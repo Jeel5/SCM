@@ -12,9 +12,9 @@ import {
   CheckCircle2,
   Circle,
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import Map, { Marker, Popup, Source, Layer } from 'react-map-gl/maplibre';
+import type { Feature, LineString } from 'geojson';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   Card,
   Button,
@@ -27,13 +27,8 @@ import { formatDate, formatRelativeTime, cn } from '@/lib/utils';
 import { mockApi } from '@/api/mockData';
 import type { Shipment, ShipmentEvent } from '@/types';
 
-// Fix Leaflet default marker icon
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+// Free map style - no token required
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
 // Shipment Timeline Component
 function ShipmentTimeline({ events }: { events: ShipmentEvent[] }) {
@@ -97,49 +92,119 @@ function ShipmentTimeline({ events }: { events: ShipmentEvent[] }) {
 
 // Shipment Map Component
 function ShipmentMap({ shipment }: { shipment: Shipment }) {
+  const [popupInfo, setPopupInfo] = useState<{ type: string; lat: number; lng: number } | null>(null);
+  
   const origin = shipment.origin.coordinates || { lat: 34.0522, lng: -118.2437 };
   const destination = shipment.destination.coordinates || { lat: 40.7128, lng: -74.006 };
   const current = shipment.currentLocation || origin;
 
-  const center: [number, number] = [
-    (origin.lat + destination.lat) / 2,
-    (origin.lng + destination.lng) / 2,
-  ];
+  const centerLat = (origin.lat + destination.lat) / 2;
+  const centerLng = (origin.lng + destination.lng) / 2;
+
+  // Route line GeoJSON
+  const routeGeoJSON: Feature<LineString> = {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [origin.lng, origin.lat],
+        [current.lng, current.lat],
+        [destination.lng, destination.lat],
+      ],
+    },
+  };
 
   return (
     <div className="h-64 rounded-xl overflow-hidden border border-gray-200">
-      <MapContainer
-        center={center}
-        zoom={4}
-        style={{ height: '100%', width: '100%' }}
-        scrollWheelZoom={false}
+      <Map
+        initialViewState={{
+          longitude: centerLng,
+          latitude: centerLat,
+          zoom: 3,
+        }}
+        style={{ width: '100%', height: '100%' }}
+        mapStyle={MAP_STYLE}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <Marker position={[origin.lat, origin.lng]}>
-          <Popup>Origin: {shipment.origin.city}</Popup>
+        {/* Route Line */}
+        <Source id="route" type="geojson" data={routeGeoJSON}>
+          <Layer
+            id="route-line"
+            type="line"
+            paint={{
+              'line-color': '#3B82F6',
+              'line-width': 3,
+              'line-dasharray': [2, 2],
+            }}
+          />
+        </Source>
+
+        {/* Origin Marker */}
+        <Marker
+          longitude={origin.lng}
+          latitude={origin.lat}
+        >
+          <div
+            className="h-6 w-6 bg-blue-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPopupInfo({ type: 'origin', lat: origin.lat, lng: origin.lng });
+            }}
+          >
+            <div className="h-2 w-2 bg-white rounded-full" />
+          </div>
         </Marker>
-        <Marker position={[destination.lat, destination.lng]}>
-          <Popup>Destination: {shipment.destination.city}</Popup>
+
+        {/* Destination Marker */}
+        <Marker
+          longitude={destination.lng}
+          latitude={destination.lat}
+        >
+          <div
+            className="h-6 w-6 bg-purple-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPopupInfo({ type: 'destination', lat: destination.lat, lng: destination.lng });
+            }}
+          >
+            <div className="h-2 w-2 bg-white rounded-full" />
+          </div>
         </Marker>
+
+        {/* Current Location Marker */}
         {shipment.status !== 'delivered' && (
-          <Marker position={[current.lat, current.lng]}>
-            <Popup>Current Location</Popup>
+          <Marker
+            longitude={current.lng}
+            latitude={current.lat}
+          >
+            <div
+              className="h-8 w-8 bg-green-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center animate-pulse cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPopupInfo({ type: 'current', lat: current.lat, lng: current.lng });
+              }}
+            >
+              <Truck className="h-4 w-4 text-white" />
+            </div>
           </Marker>
         )}
-        <Polyline
-          positions={[
-            [origin.lat, origin.lng],
-            [current.lat, current.lng],
-            [destination.lat, destination.lng],
-          ]}
-          color="#3B82F6"
-          weight={3}
-          dashArray="10, 10"
-        />
-      </MapContainer>
+
+        {/* Popup */}
+        {popupInfo && (
+          <Popup
+            longitude={popupInfo.lng}
+            latitude={popupInfo.lat}
+            onClose={() => setPopupInfo(null)}
+            closeOnClick={false}
+          >
+            <div className="text-sm font-medium">
+              {popupInfo.type === 'origin' && `Origin: ${shipment.origin.city}`}
+              {popupInfo.type === 'destination' && `Destination: ${shipment.destination.city}`}
+              {popupInfo.type === 'current' && 'Current Location'}
+            </div>
+          </Popup>
+        )}
+      </Map>
     </div>
   );
 }
