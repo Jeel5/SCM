@@ -12,9 +12,8 @@ import {
   Truck,
   Clock,
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import Map, { Marker, Popup } from 'react-map-gl/maplibre';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   Card,
   Button,
@@ -29,13 +28,8 @@ import { formatNumber, cn } from '@/lib/utils';
 import { mockApi } from '@/api/mockData';
 import type { Warehouse } from '@/types';
 
-// Fix Leaflet default marker icon
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+// Free map style - no token required
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
 // Warehouse Card Component
 function WarehouseCard({
@@ -174,20 +168,25 @@ function WarehouseDetailsModal({
       <div className="space-y-6">
         {/* Map */}
         <div className="h-48 rounded-xl overflow-hidden border border-gray-200">
-          <MapContainer
-            center={[warehouse.location.lat, warehouse.location.lng]}
-            zoom={12}
-            style={{ height: '100%', width: '100%' }}
-            scrollWheelZoom={false}
+          <Map
+            initialViewState={{
+              longitude: warehouse.location.lng,
+              latitude: warehouse.location.lat,
+              zoom: 12,
+            }}
+            style={{ width: '100%', height: '100%' }}
+            mapStyle={MAP_STYLE}
           >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            <Marker position={[warehouse.location.lat, warehouse.location.lng]}>
-              <Popup>{warehouse.name}</Popup>
+            <Marker
+              longitude={warehouse.location.lng}
+              latitude={warehouse.location.lat}
+              anchor="bottom"
+            >
+              <div className="h-8 w-8 bg-blue-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+                <Building2 className="h-4 w-4 text-white" />
+              </div>
             </Marker>
-          </MapContainer>
+          </Map>
         </div>
 
         {/* Info Grid */}
@@ -255,7 +254,7 @@ function WarehouseDetailsModal({
                     </Badge>
                   </div>
                   <div className="space-y-1">
-                    <Progress value={Math.random() * 80 + 20} size="sm" />
+                    <Progress value={((i * 17 + 7) % 80) + 20} size="sm" />
                     <p className="text-xs text-gray-500">Active</p>
                   </div>
                 </div>
@@ -482,36 +481,39 @@ export function WarehousesPage() {
       ) : (
         <Card>
           <div className="h-125 rounded-xl overflow-hidden">
-            <MapContainer
-              center={[39.8283, -98.5795]}
-              zoom={4}
-              style={{ height: '100%', width: '100%' }}
+            <Map
+              initialViewState={{
+                longitude: -98.5795,
+                latitude: 39.8283,
+                zoom: 4,
+              }}
+              style={{ width: '100%', height: '500px' }}
+              mapStyle={MAP_STYLE}
             >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
               {warehouses.map((warehouse) => (
                 <Marker
                   key={warehouse.id}
-                  position={[warehouse.location.lat, warehouse.location.lng]}
-                  eventHandlers={{
-                    click: () => {
-                      setSelectedWarehouse(warehouse);
-                      setIsDetailsOpen(true);
-                    },
+                  longitude={warehouse.location.lng}
+                  latitude={warehouse.location.lat}
+                  anchor="bottom"
+                  onClick={(e) => {
+                    e.originalEvent.stopPropagation();
+                    setSelectedWarehouse(warehouse);
+                    setIsDetailsOpen(true);
                   }}
                 >
-                  <Popup>
-                    <div className="text-sm">
-                      <p className="font-semibold">{warehouse.name}</p>
-                      <p className="text-gray-500">{warehouse.address.city}</p>
-                      <p className="text-gray-500">Utilization: {warehouse.utilizationPercentage}%</p>
-                    </div>
-                  </Popup>
+                  <div 
+                    className={cn(
+                      'h-8 w-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center cursor-pointer hover:scale-110 transition-transform',
+                      warehouse.status === 'active' ? 'bg-green-500' : 
+                      warehouse.status === 'maintenance' ? 'bg-yellow-500' : 'bg-gray-500'
+                    )}
+                  >
+                    <Building2 className="h-4 w-4 text-white" />
+                  </div>
                 </Marker>
               ))}
-            </MapContainer>
+            </Map>
           </div>
         </Card>
       )}

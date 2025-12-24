@@ -247,15 +247,20 @@ body {
   border-radius: 4px;
 }
 
-/* Leaflet Map Fixes */
-.leaflet-container {
+/* MapLibre GL Fixes */
+.maplibregl-map {
   font-family: inherit;
-  z-index: 0;
 }
 
-.leaflet-popup-content-wrapper {
+.maplibregl-popup-content {
   border-radius: 12px;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  padding: 12px;
+}
+
+.maplibregl-popup-close-button {
+  padding: 4px 8px;
+  font-size: 16px;
 }
 
 /* Custom Checkbox */
