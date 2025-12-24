@@ -1,0 +1,373 @@
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  AlertTriangle,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  Eye,
+  MessageSquare,
+  Download,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  Card,
+  Button,
+  DataTable,
+  StatusBadge,
+  SeverityBadge,
+  Modal,
+  Tabs,
+} from '@/components/ui';
+import { formatDate, formatRelativeTime, cn } from '@/lib/utils';
+import { mockApi } from '@/api/mockData';
+import type { Exception } from '@/types';
+
+// Exception Details Modal
+function ExceptionDetailsModal({
+  exception,
+  isOpen,
+  onClose,
+}: {
+  exception: Exception | null;
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  if (!exception) return null;
+
+  const severityColors = {
+    low: 'bg-blue-50 border-blue-200 text-blue-700',
+    medium: 'bg-yellow-50 border-yellow-200 text-yellow-700',
+    high: 'bg-orange-50 border-orange-200 text-orange-700',
+    critical: 'bg-red-50 border-red-200 text-red-700',
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Exception Details" size="lg">
+      <div className="space-y-6">
+        {/* Header */}
+        <div
+          className={cn(
+            'p-4 rounded-xl border',
+            severityColors[exception.severity]
+          )}
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-6 w-6" />
+              <div>
+                <h3 className="font-semibold capitalize">
+                  {exception.type.replace('_', ' ')} Exception
+                </h3>
+                <p className="text-sm mt-1">{exception.description}</p>
+              </div>
+            </div>
+            <SeverityBadge severity={exception.severity} />
+          </div>
+        </div>
+
+        {/* Info Grid */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-4 bg-gray-50 rounded-xl">
+            <p className="text-sm text-gray-500">Status</p>
+            <div className="mt-1">
+              <StatusBadge status={exception.status} />
+            </div>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-xl">
+            <p className="text-sm text-gray-500">Created</p>
+            <p className="font-medium text-gray-900">{formatDate(exception.createdAt)}</p>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-xl">
+            <p className="text-sm text-gray-500">Order ID</p>
+            <p className="font-medium text-gray-900">{exception.orderId}</p>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-xl">
+            <p className="text-sm text-gray-500">Shipment ID</p>
+            <p className="font-medium text-gray-900">{exception.shipmentId || 'N/A'}</p>
+          </div>
+        </div>
+
+        {/* Resolution */}
+        {exception.resolution && (
+          <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+            <div className="flex items-center gap-2 text-green-700 mb-2">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="font-medium">Resolution</span>
+            </div>
+            <p className="text-green-700">{exception.resolution}</p>
+            {exception.resolvedAt && (
+              <p className="text-sm text-green-600 mt-2">
+                Resolved: {formatDate(exception.resolvedAt)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Actions */}
+        {exception.status !== 'resolved' && (
+          <div className="flex items-center gap-3">
+            <Button variant="primary" className="flex-1" leftIcon={<CheckCircle2 className="h-4 w-4" />}>
+              Mark as Resolved
+            </Button>
+            <Button variant="outline" className="flex-1" leftIcon={<MessageSquare className="h-4 w-4" />}>
+              Add Note
+            </Button>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// Main Exceptions Page
+export function ExceptionsPage() {
+  const [exceptions, setExceptions] = useState<Exception[]>([]);
+  const [totalExceptions, setTotalExceptions] = useState(0);
+  const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedException, setSelectedException] = useState<Exception | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('all');
+
+  const pageSize = 10;
+
+  // Calculate stats
+  const criticalCount = exceptions.filter((e) => e.severity === 'critical').length;
+  const openCount = exceptions.filter((e) => e.status === 'open').length;
+  const resolvedCount = exceptions.filter((e) => e.status === 'resolved').length;
+
+  const tabs = [
+    { id: 'all', label: 'All Exceptions', count: totalExceptions },
+    { id: 'open', label: 'Open', count: openCount },
+    { id: 'in_progress', label: 'In Progress' },
+    { id: 'resolved', label: 'Resolved', count: resolvedCount },
+  ];
+
+  const columns = [
+    {
+      key: 'exception',
+      header: 'Exception',
+      render: (exception: Exception) => (
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'h-10 w-10 rounded-lg flex items-center justify-center',
+              exception.severity === 'critical'
+                ? 'bg-red-100 text-red-600'
+                : exception.severity === 'high'
+                  ? 'bg-orange-100 text-orange-600'
+                  : exception.severity === 'medium'
+                    ? 'bg-yellow-100 text-yellow-600'
+                    : 'bg-blue-100 text-blue-600'
+            )}
+          >
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-medium text-gray-900 capitalize">
+              {exception.type.replace('_', ' ')}
+            </p>
+            <p className="text-sm text-gray-500 truncate max-w-xs">
+              {exception.description}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'severity',
+      header: 'Severity',
+      render: (exception: Exception) => <SeverityBadge severity={exception.severity} />,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (exception: Exception) => <StatusBadge status={exception.status} />,
+    },
+    {
+      key: 'orderId',
+      header: 'Order',
+      render: (exception: Exception) => (
+        <span className="text-gray-700">{exception.orderId}</span>
+      ),
+    },
+    {
+      key: 'created',
+      header: 'Created',
+      sortable: true,
+      render: (exception: Exception) => (
+        <span className="text-gray-500">{formatRelativeTime(exception.createdAt)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '60px',
+      render: (exception: Exception) => (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedException(exception);
+            setIsDetailsOpen(true);
+          }}
+          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+        >
+          <Eye className="h-4 w-4 text-gray-500" />
+        </button>
+      ),
+    },
+  ];
+
+  useEffect(() => {
+    const fetchExceptions = async () => {
+      setIsLoading(true);
+      try {
+        const response = await mockApi.getExceptions(page, pageSize);
+        setExceptions(response.data);
+        setTotalExceptions(response.total);
+      } catch (error) {
+        console.error('Failed to fetch exceptions:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchExceptions();
+  }, [page]);
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+      >
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Exceptions</h1>
+          <p className="text-gray-500 mt-1">Monitor and resolve logistics exceptions</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />}>
+            Refresh
+          </Button>
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+            Export
+          </Button>
+        </div>
+      </motion.div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          {
+            label: 'Total Exceptions',
+            value: totalExceptions,
+            icon: AlertTriangle,
+            color: 'bg-blue-100 text-blue-600',
+          },
+          {
+            label: 'Critical',
+            value: criticalCount,
+            icon: AlertCircle,
+            color: 'bg-red-100 text-red-600',
+          },
+          {
+            label: 'Open',
+            value: openCount,
+            icon: Clock,
+            color: 'bg-yellow-100 text-yellow-600',
+          },
+          {
+            label: 'Resolved',
+            value: resolvedCount,
+            icon: CheckCircle2,
+            color: 'bg-green-100 text-green-600',
+          },
+        ].map((stat, index) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className="p-4 bg-white rounded-xl border border-gray-100"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-gray-500">{stat.label}</p>
+              <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center', stat.color)}>
+                <stat.icon className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Critical Alerts Banner */}
+      {criticalCount > 0 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertCircle className="h-5 w-5 text-red-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-red-800">
+                {criticalCount} Critical Exception{criticalCount > 1 ? 's' : ''} Require Immediate Attention
+              </p>
+              <p className="text-sm text-red-600">Please review and resolve these issues as soon as possible.</p>
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            className="bg-red-600 hover:bg-red-700"
+            onClick={() => setActiveTab('open')}
+          >
+            View Critical
+          </Button>
+        </motion.div>
+      )}
+
+      {/* Data Table */}
+      <Card padding="none">
+        <div className="p-4 border-b border-gray-100">
+          <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={exceptions}
+          isLoading={isLoading}
+          searchPlaceholder="Search exceptions..."
+          pagination={{
+            page,
+            pageSize,
+            total: totalExceptions,
+            onPageChange: setPage,
+          }}
+          onRowClick={(exception) => {
+            setSelectedException(exception);
+            setIsDetailsOpen(true);
+          }}
+          emptyMessage="No exceptions found"
+          className="border-0 rounded-none"
+        />
+      </Card>
+
+      {/* Details Modal */}
+      <ExceptionDetailsModal
+        exception={selectedException}
+        isOpen={isDetailsOpen}
+        onClose={() => {
+          setIsDetailsOpen(false);
+          setSelectedException(null);
+        }}
+      />
+    </div>
+  );
+}
