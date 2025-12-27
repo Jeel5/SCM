@@ -12,7 +12,7 @@ import {
   Truck,
   Clock,
 } from 'lucide-react';
-import Map, { Marker, Popup } from 'react-map-gl/maplibre';
+import Map, { Marker, Popup, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   Card,
@@ -28,8 +28,31 @@ import { formatNumber, cn } from '@/lib/utils';
 import { mockApi } from '@/api/mockData';
 import type { Warehouse } from '@/types';
 
-// Free map style - no token required
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+// OpenStreetMap style - free, no token required
+const MAP_STYLE = {
+  version: 8 as const,
+  sources: {
+    osm: {
+      type: 'raster' as const,
+      tiles: [
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    },
+  },
+  layers: [
+    {
+      id: 'osm',
+      type: 'raster' as const,
+      source: 'osm',
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+};
 
 // Warehouse Card Component
 function WarehouseCard({
@@ -177,6 +200,7 @@ function WarehouseDetailsModal({
             style={{ width: '100%', height: '100%' }}
             mapStyle={MAP_STYLE}
           >
+            <NavigationControl position="bottom-right" />
             <Marker
               longitude={warehouse.location.lng}
               latitude={warehouse.location.lat}
@@ -483,13 +507,14 @@ export function WarehousesPage() {
           <div className="h-125 rounded-xl overflow-hidden">
             <Map
               initialViewState={{
-                longitude: -98.5795,
-                latitude: 39.8283,
+                longitude: 78.9629,
+                latitude: 20.5937,
                 zoom: 4,
               }}
               style={{ width: '100%', height: '500px' }}
               mapStyle={MAP_STYLE}
             >
+              <NavigationControl position="bottom-right" />
               {warehouses.map((warehouse) => (
                 <Marker
                   key={warehouse.id}
