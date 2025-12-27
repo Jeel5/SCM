@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
-import { Truck, Shield, BarChart3, Globe, CheckCircle } from 'lucide-react';
+import { Truck, Shield, BarChart3, Globe, CheckCircle, Mail, Lock } from 'lucide-react';
 import { useAuthStore } from '@/stores';
-import { mockApi } from '@/api/mockData';
+import { authApi } from '@/api/services';
 
 const features = [
   { icon: <Truck className="h-6 w-6" />, title: 'Real-time Tracking', desc: 'Monitor all shipments in real-time' },
@@ -18,19 +18,17 @@ export function LoginPage() {
   const { login } = useAuthStore();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // Call mock API (in production, this would validate the token with backend)
-      const response = await mockApi.googleLogin(credentialResponse.credential || '');
-      
-      if (response.success) {
-        login(response.data.user, response.data.token);
-        navigate('/dashboard');
-      }
+      // TODO: Implement Google OAuth backend validation
+      // For now, show a message that Google login will be available soon
+      setError('Google OAuth will be available soon. Please use email/password login.');
     } catch (err) {
       setError('Authentication failed. Please try again.');
     } finally {
@@ -42,20 +40,52 @@ export function LoginPage() {
     setError('Google sign-in failed. Please try again.');
   };
 
+  // Email/Password login
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!email || !password) {
+      setError('Please enter email and password');
+      return;
+    }
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await authApi.login(email, password);
+      
+      if (response.success) {
+        login(response.data.user, response.data.accessToken);
+        // Store refresh token in localStorage
+        localStorage.setItem('refreshToken', response.data.refreshToken);
+        navigate('/dashboard');
+      }
+    } catch (err: unknown) {
+      const errorMessage = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Login failed. Please check your credentials.';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Demo login for development
   const handleDemoLogin = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      const response = await mockApi.googleLogin('demo-token');
+      // Use demo credentials
+      const response = await authApi.login('admin@logitower.com', 'admin123');
       
       if (response.success) {
-        login(response.data.user, response.data.token);
+        login(response.data.user, response.data.accessToken);
+        localStorage.setItem('refreshToken', response.data.refreshToken);
         navigate('/dashboard');
       }
-    } catch (err) {
-      setError('Demo login failed. Please try again.');
+    } catch (err: unknown) {
+      const errorMessage = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Demo login failed. Make sure the backend is running.';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -140,6 +170,71 @@ export function LoginPage() {
                   <p className="text-sm text-red-600 text-center">{error}</p>
                 </motion.div>
               )}
+
+              {/* Email/Password Login Form */}
+              <form onSubmit={handleEmailLogin} className="mb-6 space-y-4">
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="email"
+                      id="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="admin@logitower.com"
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="password"
+                      id="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none"
+                    />
+                  </div>
+                </div>
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  disabled={isLoading}
+                  className="w-full h-12 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Signing in...
+                    </span>
+                  ) : (
+                    'Sign In'
+                  )}
+                </motion.button>
+              </form>
+
+              {/* Divider */}
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-4 bg-white text-gray-500">or continue with</span>
+                </div>
+              </div>
 
               {/* Google Login Button */}
               <div className="mb-6">

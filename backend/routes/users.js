@@ -1,9 +1,17 @@
 import express from 'express';
-import { listUsers, listRoles } from '../controllers/usersController.js';
+import { login, refreshToken, getProfile, listUsers, listRoles, logout } from '../controllers/usersController.js';
+import { authenticate, authorize } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-router.get('/users', listUsers);
-router.get('/roles', listRoles);
+// Public routes
+router.post('/auth/login', login);
+router.post('/auth/refresh', refreshToken);
+
+// Protected routes
+router.get('/auth/profile', authenticate, getProfile);
+router.post('/auth/logout', authenticate, logout);
+router.get('/users', authenticate, listUsers);
+router.get('/roles', authenticate, listRoles);
 
 export default router;

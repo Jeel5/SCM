@@ -32,6 +32,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, Button, MetricCardSkeleton } from '@/components/ui';
 import { cn, formatCurrency, formatNumber, formatPercentage, formatDate, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores';
+import { dashboardApi, shipmentsApi, carriersApi, warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { DashboardMetrics, ChartDataPoint, Shipment, CarrierPerformance, WarehouseUtilization } from '@/types';
 
@@ -284,33 +285,71 @@ export function DashboardPage() {
   const [carrierPerformance, setCarrierPerformance] = useState<CarrierPerformance[]>([]);
   const [warehouseUtilization, setWarehouseUtilization] = useState<WarehouseUtilization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [useRealApi, setUseRealApi] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [metricsRes, chartRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
-          mockApi.getDashboardMetrics(),
-          mockApi.getOrdersChart(30),
-          mockApi.getShipments(1, 10),
-          mockApi.getCarrierPerformance(),
-          mockApi.getWarehouseUtilization(),
-        ]);
-        
-        setMetrics(metricsRes.data);
-        setOrdersChart(chartRes.data);
-        setShipments(shipmentsRes.data);
-        setCarrierPerformance(carrierRes.data);
-        setWarehouseUtilization(warehouseRes.data);
+        if (useRealApi) {
+          // Try to fetch from real API
+          const [metricsRes, chartRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
+            dashboardApi.getDashboardStats(),
+            dashboardApi.getOrdersChart(30),
+            shipmentsApi.getShipments(1, 10),
+            dashboardApi.getCarrierPerformance(),
+            dashboardApi.getWarehouseUtilization(),
+          ]);
+          
+          setMetrics(metricsRes.data);
+          setOrdersChart(chartRes.data);
+          setShipments(shipmentsRes.data);
+          setCarrierPerformance(carrierRes.data);
+          setWarehouseUtilization(warehouseRes.data);
+        } else {
+          // Fallback to mock API
+          const [metricsRes, chartRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
+            mockApi.getDashboardMetrics(),
+            mockApi.getOrdersChart(30),
+            mockApi.getShipments(1, 10),
+            mockApi.getCarrierPerformance(),
+            mockApi.getWarehouseUtilization(),
+          ]);
+          
+          setMetrics(metricsRes.data);
+          setOrdersChart(chartRes.data);
+          setShipments(shipmentsRes.data);
+          setCarrierPerformance(carrierRes.data);
+          setWarehouseUtilization(warehouseRes.data);
+        }
       } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
+        console.error('Failed to fetch dashboard data from real API, falling back to mock:', error);
+        // Fallback to mock data on error
+        try {
+          const [metricsRes, chartRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
+            mockApi.getDashboardMetrics(),
+            mockApi.getOrdersChart(30),
+            mockApi.getShipments(1, 10),
+            mockApi.getCarrierPerformance(),
+            mockApi.getWarehouseUtilization(),
+          ]);
+          
+          setMetrics(metricsRes.data);
+          setOrdersChart(chartRes.data);
+          setShipments(shipmentsRes.data);
+          setCarrierPerformance(carrierRes.data);
+          setWarehouseUtilization(warehouseRes.data);
+          setUseRealApi(false);
+        } catch (fallbackError) {
+          console.error('Fallback also failed:', fallbackError);
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchData();
-  }, []);
+  }, [useRealApi]);
 
   return (
     <div className="p-6 space-y-6">
