@@ -12,7 +12,7 @@ import {
   Truck,
   Clock,
 } from 'lucide-react';
-import Map, { Marker, Popup, NavigationControl } from 'react-map-gl/maplibre';
+import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   Card,

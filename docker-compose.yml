@@ -17,9 +17,7 @@ services:
     container_name: scm_frontend
     build: ./frontend
     ports:
-      - "5173:5173"
-    env_file:
-      - .env
+      - "5173:80"
     depends_on:
       - backend
     restart: unless-stopped

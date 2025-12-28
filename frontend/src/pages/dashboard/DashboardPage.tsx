@@ -32,7 +32,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, Button, MetricCardSkeleton } from '@/components/ui';
 import { cn, formatCurrency, formatNumber, formatPercentage, formatDate, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores';
-import { dashboardApi, shipmentsApi, carriersApi, warehousesApi } from '@/api/services';
+import { dashboardApi, shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { DashboardMetrics, ChartDataPoint, Shipment, CarrierPerformance, WarehouseUtilization } from '@/types';
 

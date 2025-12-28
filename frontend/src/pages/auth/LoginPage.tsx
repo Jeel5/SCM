@@ -21,7 +21,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+  const handleGoogleSuccess = async (_credentialResponse: CredentialResponse) => {
     try {
       setIsLoading(true);
       setError(null);

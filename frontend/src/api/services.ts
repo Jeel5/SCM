@@ -261,9 +261,9 @@ export const exceptionsApi = {
 // ==================== DASHBOARD & ANALYTICS ====================
 export const dashboardApi = {
   async getDashboardStats(): Promise<ApiResponse<DashboardMetrics>> {
-    const response = await get<{ success: boolean; data: DashboardMetrics }>('/dashboard/stats');
+    const response = await get<{ success: boolean; data: any }>('/dashboard/stats');
     // Transform backend response to match frontend DashboardMetrics type
-    const data = response.data;
+    const data = response.data || {};
     return {
       data: {
         totalOrders: data.orders?.total || 0,
@@ -298,10 +298,10 @@ export const dashboardApi = {
   },
 
   async getOrdersChart(days = 30): Promise<ApiResponse<ChartDataPoint[]>> {
-    const response = await get<{ success: boolean; data: { ordersOverTime: ChartDataPoint[] } }>('/analytics', { period: `${days}d` });
-    const chartData = response.data.ordersOverTime?.map((item: { date: string; count: number }) => ({
+    const response = await get<{ success: boolean; data: { ordersOverTime: Array<{ date: string; count: number }> } }>('/analytics', { period: `${days}d` });
+    const chartData = response.data.ordersOverTime?.map((item: ChartDataPoint | { date: string; count: number }) => ({
       date: item.date,
-      value: item.count,
+      value: 'count' in item ? item.count : item.value,
     })) || [];
     return { data: chartData, success: true };
   },
