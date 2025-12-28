@@ -105,7 +105,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 // Main App Component
 function App() {
   return (
-    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || 'demo-client-id'}>
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           <BrowserRouter>

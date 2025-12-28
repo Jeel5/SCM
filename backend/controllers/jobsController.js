@@ -204,9 +204,9 @@ export async function getDashboardStats(req, res) {
     const ordersResult = await pool.query(`
       SELECT 
         COUNT(*) as total,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-        COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing,
-        COUNT(CASE WHEN status = 'shipped' THEN 1 END) as shipped,
+        COUNT(CASE WHEN status IN ('created','confirmed') THEN 1 END) as pending,
+        COUNT(CASE WHEN status IN ('allocated','processing') THEN 1 END) as processing,
+        COUNT(CASE WHEN status IN ('shipped','in_transit','out_for_delivery') THEN 1 END) as shipped,
         COUNT(CASE WHEN status = 'delivered' THEN 1 END) as delivered,
         COALESCE(SUM(total_amount), 0) as total_value
       FROM orders
@@ -217,18 +217,26 @@ export async function getDashboardStats(req, res) {
     const shipmentsResult = await pool.query(`
       SELECT 
         COUNT(*) as total,
-        COUNT(CASE WHEN status = 'in_transit' THEN 1 END) as in_transit,
-        COUNT(CASE WHEN status = 'delivered' THEN 1 END) as delivered,
-        COUNT(CASE WHEN actual_delivery <= estimated_delivery THEN 1 END) as on_time
-      FROM shipments
-      WHERE created_at >= NOW() - INTERVAL '30 days'
+        COUNT(CASE WHEN s.status IN ('picked_up','in_transit','at_hub','out_for_delivery') THEN 1 END) as in_transit,
+        COUNT(CASE WHEN s.status = 'delivered' THEN 1 END) as delivered,
+        COUNT(
+          CASE 
+            WHEN o.actual_delivery IS NOT NULL 
+             AND o.estimated_delivery IS NOT NULL
+             AND o.actual_delivery <= o.estimated_delivery
+            THEN 1 
+          END
+        ) as on_time
+      FROM shipments s
+      LEFT JOIN orders o ON o.id = s.order_id
+      WHERE s.created_at >= NOW() - INTERVAL '30 days'
     `);
     
     // Inventory alerts
     const inventoryResult = await pool.query(`
       SELECT COUNT(*) as low_stock
       FROM inventory
-      WHERE quantity <= reorder_point
+      WHERE available_quantity <= 5
     `);
     
     // Returns stats
@@ -241,7 +249,7 @@ export async function getDashboardStats(req, res) {
     // Exceptions
     const exceptionsResult = await pool.query(`
       SELECT COUNT(*) as active_exceptions
-      FROM shipment_exceptions
+      FROM exceptions
       WHERE status = 'open'
     `);
     
@@ -316,7 +324,7 @@ export async function getAnalytics(req, res) {
     
     // Top products
     const topProducts = await pool.query(`
-      SELECT p.name, SUM(oi.quantity) as units_sold, SUM(oi.subtotal) as revenue
+      SELECT p.name, SUM(oi.quantity) as units_sold, SUM(oi.quantity * oi.unit_price) as revenue
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
       JOIN orders o ON oi.order_id = o.id
@@ -328,7 +336,7 @@ export async function getAnalytics(req, res) {
     
     // Warehouse utilization
     const warehouseUtil = await pool.query(`
-      SELECT w.name, w.capacity, COALESCE(SUM(i.quantity), 0) as current_stock
+      SELECT w.name, w.capacity, COALESCE(SUM(i.available_quantity + i.reserved_quantity), 0) as current_stock
       FROM warehouses w
       LEFT JOIN inventory i ON i.warehouse_id = w.id
       WHERE w.is_active = true

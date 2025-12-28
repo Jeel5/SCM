@@ -76,7 +76,7 @@ export function LoginPage() {
       setError(null);
       
       // Use demo credentials
-      const response = await authApi.login('admin@logitower.com', 'admin123');
+      const response = await authApi.login('wh1@logitower.com', 'admin123');
       
       if (response.success) {
         login(response.data.user, response.data.accessToken);

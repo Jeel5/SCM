@@ -1,6 +1,6 @@
 import type { Feature, LineString } from 'geojson';
 
-const OSRM_URL = import.meta.env.VITE_OSRM_URL  || 'http://router.project-osrm.org';
+const OSRM_URL = import.meta.env.VITE_OSRM_URL;
 
 interface RouteResponse {
   routes: Array<{

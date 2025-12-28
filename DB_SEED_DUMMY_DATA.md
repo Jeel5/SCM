@@ -1,15 +1,3 @@
-# Logistics Control Tower – Dummy Data Seed
-
-Purpose: Healthy dataset for local development and demos. Run the SQL in a PostgreSQL client connected to your project DB. All inserts respect foreign keys via subselects on stable business keys (codes, emails, skus, tracking numbers).
-
-## How to Use
-
-1. Ensure tables exist (as per your schema).
-2. Enable `gen_random_uuid()` (pgcrypto) if not already.
-3. Copy the SQL block below into `psql` or your GUI and run.
-4. Re-run safely: Designed with unique business keys to avoid duplicates.
-
-```sql
 BEGIN;
 
 -- Organizations
@@ -116,15 +104,14 @@ FROM warehouses w, products p, (VALUES
 WHERE w.code = i.wcode AND p.sku = i.sku
 ON CONFLICT DO NOTHING;
 
--- Orders
-INSERT INTO orders (order_number, customer_name, customer_email, customer_phone, status, priority, total_amount, currency, shipping_address, billing_address, estimated_delivery, notes)
+INSERT INTO orders (order_number, customer_name, customer_email, customer_phone, status, priority, total_amount, currency, shipping_address, billing_address, estimated_delivery, actual_delivery, notes)
 VALUES
-  ('ORD-100001','Alice Johnson','alice@example.com','+1-555-0100','created','express',149.98,'USD','{"street":"456 Customer Ave","city":"New York","state":"NY","postal_code":"10001","country":"USA"}'::jsonb,'{"street":"456 Customer Ave","city":"New York","state":"NY","postal_code":"10001","country":"USA"}'::jsonb, NOW() + INTERVAL '2 days','High priority'),
-  ('ORD-100002','Bob Smith','bob@example.com','+1-555-0101','confirmed','standard',89.99,'USD','{"street":"789 Market St","city":"Los Angeles","state":"CA","postal_code":"90001","country":"USA"}'::jsonb,'{"street":"789 Market St","city":"Los Angeles","state":"CA","postal_code":"90001","country":"USA"}'::jsonb, NOW() + INTERVAL '3 days',NULL),
-  ('ORD-100003','Carol Davis','carol@example.com','+1-555-0102','allocated','standard',199.99,'USD','{"street":"321 Broadway","city":"Chicago","state":"IL","postal_code":"60601","country":"USA"}'::jsonb,'{"street":"321 Broadway","city":"Chicago","state":"IL","postal_code":"60601","country":"USA"}'::jsonb, NOW() + INTERVAL '4 days',NULL),
-  ('ORD-100004','David Lee','david@example.com','+1-555-0103','shipped','express',79.99,'USD','{"street":"654 Ocean Dr","city":"Miami","state":"FL","postal_code":"33101","country":"USA"}'::jsonb,'{"street":"654 Ocean Dr","city":"Miami","state":"FL","postal_code":"33101","country":"USA"}'::jsonb, NOW() + INTERVAL '1 day','Fragile'),
-  ('ORD-100005','Emma Wilson','emma@example.com','+1-555-0104','delivered','standard',39.98,'USD','{"street":"987 Elm St","city":"Philadelphia","state":"PA","postal_code":"19019","country":"USA"}'::jsonb,'{"street":"987 Elm St","city":"Philadelphia","state":"PA","postal_code":"19019","country":"USA"}'::jsonb, NOW() - INTERVAL '1 day','Delivered on time'),
-  ('ORD-100006','Frank Miller','frank@example.com','+1-555-0105','returned','bulk',499.99,'USD','{"street":"555 Pine St","city":"San Diego","state":"CA","postal_code":"92101","country":"USA"}'::jsonb,'{"street":"555 Pine St","city":"San Diego","state":"CA","postal_code":"92101","country":"USA"}'::jsonb, NOW() + INTERVAL '5 days','Oversized')
+  ('ORD-100001','Alice Johnson','alice@example.com','+1-555-0100','created','express',149.98,'USD','{"street":"456 Customer Ave","city":"New York","state":"NY","postal_code":"10001","country":"USA"}'::jsonb,'{"street":"456 Customer Ave","city":"New York","state":"NY","postal_code":"10001","country":"USA"}'::jsonb, NOW() + INTERVAL '2 days', NULL,'High priority'),
+  ('ORD-100002','Bob Smith','bob@example.com','+1-555-0101','confirmed','standard',89.99,'USD','{"street":"789 Market St","city":"Los Angeles","state":"CA","postal_code":"90001","country":"USA"}'::jsonb,'{"street":"789 Market St","city":"Los Angeles","state":"CA","postal_code":"90001","country":"USA"}'::jsonb, NOW() + INTERVAL '3 days', NULL,NULL),
+  ('ORD-100003','Carol Davis','carol@example.com','+1-555-0102','allocated','standard',199.99,'USD','{"street":"321 Broadway","city":"Chicago","state":"IL","postal_code":"60601","country":"USA"}'::jsonb,'{"street":"321 Broadway","city":"Chicago","state":"IL","postal_code":"60601","country":"USA"}'::jsonb, NOW() + INTERVAL '4 days', NULL,NULL),
+  ('ORD-100004','David Lee','david@example.com','+1-555-0103','shipped','express',79.99,'USD','{"street":"654 Ocean Dr","city":"Miami","state":"FL","postal_code":"33101","country":"USA"}'::jsonb,'{"street":"654 Ocean Dr","city":"Miami","state":"FL","postal_code":"33101","country":"USA"}'::jsonb, NOW() + INTERVAL '1 day', NULL,'Fragile'),
+  ('ORD-100005','Emma Wilson','emma@example.com','+1-555-0104','delivered','standard',39.98,'USD','{"street":"987 Elm St","city":"Philadelphia","state":"PA","postal_code":"19019","country":"USA"}'::jsonb,'{"street":"987 Elm St","city":"Philadelphia","state":"PA","postal_code":"19019","country":"USA"}'::jsonb, NOW() - INTERVAL '1 day', NOW() - INTERVAL '12 hours','Delivered on time'),
+  ('ORD-100006','Frank Miller','frank@example.com','+1-555-0105','returned','bulk',499.99,'USD','{"street":"555 Pine St","city":"San Diego","state":"CA","postal_code":"92101","country":"USA"}'::jsonb,'{"street":"555 Pine St","city":"San Diego","state":"CA","postal_code":"92101","country":"USA"}'::jsonb, NOW() + INTERVAL '5 days', NULL,'Oversized')
 ON CONFLICT (order_number) DO NOTHING;
 
 -- Order Items
@@ -141,14 +128,48 @@ FROM orders o JOIN (VALUES
 JOIN products p ON p.sku = oi.sku;
 
 -- Shipments
-INSERT INTO shipments (tracking_number, order_id, carrier_id, warehouse_id, status, origin_address, destination_address, weight, shipping_cost, pickup_scheduled)
+INSERT INTO shipments (
+  tracking_number, order_id, carrier_id, warehouse_id, status,
+  origin_address, destination_address, weight, shipping_cost,
+  pickup_scheduled, pickup_actual, delivery_scheduled, delivery_actual, current_location
+)
 SELECT * FROM (
-  SELECT 'TRK123456789', (SELECT id FROM orders WHERE order_number='ORD-100004'), (SELECT id FROM carriers WHERE code='DHL'), (SELECT id FROM warehouses WHERE code='WH-LA'), 'in_transit', '{"street":"123 Industrial Blvd","city":"Los Angeles","state":"CA","postal_code":"90001","country":"USA"}'::jsonb, (SELECT shipping_address FROM orders WHERE order_number='ORD-100004'), 1.65, 12.50, NOW() - INTERVAL '1 day'
+  SELECT 'TRK123456789',
+         (SELECT id FROM orders WHERE order_number='ORD-100004'),
+         (SELECT id FROM carriers WHERE code='DHL'),
+         (SELECT id FROM warehouses WHERE code='WH-LA'),
+         'in_transit',
+         '{"street":"123 Industrial Blvd","city":"Los Angeles","state":"CA","postal_code":"90001","country":"USA"}'::jsonb,
+         (SELECT shipping_address FROM orders WHERE order_number='ORD-100004'),
+         1.65,
+         12.50,
+         NOW() - INTERVAL '1 day',
+         NOW() - INTERVAL '22 hours',
+         (SELECT estimated_delivery FROM orders WHERE order_number='ORD-100004')::timestamptz,
+         NULL::timestamptz,
+         '{"city":"Phoenix","state":"AZ","lat":33.4484,"lng":-112.0740}'::jsonb
 ) AS s
 ON CONFLICT (tracking_number) DO NOTHING;
-INSERT INTO shipments (tracking_number, order_id, carrier_id, warehouse_id, status, origin_address, destination_address, weight, shipping_cost, pickup_scheduled)
+INSERT INTO shipments (
+  tracking_number, order_id, carrier_id, warehouse_id, status,
+  origin_address, destination_address, weight, shipping_cost,
+  pickup_scheduled, pickup_actual, delivery_scheduled, delivery_actual, current_location
+)
 SELECT * FROM (
-  SELECT 'TRK987654321', (SELECT id FROM orders WHERE order_number='ORD-100003'), (SELECT id FROM carriers WHERE code='UPS'), (SELECT id FROM warehouses WHERE code='WH-CHI'), 'picked_up', '{"street":"789 Logistics Dr","city":"Chicago","state":"IL","postal_code":"60601","country":"USA"}'::jsonb, (SELECT shipping_address FROM orders WHERE order_number='ORD-100003'), 20.00, 25.00, NOW() - INTERVAL '2 days'
+  SELECT 'TRK987654321',
+         (SELECT id FROM orders WHERE order_number='ORD-100003'),
+         (SELECT id FROM carriers WHERE code='UPS'),
+         (SELECT id FROM warehouses WHERE code='WH-CHI'),
+         'picked_up',
+         '{"street":"789 Logistics Dr","city":"Chicago","state":"IL","postal_code":"60601","country":"USA"}'::jsonb,
+         (SELECT shipping_address FROM orders WHERE order_number='ORD-100003'),
+         20.00,
+         25.00,
+         NOW() - INTERVAL '2 days',
+         NOW() - INTERVAL '45 hours',
+         (SELECT estimated_delivery FROM orders WHERE order_number='ORD-100003')::timestamptz,
+         NULL::timestamptz,
+         '{"city":"Chicago","state":"IL","lat":41.8781,"lng":-87.6298}'::jsonb
 ) AS s
 ON CONFLICT (tracking_number) DO NOTHING;
 
@@ -222,10 +243,3 @@ FROM (VALUES
 ON CONFLICT (invoice_number) DO NOTHING;
 
 COMMIT;
-```
-
-## Notes
-- Password hashes are placeholders; replace with real bcrypt hashes for production.
-- Adjust quantities and prices as needed for specific test scenarios.
-- All JSON fields use compact formatting to reduce line count.
-- The dataset covers all modules: Auth, MDM, Inventory, OMS, Shipments, SLA, Returns, Exceptions, ETA, Notifications, Financials.
