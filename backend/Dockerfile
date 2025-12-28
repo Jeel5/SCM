@@ -7,6 +7,8 @@ RUN npm ci --omit=dev
 
 COPY . .
 
+RUN npx prisma generate
+
 EXPOSE 3001
 
-CMD ["npm", "run", "start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
