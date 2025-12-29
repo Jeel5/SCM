@@ -13,7 +13,6 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@prisma/client": "^7.2.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.66.2",
@@ -35,8 +34,5 @@
     "sequelize": "^6.37.7",
     "sequelize-cli": "^6.6.3",
     "uuid": "^13.0.0"
-  },
-  "devDependencies": {
-    "prisma": "^7.2.0"
   }
 }
