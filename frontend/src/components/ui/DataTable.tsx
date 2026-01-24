@@ -65,10 +65,10 @@ export function DataTable<T extends { id: string }>({
   const totalPages = pagination ? Math.ceil(pagination.total / pagination.pageSize) : 1;
 
   return (
-    <div className={cn('bg-white rounded-2xl border border-gray-100 overflow-hidden', className)}>
+    <div className={cn('bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden', className)}>
       {/* Search & Filters */}
       {searchable && (
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
           <div className="flex items-center gap-4">
             <div className="flex-1 max-w-md">
               <Input
@@ -93,13 +93,13 @@ export function DataTable<T extends { id: string }>({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="bg-gray-50/80">
+            <tr className="bg-gray-50/80 dark:bg-gray-900/50">
               {columns.map((column) => (
                 <th
                   key={column.key}
                   className={cn(
-                    'px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider',
-                    column.sortable && 'cursor-pointer select-none hover:bg-gray-100 transition-colors'
+                    'px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider',
+                    column.sortable && 'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors'
                   )}
                   style={{ width: column.width }}
                   onClick={() => column.sortable && handleSort(column.key)}
@@ -124,7 +124,7 @@ export function DataTable<T extends { id: string }>({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             <AnimatePresence mode="wait">
               {isLoading ? (
                 // Loading skeleton
@@ -144,10 +144,10 @@ export function DataTable<T extends { id: string }>({
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="text-gray-500"
+                      className="text-gray-500 dark:text-gray-400"
                     >
-                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-                        <Search className="h-8 w-8 text-gray-300" />
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                        <Search className="h-8 w-8 text-gray-300 dark:text-gray-500" />
                       </div>
                       <p className="font-medium">{emptyMessage}</p>
                       <p className="text-sm mt-1">Try adjusting your search or filters</p>
@@ -165,11 +165,11 @@ export function DataTable<T extends { id: string }>({
                     onClick={() => onRowClick?.(item)}
                     className={cn(
                       'transition-colors',
-                      onRowClick && 'cursor-pointer hover:bg-blue-50/50'
+                      onRowClick && 'cursor-pointer hover:bg-blue-50/50 dark:hover:bg-gray-700/50'
                     )}
                   >
                     {columns.map((column) => (
-                      <td key={column.key} className="px-6 py-4 text-sm text-gray-700">
+                      <td key={column.key} className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                         {column.render
                           ? column.render(item)
                           : String((item as Record<string, unknown>)[column.key] ?? '')}
@@ -185,8 +185,8 @@ export function DataTable<T extends { id: string }>({
 
       {/* Pagination */}
       {pagination && totalPages > 1 && (
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
-          <p className="text-sm text-gray-600">
+        <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Showing{' '}
             <span className="font-medium">
               {(pagination.page - 1) * pagination.pageSize + 1}
@@ -230,7 +230,7 @@ export function DataTable<T extends { id: string }>({
                       'h-8 w-8 rounded-lg text-sm font-medium transition-colors',
                       pageNum === pagination.page
                         ? 'bg-blue-600 text-white'
-                        : 'text-gray-600 hover:bg-gray-100'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                     )}
                   >
                     {pageNum}

@@ -4,16 +4,13 @@ import {
   User,
   Bell,
   Shield,
-  Palette,
   Key,
   Mail,
   Phone,
   Building2,
   Save,
-  Moon,
-  Sun,
-  Monitor,
   Check,
+  Palette,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Button, Input, Select } from '@/components/ui';
 import { useAuthStore, useUIStore } from '@/stores';
@@ -46,9 +43,9 @@ function ProfileSettings() {
               </button>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">{user?.name}</h3>
-              <p className="text-sm text-gray-500">{user?.email}</p>
-              <p className="text-sm text-gray-500 capitalize mt-1">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">{user?.name}</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{user?.email}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 capitalize mt-1">
                 Role: {user?.role.replace('_', ' ')}
               </p>
             </div>
@@ -121,16 +118,16 @@ function NotificationSettings() {
     description: string;
     settingKey: keyof typeof settings;
   }) => (
-    <div className="flex items-center justify-between py-4 border-b border-gray-100 last:border-0">
+    <div className="flex items-center justify-between py-4 border-b border-gray-100 dark:border-gray-700 last:border-0">
       <div>
-        <p className="font-medium text-gray-900">{label}</p>
-        <p className="text-sm text-gray-500">{description}</p>
+        <p className="font-medium text-gray-900 dark:text-gray-100">{label}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
       </div>
       <button
         onClick={() => toggleSetting(settingKey)}
         className={cn(
           'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-          settings[settingKey] ? 'bg-blue-600' : 'bg-gray-200'
+          settings[settingKey] ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
         )}
       >
         <span
@@ -191,95 +188,6 @@ function NotificationSettings() {
   );
 }
 
-// Appearance Settings Section
-function AppearanceSettings() {
-  const { theme, setTheme } = useUIStore();
-
-  const themes = [
-    { id: 'light', label: 'Light', icon: Sun },
-    { id: 'dark', label: 'Dark', icon: Moon },
-    { id: 'system', label: 'System', icon: Monitor },
-  ];
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Appearance</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {/* Theme Selection */}
-          <div>
-            <p className="font-medium text-gray-900 mb-3">Theme</p>
-            <div className="grid grid-cols-3 gap-3">
-              {themes.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTheme(t.id as 'light' | 'dark' | 'system')}
-                  className={cn(
-                    'p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2',
-                    theme === t.id
-                      ? 'border-blue-600 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <t.icon
-                    className={cn(
-                      'h-6 w-6',
-                      theme === t.id ? 'text-blue-600' : 'text-gray-500'
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      'text-sm font-medium',
-                      theme === t.id ? 'text-blue-600' : 'text-gray-700'
-                    )}
-                  >
-                    {t.label}
-                  </span>
-                  {theme === t.id && (
-                    <Check className="h-4 w-4 text-blue-600 absolute top-2 right-2" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Language */}
-          <div>
-            <p className="font-medium text-gray-900 mb-3">Language</p>
-            <Select
-              options={[
-                { value: 'en', label: 'English (US)' },
-                { value: 'es', label: 'Español' },
-                { value: 'fr', label: 'Français' },
-                { value: 'de', label: 'Deutsch' },
-                { value: 'zh', label: '中文' },
-              ]}
-              className="max-w-xs"
-            />
-          </div>
-
-          {/* Timezone */}
-          <div>
-            <p className="font-medium text-gray-900 mb-3">Timezone</p>
-            <Select
-              options={[
-                { value: 'America/New_York', label: 'Eastern Time (ET)' },
-                { value: 'America/Chicago', label: 'Central Time (CT)' },
-                { value: 'America/Denver', label: 'Mountain Time (MT)' },
-                { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
-                { value: 'Europe/London', label: 'GMT/UTC' },
-              ]}
-              className="max-w-xs"
-            />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 // Security Settings Section
 function SecuritySettings() {
   return (
@@ -290,15 +198,15 @@ function SecuritySettings() {
       <CardContent>
         <div className="space-y-6">
           {/* Change Password */}
-          <div className="p-4 bg-gray-50 rounded-xl">
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <Key className="h-5 w-5 text-blue-600" />
+                <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                  <Key className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">Password</p>
-                  <p className="text-sm text-gray-500">Last changed 30 days ago</p>
+                  <p className="font-medium text-gray-900 dark:text-white">Password</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Last changed 30 days ago</p>
                 </div>
               </div>
               <Button variant="outline" size="sm">
@@ -308,15 +216,15 @@ function SecuritySettings() {
           </div>
 
           {/* Two-Factor Authentication */}
-          <div className="p-4 bg-gray-50 rounded-xl">
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
-                  <Shield className="h-5 w-5 text-green-600" />
+                <div className="h-10 w-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                  <Shield className="h-5 w-5 text-green-600 dark:text-green-400" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">Two-Factor Authentication</p>
-                  <p className="text-sm text-gray-500">Add an extra layer of security</p>
+                  <p className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Add an extra layer of security</p>
                 </div>
               </div>
               <Button variant="outline" size="sm">
@@ -327,7 +235,7 @@ function SecuritySettings() {
 
           {/* Active Sessions */}
           <div>
-            <p className="font-medium text-gray-900 mb-3">Active Sessions</p>
+            <p className="font-medium text-gray-900 dark:text-white mb-3">Active Sessions</p>
             <div className="space-y-3">
               {[
                 { device: 'Windows PC - Chrome', location: 'New York, US', current: true },
@@ -336,7 +244,7 @@ function SecuritySettings() {
               ].map((session, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700"
                 >
                   <div className="flex items-center gap-3">
                     <div className={cn(
@@ -344,8 +252,8 @@ function SecuritySettings() {
                       session.current ? 'bg-green-500' : 'bg-gray-300'
                     )} />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{session.device}</p>
-                      <p className="text-xs text-gray-500">{session.location}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{session.device}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{session.location}</p>
                     </div>
                   </div>
                   {session.current ? (
@@ -372,7 +280,6 @@ export function SettingsPage() {
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'security', label: 'Security', icon: Shield },
   ];
 
@@ -383,8 +290,8 @@ export function SettingsPage() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-500 mt-1">Manage your account settings and preferences</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">Manage your account settings and preferences</p>
       </motion.div>
 
       {/* Content */}
@@ -395,7 +302,7 @@ export function SettingsPage() {
           animate={{ opacity: 1, x: 0 }}
           className="lg:w-64 shrink-0"
         >
-          <nav className="space-y-1 bg-white rounded-xl border border-gray-100 p-2">
+          <nav className="space-y-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-2 transition-colors duration-300">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -403,8 +310,8 @@ export function SettingsPage() {
                 className={cn(
                   'w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors',
                   activeTab === tab.id
-                    ? 'bg-blue-50 text-blue-600'
-                    : 'text-gray-600 hover:bg-gray-50'
+                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                 )}
               >
                 <tab.icon className="h-5 w-5" />
@@ -423,7 +330,6 @@ export function SettingsPage() {
         >
           {activeTab === 'profile' && <ProfileSettings />}
           {activeTab === 'notifications' && <NotificationSettings />}
-          {activeTab === 'appearance' && <AppearanceSettings />}
           {activeTab === 'security' && <SecuritySettings />}
         </motion.div>
       </div>

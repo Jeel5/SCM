@@ -3,13 +3,10 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
-  Search,
   Menu,
   Sun,
   Moon,
   ChevronDown,
-  User,
-  Settings,
   LogOut,
   HelpCircle,
 } from 'lucide-react';
@@ -22,7 +19,6 @@ export function Header() {
   const { user, logout } = useAuthStore();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -30,14 +26,12 @@ export function Header() {
   };
 
   const userMenuItems = [
-    { label: 'Profile', value: 'profile', icon: <User className="h-4 w-4" /> },
-    { label: 'Settings', value: 'settings', icon: <Settings className="h-4 w-4" /> },
     { label: 'Help & Support', value: 'help', icon: <HelpCircle className="h-4 w-4" /> },
     { label: 'Sign Out', value: 'logout', icon: <LogOut className="h-4 w-4" />, danger: true },
   ];
 
   return (
-    <header className="h-16 bg-white border-b border-gray-100 px-4 lg:px-6 flex items-center justify-between sticky top-0 z-30">
+    <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 px-4 lg:px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-300">
       {/* Left Section */}
       <div className="flex items-center gap-4">
         {/* Mobile Menu Toggle */}
@@ -45,52 +39,34 @@ export function Header() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={toggleMobileSidebar}
-          className="lg:hidden p-2 rounded-xl hover:bg-gray-100 transition-colors"
+          className="lg:hidden p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
-          <Menu className="h-5 w-5 text-gray-600" />
+          <Menu className="h-5 w-5 text-gray-600 dark:text-gray-300" />
         </motion.button>
-
-        {/* Search */}
-        <div className="hidden md:flex items-center">
-          <motion.div
-            initial={false}
-            animate={{ width: showSearch ? 300 : 200 }}
-            className="relative"
-          >
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search orders, shipments..."
-              onFocus={() => setShowSearch(true)}
-              onBlur={() => setShowSearch(false)}
-              className="w-full h-10 pl-10 pr-4 rounded-xl border border-gray-200 bg-gray-50 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white transition-all"
-            />
-          </motion.div>
-        </div>
       </div>
 
       {/* Right Section */}
       <div className="flex items-center gap-2">
-        {/* Mobile Search Toggle */}
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="md:hidden p-2 rounded-xl hover:bg-gray-100 transition-colors"
-        >
-          <Search className="h-5 w-5 text-gray-600" />
-        </motion.button>
-
         {/* Theme Toggle */}
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-          className="p-2 rounded-xl hover:bg-gray-100 transition-colors"
+          onClick={() => {
+            const newTheme = theme === 'light' ? 'dark' : 'light';
+            setTheme(newTheme);
+            // Also apply immediately
+            if (newTheme === 'dark') {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+          }}
+          className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
           {theme === 'light' ? (
-            <Moon className="h-5 w-5 text-gray-600" />
+            <Moon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
           ) : (
-            <Sun className="h-5 w-5 text-gray-600" />
+            <Sun className="h-5 w-5 text-gray-600 dark:text-gray-300" />
           )}
         </motion.button>
 
@@ -100,9 +76,9 @@ export function Header() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowNotifications(!showNotifications)}
-            className="relative p-2 rounded-xl hover:bg-gray-100 transition-colors"
+            className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
-            <Bell className="h-5 w-5 text-gray-600" />
+            <Bell className="h-5 w-5 text-gray-600 dark:text-gray-300" />
             {unreadCount > 0 && (
               <motion.span
                 initial={{ scale: 0 }}
@@ -130,10 +106,10 @@ export function Header() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-gray-100 shadow-xl z-50 overflow-hidden"
+                  className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-xl z-50 overflow-hidden transition-colors duration-300"
                 >
-                  <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900">Notifications</h3>
+                  <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                    <h3 className="font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
                     {unreadCount > 0 && (
                       <button
                         onClick={() => markAllAsRead()}
@@ -146,8 +122,8 @@ export function Header() {
                   <div className="max-h-96 overflow-y-auto">
                     {notifications.length === 0 ? (
                       <div className="p-8 text-center">
-                        <Bell className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">No notifications</p>
+                        <Bell className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500 dark:text-gray-400">No notifications</p>
                       </div>
                     ) : (
                       notifications.slice(0, 5).map((notification) => (
@@ -160,25 +136,25 @@ export function Header() {
                             setShowNotifications(false);
                           }}
                           className={cn(
-                            'p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors',
-                            !notification.isRead && 'bg-blue-50/50'
+                            'p-4 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors',
+                            !notification.isRead && 'bg-blue-50/50 dark:bg-blue-900/20'
                           )}
                         >
                           <div className="flex items-start gap-3">
                             <div
                               className={cn(
                                 'h-2 w-2 mt-2 rounded-full shrink-0',
-                                notification.isRead ? 'bg-gray-300' : 'bg-blue-500'
+                                notification.isRead ? 'bg-gray-300 dark:bg-gray-600' : 'bg-blue-500'
                               )}
                             />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                                 {notification.title}
                               </p>
-                              <p className="text-sm text-gray-600 line-clamp-2">
+                              <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
                                 {notification.message}
                               </p>
-                              <p className="text-xs text-gray-400 mt-1">
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                                 {formatRelativeTime(notification.createdAt)}
                               </p>
                             </div>
@@ -191,7 +167,7 @@ export function Header() {
                     <Link
                       to="/notifications"
                       onClick={() => setShowNotifications(false)}
-                      className="block p-3 text-center text-sm text-blue-600 hover:bg-gray-50 border-t border-gray-100"
+                      className="block p-3 text-center text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700 border-t border-gray-100 dark:border-gray-700"
                     >
                       View all notifications
                     </Link>
@@ -207,7 +183,7 @@ export function Header() {
           trigger={
             <motion.div
               whileHover={{ scale: 1.02 }}
-              className="flex items-center gap-3 p-1.5 pr-3 rounded-xl hover:bg-gray-100 cursor-pointer transition-colors"
+              className="flex items-center gap-3 p-1.5 pr-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
             >
               <Avatar
                 src={user?.avatar}
@@ -216,18 +192,21 @@ export function Header() {
                 status="online"
               />
               <div className="hidden md:block text-left">
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{user?.name}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   {user?.role ? getRoleDisplayName(user.role) : ''}
                 </p>
               </div>
-              <ChevronDown className="h-4 w-4 text-gray-400 hidden md:block" />
+              <ChevronDown className="h-4 w-4 text-gray-400 dark:text-gray-500 hidden md:block" />
             </motion.div>
           }
           items={userMenuItems}
           onSelect={(value) => {
-            if (value === 'logout') handleLogout();
-            // Handle other menu items
+            if (value === 'logout') {
+              handleLogout();
+            } else if (value === 'help') {
+              window.location.href = '/help';
+            }
           }}
           align="right"
         />

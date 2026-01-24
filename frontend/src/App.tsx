@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react';
 
 import { MainLayout, AuthLayout } from '@/components/layout';
 import { ToastProvider } from '@/components/ui/Toast';
-import { useAuthStore } from '@/stores';
+import { useAuthStore, useUIStore } from '@/stores';
 
 // Lazy load all pages for code splitting
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -20,6 +20,9 @@ const CarriersPage = lazy(() => import('@/pages/carriers/CarriersPage').then(m =
 const ExceptionsPage = lazy(() => import('@/pages/exceptions/ExceptionsPage').then(m => ({ default: m.ExceptionsPage })));
 const ReturnsPage = lazy(() => import('@/pages/returns/ReturnsPage').then(m => ({ default: m.ReturnsPage })));
 const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
+const SLAManagementPage = lazy(() => import('@/pages/sla/SLAManagementPage').then(m => ({ default: m.SLAManagementPage })));
+const FinancePage = lazy(() => import('@/pages/finance/FinancePage').then(m => ({ default: m.FinancePage })));
+const HelpSupportPage = lazy(() => import('@/pages/help/HelpSupportPage').then(m => ({ default: m.HelpSupportPage })));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 
 // Query client configuration
@@ -104,6 +107,27 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
 // Main App Component
 function App() {
+  const { theme } = useUIStore();
+  
+  // Apply theme class to document root on mount and when theme changes
+  useEffect(() => {
+    const root = document.documentElement;
+    
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else if (theme === 'light') {
+      root.classList.remove('dark');
+    } else if (theme === 'system') {
+      // Check system preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (prefersDark) {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
+    }
+  }, [theme]);
+  
   return (
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
       <QueryClientProvider client={queryClient}>
@@ -203,6 +227,30 @@ function App() {
                   element={
                     <PageLoader>
                       <AnalyticsPage />
+                    </PageLoader>
+                  }
+                />
+                <Route
+                  path="sla"
+                  element={
+                    <PageLoader>
+                      <SLAManagementPage />
+                    </PageLoader>
+                  }
+                />
+                <Route
+                  path="finance"
+                  element={
+                    <PageLoader>
+                      <FinancePage />
+                    </PageLoader>
+                  }
+                />
+                <Route
+                  path="help"
+                  element={
+                    <PageLoader>
+                      <HelpSupportPage />
                     </PageLoader>
                   }
                 />

@@ -678,7 +678,21 @@ const generateWarehouseUtilization = (): WarehouseUtilization[] => {
 // Mock API Functions
 export const mockApi = {
   // Auth
-  async googleLogin(_credential: string): Promise<ApiResponse<{ user: User; token: string }>> {
+  async login(email: string, password: string): Promise<ApiResponse<{ user: User; accessToken: string; refreshToken: string }>> {
+    await delay(800);
+    // Find user by email or use default admin
+    const user = mockUsers.find(u => u.email === email) || mockUsers[0];
+    return { 
+      data: { 
+        user, 
+        accessToken: 'mock-jwt-access-token-' + generateId(),
+        refreshToken: 'mock-jwt-refresh-token-' + generateId()
+      }, 
+      success: true 
+    };
+  },
+
+  async googleLogin(): Promise<ApiResponse<{ user: User; token: string }>> {
     await delay(800);
     // Simulate Google OAuth validation
     const user: User = {
@@ -759,7 +773,7 @@ export const mockApi = {
     return { data: { ...shipments[0], id }, success: true };
   },
 
-  async getShipmentTimeline(_id: string): Promise<ApiResponse<Shipment['events']>> {
+  async getShipmentTimeline(): Promise<ApiResponse<Shipment['events']>> {
     await delay(300);
     const shipments = generateShipments(1);
     return { data: shipments[0].events, success: true };
@@ -887,13 +901,110 @@ export const mockApi = {
     return { data: generateWarehouseUtilization(), success: true };
   },
 
+  // SLA Dashboard
+  async getSLADashboard(): Promise<ApiResponse<any>> {
+    await delay(400);
+    return {
+      data: {
+        overallCompliance: 94.5,
+        totalShipments: 1250,
+        onTimeDeliveries: 1182,
+        violations: { pending: 12, resolved: 45, waived: 11 },
+        topCarriers: [
+          { name: 'DHL Express', reliabilityScore: 0.95, shipmentCount: 450 },
+          { name: 'FedEx', reliabilityScore: 0.92, shipmentCount: 380 },
+          { name: 'UPS', reliabilityScore: 0.88, shipmentCount: 250 },
+        ],
+      },
+      success: true,
+    };
+  },
+
+  // Finance
+  async getFinanceData(): Promise<ApiResponse<any>> {
+    await delay(400);
+    return {
+      data: {
+        outstandingInvoices: 12450.75,
+        refundsProcessed: 3280.50,
+        disputes: 2,
+        payoutStatus: 'Scheduled for Jan 25, 2026',
+        invoices: [
+          {
+            id: 'inv-1',
+            invoiceNumber: 'INV-2026-001',
+            carrier: 'DHL Express',
+            amount: 5420.25,
+            status: 'pending',
+            dueDate: '2026-01-25',
+          },
+          {
+            id: 'inv-2',
+            invoiceNumber: 'INV-2026-002',
+            carrier: 'FedEx',
+            amount: 3890.50,
+            status: 'pending',
+            dueDate: '2026-01-28',
+          },
+          {
+            id: 'inv-3',
+            invoiceNumber: 'INV-2025-145',
+            carrier: 'UPS',
+            amount: 3140.00,
+            status: 'paid',
+            dueDate: '2026-01-15',
+          },
+          {
+            id: 'inv-4',
+            invoiceNumber: 'INV-2026-003',
+            carrier: 'BlueDart',
+            amount: 2250.75,
+            status: 'pending',
+            dueDate: '2026-01-30',
+          },
+        ],
+        refunds: [
+          {
+            id: 'ref-1',
+            orderNumber: 'ORD-100234',
+            amount: 89.99,
+            status: 'processed',
+            processedAt: '2026-01-15',
+          },
+          {
+            id: 'ref-2',
+            orderNumber: 'ORD-100189',
+            amount: 124.50,
+            status: 'processed',
+            processedAt: '2026-01-14',
+          },
+          {
+            id: 'ref-3',
+            orderNumber: 'ORD-100456',
+            amount: 299.99,
+            status: 'pending',
+            processedAt: '2026-01-18',
+          },
+          {
+            id: 'ref-4',
+            orderNumber: 'ORD-100512',
+            amount: 45.25,
+            status: 'processed',
+            processedAt: '2026-01-16',
+          },
+        ],
+      },
+      success: true,
+    };
+  },
+
   // Notifications
   async getNotifications(): Promise<ApiResponse<Notification[]>> {
     await delay(300);
     return { data: generateNotifications(), success: true };
   },
 
-  async markNotificationRead(_id: string): Promise<ApiResponse<null>> {
+  async markNotificationRead(): Promise<ApiResponse<null>> {
     await delay(200);
     return { data: null, success: true };
   },
@@ -902,6 +1013,104 @@ export const mockApi = {
     await delay(200);
     return { data: null, success: true };
   },
+
+  // Add mock data for shipments
+  mockShipments: [
+    {
+      id: 'shipment-1',
+      status: 'delivered',
+      orderId: 'ord-1',
+      carrierId: 'car-1',
+      trackingNumber: 'TRK123456789',
+      origin: {
+        street: '123 Warehouse Dr',
+        city: 'Los Angeles',
+        state: 'CA',
+        postalCode: '90001',
+        country: 'USA',
+      },
+      destination: {
+        street: '456 Customer Ave',
+        city: 'New York',
+        state: 'NY',
+        postalCode: '10001',
+        country: 'USA',
+      },
+      weight: 2.5,
+      cost: 15.0,
+      createdAt: '2024-01-10T10:00:00Z',
+      updatedAt: '2024-01-12T10:00:00Z',
+      events: [
+        {
+          id: 'evt-1',
+          shipmentId: 'shipment-1',
+          status: 'picked_up',
+          location: 'Origin Hub',
+          timestamp: '2024-01-10T12:00:00Z',
+          description: 'Package picked up by carrier',
+        },
+        {
+          id: 'evt-2',
+          shipmentId: 'shipment-1',
+          status: 'in_transit',
+          location: 'Transit Hub',
+          timestamp: '2024-01-11T08:00:00Z',
+          description: 'In transit to destination',
+        },
+        {
+          id: 'evt-3',
+          shipmentId: 'shipment-1',
+          status: 'delivered',
+          location: 'Destination',
+          timestamp: '2024-01-12T09:00:00Z',
+          description: 'Package delivered to customer',
+        },
+      ],
+    },
+    {
+      id: 'shipment-2',
+      status: 'in_transit',
+      orderId: 'ord-2',
+      carrierId: 'car-2',
+      trackingNumber: 'TRK987654321',
+      origin: {
+        street: '789 Logistics Dr',
+        city: 'Chicago',
+        state: 'IL',
+        postalCode: '60601',
+        country: 'USA',
+      },
+      destination: {
+        street: '321 Customer Blvd',
+        city: 'Houston',
+        state: 'TX',
+        postalCode: '77001',
+        country: 'USA',
+      },
+      weight: 10.0,
+      cost: 50.0,
+      createdAt: '2024-01-15T10:00:00Z',
+      updatedAt: '2024-01-16T10:00:00Z',
+      events: [
+        {
+          id: 'evt-4',
+          shipmentId: 'shipment-2',
+          status: 'picked_up',
+          location: 'Origin Hub',
+          timestamp: '2024-01-15T12:00:00Z',
+          description: 'Package picked up by carrier',
+        },
+        {
+          id: 'evt-5',
+          shipmentId: 'shipment-2',
+          status: 'in_transit',
+          location: 'Transit Hub',
+          timestamp: '2024-01-16T08:00:00Z',
+          description: 'In transit to destination',
+        },
+      ],
+    },
+  ],
 };
 
 export default mockApi;

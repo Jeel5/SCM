@@ -20,6 +20,7 @@ import {
   Badge,
 } from '@/components/ui';
 import { formatCurrency, formatDate, formatRelativeTime, cn } from '@/lib/utils';
+import { ordersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { Order, OrderStatus } from '@/types';
 
@@ -31,49 +32,49 @@ function OrderDetailsModal({ order, isOpen, onClose }: { order: Order | null; is
     <Modal isOpen={isOpen} onClose={onClose} title={`Order ${order.orderNumber}`} size="lg">
       <div className="space-y-6">
         {/* Status Section */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
           <div>
-            <p className="text-sm text-gray-500">Status</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
             <StatusBadge status={order.status} />
           </div>
           <div>
-            <p className="text-sm text-gray-500">Priority</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Priority</p>
             <PriorityBadge priority={order.priority} />
           </div>
           <div>
-            <p className="text-sm text-gray-500">Total</p>
-            <p className="font-semibold text-gray-900">{formatCurrency(order.totalAmount)}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Total</p>
+            <p className="font-semibold text-gray-900 dark:text-white">{formatCurrency(order.totalAmount)}</p>
           </div>
         </div>
 
         {/* Customer Info */}
         <div>
-          <h4 className="font-medium text-gray-900 mb-3">Customer Information</h4>
-          <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Customer Information</h4>
+          <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
             <div>
-              <p className="text-sm text-gray-500">Name</p>
-              <p className="font-medium text-gray-900">{order.customerName}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Name</p>
+              <p className="font-medium text-gray-900 dark:text-white">{order.customerName}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Email</p>
-              <p className="font-medium text-gray-900">{order.customerEmail}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
+              <p className="font-medium text-gray-900 dark:text-white">{order.customerEmail}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Phone</p>
-              <p className="font-medium text-gray-900">{order.customerPhone}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Phone</p>
+              <p className="font-medium text-gray-900 dark:text-white">{order.customerPhone}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Created</p>
-              <p className="font-medium text-gray-900">{formatDate(order.createdAt)}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Created</p>
+              <p className="font-medium text-gray-900 dark:text-white">{formatDate(order.createdAt)}</p>
             </div>
           </div>
         </div>
 
         {/* Shipping Address */}
         <div>
-          <h4 className="font-medium text-gray-900 mb-3">Shipping Address</h4>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-gray-700">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Shipping Address</h4>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+            <p className="text-gray-700 dark:text-gray-300">
               {order.shippingAddress.street}<br />
               {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.postalCode}<br />
               {order.shippingAddress.country}
@@ -83,22 +84,22 @@ function OrderDetailsModal({ order, isOpen, onClose }: { order: Order | null; is
 
         {/* Order Items */}
         <div>
-          <h4 className="font-medium text-gray-900 mb-3">Order Items</h4>
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Order Items</h4>
           <div className="space-y-2">
             {order.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+              <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                    <ShoppingCart className="h-5 w-5 text-blue-600" />
+                  <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                    <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">{item.productName}</p>
-                    <p className="text-sm text-gray-500">SKU: {item.sku}</p>
+                    <p className="font-medium text-gray-900 dark:text-white">{item.productName}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.sku}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium text-gray-900">{formatCurrency(item.unitPrice)} x {item.quantity}</p>
-                  <p className="text-sm text-gray-500">{formatCurrency(item.unitPrice * item.quantity)}</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(item.unitPrice)} x {item.quantity}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{formatCurrency(item.unitPrice * item.quantity)}</p>
                 </div>
               </div>
             ))}
@@ -106,7 +107,7 @@ function OrderDetailsModal({ order, isOpen, onClose }: { order: Order | null; is
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3 pt-4 border-t border-gray-100">
+        <div className="flex gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
           <Button variant="outline" className="flex-1">
             <Edit className="h-4 w-4 mr-2" />
             Edit Order
@@ -127,7 +128,7 @@ function CreateOrderModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
       <form className="space-y-6">
         {/* Customer Section */}
         <div>
-          <h4 className="font-medium text-gray-900 mb-3">Customer Information</h4>
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Customer Information</h4>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Customer Name" placeholder="Enter customer name" />
             <Input label="Email" type="email" placeholder="customer@example.com" />
@@ -145,7 +146,7 @@ function CreateOrderModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
 
         {/* Shipping Address */}
         <div>
-          <h4 className="font-medium text-gray-900 mb-3">Shipping Address</h4>
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Shipping Address</h4>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <Input label="Street Address" placeholder="123 Main St" />
@@ -165,7 +166,7 @@ function CreateOrderModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3 pt-4 border-t border-gray-100">
+        <div className="flex gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
           <Button variant="outline" className="flex-1" onClick={onClose}>
             Cancel
           </Button>
@@ -199,9 +200,9 @@ function OrderStats({ orders, totalOrders }: { orders: Order[]; totalOrders: num
           key={stat.label}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-4 bg-white rounded-xl border border-gray-100"
+          className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700"
         >
-          <p className="text-sm text-gray-500">{stat.label}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
           <p className={cn('text-2xl font-bold', stat.color)}>{stat.value}</p>
         </motion.div>
       ))}
@@ -237,8 +238,8 @@ export function OrdersPage() {
       sortable: true,
       render: (order: Order) => (
         <div>
-          <p className="font-medium text-gray-900">{order.orderNumber}</p>
-          <p className="text-sm text-gray-500">{formatRelativeTime(order.createdAt)}</p>
+          <p className="font-medium text-gray-900 dark:text-white">{order.orderNumber}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{formatRelativeTime(order.createdAt)}</p>
         </div>
       ),
     },
@@ -247,8 +248,8 @@ export function OrdersPage() {
       header: 'Customer',
       render: (order: Order) => (
         <div>
-          <p className="font-medium text-gray-900">{order.customerName}</p>
-          <p className="text-sm text-gray-500">{order.customerEmail}</p>
+          <p className="font-medium text-gray-900 dark:text-white">{order.customerName}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{order.customerEmail}</p>
         </div>
       ),
     },
@@ -274,7 +275,7 @@ export function OrdersPage() {
       header: 'Total',
       sortable: true,
       render: (order: Order) => (
-        <span className="font-medium text-gray-900">{formatCurrency(order.totalAmount)}</span>
+        <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(order.totalAmount)}</span>
       ),
     },
     {
@@ -288,7 +289,7 @@ export function OrdersPage() {
             setSelectedOrder(order);
             setIsDetailsOpen(true);
           }}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
           <Eye className="h-4 w-4 text-gray-500" />
         </button>
@@ -298,13 +299,18 @@ export function OrdersPage() {
 
   useEffect(() => {
     const fetchOrders = async () => {
+      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
-        const response = await mockApi.getOrders(page, pageSize);
+        const response = useMockApi 
+          ? await mockApi.getOrders(page, pageSize)
+          : await ordersApi.getOrders(page, pageSize);
         setOrders(response.data);
         setTotalOrders(response.total);
       } catch (error) {
         console.error('Failed to fetch orders:', error);
+        setOrders([]);
+        setTotalOrders(0);
       } finally {
         setIsLoading(false);
       }
@@ -327,8 +333,8 @@ export function OrdersPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-          <p className="text-gray-500 mt-1">Manage and track all customer orders</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Orders</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage and track all customer orders</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>

@@ -70,16 +70,16 @@ export const ordersApi = {
 // ==================== SHIPMENTS ====================
 export const shipmentsApi = {
   async getShipments(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Shipment>> {
-    const response = await get<{ success: boolean; data: Shipment[]; pagination: { page: number; limit: number; total: number } }>(
+    const response = await get<{ success: boolean; data: Shipment[]; pagination?: { page: number; limit: number; total: number } }>(
       '/shipments',
       { page, limit: pageSize, ...filters }
     );
     return {
       data: response.data,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      pageSize: response.pagination.limit,
-      totalPages: Math.ceil(response.pagination.total / response.pagination.limit),
+      total: response.pagination?.total || 0,
+      page: response.pagination?.page || 1,
+      pageSize: response.pagination?.limit || pageSize,
+      totalPages: Math.ceil((response.pagination?.total || 0) / (response.pagination?.limit || pageSize)),
     };
   },
 
@@ -261,7 +261,7 @@ export const exceptionsApi = {
 // ==================== DASHBOARD & ANALYTICS ====================
 export const dashboardApi = {
   async getDashboardStats(): Promise<ApiResponse<DashboardMetrics>> {
-    const response = await get<{ success: boolean; data: any }>('/dashboard/stats');
+    const response = await get<{ success: boolean; data: DashboardStats }>('/dashboard/stats');
     // Transform backend response to match frontend DashboardMetrics type
     const data = response.data || {};
     return {
@@ -354,7 +354,7 @@ export const notificationsApi = {
     return { data: mockNotifications, success: true };
   },
 
-  async markNotificationRead(_id: string): Promise<ApiResponse<null>> {
+  async markNotificationRead(): Promise<ApiResponse<null>> {
     return { data: null, success: true };
   },
 
@@ -395,6 +395,7 @@ export const realApi = {
   // SLA
   getSLAPolicies: slaApi.getSLAPolicies,
   getSLAViolations: slaApi.getSLAViolations,
+  getSLADashboard: slaApi.getSLADashboard,
 
   // Returns
   getReturns: returnsApi.getReturns,

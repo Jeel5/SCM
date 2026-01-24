@@ -38,7 +38,7 @@ export async function listShipments(req, res) {
       query.replace(/SELECT .* FROM/, 'SELECT COUNT(*) FROM').split('ORDER BY')[0],
       countParams
     );
-    const total = parseInt(countResult.rows[0].count);
+    const total = countResult.rows && countResult.rows[0] ? parseInt(countResult.rows[0].count) : 0;
     
     query += ` ORDER BY s.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
     
@@ -86,15 +86,18 @@ export async function listShipments(req, res) {
     }));
     
     res.json({
+      success: true,
       data: shipments,
-      total,
-      page: parseInt(page),
-      pageSize: parseInt(limit),
-      totalPages: Math.ceil(total / limit)
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / limit)
+      }
     });
   } catch (error) {
     console.error('List shipments error:', error);
-    res.status(500).json({ error: 'Failed to list shipments' });
+    res.status(500).json({ success: false, error: 'Failed to list shipments' });
   }
 }
 

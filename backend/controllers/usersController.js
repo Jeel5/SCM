@@ -33,7 +33,11 @@ export async function login(req, res) {
     const user = result.rows[0];
     console.log('Password hash exists:', !!user.password_hash);
     
-    const isValid = await bcrypt.compare(password, "$2b$10$WUddUaFWTuZZIvbgGC9IV.701wN7afg.r4F5lYzgZT6VFHR3UKruu");
+    // Ensure password is a string
+    const passwordString = String(password);
+    const passwordHash = String(user.password_hash);
+    
+    const isValid = await bcrypt.compare(passwordString, passwordHash);
     console.log('Password valid:', isValid);
     
     if (!isValid) {

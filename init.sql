@@ -550,3 +550,17 @@ FROM (VALUES
 ON CONFLICT (invoice_number) DO NOTHING;
 
 COMMIT;
+
+-- SQL script to wipe data and keep only one admin user
+
+-- Delete all users except the admin
+DELETE FROM users WHERE email != 'admin@logitower.com';
+
+-- Optionally, you can also delete other related data if needed
+-- DELETE FROM user_permissions;
+-- DELETE FROM audit_logs;
+
+-- Ensure the admin user exists
+INSERT INTO users (email, password_hash, name, role, organization_id) VALUES
+('admin@logitower.com', 'hashed_password', 'Admin User', 'admin', 'org-1')
+ON CONFLICT (email) DO NOTHING;

@@ -21,7 +21,7 @@ export function MainLayout() {
 
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-gray-50">
+      <div className="h-screen w-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -43,8 +43,8 @@ export function MainLayout() {
             </svg>
           </div>
           <div className="text-center">
-            <p className="text-gray-900 font-semibold">LogiTower</p>
-            <p className="text-sm text-gray-500">Loading...</p>
+            <p className="text-gray-900 dark:text-gray-100 font-semibold">LogiTower</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
           </div>
         </motion.div>
       </div>
@@ -56,7 +56,7 @@ export function MainLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header />

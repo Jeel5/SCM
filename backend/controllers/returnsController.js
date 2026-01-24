@@ -6,10 +6,11 @@ export async function listReturns(req, res) {
     const offset = (page - 1) * limit;
     
     let query = `
-      SELECT r.*, o.order_number, p.name as product_name, p.sku
+      SELECT r.*, o.order_number, p.name as product_name, p.sku, ri.product_id
       FROM returns r
       JOIN orders o ON r.order_id = o.id
-      LEFT JOIN products p ON r.product_id = p.id
+      LEFT JOIN return_items ri ON ri.return_id = r.id
+      LEFT JOIN products p ON ri.product_id = p.id
       WHERE 1=1
     `;
     const params = [];

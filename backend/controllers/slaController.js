@@ -179,30 +179,37 @@ export async function getSlaDashboard(req, res) {
 export async function listExceptions(req, res) {
   try {
     const { page = 1, limit = 20, severity, status } = req.query;
-    const offset = (page - 1) * limit;
+    const pageNumber = parseInt(page) || 1;
+    const limitNumber = parseInt(limit) || 20;
+    const offset = (pageNumber - 1) * limitNumber;
     
     let query = `
-      SELECT se.*, s.tracking_number, o.order_number
-      FROM shipment_exceptions se
-      JOIN shipments s ON se.shipment_id = s.id
-      LEFT JOIN orders o ON s.order_id = o.id
+      SELECT e.*, s.tracking_number, o.order_number
+      FROM exceptions e
+      LEFT JOIN shipments s ON e.shipment_id = s.id
+      LEFT JOIN orders o ON e.order_id = o.id
       WHERE 1=1
     `;
+    let countQuery = 'SELECT COUNT(*) FROM exceptions e WHERE 1=1';
     const params = [];
     
     if (severity) {
       params.push(severity);
-      query += ` AND se.severity = $${params.length}`;
+      query += ` AND e.severity = $${params.length}`;
+      countQuery += ` AND e.severity = $${params.length}`;
     }
     
     if (status) {
       params.push(status);
-      query += ` AND se.status = $${params.length}`;
+      query += ` AND e.status = $${params.length}`;
+      countQuery += ` AND e.status = $${params.length}`;
     }
     
-    query += ` ORDER BY se.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
+    query += ` ORDER BY e.created_at DESC LIMIT ${limitNumber} OFFSET ${offset}`;
     
     const result = await pool.query(query, params);
+    const countResult = await pool.query(countQuery, params);
+    const total = countResult.rows[0] ? parseInt(countResult.rows[0].count) : 0;
     
     res.json({
       success: true,
@@ -218,7 +225,12 @@ export async function listExceptions(req, res) {
         resolution: e.resolution,
         createdAt: e.created_at,
         resolvedAt: e.resolved_at
-      }))
+      })),
+      pagination: {
+        page: pageNumber,
+        limit: limitNumber,
+        total
+      }
     });
   } catch (error) {
     console.error('List exceptions error:', error);
@@ -231,7 +243,7 @@ export async function createException(req, res) {
     const { shipmentId, exceptionType, severity, description } = req.body;
     
     const result = await pool.query(
-      `INSERT INTO shipment_exceptions (shipment_id, exception_type, severity, description)
+      `INSERT INTO exceptions (shipment_id, exception_type, severity, description)
        VALUES ($1, $2, $3, $4) RETURNING *`,
       [shipmentId, exceptionType, severity, description]
     );
@@ -249,7 +261,7 @@ export async function resolveException(req, res) {
     const { resolution } = req.body;
     
     const result = await pool.query(
-      `UPDATE shipment_exceptions SET status = 'resolved', resolution = $1, resolved_at = NOW()
+      `UPDATE exceptions SET status = 'resolved', resolution = $1, resolved_at = NOW()
        WHERE id = $2 RETURNING *`,
       [resolution, id]
     );

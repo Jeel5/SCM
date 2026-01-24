@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Package,
@@ -26,6 +26,8 @@ import {
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent, Button, Select, Tabs } from '@/components/ui';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
+import { dashboardApi } from '@/api/services';
+import { mockApi } from '@/api/mockData';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
@@ -49,12 +51,12 @@ function KPICard({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-6 bg-white rounded-2xl border border-gray-100 hover:shadow-lg transition-all duration-300"
+      className="p-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all duration-300"
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{value}</p>
+          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{value}</p>
           <div className="flex items-center gap-1 mt-2">
             {trend === 'up' ? (
               <ArrowUpRight className="h-4 w-4 text-green-500" />
@@ -64,7 +66,7 @@ function KPICard({
             <span className={cn('text-sm font-medium', trend === 'up' ? 'text-green-500' : 'text-red-500')}>
               {Math.abs(change)}%
             </span>
-            <span className="text-sm text-gray-500">vs last period</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">vs last period</span>
           </div>
         </div>
         <div className={cn('h-12 w-12 rounded-xl flex items-center justify-center', color)}>
@@ -79,6 +81,20 @@ function KPICard({
 export function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [timeRange, setTimeRange] = useState('30d');
+  const [orderTrendData, setOrderTrendData] = useState<Array<{ date: string; orders: number; revenue: number }>>([]);
+  const [carrierData, setCarrierData] = useState<Array<{ name: string; count: number }>>([]);
+  const [warehouseData, setWarehouseData] = useState<Array<{ name: string; utilization: number }>>([]);
+  const [kpiData, setKpiData] = useState({
+    totalOrders: 0,
+    ordersChange: 0,
+    totalRevenue: 0,
+    revenueChange: 0,
+    activeShipments: 0,
+    shipmentsChange: 0,
+    avgDeliveryTime: 0,
+    deliveryTimeChange: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -88,55 +104,128 @@ export function AnalyticsPage() {
     { id: 'warehouses', label: 'Warehouses' },
   ];
 
-  // Mock chart data
-  const orderTrendData = [
-    { date: 'Jan', orders: 1200, revenue: 45000 },
-    { date: 'Feb', orders: 1400, revenue: 52000 },
-    { date: 'Mar', orders: 1100, revenue: 41000 },
-    { date: 'Apr', orders: 1600, revenue: 61000 },
-    { date: 'May', orders: 1800, revenue: 72000 },
-    { date: 'Jun', orders: 2100, revenue: 85000 },
-    { date: 'Jul', orders: 1900, revenue: 76000 },
-    { date: 'Aug', orders: 2200, revenue: 89000 },
-    { date: 'Sep', orders: 2400, revenue: 96000 },
-    { date: 'Oct', orders: 2600, revenue: 105000 },
-    { date: 'Nov', orders: 2800, revenue: 112000 },
-    { date: 'Dec', orders: 3100, revenue: 125000 },
-  ];
-
-  const deliveryPerformance = [
+  const [deliveryPerformance, setDeliveryPerformance] = useState([
     { name: 'On Time', value: 85 },
     { name: 'Late', value: 10 },
     { name: 'Early', value: 5 },
-  ];
+  ]);
 
-  const carrierPerformance = [
-    { carrier: 'FedEx', onTime: 92, volume: 1200 },
-    { carrier: 'UPS', onTime: 88, volume: 980 },
-    { carrier: 'DHL', onTime: 95, volume: 750 },
-    { carrier: 'USPS', onTime: 82, volume: 620 },
-    { carrier: 'Amazon', onTime: 90, volume: 540 },
-  ];
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      const useMock = localStorage.getItem('useMockApi') === 'true';
 
-  const warehouseUtilization = [
-    { name: 'LA Warehouse', utilized: 78, capacity: 100 },
-    { name: 'NY Warehouse', utilized: 92, capacity: 100 },
-    { name: 'Chicago Hub', utilized: 65, capacity: 100 },
-    { name: 'Dallas DC', utilized: 88, capacity: 100 },
-    { name: 'Seattle FC', utilized: 71, capacity: 100 },
-  ];
+      try {
+        if (useMock) {
+          const [metricsRes, ordersRes, carrierRes, warehouseRes] = await Promise.all([
+            mockApi.getDashboardMetrics(),
+            mockApi.getOrdersChart(parseInt(timeRange) || 30),
+            mockApi.getCarrierPerformance(),
+            mockApi.getWarehouseUtilization(),
+          ]);
 
-  // Mock KPI data
-  const kpiData = {
-    totalOrders: 24580,
-    ordersChange: 12.5,
-    totalRevenue: 1250000,
-    revenueChange: 8.2,
-    activeShipments: 3420,
-    shipmentsChange: -2.3,
-    avgDeliveryTime: 2.4,
-    deliveryTimeChange: -5.1,
-  };
+          setKpiData({
+            totalOrders: metricsRes.data.totalOrders || 0,
+            ordersChange: metricsRes.data.ordersChange || 0,
+            totalRevenue: metricsRes.data.revenue || metricsRes.data.totalRevenue || 0,
+            revenueChange: metricsRes.data.revenueChange || 0,
+            activeShipments: metricsRes.data.activeShipments || 0,
+            shipmentsChange: metricsRes.data.shipmentsChange || 0,
+            avgDeliveryTime: metricsRes.data.avgDeliveryTime || 0,
+            deliveryTimeChange: metricsRes.data.deliveryTimeChange || 0,
+          });
+
+          const onTimeRate = metricsRes.data.deliveryRate || 85;
+          setDeliveryPerformance([
+            { name: 'On Time', value: onTimeRate },
+            { name: 'Late', value: Math.max(0, 100 - onTimeRate - 5) },
+            { name: 'Early', value: 5 },
+          ]);
+
+          setOrderTrendData(
+            ordersRes.data.map((item) => ({
+              date: item.date,
+              orders: 'value' in item ? (item as any).value ?? 0 : (item as any).count ?? 0,
+              revenue: 'value' in item ? (item as any).value ?? 0 : 0,
+            }))
+          );
+
+          setCarrierData(
+            carrierRes.data.map((c) => ({
+              name: (c as any).carrierName || (c as any).carrier || (c as any).name,
+              count: (c as any).totalShipments || (c as any).onTimeRate || 0,
+            }))
+          );
+
+          setWarehouseData(
+            warehouseRes.data.map((w) => ({
+              name: (w as any).warehouseName || (w as any).name,
+              utilization: (w as any).utilizationRate || (w as any).utilization || 0,
+            }))
+          );
+        } else {
+          const analyticsRes = await dashboardApi.getAnalytics(timeRange);
+          const data = analyticsRes.data || {};
+
+          const orders = (data.ordersOverTime || []).map((item: any) => ({
+            date: item.date,
+            orders: item.count || 0,
+            revenue: item.value || 0,
+          }));
+          setOrderTrendData(orders);
+
+          const totalOrders = orders.reduce((sum, item) => sum + (item.orders || 0), 0);
+          const totalRevenue = orders.reduce((sum, item) => sum + (item.revenue || 0), 0);
+          const carrier = (data.shipmentsByCarrier || []).map((c: any) => ({ name: c.carrier, count: c.count || 0 }));
+          setCarrierData(carrier);
+
+          const warehouse = (data.warehouseUtilization || []).map((w: any) => ({
+            name: w.name,
+            utilization: w.utilization || (w.capacity ? Math.round(((w.currentStock || 0) / w.capacity) * 100) : 0),
+          }));
+          setWarehouseData(warehouse);
+
+          setKpiData({
+            totalOrders,
+            ordersChange: 0,
+            totalRevenue,
+            revenueChange: 0,
+            activeShipments: carrier.reduce((sum, c) => sum + (c.count || 0), 0),
+            shipmentsChange: 0,
+            avgDeliveryTime: 0,
+            deliveryTimeChange: 0,
+          });
+
+          // Try to get on-time rate from analytics or calculate
+          const onTimeRate = 85; // Default if not available
+          setDeliveryPerformance([
+            { name: 'On Time', value: onTimeRate },
+            { name: 'Late', value: Math.max(0, 100 - onTimeRate - 5) },
+            { name: 'Early', value: 5 },
+          ]);
+        }
+      } catch (error) {
+        console.error('Failed to load analytics:', error);
+        setOrderTrendData([]);
+        setCarrierData([]);
+        setWarehouseData([]);
+        setKpiData({
+          totalOrders: 0,
+          ordersChange: 0,
+          totalRevenue: 0,
+          revenueChange: 0,
+          activeShipments: 0,
+          shipmentsChange: 0,
+          avgDeliveryTime: 0,
+          deliveryTimeChange: 0,
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [timeRange]);
 
   return (
     <div className="p-6 space-y-6">
@@ -148,7 +237,7 @@ export function AnalyticsPage() {
       >
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-          <p className="text-gray-500 mt-1">Track performance metrics and insights</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Track performance metrics and insights</p>
         </div>
         <div className="flex items-center gap-3">
           <Select
@@ -171,7 +260,12 @@ export function AnalyticsPage() {
       {/* Tabs */}
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
+      {isLoading && (
+        <div className="w-full p-6 text-center text-gray-500">Loading analytics...</div>
+      )}
+
       {/* KPI Cards */}
+      {!isLoading && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           title="Total Orders"
@@ -206,6 +300,7 @@ export function AnalyticsPage() {
           color="bg-yellow-100 text-yellow-600"
         />
       </div>
+      )}
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -305,10 +400,10 @@ export function AnalyticsPage() {
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={carrierPerformance} layout="vertical">
+                <BarChart data={carrierData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis type="number" domain={[0, 100]} stroke="#6B7280" fontSize={12} />
-                  <YAxis dataKey="carrier" type="category" stroke="#6B7280" fontSize={12} width={80} />
+                  <XAxis type="number" domain={[0, 'auto']} stroke="#6B7280" fontSize={12} />
+                  <YAxis dataKey="name" type="category" stroke="#6B7280" fontSize={12} width={120} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: 'white',
@@ -316,7 +411,7 @@ export function AnalyticsPage() {
                       borderRadius: '12px',
                     }}
                   />
-                  <Bar dataKey="onTime" fill="#3B82F6" radius={[0, 4, 4, 0]} name="On-Time %" />
+                  <Bar dataKey="count" fill="#3B82F6" radius={[0, 4, 4, 0]} name="Shipments" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -331,7 +426,7 @@ export function AnalyticsPage() {
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={warehouseUtilization}>
+                <BarChart data={warehouseData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                   <XAxis dataKey="name" stroke="#6B7280" fontSize={10} angle={-45} textAnchor="end" height={80} />
                   <YAxis stroke="#6B7280" fontSize={12} />
@@ -342,7 +437,7 @@ export function AnalyticsPage() {
                       borderRadius: '12px',
                     }}
                   />
-                  <Bar dataKey="utilized" fill="#8B5CF6" radius={[4, 4, 0, 0]} name="Utilization %" />
+                  <Bar dataKey="utilization" fill="#8B5CF6" radius={[4, 4, 0, 0]} name="Utilization %" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -353,19 +448,19 @@ export function AnalyticsPage() {
       {/* Additional Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Avg. Order Value', value: formatCurrency(52.30), color: 'text-blue-600' },
+          { label: 'Avg. Order Value', value: orderTrendData.length ? formatCurrency(kpiData.totalRevenue / Math.max(kpiData.totalOrders, 1)) : '$0', color: 'text-blue-600' },
           { label: 'Avg. Delivery Time', value: `${kpiData.avgDeliveryTime}d`, color: 'text-green-600' },
-          { label: 'Return Rate', value: '3.2%', color: 'text-yellow-600' },
-          { label: 'Customer Satisfaction', value: '4.8/5', color: 'text-purple-600' },
+          { label: 'Return Rate', value: '—', color: 'text-yellow-600' },
+          { label: 'Customer Satisfaction', value: '—', color: 'text-purple-600' },
         ].map((metric, index) => (
           <motion.div
             key={metric.label}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="p-4 bg-white rounded-xl border border-gray-100 text-center"
+            className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 text-center"
           >
-            <p className="text-sm text-gray-500">{metric.label}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{metric.label}</p>
             <p className={cn('text-2xl font-bold mt-1', metric.color)}>{metric.value}</p>
           </motion.div>
         ))}

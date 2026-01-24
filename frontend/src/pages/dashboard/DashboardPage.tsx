@@ -55,11 +55,11 @@ function MetricCard({ title, value, change, icon, iconBg, link }: MetricCardProp
       
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
+          <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">{title}</p>
           <motion.p
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-2xl font-bold text-gray-900"
+            className="text-2xl font-bold text-gray-900 dark:text-white"
           >
             {value}
           </motion.p>
@@ -77,7 +77,7 @@ function MetricCard({ title, value, change, icon, iconBg, link }: MetricCardProp
             >
               {isPositive ? '+' : ''}{change.toFixed(1)}%
             </span>
-            <span className="text-sm text-gray-400">vs last period</span>
+            <span className="text-sm text-gray-400 dark:text-gray-500">vs last period</span>
           </div>
         </div>
         <div className={cn('h-12 w-12 rounded-xl flex items-center justify-center', iconBg)}>
@@ -86,8 +86,8 @@ function MetricCard({ title, value, change, icon, iconBg, link }: MetricCardProp
       </div>
       
       {link && (
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <span className="text-sm text-blue-600 font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+          <span className="text-sm text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
             View Details <ArrowRight className="h-4 w-4" />
           </span>
         </div>
@@ -121,17 +121,17 @@ function RecentShipments({ shipments }: { shipments: Shipment[] }) {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.05 }}
-              className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer"
+              className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
             >
-              <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <Truck className="h-5 w-5 text-blue-600" />
+              <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <Truck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="font-medium text-gray-900 truncate">{shipment.trackingNumber}</p>
+                  <p className="font-medium text-gray-900 dark:text-white truncate">{shipment.trackingNumber}</p>
                   <StatusBadge status={shipment.status} />
                 </div>
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
+                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 dark:text-gray-400">
                   <MapPin className="h-3 w-3" />
                   <span className="truncate">{shipment.carrierName}</span>
                   <span>•</span>
@@ -285,14 +285,14 @@ export function DashboardPage() {
   const [carrierPerformance, setCarrierPerformance] = useState<CarrierPerformance[]>([]);
   const [warehouseUtilization, setWarehouseUtilization] = useState<WarehouseUtilization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [useRealApi, setUseRealApi] = useState(true);
+  const [useRealApi, setUseRealApi] = useState(localStorage.getItem('useMockApi') !== 'true');
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
         if (useRealApi) {
-          // Try to fetch from real API
+          // Fetch from real API
           const [metricsRes, chartRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
             dashboardApi.getDashboardStats(),
             dashboardApi.getOrdersChart(30),
@@ -303,11 +303,11 @@ export function DashboardPage() {
           
           setMetrics(metricsRes.data);
           setOrdersChart(chartRes.data);
-          setShipments(shipmentsRes.data);
-          setCarrierPerformance(carrierRes.data);
-          setWarehouseUtilization(warehouseRes.data);
+          setShipments(shipmentsRes.data || []);
+          setCarrierPerformance(carrierRes.data || []);
+          setWarehouseUtilization(warehouseRes.data || []);
         } else {
-          // Fallback to mock API
+          // Use mock API for demo mode
           const [metricsRes, chartRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
             mockApi.getDashboardMetrics(),
             mockApi.getOrdersChart(30),
@@ -323,25 +323,14 @@ export function DashboardPage() {
           setWarehouseUtilization(warehouseRes.data);
         }
       } catch (error) {
-        console.error('Failed to fetch dashboard data from real API, falling back to mock:', error);
-        // Fallback to mock data on error
-        try {
-          const [metricsRes, chartRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
-            mockApi.getDashboardMetrics(),
-            mockApi.getOrdersChart(30),
-            mockApi.getShipments(1, 10),
-            mockApi.getCarrierPerformance(),
-            mockApi.getWarehouseUtilization(),
-          ]);
-          
-          setMetrics(metricsRes.data);
-          setOrdersChart(chartRes.data);
-          setShipments(shipmentsRes.data);
-          setCarrierPerformance(carrierRes.data);
-          setWarehouseUtilization(warehouseRes.data);
-          setUseRealApi(false);
-        } catch (fallbackError) {
-          console.error('Fallback also failed:', fallbackError);
+        console.error('Failed to fetch dashboard data:', error);
+        // Don't fallback to mock if using real API - just show empty state
+        if (useRealApi) {
+          setMetrics(null);
+          setOrdersChart([]);
+          setShipments([]);
+          setCarrierPerformance([]);
+          setWarehouseUtilization([]);
         }
       } finally {
         setIsLoading(false);
@@ -360,19 +349,16 @@ export function DashboardPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Welcome back, {user?.name?.split(' ')[0]} 👋
           </h1>
-          <p className="text-gray-500 mt-1">
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
             Here's what's happening with your logistics today.
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" leftIcon={<Clock className="h-4 w-4" />}>
             {formatDate(new Date(), 'MMM dd, yyyy')}
-          </Button>
-          <Button variant="primary" leftIcon={<ShoppingCart className="h-4 w-4" />}>
-            New Order
           </Button>
         </div>
       </motion.div>

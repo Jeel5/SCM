@@ -34,7 +34,7 @@ export function Skeleton({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className={cn(
-        'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%]',
+        'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 bg-[length:200%_100%]',
         variants[variant],
         animations[animation],
         className
@@ -52,14 +52,14 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
   return (
     <div className="space-y-3">
       {/* Header */}
-      <div className="flex gap-4 p-4 bg-gray-50 rounded-xl">
+      <div className="flex gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
         {Array.from({ length: columns }).map((_, i) => (
           <Skeleton key={i} className="h-4 flex-1" />
         ))}
       </div>
       {/* Rows */}
       {Array.from({ length: rows }).map((_, rowIndex) => (
-        <div key={rowIndex} className="flex gap-4 p-4 border-b border-gray-100">
+        <div key={rowIndex} className="flex gap-4 p-4 border-b border-gray-100 dark:border-gray-700">
           {Array.from({ length: columns }).map((_, colIndex) => (
             <Skeleton key={colIndex} className="h-4 flex-1" />
           ))}
@@ -72,7 +72,7 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
 // Card Skeleton
 export function CardSkeleton() {
   return (
-    <div className="p-6 rounded-2xl border border-gray-100 bg-white">
+    <div className="p-6 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
       <div className="flex items-center gap-4 mb-4">
         <Skeleton variant="circular" width={48} height={48} />
         <div className="flex-1 space-y-2">

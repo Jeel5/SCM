@@ -40,7 +40,7 @@ export async function getInventory(req, res) {
       query.replace(/SELECT .* FROM/, 'SELECT COUNT(*) FROM'),
       params
     );
-    const total = parseInt(countResult.rows[0].count);
+    const total = countResult.rows && countResult.rows[0] ? parseInt(countResult.rows[0].count) : 0;
     
     query += ` ORDER BY i.updated_at DESC LIMIT ${limit} OFFSET ${offset}`;
     

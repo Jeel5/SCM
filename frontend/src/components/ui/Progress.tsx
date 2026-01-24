@@ -42,15 +42,15 @@ export function Progress({
     <div className={cn('w-full', className)}>
       {(showLabel || label) && (
         <div className="flex justify-between items-center mb-2">
-          <span className="text-sm font-medium text-gray-700">{label}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
           {showLabel && (
-            <span className="text-sm font-medium text-gray-500">
+            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
               {percentage.toFixed(0)}%
             </span>
           )}
         </div>
       )}
-      <div className={cn('w-full bg-gray-100 rounded-full overflow-hidden', sizes[size])}>
+      <div className={cn('w-full bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden', sizes[size])}>
         <motion.div
           initial={animated ? { width: 0 } : false}
           animate={{ width: `${percentage}%` }}

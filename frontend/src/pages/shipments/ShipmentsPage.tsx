@@ -28,6 +28,7 @@ import {
 import { formatDate, formatRelativeTime, cn } from '@/lib/utils';
 import { getRoute, formatDistance, formatDuration, type RouteInfo } from '@/lib/routing';
 import { useShipmentTracking } from '@/hooks/useSocket';
+import { shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { Shipment, ShipmentEvent } from '@/types';
 
@@ -79,8 +80,8 @@ function ShipmentTimeline({ events }: { events: ShipmentEvent[] }) {
               className={cn(
                 'h-8 w-8 rounded-full flex items-center justify-center shrink-0',
                 index === 0
-                  ? 'bg-blue-100 text-blue-600'
-                  : 'bg-gray-100 text-gray-500'
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
               )}
             >
               {index === 0 ? (
@@ -90,17 +91,17 @@ function ShipmentTimeline({ events }: { events: ShipmentEvent[] }) {
               )}
             </div>
             {index < sortedEvents.length - 1 && (
-              <div className="w-0.5 flex-1 bg-gray-200 mt-2" />
+              <div className="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-2" />
             )}
           </div>
 
           {/* Event content */}
           <div className="flex-1 pt-1">
             <div className="flex items-center justify-between">
-              <p className="font-medium text-gray-900">{event.description}</p>
+              <p className="font-medium text-gray-900 dark:text-white">{event.description}</p>
               <StatusBadge status={event.status} />
             </div>
-            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1">
                 <MapPin className="h-3 w-3" />
                 {event.location}
@@ -370,14 +371,14 @@ function ShipmentDetailsModal({
     <Modal isOpen={isOpen} onClose={onClose} title={`Shipment ${shipment.trackingNumber}`} size="lg">
       <div className="space-y-6">
         {/* Status Header */}
-        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
-              <Truck className="h-6 w-6 text-blue-600" />
+            <div className="h-12 w-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <Truck className="h-6 w-6 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <p className="font-semibold text-gray-900">{shipment.carrierName}</p>
-              <p className="text-sm text-gray-500">
+              <p className="font-semibold text-gray-900 dark:text-white">{shipment.carrierName}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 Est. Delivery: {formatDate(shipment.estimatedDelivery)}
               </p>
             </div>
@@ -386,10 +387,10 @@ function ShipmentDetailsModal({
         </div>
 
         {/* Route Info */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="text-center">
-            <p className="text-sm text-gray-500">From</p>
-            <p className="font-medium text-gray-900">{shipment.origin.city}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">From</p>
+            <p className="font-medium text-gray-900 dark:text-white">{shipment.origin.city}</p>
           </div>
           <div className="flex-1 flex items-center justify-center">
             <div className="flex items-center gap-2">
@@ -401,8 +402,8 @@ function ShipmentDetailsModal({
             </div>
           </div>
           <div className="text-center">
-            <p className="text-sm text-gray-500">To</p>
-            <p className="font-medium text-gray-900">{shipment.destination.city}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">To</p>
+            <p className="font-medium text-gray-900 dark:text-white">{shipment.destination.city}</p>
           </div>
         </div>
 
@@ -424,21 +425,21 @@ function ShipmentDetailsModal({
 
         {activeTab === 'details' && (
           <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="p-4 bg-gray-50 rounded-xl">
-              <p className="text-sm text-gray-500">Order ID</p>
-              <p className="font-medium text-gray-900">{shipment.orderId}</p>
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Order ID</p>
+              <p className="font-medium text-gray-900 dark:text-white">{shipment.orderId}</p>
             </div>
-            <div className="p-4 bg-gray-50 rounded-xl">
-              <p className="text-sm text-gray-500">Weight</p>
-              <p className="font-medium text-gray-900">{shipment.weight.toFixed(2)} kg</p>
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Weight</p>
+              <p className="font-medium text-gray-900 dark:text-white">{shipment.weight.toFixed(2)} kg</p>
             </div>
-            <div className="p-4 bg-gray-50 rounded-xl">
-              <p className="text-sm text-gray-500">SLA Deadline</p>
-              <p className="font-medium text-gray-900">{formatDate(shipment.slaDeadline)}</p>
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+              <p className="text-sm text-gray-500 dark:text-gray-400">SLA Deadline</p>
+              <p className="font-medium text-gray-900 dark:text-white">{formatDate(shipment.slaDeadline)}</p>
             </div>
-            <div className="p-4 bg-gray-50 rounded-xl">
-              <p className="text-sm text-gray-500">Shipping Cost</p>
-              <p className="font-medium text-gray-900">${shipment.cost.toFixed(2)}</p>
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Shipping Cost</p>
+              <p className="font-medium text-gray-900 dark:text-white">${shipment.cost.toFixed(2)}</p>
             </div>
           </div>
         )}
@@ -474,12 +475,12 @@ export function ShipmentsPage() {
       sortable: true,
       render: (shipment: Shipment) => (
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-            <Truck className="h-5 w-5 text-blue-600" />
+          <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+            <Truck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <p className="font-medium text-gray-900">{shipment.trackingNumber}</p>
-            <p className="text-sm text-gray-500">{formatRelativeTime(shipment.updatedAt)}</p>
+            <p className="font-medium text-gray-900 dark:text-white">{shipment.trackingNumber}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{formatRelativeTime(shipment.updatedAt)}</p>
           </div>
         </div>
       ),
@@ -488,7 +489,7 @@ export function ShipmentsPage() {
       key: 'carrier',
       header: 'Carrier',
       render: (shipment: Shipment) => (
-        <span className="font-medium text-gray-700">{shipment.carrierName}</span>
+        <span className="font-medium text-gray-700 dark:text-gray-200">{shipment.carrierName}</span>
       ),
     },
     {
@@ -496,9 +497,9 @@ export function ShipmentsPage() {
       header: 'Route',
       render: (shipment: Shipment) => (
         <div className="flex items-center gap-2">
-          <span className="text-gray-700">{shipment.origin.city}</span>
-          <span className="text-gray-400">→</span>
-          <span className="text-gray-700">{shipment.destination.city}</span>
+          <span className="text-gray-700 dark:text-gray-200">{shipment.origin.city}</span>
+          <span className="text-gray-400 dark:text-gray-500">→</span>
+          <span className="text-gray-700 dark:text-gray-200">{shipment.destination.city}</span>
         </div>
       ),
     },
@@ -512,7 +513,7 @@ export function ShipmentsPage() {
       header: 'Est. Delivery',
       sortable: true,
       render: (shipment: Shipment) => (
-        <span className="text-gray-700">{formatDate(shipment.estimatedDelivery)}</span>
+        <span className="text-gray-700 dark:text-gray-200">{formatDate(shipment.estimatedDelivery)}</span>
       ),
     },
     {
@@ -526,7 +527,7 @@ export function ShipmentsPage() {
             setSelectedShipment(shipment);
             setIsDetailsOpen(true);
           }}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
           <Eye className="h-4 w-4 text-gray-500" />
         </button>
@@ -536,13 +537,18 @@ export function ShipmentsPage() {
 
   useEffect(() => {
     const fetchShipments = async () => {
+      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
-        const response = await mockApi.getShipments(page, pageSize);
+        const response = useMockApi
+          ? await mockApi.getShipments(page, pageSize)
+          : await shipmentsApi.getShipments(page, pageSize);
         setShipments(response.data);
         setTotalShipments(response.total);
       } catch (error) {
         console.error('Failed to fetch shipments:', error);
+        setShipments([]);
+        setTotalShipments(0);
       } finally {
         setIsLoading(false);
       }
@@ -560,8 +566,8 @@ export function ShipmentsPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Shipments</h1>
-          <p className="text-gray-500 mt-1">Track and manage all shipments in real-time</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Shipments</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Track and manage all shipments in real-time</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />}>
@@ -585,22 +591,22 @@ export function ShipmentsPage() {
             key={stat.label}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-4 bg-white rounded-xl border border-gray-100"
+            className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700"
           >
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-500">{stat.label}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
               <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center', stat.color)}>
                 <stat.icon className="h-4 w-4" />
               </div>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
           </motion.div>
         ))}
       </div>
 
       {/* Data Table */}
       <Card padding="none">
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
 

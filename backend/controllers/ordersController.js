@@ -87,15 +87,18 @@ export async function listOrders(req, res) {
     }));
     
     res.json({
+      success: true,
       data: orders,
-      total,
-      page: parseInt(page),
-      pageSize: parseInt(limit),
-      totalPages: Math.ceil(total / limit)
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / limit)
+      }
     });
   } catch (error) {
     console.error('List orders error:', error);
-    res.status(500).json({ error: 'Failed to list orders' });
+    res.status(500).json({ success: false, error: 'Failed to list orders' });
   }
 }
 

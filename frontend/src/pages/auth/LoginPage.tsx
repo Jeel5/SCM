@@ -5,6 +5,7 @@ import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { Truck, Shield, BarChart3, Globe, CheckCircle, Mail, Lock } from 'lucide-react';
 import { useAuthStore } from '@/stores';
 import { authApi } from '@/api/services';
+import { mockApi } from '@/api/mockData';
 
 const features = [
   { icon: <Truck className="h-6 w-6" />, title: 'Real-time Tracking', desc: 'Monitor all shipments in real-time' },
@@ -59,6 +60,7 @@ export function LoginPage() {
         login(response.data.user, response.data.accessToken);
         // Store refresh token in localStorage
         localStorage.setItem('refreshToken', response.data.refreshToken);
+        localStorage.removeItem('useMockApi'); // Clear mock flag for real API
         navigate('/dashboard');
       }
     } catch (err: unknown) {
@@ -75,16 +77,17 @@ export function LoginPage() {
       setIsLoading(true);
       setError(null);
       
-      // Use demo credentials
-      const response = await authApi.login('admin@logitower.com', 'admin123');
+      // Use mock API for demo login
+      const response = await mockApi.login('admin@logitower.com', 'demo');
       
       if (response.success) {
         login(response.data.user, response.data.accessToken);
         localStorage.setItem('refreshToken', response.data.refreshToken);
+        localStorage.setItem('useMockApi', 'true'); // Flag to use mock data
         navigate('/dashboard');
       }
     } catch (err: unknown) {
-      const errorMessage = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Demo login failed. Make sure the backend is running.';
+      const errorMessage = 'Demo login failed. Please try again.';
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -185,7 +188,7 @@ export function LoginPage() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="admin@logitower.com"
-                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none"
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none text-gray-900 placeholder:text-gray-400"
                     />
                   </div>
                 </div>
@@ -201,7 +204,7 @@ export function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none"
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none text-gray-900 placeholder:text-gray-400"
                     />
                   </div>
                 </div>

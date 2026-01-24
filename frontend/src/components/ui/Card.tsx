@@ -24,9 +24,9 @@ export function Card({ children, className, hover = false, gradient = false, pad
       transition={{ duration: 0.3 }}
       whileHover={hover ? { y: -4, boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' } : undefined}
       className={cn(
-        'rounded-2xl bg-white border border-gray-100 shadow-sm',
+        'rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm transition-colors duration-300',
         hover && 'transition-all duration-300 cursor-pointer',
-        gradient && 'bg-gradient-to-br from-white to-gray-50',
+        gradient && 'bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900',
         paddingClasses[padding],
         className
       )}
@@ -58,11 +58,11 @@ interface CardTitleProps {
 export function CardTitle({ children, className, subtitle }: CardTitleProps) {
   return (
     <div>
-      <h3 className={cn('text-lg font-semibold text-gray-900', className)}>
+      <h3 className={cn('text-lg font-semibold text-gray-900 dark:text-gray-100', className)}>
         {children}
       </h3>
       {subtitle && (
-        <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{subtitle}</p>
       )}
     </div>
   );
@@ -84,7 +84,7 @@ interface CardFooterProps {
 
 export function CardFooter({ children, className }: CardFooterProps) {
   return (
-    <div className={cn('mt-4 pt-4 border-t border-gray-100 flex items-center justify-between', className)}>
+    <div className={cn('mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between', className)}>
       {children}
     </div>
   );

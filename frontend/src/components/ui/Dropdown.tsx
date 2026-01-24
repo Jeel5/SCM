@@ -47,7 +47,7 @@ export function Dropdown({ trigger, items, onSelect, align = 'left', className }
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.15, type: 'spring', damping: 25, stiffness: 300 }}
             className={cn(
-              'absolute z-50 mt-2 min-w-[180px] rounded-xl bg-white border border-gray-100 shadow-xl overflow-hidden',
+              'absolute z-50 mt-2 min-w-[180px] rounded-xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xl overflow-hidden',
               align === 'left' ? 'left-0' : 'right-0'
             )}
           >
@@ -68,13 +68,13 @@ export function Dropdown({ trigger, items, onSelect, align = 'left', className }
                   className={cn(
                     'w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors',
                     item.disabled
-                      ? 'text-gray-400 cursor-not-allowed'
+                      ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed'
                       : item.danger
-                      ? 'text-red-600 hover:bg-red-50'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                   )}
                 >
-                  {item.icon && <span className="text-gray-400">{item.icon}</span>}
+                  {item.icon && <span className="text-gray-400 dark:text-gray-500">{item.icon}</span>}
                   {item.label}
                 </motion.button>
               ))}
@@ -109,14 +109,14 @@ export function SelectDropdown({
       trigger={
         <div
           className={cn(
-            'flex items-center justify-between h-10 px-4 rounded-xl border border-gray-200 bg-white text-sm hover:border-gray-300 transition-colors',
+            'flex items-center justify-between h-10 px-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm hover:border-gray-300 dark:hover:border-gray-500 transition-colors',
             className
           )}
         >
-          <span className={selectedOption ? 'text-gray-900' : 'text-gray-400'}>
+          <span className={selectedOption ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}>
             {selectedOption?.label || placeholder}
           </span>
-          <ChevronDown className="h-4 w-4 text-gray-400" />
+          <ChevronDown className="h-4 w-4 text-gray-400 dark:text-gray-500" />
         </div>
       }
       items={options.map((o) => ({ label: o.label, value: o.value }))}

@@ -38,8 +38,8 @@ export function Tabs({
     <div
       className={cn(
         'flex gap-1',
-        variant === 'default' && 'p-1 bg-gray-100 rounded-xl',
-        variant === 'underline' && 'border-b border-gray-200',
+        variant === 'default' && 'p-1 bg-gray-100 dark:bg-gray-800 rounded-xl',
+        variant === 'underline' && 'border-b border-gray-200 dark:border-gray-700',
         fullWidth && 'w-full',
         className
       )}
@@ -56,24 +56,24 @@ export function Tabs({
               fullWidth && 'flex-1 justify-center',
               variant === 'default' && [
                 'rounded-lg',
-                isActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700',
+                isActive ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
               ],
               variant === 'pills' && [
                 'rounded-full',
                 isActive
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100',
+                  ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700',
               ],
               variant === 'underline' && [
                 'pb-3 -mb-px',
-                isActive ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700',
+                isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
               ]
             )}
           >
             {variant === 'default' && isActive && (
               <motion.div
                 layoutId="activeTab"
-                className="absolute inset-0 bg-white rounded-lg shadow-sm"
+                className="absolute inset-0 bg-white dark:bg-gray-700 rounded-lg shadow-sm"
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               />
             )}
@@ -92,8 +92,8 @@ export function Tabs({
                   className={cn(
                     'px-2 py-0.5 rounded-full text-xs font-medium',
                     isActive
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-gray-200 text-gray-600'
+                      ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                   )}
                 >
                   {tab.count}

@@ -25,6 +25,7 @@ import {
   Tabs,
 } from '@/components/ui';
 import { formatDate, formatCurrency, formatRelativeTime, cn } from '@/lib/utils';
+import { returnsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { Return } from '@/types';
 
@@ -44,17 +45,17 @@ function ReturnDetailsModal({
     <Modal isOpen={isOpen} onClose={onClose} title={`Return ${returnItem.id}`} size="lg">
       <div className="space-y-6">
         {/* Status Header */}
-        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl">
+        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-white flex items-center justify-center shadow-sm">
-                <RotateCcw className="h-6 w-6 text-purple-600" />
+              <div className="h-12 w-12 rounded-xl bg-white dark:bg-gray-900 flex items-center justify-center shadow-sm">
+                <RotateCcw className="h-6 w-6 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
-                <p className="font-semibold text-gray-900 capitalize">
+                <p className="font-semibold text-gray-900 dark:text-white capitalize">
                   {returnItem.reason.replace('_', ' ')}
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Requested: {formatDate(returnItem.requestedAt)}
                 </p>
               </div>
@@ -64,39 +65,39 @@ function ReturnDetailsModal({
         </div>
 
         {/* Return Flow */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
           <div className="text-center">
-            <p className="text-sm text-gray-500">Order</p>
-            <p className="font-medium text-gray-900">{returnItem.orderId}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Order</p>
+            <p className="font-medium text-gray-900 dark:text-white">{returnItem.orderId}</p>
           </div>
-          <ArrowRight className="h-5 w-5 text-gray-400" />
+          <ArrowRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
           <div className="text-center">
-            <p className="text-sm text-gray-500">Return Type</p>
-            <p className="font-medium text-gray-900 capitalize">{returnItem.type}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Return Type</p>
+            <p className="font-medium text-gray-900 dark:text-white capitalize">{returnItem.type}</p>
           </div>
-          <ArrowRight className="h-5 w-5 text-gray-400" />
+          <ArrowRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
           <div className="text-center">
-            <p className="text-sm text-gray-500">Refund Amount</p>
-            <p className="font-semibold text-green-600">{formatCurrency(returnItem.refundAmount || 0)}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Refund Amount</p>
+            <p className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(returnItem.refundAmount || 0)}</p>
           </div>
         </div>
 
         {/* Items */}
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <h4 className="font-medium text-gray-900 mb-3">Return Items</h4>
+        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Return Items</h4>
           <div className="space-y-2">
             {returnItem.items.map((item, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100"
+                className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700"
               >
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                    <Package className="h-5 w-5 text-purple-600" />
+                  <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                    <Package className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">{item.productName || item.name}</p>
-                    <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
+                    <p className="font-medium text-gray-900 dark:text-white">{item.productName || item.name}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Qty: {item.quantity}</p>
                   </div>
                 </div>
                 <Badge variant={item.condition === 'good' ? 'success' : 'warning'} className="capitalize">
@@ -109,20 +110,20 @@ function ReturnDetailsModal({
 
         {/* Notes */}
         {returnItem.notes && (
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <h4 className="font-medium text-gray-900 mb-2">Notes</h4>
-            <p className="text-gray-600">{returnItem.notes}</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Notes</h4>
+            <p className="text-gray-600 dark:text-gray-300">{returnItem.notes}</p>
           </div>
         )}
 
         {/* Tracking */}
         {returnItem.trackingNumber && (
-          <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-            <div className="flex items-center gap-2 text-blue-700 mb-2">
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 mb-2">
               <Truck className="h-5 w-5" />
               <span className="font-medium">Return Shipment</span>
             </div>
-            <p className="text-blue-700">Tracking: {returnItem.trackingNumber}</p>
+            <p className="text-blue-700 dark:text-blue-300">Tracking: {returnItem.trackingNumber}</p>
           </div>
         )}
 
@@ -218,12 +219,12 @@ export function ReturnsPage() {
       header: 'Return',
       render: (returnItem: Return) => (
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
-            <RotateCcw className="h-5 w-5 text-purple-600" />
+          <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+            <RotateCcw className="h-5 w-5 text-purple-600 dark:text-purple-400" />
           </div>
           <div>
-            <p className="font-medium text-gray-900">{returnItem.id}</p>
-            <p className="text-sm text-gray-500">{returnItem.orderId}</p>
+            <p className="font-medium text-gray-900 dark:text-white">{returnItem.id}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{returnItem.orderId}</p>
           </div>
         </div>
       ),
@@ -232,7 +233,7 @@ export function ReturnsPage() {
       key: 'reason',
       header: 'Reason',
       render: (returnItem: Return) => (
-        <span className="text-gray-700 capitalize">{returnItem.reason.replace('_', ' ')}</span>
+        <span className="text-gray-700 dark:text-gray-200 capitalize">{returnItem.reason.replace('_', ' ')}</span>
       ),
     },
     {
@@ -249,7 +250,7 @@ export function ReturnsPage() {
       header: 'Refund',
       sortable: true,
       render: (returnItem: Return) => (
-        <span className="font-medium text-gray-900">{formatCurrency(returnItem.refundAmount || 0)}</span>
+        <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(returnItem.refundAmount || 0)}</span>
       ),
     },
     {
@@ -262,7 +263,7 @@ export function ReturnsPage() {
       header: 'Requested',
       sortable: true,
       render: (returnItem: Return) => (
-        <span className="text-gray-500">{formatRelativeTime(returnItem.requestedAt)}</span>
+        <span className="text-gray-500 dark:text-gray-400">{formatRelativeTime(returnItem.requestedAt)}</span>
       ),
     },
     {
@@ -276,7 +277,7 @@ export function ReturnsPage() {
             setSelectedReturn(returnItem);
             setIsDetailsOpen(true);
           }}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
           <Eye className="h-4 w-4 text-gray-500" />
         </button>
@@ -286,13 +287,18 @@ export function ReturnsPage() {
 
   useEffect(() => {
     const fetchReturns = async () => {
+      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
-        const response = await mockApi.getReturns(page, pageSize);
+        const response = useMockApi
+          ? await mockApi.getReturns(page, pageSize)
+          : await returnsApi.getReturns(page, pageSize);
         setReturns(response.data);
         setTotalReturns(response.total);
       } catch (error) {
         console.error('Failed to fetch returns:', error);
+        setReturns([]);
+        setTotalReturns(0);
       } finally {
         setIsLoading(false);
       }
@@ -310,8 +316,8 @@ export function ReturnsPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Returns</h1>
-          <p className="text-gray-500 mt-1">Manage return requests and refunds</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Returns</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage return requests and refunds</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
@@ -356,15 +362,15 @@ export function ReturnsPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="p-4 bg-white rounded-xl border border-gray-100"
+            className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700"
           >
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-500">{stat.label}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
               <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center', stat.color)}>
                 <stat.icon className="h-4 w-4" />
               </div>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
           </motion.div>
         ))}
       </div>

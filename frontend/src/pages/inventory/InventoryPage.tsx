@@ -23,6 +23,7 @@ import {
   Tabs,
 } from '@/components/ui';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
+import { inventoryApi, warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { InventoryItem, Warehouse } from '@/types';
 
@@ -48,16 +49,16 @@ function StockLevelIndicator({ item }: { item: InventoryItem }) {
       <div className="flex items-center justify-between text-xs">
         <span className={cn(
           'font-medium',
-          status === 'Critical' && 'text-red-600',
-          status === 'Low' && 'text-yellow-600',
-          status === 'Healthy' && 'text-green-600',
-          status === 'Overstocked' && 'text-blue-600'
+          status === 'Critical' && 'text-red-600 dark:text-red-400',
+          status === 'Low' && 'text-yellow-600 dark:text-yellow-400',
+          status === 'Healthy' && 'text-green-600 dark:text-green-400',
+          status === 'Overstocked' && 'text-blue-600 dark:text-blue-400'
         )}>
           {status}
         </span>
-        <span className="text-gray-500">{percentage.toFixed(0)}%</span>
+        <span className="text-gray-500 dark:text-gray-400">{percentage.toFixed(0)}%</span>
       </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
@@ -87,14 +88,14 @@ function InventoryDetailsModal({
     <Modal isOpen={isOpen} onClose={onClose} title="Inventory Details" size="lg">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl">
+        <div className="flex items-start justify-between p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-xl bg-white flex items-center justify-center shadow-sm">
-              <Boxes className="h-8 w-8 text-indigo-600" />
+            <div className="h-16 w-16 rounded-xl bg-white dark:bg-gray-900 flex items-center justify-center shadow-sm">
+              <Boxes className="h-8 w-8 text-indigo-600 dark:text-indigo-300" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">{item.name}</h3>
-              <p className="text-sm text-gray-500">SKU: {item.sku}</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{item.name}</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.sku}</p>
               <div className="flex items-center gap-2 mt-2">
                 <Badge variant={item.category === 'electronics' ? 'info' : 'default'}>
                   {item.category}
@@ -104,21 +105,21 @@ function InventoryDetailsModal({
             </div>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-gray-900">{formatNumber(item.quantity)}</p>
-            <p className="text-sm text-gray-500">in stock</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">in stock</p>
           </div>
         </div>
 
         {/* Stock Level Visual */}
-        <div className="p-4 bg-gray-50 rounded-xl">
+        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-gray-700">Stock Level</span>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Stock Level</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">
               {formatNumber(item.quantity)} / {formatNumber(item.maxQuantity)}
             </span>
           </div>
           <Progress value={stockPercentage} size="lg" showLabel />
-          <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
+          <div className="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-gray-400">
             <span>Min: {formatNumber(item.minQuantity)}</span>
             <span className="flex items-center gap-1">
               <AlertTriangle className="h-3 w-3 text-yellow-500" />
@@ -130,23 +131,23 @@ function InventoryDetailsModal({
 
         {/* Details Grid */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Unit Cost</p>
-            <p className="text-xl font-semibold text-gray-900">{formatCurrency(item.unitCost)}</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Unit Cost</p>
+            <p className="text-xl font-semibold text-gray-900 dark:text-white">{formatCurrency(item.unitCost)}</p>
           </div>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Total Value</p>
-            <p className="text-xl font-semibold text-gray-900">
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Total Value</p>
+            <p className="text-xl font-semibold text-gray-900 dark:text-white">
               {formatCurrency(item.quantity * item.unitCost)}
             </p>
           </div>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Warehouse</p>
-            <p className="text-lg font-semibold text-gray-900">{item.warehouseName}</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Warehouse</p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{item.warehouseName}</p>
           </div>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Location</p>
-            <p className="text-lg font-semibold text-gray-900">{item.location}</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Location</p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{item.location}</p>
           </div>
         </div>
 
@@ -261,12 +262,12 @@ export function InventoryPage() {
       sortable: true,
       render: (item: InventoryItem) => (
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-            <Package className="h-5 w-5 text-indigo-600" />
+          <div className="h-10 w-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+            <Package className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
           </div>
           <div>
-            <p className="font-medium text-gray-900">{item.name}</p>
-            <p className="text-sm text-gray-500">SKU: {item.sku}</p>
+            <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.sku}</p>
           </div>
         </div>
       ),
@@ -286,8 +287,8 @@ export function InventoryPage() {
       sortable: true,
       render: (item: InventoryItem) => (
         <div>
-          <p className="font-medium text-gray-900">{formatNumber(item.quantity)}</p>
-          <p className="text-xs text-gray-500">{item.unit}</p>
+          <p className="font-medium text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{item.unit}</p>
         </div>
       ),
     },
@@ -301,7 +302,7 @@ export function InventoryPage() {
       key: 'warehouse',
       header: 'Warehouse',
       render: (item: InventoryItem) => (
-        <span className="text-gray-700">{item.warehouseName}</span>
+        <span className="text-gray-700 dark:text-gray-300">{item.warehouseName}</span>
       ),
     },
     {
@@ -309,7 +310,7 @@ export function InventoryPage() {
       header: 'Value',
       sortable: true,
       render: (item: InventoryItem) => (
-        <span className="font-medium text-gray-900">
+        <span className="font-medium text-gray-900 dark:text-white">
           {formatCurrency(item.quantity * item.unitCost)}
         </span>
       ),
@@ -325,9 +326,9 @@ export function InventoryPage() {
             setSelectedItem(item);
             setIsDetailsOpen(true);
           }}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
-          <Eye className="h-4 w-4 text-gray-500" />
+          <Eye className="h-4 w-4 text-gray-500 dark:text-gray-400" />
         </button>
       ),
     },
@@ -335,17 +336,26 @@ export function InventoryPage() {
 
   useEffect(() => {
     const fetchData = async () => {
+      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
-        const [inventoryRes, warehouseRes] = await Promise.all([
-          mockApi.getInventory(page, pageSize),
-          mockApi.getWarehouses(),
-        ]);
+        const [inventoryRes, warehouseRes] = useMockApi
+          ? await Promise.all([
+              mockApi.getInventory(page, pageSize),
+              mockApi.getWarehouses(),
+            ])
+          : await Promise.all([
+              inventoryApi.getInventory(page, pageSize),
+              warehousesApi.getWarehouses(),
+            ]);
         setInventory(inventoryRes.data);
         setTotalItems(inventoryRes.total);
         setWarehouses(warehouseRes.data);
       } catch (error) {
         console.error('Failed to fetch inventory:', error);
+        setInventory([]);
+        setTotalItems(0);
+        setWarehouses([]);
       } finally {
         setIsLoading(false);
       }
@@ -363,8 +373,8 @@ export function InventoryPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
-          <p className="text-gray-500 mt-1">Track stock levels and manage inventory across warehouses</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Inventory Management</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Track stock levels and manage inventory across warehouses</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
@@ -409,22 +419,22 @@ export function InventoryPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="p-4 bg-white rounded-xl border border-gray-100"
+            className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700"
           >
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-500">{stat.label}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
               <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center', stat.color)}>
                 <stat.icon className="h-4 w-4" />
               </div>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
           </motion.div>
         ))}
       </div>
 
       {/* Data Table */}
       <Card padding="none">
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
 

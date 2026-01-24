@@ -29,6 +29,7 @@ import {
   Tabs,
 } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
+import { carriersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { Carrier } from '@/types';
 
@@ -49,7 +50,7 @@ function RatingStars({ rating }: { rating: number }) {
           )}
         />
       ))}
-      <span className="ml-1 text-sm font-medium text-gray-700">{rating.toFixed(1)}</span>
+      <span className="ml-1 text-sm font-medium text-gray-700 dark:text-gray-300">{rating.toFixed(1)}</span>
     </div>
   );
 }
@@ -67,32 +68,32 @@ function CarrierCard({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ y: -4 }}
-      className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300"
+      className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-300"
     >
       {/* Header */}
-      <div className="p-4 border-b border-gray-100">
+      <div className="p-4 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div
               className={cn(
                 'h-12 w-12 rounded-xl flex items-center justify-center',
                 carrier.status === 'active'
-                  ? 'bg-blue-100 text-blue-600'
+                  ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
                   : carrier.status === 'suspended'
-                    ? 'bg-red-100 text-red-600'
-                    : 'bg-gray-100 text-gray-600'
+                    ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
               )}
             >
               <Truck className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">{carrier.name}</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white">{carrier.name}</h3>
               <RatingStars rating={carrier.rating} />
             </div>
           </div>
           <Dropdown
             trigger={
-              <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+              <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                 <MoreHorizontal className="h-4 w-4 text-gray-500" />
               </button>
             }
@@ -110,16 +111,16 @@ function CarrierCard({
       {/* Performance Metrics */}
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">On-Time Delivery</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">On-Time Delivery</span>
           <div className="flex items-center gap-2">
             <Progress value={carrier.onTimeDeliveryRate} size="sm" className="w-24" />
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
               {carrier.onTimeDeliveryRate}%
             </span>
           </div>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">Damage Rate</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">Damage Rate</span>
           <div className="flex items-center gap-2">
             <Progress
               value={100 - carrier.damageRate}
@@ -127,7 +128,7 @@ function CarrierCard({
               size="sm"
               className="w-24"
             />
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
               {carrier.damageRate}%
             </span>
           </div>
@@ -135,22 +136,22 @@ function CarrierCard({
       </div>
 
       {/* Stats */}
-      <div className="p-4 bg-gray-50 grid grid-cols-3 gap-4">
+      <div className="p-4 bg-gray-50 dark:bg-gray-900/50 grid grid-cols-3 gap-4 border-t border-gray-100 dark:border-gray-700">
         <div className="text-center">
-          <p className="text-lg font-semibold text-gray-900">
+          <p className="text-lg font-semibold text-gray-900 dark:text-white">
             {formatNumber(carrier.activeShipments)}
           </p>
-          <p className="text-xs text-gray-500">Active</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Active</p>
         </div>
-        <div className="text-center border-x border-gray-200">
-          <p className="text-lg font-semibold text-gray-900">
+        <div className="text-center border-x border-gray-200 dark:border-gray-700">
+          <p className="text-lg font-semibold text-gray-900 dark:text-white">
             {formatNumber(carrier.totalShipments)}
           </p>
-          <p className="text-xs text-gray-500">Total</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
         </div>
         <div className="text-center">
-          <p className="text-lg font-semibold text-gray-900">{carrier.averageDeliveryTime}h</p>
-          <p className="text-xs text-gray-500">Avg Time</p>
+          <p className="text-lg font-semibold text-gray-900 dark:text-white">{carrier.averageDeliveryTime}h</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Avg Time</p>
         </div>
       </div>
 
@@ -228,25 +229,25 @@ function CarrierDetailsModal({
 
         {/* Performance Metrics */}
         <div className="grid grid-cols-4 gap-4">
-          <div className="p-4 bg-green-50 rounded-xl text-center">
-            <CheckCircle2 className="h-6 w-6 text-green-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{carrier.onTimeDeliveryRate}%</p>
-            <p className="text-sm text-gray-500">On-Time</p>
+          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl text-center">
+            <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.onTimeDeliveryRate}%</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">On-Time</p>
           </div>
-          <div className="p-4 bg-red-50 rounded-xl text-center">
-            <XCircle className="h-6 w-6 text-red-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{carrier.damageRate}%</p>
-            <p className="text-sm text-gray-500">Damage Rate</p>
+          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl text-center">
+            <XCircle className="h-6 w-6 text-red-600 dark:text-red-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.damageRate}%</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Damage Rate</p>
           </div>
-          <div className="p-4 bg-yellow-50 rounded-xl text-center">
-            <AlertTriangle className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{carrier.lossRate}%</p>
-            <p className="text-sm text-gray-500">Loss Rate</p>
+          <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-center">
+            <AlertTriangle className="h-6 w-6 text-yellow-600 dark:text-yellow-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.lossRate}%</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loss Rate</p>
           </div>
-          <div className="p-4 bg-blue-50 rounded-xl text-center">
-            <Clock className="h-6 w-6 text-blue-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900">{carrier.averageDeliveryTime}h</p>
-            <p className="text-sm text-gray-500">Avg Time</p>
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-center">
+            <Clock className="h-6 w-6 text-blue-600 dark:text-blue-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.averageDeliveryTime}h</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Avg Time</p>
           </div>
         </div>
 
@@ -380,12 +381,16 @@ export function CarriersPage() {
 
   useEffect(() => {
     const fetchCarriers = async () => {
+      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
-        const response = await mockApi.getCarriers();
+        const response = useMockApi
+          ? await mockApi.getCarriers()
+          : await carriersApi.getCarriers();
         setCarriers(response.data);
       } catch (error) {
         console.error('Failed to fetch carriers:', error);
+        setCarriers([]);
       } finally {
         setIsLoading(false);
       }
@@ -488,7 +493,7 @@ export function CarriersPage() {
       >
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Carriers</h1>
-          <p className="text-gray-500 mt-1">Manage shipping carriers and track performance</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage shipping carriers and track performance</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center rounded-lg border border-gray-200 p-1">
@@ -556,15 +561,15 @@ export function CarriersPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="p-4 bg-white rounded-xl border border-gray-100"
+            className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700"
           >
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-500">{stat.label}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
               <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center', stat.color)}>
                 <stat.icon className="h-4 w-4" />
               </div>
             </div>
-            <p className="text-2xl font-bold text-gray-900 truncate">{stat.value}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white truncate">{stat.value}</p>
           </motion.div>
         ))}
       </div>
@@ -578,7 +583,7 @@ export function CarriersPage() {
         </div>
       ) : viewMode === 'grid' ? (
         <>
-          <div className="border-b border-gray-200">
+          <div className="border-b border-gray-200 dark:border-gray-700">
             <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -598,7 +603,7 @@ export function CarriersPage() {
         </>
       ) : (
         <Card padding="none">
-          <div className="p-4 border-b border-gray-100">
+          <div className="p-4 border-b border-gray-100 dark:border-gray-700">
             <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
           </div>
           <DataTable

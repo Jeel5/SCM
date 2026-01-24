@@ -20,6 +20,7 @@ import {
   Tabs,
 } from '@/components/ui';
 import { formatDate, formatRelativeTime, cn } from '@/lib/utils';
+import { exceptionsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import type { Exception } from '@/types';
 
@@ -68,23 +69,23 @@ function ExceptionDetailsModal({
 
         {/* Info Grid */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Status</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
             <div className="mt-1">
               <StatusBadge status={exception.status} />
             </div>
           </div>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Created</p>
-            <p className="font-medium text-gray-900">{formatDate(exception.createdAt)}</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Created</p>
+            <p className="font-medium text-gray-900 dark:text-white">{formatDate(exception.createdAt)}</p>
           </div>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Order ID</p>
-            <p className="font-medium text-gray-900">{exception.orderId}</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Order ID</p>
+            <p className="font-medium text-gray-900 dark:text-white">{exception.orderId}</p>
           </div>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-500">Shipment ID</p>
-            <p className="font-medium text-gray-900">{exception.shipmentId || 'N/A'}</p>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Shipment ID</p>
+            <p className="font-medium text-gray-900 dark:text-white">{exception.shipmentId || 'N/A'}</p>
           </div>
         </div>
 
@@ -154,21 +155,21 @@ export function ExceptionsPage() {
             className={cn(
               'h-10 w-10 rounded-lg flex items-center justify-center',
               exception.severity === 'critical'
-                ? 'bg-red-100 text-red-600'
+                ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
                 : exception.severity === 'high'
-                  ? 'bg-orange-100 text-orange-600'
+                  ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
                   : exception.severity === 'medium'
-                    ? 'bg-yellow-100 text-yellow-600'
-                    : 'bg-blue-100 text-blue-600'
+                    ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400'
+                    : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
             )}
           >
             <AlertTriangle className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-medium text-gray-900 capitalize">
+            <p className="font-medium text-gray-900 dark:text-white capitalize">
               {exception.type.replace('_', ' ')}
             </p>
-            <p className="text-sm text-gray-500 truncate max-w-xs">
+            <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">
               {exception.description}
             </p>
           </div>
@@ -189,7 +190,7 @@ export function ExceptionsPage() {
       key: 'orderId',
       header: 'Order',
       render: (exception: Exception) => (
-        <span className="text-gray-700">{exception.orderId}</span>
+        <span className="text-gray-700 dark:text-gray-200">{exception.orderId}</span>
       ),
     },
     {
@@ -197,7 +198,7 @@ export function ExceptionsPage() {
       header: 'Created',
       sortable: true,
       render: (exception: Exception) => (
-        <span className="text-gray-500">{formatRelativeTime(exception.createdAt)}</span>
+        <span className="text-gray-500 dark:text-gray-400">{formatRelativeTime(exception.createdAt)}</span>
       ),
     },
     {
@@ -211,7 +212,7 @@ export function ExceptionsPage() {
             setSelectedException(exception);
             setIsDetailsOpen(true);
           }}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
           <Eye className="h-4 w-4 text-gray-500" />
         </button>
@@ -221,13 +222,18 @@ export function ExceptionsPage() {
 
   useEffect(() => {
     const fetchExceptions = async () => {
+      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
-        const response = await mockApi.getExceptions(page, pageSize);
+        const response = useMockApi
+          ? await mockApi.getExceptions(page, pageSize)
+          : await exceptionsApi.getExceptions(page, pageSize);
         setExceptions(response.data);
         setTotalExceptions(response.total);
       } catch (error) {
         console.error('Failed to fetch exceptions:', error);
+        setExceptions([]);
+        setTotalExceptions(0);
       } finally {
         setIsLoading(false);
       }
@@ -245,8 +251,8 @@ export function ExceptionsPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Exceptions</h1>
-          <p className="text-gray-500 mt-1">Monitor and resolve logistics exceptions</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Exceptions</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Monitor and resolve logistics exceptions</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />}>
@@ -291,15 +297,15 @@ export function ExceptionsPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="p-4 bg-white rounded-xl border border-gray-100"
+            className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700"
           >
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-gray-500">{stat.label}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
               <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center', stat.color)}>
                 <stat.icon className="h-4 w-4" />
               </div>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
           </motion.div>
         ))}
       </div>
@@ -309,23 +315,23 @@ export function ExceptionsPage() {
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between"
+          className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center justify-between"
         >
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-              <AlertCircle className="h-5 w-5 text-red-600" />
+            <div className="h-10 w-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
             </div>
             <div>
-              <p className="font-semibold text-red-800">
+              <p className="font-semibold text-red-800 dark:text-red-300">
                 {criticalCount} Critical Exception{criticalCount > 1 ? 's' : ''} Require Immediate Attention
               </p>
-              <p className="text-sm text-red-600">Please review and resolve these issues as soon as possible.</p>
+              <p className="text-sm text-red-600 dark:text-red-400">Please review and resolve these issues as soon as possible.</p>
             </div>
           </div>
           <Button
             variant="primary"
             size="sm"
-            className="bg-red-600 hover:bg-red-700"
+            className="bg-red-600 hover:bg-red-700 shadow-none"
             onClick={() => setActiveTab('open')}
           >
             View Critical
@@ -335,7 +341,7 @@ export function ExceptionsPage() {
 
       {/* Data Table */}
       <Card padding="none">
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
 

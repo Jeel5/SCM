@@ -148,13 +148,13 @@ export function Sidebar() {
         initial={false}
         animate={{ width: sidebarCollapsed ? 80 : 280 }}
         className={cn(
-          'fixed top-0 left-0 h-screen bg-white border-r border-gray-100 z-50 flex flex-col',
+          'fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 z-50 flex flex-col transition-colors duration-300',
           'lg:relative lg:translate-x-0',
           sidebarMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-100">
+        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-100 dark:border-gray-700">
           <AnimatePresence mode="wait">
             {!sidebarCollapsed && (
               <motion.div
@@ -167,8 +167,8 @@ export function Sidebar() {
                   <Truck className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="font-bold text-gray-900">LogiTower</h1>
-                  <p className="text-xs text-gray-500">Control Center</p>
+                  <h1 className="font-bold text-gray-900 dark:text-gray-100">LogiTower</h1>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Control Center</p>
                 </div>
               </motion.div>
             )}
@@ -192,14 +192,14 @@ export function Sidebar() {
                     onClick={() => setMobileSidebarOpen(false)}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200',
-                      'hover:bg-gray-100',
-                      isActive && 'bg-blue-50 text-blue-600'
+                      'hover:bg-gray-100 dark:hover:bg-gray-700',
+                      isActive && 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                     )}
                   >
                     <span
                       className={cn(
                         'shrink-0',
-                        isActive ? 'text-blue-600' : 'text-gray-500'
+                        isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
                       )}
                     >
                       {item.icon}
@@ -212,7 +212,7 @@ export function Sidebar() {
                           exit={{ opacity: 0, width: 0 }}
                           className={cn(
                             'font-medium text-sm truncate',
-                            isActive ? 'text-blue-600' : 'text-gray-700'
+                            isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
                           )}
                         >
                           {item.label}
@@ -223,7 +223,7 @@ export function Sidebar() {
                       <motion.span
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
-                        className="ml-auto px-2 py-0.5 text-xs font-medium bg-red-100 text-red-600 rounded-full"
+                        className="ml-auto px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full"
                       >
                         {item.badge}
                       </motion.span>
@@ -239,12 +239,12 @@ export function Sidebar() {
         </nav>
 
         {/* Collapse Toggle */}
-        <div className="p-3 border-t border-gray-100 hidden lg:block">
+        <div className="p-3 border-t border-gray-100 dark:border-gray-700 hidden lg:block">
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={toggleSidebar}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
             {sidebarCollapsed ? (
               <ChevronRight className="h-5 w-5" />
