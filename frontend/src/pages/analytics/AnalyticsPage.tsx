@@ -310,6 +310,15 @@ export function AnalyticsPage() {
             <CardTitle>Order & Revenue Trends</CardTitle>
           </CardHeader>
           <CardContent>
+            {orderTrendData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-80 text-center">
+                <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+                  <Package className="h-8 w-8 text-gray-400" />
+                </div>
+                <p className="text-gray-500 dark:text-gray-400 font-medium">No order data available</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Order trends will appear when data is available</p>
+              </div>
+            ) : (
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={orderTrendData}>
@@ -355,6 +364,7 @@ export function AnalyticsPage() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -398,6 +408,15 @@ export function AnalyticsPage() {
             <CardTitle>Carrier Performance</CardTitle>
           </CardHeader>
           <CardContent>
+            {carrierData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-80 text-center">
+                <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+                  <Truck className="h-8 w-8 text-gray-400" />
+                </div>
+                <p className="text-gray-500 dark:text-gray-400 font-medium">No carrier data available</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Carrier performance will appear when data is available</p>
+              </div>
+            ) : (
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={carrierData} layout="vertical">
@@ -415,6 +434,7 @@ export function AnalyticsPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -424,6 +444,15 @@ export function AnalyticsPage() {
             <CardTitle>Warehouse Utilization</CardTitle>
           </CardHeader>
           <CardContent>
+            {warehouseData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-80 text-center">
+                <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+                  <Package className="h-8 w-8 text-gray-400" />
+                </div>
+                <p className="text-gray-500 dark:text-gray-400 font-medium">No warehouse data available</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Warehouse utilization will appear when data is available</p>
+              </div>
+            ) : (
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={warehouseData}>
@@ -441,6 +470,7 @@ export function AnalyticsPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -20,6 +20,8 @@
   --text-primary: #111827;
   --text-secondary: #6B7280;
   --border-color: #E5E7EB;
+  --dropdown-bg: #FFFFFF;
+  --dropdown-border: #E5E7EB;
 }
 
 .dark {
@@ -36,8 +38,10 @@
   --bg-secondary: #1F2937;
   --bg-tertiary: #374151;
   --text-primary: #F9FAFB;
-  --text-secondary: #D1D5DB;
+  --text-secondary: #9CA3AF;
   --border-color: #374151;
+  --dropdown-bg: #1F2937;
+  --dropdown-border: #374151;
 }
 
 /* Base Styles */

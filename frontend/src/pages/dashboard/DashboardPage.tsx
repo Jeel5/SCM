@@ -115,7 +115,16 @@ function RecentShipments({ shipments }: { shipments: Shipment[] }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {shipments.slice(0, 5).map((shipment, index) => (
+          {shipments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+                <Truck className="h-8 w-8 text-gray-400" />
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 font-medium">No active shipments</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Shipments will appear here when available</p>
+            </div>
+          ) : (
+            shipments.slice(0, 5).map((shipment, index) => (
             <motion.div
               key={shipment.id}
               initial={{ opacity: 0, x: -20 }}
@@ -140,7 +149,8 @@ function RecentShipments({ shipments }: { shipments: Shipment[] }) {
                 </div>
               </div>
             </motion.div>
-          ))}
+          ))
+          )}
         </div>
       </CardContent>
     </Card>
@@ -161,6 +171,15 @@ function CarrierPerformanceChart({ data }: { data: CarrierPerformance[] }) {
         <CardTitle subtitle="On-time delivery rates">Carrier Performance</CardTitle>
       </CardHeader>
       <CardContent>
+        {data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+              <Truck className="h-8 w-8 text-gray-400" />
+            </div>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">No carrier data available</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Performance metrics will appear when available</p>
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={chartData} layout="vertical">
             <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
@@ -173,6 +192,7 @@ function CarrierPerformanceChart({ data }: { data: CarrierPerformance[] }) {
             <Bar dataKey="onTime" stackId="a" fill="#10B981" radius={[0, 4, 4, 0]} name="On Time" />
           </BarChart>
         </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   );
@@ -186,6 +206,15 @@ function OrdersTrendChart({ data }: { data: ChartDataPoint[] }) {
         <CardTitle subtitle="Last 30 days">Orders Trend</CardTitle>
       </CardHeader>
       <CardContent>
+        {data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+              <ShoppingCart className="h-8 w-8 text-gray-400" />
+            </div>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">No order data available</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Order trends will appear when available</p>
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height={250}>
           <AreaChart data={data}>
             <defs>
@@ -215,6 +244,7 @@ function OrdersTrendChart({ data }: { data: ChartDataPoint[] }) {
             />
           </AreaChart>
         </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   );
@@ -233,6 +263,16 @@ function WarehouseUtilizationChart({ data }: { data: WarehouseUtilization[] }) {
         <CardTitle subtitle="Capacity usage">Warehouse Utilization</CardTitle>
       </CardHeader>
       <CardContent>
+        {data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
+              <Package className="h-8 w-8 text-gray-400" />
+            </div>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">No warehouse data</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Utilization data will appear when available</p>
+          </div>
+        ) : (
+          <>
         <div className="flex items-center justify-center mb-4">
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
@@ -271,6 +311,8 @@ function WarehouseUtilizationChart({ data }: { data: WarehouseUtilization[] }) {
             </div>
           ))}
         </div>
+        </>
+        )}
       </CardContent>
     </Card>
   );

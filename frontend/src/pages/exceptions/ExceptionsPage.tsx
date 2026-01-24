@@ -37,10 +37,10 @@ function ExceptionDetailsModal({
   if (!exception) return null;
 
   const severityColors = {
-    low: 'bg-blue-50 border-blue-200 text-blue-700',
-    medium: 'bg-yellow-50 border-yellow-200 text-yellow-700',
-    high: 'bg-orange-50 border-orange-200 text-orange-700',
-    critical: 'bg-red-50 border-red-200 text-red-700',
+    low: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300',
+    medium: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-300',
+    high: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300',
+    critical: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300',
   };
 
   return (
@@ -91,14 +91,14 @@ function ExceptionDetailsModal({
 
         {/* Resolution */}
         {exception.resolution && (
-          <div className="p-4 bg-green-50 rounded-xl border border-green-200">
-            <div className="flex items-center gap-2 text-green-700 mb-2">
+          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-300 mb-2">
               <CheckCircle2 className="h-5 w-5" />
               <span className="font-medium">Resolution</span>
             </div>
-            <p className="text-green-700">{exception.resolution}</p>
+            <p className="text-green-700 dark:text-green-300">{exception.resolution}</p>
             {exception.resolvedAt && (
-              <p className="text-sm text-green-600 mt-2">
+              <p className="text-sm text-green-600 dark:text-green-400 mt-2">
                 Resolved: {formatDate(exception.resolvedAt)}
               </p>
             )}

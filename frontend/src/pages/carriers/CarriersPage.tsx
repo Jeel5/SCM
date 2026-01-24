@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Truck,
@@ -59,16 +59,29 @@ function RatingStars({ rating }: { rating: number }) {
 function CarrierCard({
   carrier,
   onViewDetails,
+  index,
+  totalInRow = 3,
 }: {
   carrier: Carrier;
   onViewDetails: () => void;
+  index?: number;
+  totalInRow?: number;
 }) {
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  // Determine if this is in the rightmost column
+  const isRightmost = index !== undefined && (index % totalInRow) === (totalInRow - 1);
+  
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ y: -4 }}
-      className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-300"
+      className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all duration-300"
+      style={{ 
+        overflow: 'visible', 
+        position: 'relative',
+        zIndex: isDropdownOpen ? 9999 : 'auto'
+      }}
     >
       {/* Header */}
       <div className="p-4 border-b border-gray-100 dark:border-gray-700">
@@ -92,6 +105,7 @@ function CarrierCard({
             </div>
           </div>
           <Dropdown
+            align={isRightmost ? 'right' : 'left'}
             trigger={
               <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                 <MoreHorizontal className="h-4 w-4 text-gray-500" />
@@ -103,7 +117,9 @@ function CarrierCard({
             ]}
             onSelect={(value) => {
               if (value === 'view') onViewDetails();
+              setIsDropdownOpen(false);
             }}
+            onOpenChange={setIsDropdownOpen}
           />
         </div>
       </div>
@@ -202,13 +218,13 @@ function CarrierDetailsModal({
     <Modal isOpen={isOpen} onClose={onClose} title={carrier.name} size="xl">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 bg-linear-to-r from-blue-50 to-indigo-50 rounded-xl">
+        <div className="flex items-center justify-between p-4 bg-linear-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-xl bg-white flex items-center justify-center shadow-sm">
-              <Truck className="h-8 w-8 text-blue-600" />
+            <div className="h-16 w-16 rounded-xl bg-white dark:bg-gray-900 flex items-center justify-center shadow-sm border border-gray-100 dark:border-gray-700">
+              <Truck className="h-8 w-8 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">{carrier.name}</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{carrier.name}</h3>
               <RatingStars rating={carrier.rating} />
             </div>
           </div>
@@ -252,23 +268,23 @@ function CarrierDetailsModal({
         </div>
 
         {/* Shipment Stats */}
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <h4 className="font-medium text-gray-900 mb-4">Shipment Statistics</h4>
+        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-4">Shipment Statistics</h4>
           <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center justify-between p-3 bg-white rounded-lg">
-              <span className="text-sm text-gray-500">Active Shipments</span>
-              <span className="font-semibold text-gray-900">{formatNumber(carrier.activeShipments)}</span>
+            <div className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Active Shipments</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(carrier.activeShipments)}</span>
             </div>
-            <div className="flex items-center justify-between p-3 bg-white rounded-lg">
-              <span className="text-sm text-gray-500">Total Shipments</span>
-              <span className="font-semibold text-gray-900">{formatNumber(carrier.totalShipments)}</span>
+            <div className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Total Shipments</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(carrier.totalShipments)}</span>
             </div>
           </div>
         </div>
 
         {/* Services */}
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <h4 className="font-medium text-gray-900 mb-3">Available Services</h4>
+        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Available Services</h4>
           <div className="flex flex-wrap gap-2">
             {carrier.services.map((service) => (
               <Badge key={service} variant="info" className="capitalize">
@@ -279,34 +295,34 @@ function CarrierDetailsModal({
         </div>
 
         {/* Contact Information */}
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <h4 className="font-medium text-gray-900 mb-4">Contact Information</h4>
+        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-4">Contact Information</h4>
           <div className="grid grid-cols-3 gap-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <Phone className="h-5 w-5 text-blue-600" />
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                <Phone className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
-              <div>
-                <p className="text-xs text-gray-500">Phone</p>
-                <p className="text-sm font-medium text-gray-900">{carrier.contactPhone}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <Mail className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Email</p>
-                <p className="text-sm font-medium text-gray-900">{carrier.contactEmail}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Phone</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{carrier.contactPhone}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                <Globe className="h-5 w-5 text-purple-600" />
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+                <Mail className="h-5 w-5 text-green-600 dark:text-green-400" />
               </div>
-              <div>
-                <p className="text-xs text-gray-500">API Endpoint</p>
-                <p className="text-sm font-medium text-blue-600">{carrier.apiEndpoint || 'N/A'}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Email</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{carrier.contactEmail}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
+                <Globe className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400">API Endpoint</p>
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400 truncate">{carrier.apiEndpoint || 'N/A'}</p>
               </div>
             </div>
           </div>
@@ -589,10 +605,12 @@ export function CarriersPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {carriers
               .filter((c) => activeTab === 'all' || c.status === activeTab)
-              .map((carrier) => (
+              .map((carrier, index) => (
                 <CarrierCard
                   key={carrier.id}
                   carrier={carrier}
+                  index={index}
+                  totalInRow={3}
                   onViewDetails={() => {
                     setSelectedCarrier(carrier);
                     setIsDetailsOpen(true);

@@ -282,7 +282,7 @@ export function SLAManagementPage() {
                     <div key={v.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">{v.trackingNumber}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{v.policyName}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-300">{v.policyName}</p>
                       </div>
                       <span className="text-red-600 dark:text-red-400 font-medium">${v.penaltyAmount.toFixed(2)}</span>
                     </div>

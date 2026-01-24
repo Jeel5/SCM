@@ -17,9 +17,10 @@ interface DropdownProps {
   onSelect: (value: string) => void;
   align?: 'left' | 'right';
   className?: string;
+  onOpenChange?: (isOpen: boolean) => void;
 }
 
-export function Dropdown({ trigger, items, onSelect, align = 'left', className }: DropdownProps) {
+export function Dropdown({ trigger, items, onSelect, align = 'left', className, onOpenChange }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -27,16 +28,23 @@ export function Dropdown({ trigger, items, onSelect, align = 'left', className }
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        onOpenChange?.(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [onOpenChange]);
+
+  const handleToggle = () => {
+    const newState = !isOpen;
+    setIsOpen(newState);
+    onOpenChange?.(newState);
+  };
 
   return (
     <div ref={dropdownRef} className={cn('relative inline-block', className)}>
-      <div onClick={() => setIsOpen(!isOpen)} className="cursor-pointer">
+      <div onClick={handleToggle} className="cursor-pointer">
         {trigger}
       </div>
       <AnimatePresence>
@@ -47,9 +55,14 @@ export function Dropdown({ trigger, items, onSelect, align = 'left', className }
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.15, type: 'spring', damping: 25, stiffness: 300 }}
             className={cn(
-              'absolute z-50 mt-2 min-w-[180px] rounded-xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xl overflow-hidden',
+              'absolute z-[9999] mt-2 min-w-[180px] rounded-xl border shadow-2xl overflow-hidden',
               align === 'left' ? 'left-0' : 'right-0'
             )}
+            style={{ 
+              backgroundColor: 'var(--dropdown-bg, #ffffff)',
+              borderColor: 'var(--dropdown-border, #e5e7eb)',
+              zIndex: 9999,
+            }}
           >
             <div className="py-1">
               {items.map((item, index) => (
@@ -62,6 +75,7 @@ export function Dropdown({ trigger, items, onSelect, align = 'left', className }
                     if (!item.disabled) {
                       onSelect(item.value);
                       setIsOpen(false);
+                      onOpenChange?.(false);
                     }
                   }}
                   disabled={item.disabled}
