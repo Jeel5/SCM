@@ -17,6 +17,7 @@ import shipmentsRoutes from './routes/shipments.js';
 import slaRoutes from './routes/sla.js';
 import returnsRoutes from './routes/returns.js';
 import jobsRoutes from './routes/jobs.js';
+import financeRoutes from './routes/finance.js';
 
 app.use(helmet());
 app.use(
@@ -43,6 +44,7 @@ app.use(API_PREFIX, shipmentsRoutes);
 app.use(API_PREFIX, slaRoutes);
 app.use(API_PREFIX, returnsRoutes);
 app.use(API_PREFIX, jobsRoutes);
+app.use(API_PREFIX, financeRoutes);
 
 // 404 handler
 app.use((req, res) => {
