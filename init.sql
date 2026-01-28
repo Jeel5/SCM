@@ -368,6 +368,66 @@ CREATE TABLE invoices (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 13. Dead Letter Queue for Failed Jobs
+CREATE TABLE dead_letter_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  original_job_id UUID NOT NULL,
+  job_type VARCHAR(100) NOT NULL,
+  payload JSONB,
+  priority INTEGER,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL,
+  moved_to_dlq_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 14. Alert Rules and Alerts
+CREATE TABLE alert_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  rule_type VARCHAR(100) NOT NULL,
+  severity VARCHAR(50) NOT NULL DEFAULT 'medium',
+  message_template TEXT NOT NULL,
+  threshold INTEGER,
+  conditions JSONB,
+  assigned_users UUID[],
+  assigned_roles VARCHAR(50)[],
+  escalation_enabled BOOLEAN DEFAULT false,
+  escalation_delay_minutes INTEGER DEFAULT 15,
+  is_active BOOLEAN DEFAULT true,
+  priority INTEGER DEFAULT 5,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rule_id UUID REFERENCES alert_rules(id),
+  rule_name VARCHAR(255),
+  alert_type VARCHAR(100),
+  severity VARCHAR(50),
+  message TEXT,
+  data JSONB,
+  status VARCHAR(50) DEFAULT 'pending',
+  triggered_at TIMESTAMPTZ DEFAULT NOW(),
+  acknowledged_by UUID REFERENCES users(id),
+  acknowledged_at TIMESTAMPTZ,
+  resolved_by UUID REFERENCES users(id),
+  resolved_at TIMESTAMPTZ,
+  resolution TEXT
+);
+
+-- 15. User Settings
+CREATE TABLE user_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  notification_preferences JSONB DEFAULT '{}',
+  ui_preferences JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Indexes for Performance
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_created_at ON orders(created_at);
@@ -391,6 +451,18 @@ CREATE INDEX idx_sla_violations_violated_at ON sla_violations(violated_at);
 CREATE INDEX idx_sla_violations_resolved_at ON sla_violations(resolved_at);
 CREATE INDEX idx_exceptions_priority ON exceptions(priority, status);
 CREATE INDEX idx_exceptions_escalation ON exceptions(escalation_level);
+
+-- Dead Letter Queue Indexes
+CREATE INDEX idx_dead_letter_queue_job_type ON dead_letter_queue(job_type);
+CREATE INDEX idx_dead_letter_queue_created_at ON dead_letter_queue(created_at);
+
+-- Alert System Indexes
+CREATE INDEX idx_alert_rules_active ON alert_rules(is_active);
+CREATE INDEX idx_alert_rules_type ON alert_rules(rule_type);
+CREATE INDEX idx_alerts_status ON alerts(status);
+CREATE INDEX idx_alerts_severity ON alerts(severity);
+CREATE INDEX idx_alerts_triggered_at ON alerts(triggered_at);
+CREATE INDEX idx_user_settings_user_id ON user_settings(user_id);
 
 BEGIN;
 

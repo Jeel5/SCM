@@ -404,5 +404,139 @@ export const jobsService = {
        WHERE id = $2`,
       [nextRun, scheduleId]
     );
+  },
+
+  // Dead Letter Queue Management
+  async moveToDeadLetterQueue(jobId, errorMessage) {
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      // Get the job details
+      const jobResult = await client.query(
+        'SELECT * FROM background_jobs WHERE id = $1',
+        [jobId]
+      );
+      
+      if (jobResult.rows.length === 0) {
+        throw new Error('Job not found');
+      }
+      
+      const job = jobResult.rows[0];
+      
+      // Insert into dead letter queue
+      await client.query(
+        `INSERT INTO dead_letter_queue 
+         (original_job_id, job_type, payload, priority, error_message, retry_count, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          job.id,
+          job.job_type,
+          job.payload,
+          job.priority,
+          errorMessage,
+          job.retry_count,
+          job.created_at
+        ]
+      );
+      
+      // Update job status
+      await client.query(
+        `UPDATE background_jobs 
+         SET status = 'dead_letter', error_message = $2, updated_at = NOW()
+         WHERE id = $1`,
+        [jobId, errorMessage]
+      );
+      
+      await client.query('COMMIT');
+      
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  async getDeadLetterQueue(page = 1, limit = 20) {
+    const offset = (page - 1) * limit;
+    
+    const result = await pool.query(
+      `SELECT * FROM dead_letter_queue
+       ORDER BY created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    
+    const countResult = await pool.query('SELECT COUNT(*) FROM dead_letter_queue');
+    const totalCount = parseInt(countResult.rows[0].count);
+    
+    return {
+      jobs: result.rows,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit)
+      }
+    };
+  },
+
+  async retryFromDeadLetterQueue(dlqId) {
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      // Get the dead letter job
+      const dlqResult = await client.query(
+        'SELECT * FROM dead_letter_queue WHERE id = $1',
+        [dlqId]
+      );
+      
+      if (dlqResult.rows.length === 0) {
+        throw new Error('Dead letter job not found');
+      }
+      
+      const dlqJob = dlqResult.rows[0];
+      
+      // Create a new job
+      const newJobResult = await client.query(
+        `INSERT INTO background_jobs 
+         (job_type, payload, priority, status)
+         VALUES ($1, $2, $3, 'pending')
+         RETURNING *`,
+        [dlqJob.job_type, dlqJob.payload, dlqJob.priority]
+      );
+      
+      // Remove from dead letter queue
+      await client.query(
+        'DELETE FROM dead_letter_queue WHERE id = $1',
+        [dlqId]
+      );
+      
+      await client.query('COMMIT');
+      
+      return newJobResult.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  async purgeDeadLetterQueue(olderThanDays = 30) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+    
+    const result = await pool.query(
+      'DELETE FROM dead_letter_queue WHERE created_at < $1',
+      [cutoffDate]
+    );
+    
+    return result.rowCount;
   }
 };

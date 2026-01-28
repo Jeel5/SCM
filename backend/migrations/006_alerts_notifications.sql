@@ -1,0 +1,66 @@
+-- Alert Rules and Alerts Tables
+-- Migration: 006_alerts_notifications.sql
+
+-- Alert Rules Table
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  rule_type VARCHAR(100) NOT NULL, -- sla_breach, exception_critical, inventory_low_stock, etc.
+  severity VARCHAR(50) NOT NULL DEFAULT 'medium', -- low, medium, high, critical
+  message_template TEXT NOT NULL,
+  threshold INTEGER,
+  conditions JSONB, -- Additional rule conditions
+  assigned_users UUID[],
+  assigned_roles VARCHAR(50)[],
+  escalation_enabled BOOLEAN DEFAULT false,
+  escalation_delay_minutes INTEGER DEFAULT 15,
+  is_active BOOLEAN DEFAULT true,
+  priority INTEGER DEFAULT 5,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Alerts Table (Triggered alerts)
+CREATE TABLE IF NOT EXISTS alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rule_id UUID REFERENCES alert_rules(id),
+  rule_name VARCHAR(255),
+  alert_type VARCHAR(100),
+  severity VARCHAR(50),
+  message TEXT,
+  data JSONB,
+  status VARCHAR(50) DEFAULT 'pending', -- pending, acknowledged, resolved, dismissed
+  triggered_at TIMESTAMPTZ DEFAULT NOW(),
+  acknowledged_by UUID REFERENCES users(id),
+  acknowledged_at TIMESTAMPTZ,
+  resolved_by UUID REFERENCES users(id),
+  resolved_at TIMESTAMPTZ,
+  resolution TEXT
+);
+
+-- User Settings Table (for notification preferences)
+CREATE TABLE IF NOT EXISTS user_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  notification_preferences JSONB DEFAULT '{}',
+  ui_preferences JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Add indexes
+CREATE INDEX IF NOT EXISTS idx_alert_rules_active ON alert_rules(is_active);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_type ON alert_rules(rule_type);
+CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_alerts_triggered_at ON alerts(triggered_at);
+CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
+
+-- Comments
+COMMENT ON TABLE alert_rules IS 'Configurable alert rules for system monitoring';
+COMMENT ON TABLE alerts IS 'Triggered alerts from alert rules';
+COMMENT ON TABLE user_settings IS 'User-specific settings and preferences';
+COMMENT ON COLUMN alert_rules.threshold IS 'Numeric threshold for triggering the alert';
+COMMENT ON COLUMN alert_rules.conditions IS 'JSON object with additional rule conditions';
+COMMENT ON COLUMN alerts.data IS 'Additional context data for the alert';

@@ -240,3 +240,59 @@ export async function deleteCronSchedule(req, res) {
     res.status(500).json({ error: 'Failed to delete cron schedule' });
   }
 }
+
+// Dead Letter Queue Management
+export async function getDeadLetterQueue(req, res) {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    
+    const result = await jobsService.getDeadLetterQueue(parseInt(page), parseInt(limit));
+    
+    res.json({
+      success: true,
+      data: result.jobs,
+      pagination: result.pagination
+    });
+  } catch (error) {
+    console.error('Get dead letter queue error:', error);
+    res.status(500).json({ error: 'Failed to fetch dead letter queue' });
+  }
+}
+
+export async function retryFromDeadLetterQueue(req, res) {
+  try {
+    const { id } = req.params;
+    
+    const job = await jobsService.retryFromDeadLetterQueue(id);
+    
+    res.json({
+      success: true,
+      data: job,
+      message: 'Job moved back to queue for retry'
+    });
+  } catch (error) {
+    console.error('Retry from DLQ error:', error);
+    
+    if (error.message === 'Dead letter job not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to retry job from dead letter queue' });
+  }
+}
+
+export async function purgeDeadLetterQueue(req, res) {
+  try {
+    const { older_than_days = 30 } = req.query;
+    
+    const deletedCount = await jobsService.purgeDeadLetterQueue(parseInt(older_than_days));
+    
+    res.json({
+      success: true,
+      message: `Purged ${deletedCount} jobs from dead letter queue`
+    });
+  } catch (error) {
+    console.error('Purge dead letter queue error:', error);
+    res.status(500).json({ error: 'Failed to purge dead letter queue' });
+  }
+}

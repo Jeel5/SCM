@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import { errorHandler, notFoundHandler } from './errors/index.js';
 import { requestLogger, requestId, slowRequestLogger } from './middlewares/requestLogger.js';
 import logger from './utils/logger.js';
+import { jobWorker } from './workers/jobWorker.js';
+import { cronScheduler } from './workers/cronScheduler.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -69,10 +71,70 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server and listen on specified port
-app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
 	logger.info(`🚀 Server running on http://localhost:${PORT}`);
 	logger.info(`📚 API available at http://localhost:${PORT}${API_PREFIX}`);
-	logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
-	// ✅ Error handling is in place
-	// ✅ Frontend can now make requests to our API!
+	logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+	
+	// Start background job worker
+	try {
+		await jobWorker.start();
+		logger.info('✅ Job Worker initialized');
+	} catch (error) {
+		logger.error('Failed to start Job Worker:', error);
+	}
+	
+	// Start cron scheduler
+	try {
+		await cronScheduler.start();
+		logger.info('✅ Cron Scheduler initialized');
+	} catch (error) {
+		logger.error('Failed to start Cron Scheduler:', error);
+	}
+});
+
+// Graceful shutdown handler
+process.on('SIGTERM', async () => {
+	logger.info('SIGTERM received, shutting down gracefully...');
+	
+	// Stop accepting new requests
+	server.close(() => {
+		logger.info('HTTP server closed');
+	});
+	
+	// Stop workers
+	await Promise.all([
+		jobWorker.stop(),
+		cronScheduler.stop()
+	]);
+	
+	// Exit process
+	process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+	logger.info('SIGINT received, shutting down gracefully...');
+	
+	server.close(() => {
+		logger.info('HTTP server closed');
+	});
+	
+	await Promise.all([
+		jobWorker.stop(),
+		cronScheduler.stop()
+	]);
+	
+	process.exit(0);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+	logger.error('Uncaught Exception:', error);
+	process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+	logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+	process.exit(1);
 });

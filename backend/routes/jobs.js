@@ -10,7 +10,10 @@ import {
   listCronSchedules,
   createCronSchedule,
   updateCronSchedule,
-  deleteCronSchedule
+  deleteCronSchedule,
+  getDeadLetterQueue,
+  retryFromDeadLetterQueue,
+  purgeDeadLetterQueue
 } from '../controllers/jobsController.js';
 import { getDashboardStats } from '../controllers/dashboardController.js';
 import { getAnalytics } from '../controllers/analyticsController.js';
@@ -32,6 +35,11 @@ router.get('/cron', authenticate, authorize('jobs:read'), listCronSchedules);
 router.post('/cron', authenticate, authorize('jobs:create'), createCronSchedule);
 router.patch('/cron/:id', authenticate, authorize('jobs:update'), updateCronSchedule);
 router.delete('/cron/:id', authenticate, authorize('jobs:delete'), deleteCronSchedule);
+
+// Dead Letter Queue
+router.get('/dead-letter-queue', authenticate, authorize('jobs:read'), getDeadLetterQueue);
+router.post('/dead-letter-queue/:id/retry', authenticate, authorize('jobs:update'), retryFromDeadLetterQueue);
+router.delete('/dead-letter-queue/purge', authenticate, authorize('jobs:delete'), purgeDeadLetterQueue);
 
 // Dashboard & Analytics
 router.get('/dashboard/stats', authenticate, authorize('dashboard:read'), getDashboardStats);
