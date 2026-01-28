@@ -1,6 +1,7 @@
+// Master Data Management (MDM) Controller - handles warehouses, carriers, products
 import pool from '../configs/db.js';
 
-// ========== WAREHOUSES ==========
+// Get warehouses list with filters
 export async function listWarehouses(req, res) {
   try {
     const { is_active, search } = req.query;

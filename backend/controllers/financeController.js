@@ -1,6 +1,7 @@
+// Finance Controller - handles invoices, refunds, disputes, and financial reporting
 import db from '../configs/db.js';
 
-// GET /api/finance/invoices - Get all invoices with pagination
+// Get invoices list with pagination and filters
 export const getInvoices = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;

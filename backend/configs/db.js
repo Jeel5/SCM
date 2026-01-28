@@ -5,6 +5,7 @@ dotenv.config();
 
 const { Pool } = pg;
 
+// PostgreSQL connection pool - manages database connections
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
@@ -16,10 +17,12 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
+// Log unexpected errors from idle database connections
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
 });
 
+// Test database connection on startup
 export async function testConnection() {
   try {
     const client = await pool.connect();

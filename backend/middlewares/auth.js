@@ -1,6 +1,7 @@
 import { verifyAccessToken } from '../utils/jwt.js';
 import pool from '../configs/db.js';
 
+// Middleware to verify JWT token and attach user info to request
 export async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -30,6 +31,7 @@ export async function authenticate(req, res, next) {
   }
 }
 
+// Middleware factory to check if user has required role(s)
 export function authorize(...roles) {
   return (req, res, next) => {
     if (!req.user) {

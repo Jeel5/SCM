@@ -1,6 +1,7 @@
+// Inventory Controller - handles HTTP requests for inventory management
 import pool from '../configs/db.js';
 
-// List inventory
+// Get inventory list with filters and pagination
 export async function getInventory(req, res) {
   try {
     const { warehouse_id, product_id, low_stock, search, page = 1, limit = 20 } = req.query;
@@ -72,10 +73,12 @@ export async function getInventory(req, res) {
     
     res.json({
       data: inventory,
-      total,
-      page: parseInt(page),
-      pageSize: parseInt(limit),
-      totalPages: Math.ceil(total / limit)
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
     });
   } catch (error) {
     console.error('Get inventory error:', error);

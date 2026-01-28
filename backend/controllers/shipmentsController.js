@@ -1,6 +1,7 @@
+// Shipments Controller - handles HTTP requests for shipment tracking
 import pool from '../configs/db.js';
 
-// List shipments
+// Get shipments list with filters and pagination
 export async function listShipments(req, res) {
   try {
     const { status, carrier_id, search, page = 1, limit = 20 } = req.query;

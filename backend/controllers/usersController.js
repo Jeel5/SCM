@@ -1,8 +1,9 @@
 import bcrypt from 'bcrypt';
 import pool from '../configs/db.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
+import { settingsService } from '../services/settingsService.js';
 
-// Login with email/password
+// Login - verifies credentials and returns JWT tokens
 export async function login(req, res) {
   try {
     const { email, password } = req.body;
@@ -36,6 +37,7 @@ export async function login(req, res) {
     // Ensure password is a string
     const passwordString = String(password);
     const passwordHash = String(user.password_hash);
+    console.log(passwordString, passwordHash)
     
     const isValid = await bcrypt.compare(passwordString, passwordHash);
     console.log('Password valid:', isValid);
@@ -236,3 +238,141 @@ export async function logout(req, res) {
     res.json({ success: true, data: null });
   }
 }
+
+// Update user profile (name, email, company, phone)
+export async function updateProfile(req, res) {
+  try {
+    const userId = req.user.userId;
+    const updates = req.body;
+    
+    const updatedUser = await settingsService.updateUserProfile(userId, updates);
+    
+    res.json({
+      success: true,
+      data: updatedUser
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    
+    if (error.message === 'Email already in use') {
+      return res.status(400).json({ error: error.message });
+    }
+    if (error.message === 'No valid fields to update') {
+      return res.status(400).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+}
+
+// Change password
+export async function changePassword(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new passwords are required' });
+    }
+    
+    await settingsService.changePassword(userId, currentPassword, newPassword);
+    
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    
+    if (error.message === 'Current password is incorrect') {
+      return res.status(400).json({ error: error.message });
+    }
+    if (error.message === 'New password must be at least 8 characters long') {
+      return res.status(400).json({ error: error.message });
+    }
+    if (error.message === 'User not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+}
+
+// Get notification preferences
+export async function getNotificationPreferences(req, res) {
+  try {
+    const userId = req.user.userId;
+    const preferences = await settingsService.getNotificationPreferences(userId);
+    
+    res.json({
+      success: true,
+      data: preferences
+    });
+  } catch (error) {
+    console.error('Get notification preferences error:', error);
+    res.status(500).json({ error: 'Failed to get notification preferences' });
+  }
+}
+
+// Update notification preferences
+export async function updateNotificationPreferences(req, res) {
+  try {
+    const userId = req.user.userId;
+    const preferences = req.body;
+    
+    const updated = await settingsService.updateNotificationPreferences(userId, preferences);
+    
+    res.json({
+      success: true,
+      data: updated
+    });
+  } catch (error) {
+    console.error('Update notification preferences error:', error);
+    
+    if (error.message === 'No valid preferences to update') {
+      return res.status(400).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to update notification preferences' });
+  }
+}
+
+// Get active sessions
+export async function getActiveSessions(req, res) {
+  try {
+    const userId = req.user.userId;
+    const sessions = await settingsService.getActiveSessions(userId);
+    
+    res.json({
+      success: true,
+      data: sessions
+    });
+  } catch (error) {
+    console.error('Get active sessions error:', error);
+    res.status(500).json({ error: 'Failed to get active sessions' });
+  }
+}
+
+// Revoke session
+export async function revokeSession(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { sessionId } = req.params;
+    
+    await settingsService.revokeSession(userId, sessionId);
+    
+    res.json({
+      success: true,
+      message: 'Session revoked successfully'
+    });
+  } catch (error) {
+    console.error('Revoke session error:', error);
+    
+    if (error.message === 'Session not found or does not belong to user') {
+      return res.status(404).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to revoke session' });
+  }
+}
+

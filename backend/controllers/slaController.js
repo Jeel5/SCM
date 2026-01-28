@@ -1,5 +1,7 @@
+// SLA Controller - handles service level agreements, ETAs, and violations
 import pool from '../configs/db.js';
 
+// Get list of active SLA policies
 export async function listSlaPolicies(req, res) {
   try {
     const result = await pool.query(
@@ -70,7 +72,7 @@ export async function getSlaViolations(req, res) {
       SELECT sv.*, s.tracking_number, sp.name as policy_name
       FROM sla_violations sv
       JOIN shipments s ON sv.shipment_id = s.id
-      JOIN sla_policies sp ON sv.policy_id = sp.id
+      JOIN sla_policies sp ON sv.sla_policy_id = sp.id
       WHERE 1=1
     `;
     const params = [];
@@ -95,10 +97,10 @@ export async function getSlaViolations(req, res) {
         id: v.id,
         shipmentId: v.shipment_id,
         trackingNumber: v.tracking_number,
-        policyId: v.policy_id,
+        policyId: v.sla_policy_id,
         policyName: v.policy_name,
         status: v.status,
-        violationReason: v.violation_reason,
+        violationReason: v.reason,
         penaltyAmount: parseFloat(v.penalty_amount),
         violatedAt: v.violated_at,
         resolvedAt: v.resolved_at
@@ -121,7 +123,7 @@ export async function getSlaDashboard(req, res) {
     const complianceResult = await pool.query(`
       SELECT 
         COUNT(*) as total_shipments,
-        COUNT(CASE WHEN s.actual_delivery <= s.estimated_delivery THEN 1 END) as on_time
+        COUNT(CASE WHEN s.delivery_actual <= s.delivery_scheduled THEN 1 END) as on_time
       FROM shipments s
       WHERE s.status = 'delivered'
         AND s.created_at >= NOW() - INTERVAL '30 days'

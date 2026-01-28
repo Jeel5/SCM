@@ -1,3 +1,4 @@
+// Master Data Management routes - warehouses, carriers, products, policies
 import express from 'express';
 import { 
   listWarehouses, getWarehouse, createWarehouse,

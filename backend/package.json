@@ -33,6 +33,7 @@
     "rate-limiter-flexible": "^9.0.1",
     "sequelize": "^6.37.7",
     "sequelize-cli": "^6.6.3",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0"
   }
 }

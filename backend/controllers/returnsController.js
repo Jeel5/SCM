@@ -1,5 +1,7 @@
+// Returns Controller - handles HTTP requests for product returns
 import pool from '../configs/db.js';
 
+// Get returns list with filters and pagination
 export async function listReturns(req, res) {
   try {
     const { page = 1, limit = 20, status, reason } = req.query;

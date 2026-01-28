@@ -1,19 +1,23 @@
+// Jobs, dashboard, and analytics routes - background tasks and metrics
 import express from 'express';
-import { listJobs, getJob, createJob, cancelJob, retryJob, getJobStats, getDashboardStats, getAnalytics } from '../controllers/jobsController.js';
+import { listJobs, getJob, createJob, cancelJob, retryJob, getJobStats } from '../controllers/jobsController.js';
+import { getDashboardStats } from '../controllers/dashboardController.js';
+import { getAnalytics } from '../controllers/analyticsController.js';
 import { authenticate } from '../middlewares/auth.js';
+import { authorize } from '../middlewares/rbac.js';
 
 const router = express.Router();
 
 // Jobs
-router.get('/jobs', authenticate, listJobs);
-router.get('/jobs/stats', authenticate, getJobStats);
-router.get('/jobs/:id', authenticate, getJob);
-router.post('/jobs', authenticate, createJob);
-router.post('/jobs/:id/cancel', authenticate, cancelJob);
-router.post('/jobs/:id/retry', authenticate, retryJob);
+router.get('/jobs', authenticate, authorize('jobs:read'), listJobs);
+router.get('/jobs/stats', authenticate, authorize('jobs:read'), getJobStats);
+router.get('/jobs/:id', authenticate, authorize('jobs:read'), getJob);
+router.post('/jobs', authenticate, authorize('jobs:create'), createJob);
+router.post('/jobs/:id/cancel', authenticate, authorize('jobs:update'), cancelJob);
+router.post('/jobs/:id/retry', authenticate, authorize('jobs:update'), retryJob);
 
 // Dashboard & Analytics
-router.get('/dashboard/stats', authenticate, getDashboardStats);
-router.get('/analytics', authenticate, getAnalytics);
+router.get('/dashboard/stats', authenticate, authorize('dashboard:read'), getDashboardStats);
+router.get('/analytics', authenticate, authorize('analytics:read'), getAnalytics);
 
 export default router;

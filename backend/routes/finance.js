@@ -1,3 +1,4 @@
+// Finance routes - invoices, refunds, disputes, financial summaries
 import express from 'express';
 import {
   getInvoices,
