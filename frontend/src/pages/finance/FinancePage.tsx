@@ -1,73 +1,11 @@
-import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { DollarSign, CreditCard, TrendingUp, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Button, DataTable } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
-import { mockApi } from '@/api/mockData';
-
-interface FinanceData {
-  outstandingInvoices: number;
-  refundsProcessed: number;
-  disputes: number;
-  payoutStatus: string;
-  invoices: Array<{
-    id: string;
-    invoiceNumber: string;
-    carrier: string;
-    amount: number;
-    status: string;
-    dueDate: string;
-  }>;
-  refunds: Array<{
-    id: string;
-    orderNumber: string;
-    amount: number;
-    status: string;
-    processedAt: string;
-  }>;
-}
+import { useFinance } from './hooks/useFinance';
 
 export function FinancePage() {
-  const [data, setData] = useState<FinanceData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      const useMock = localStorage.getItem('useMockApi') === 'true';
-
-      try {
-        if (useMock) {
-          const response = await mockApi.getFinanceData();
-          setData(response.data);
-        } else {
-          // Real API would go here - for now show empty state
-          setData({
-            outstandingInvoices: 0,
-            refundsProcessed: 0,
-            disputes: 0,
-            payoutStatus: 'No payouts scheduled',
-            invoices: [],
-            refunds: [],
-          });
-        }
-      } catch (error) {
-        console.error('Failed to fetch finance data:', error);
-        setData({
-          outstandingInvoices: 0,
-          refundsProcessed: 0,
-          disputes: 0,
-          payoutStatus: 'No payouts scheduled',
-          invoices: [],
-          refunds: [],
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  const { data, isLoading } = useFinance();
 
   const summaryCards = data
     ? [

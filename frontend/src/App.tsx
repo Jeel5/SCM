@@ -10,20 +10,20 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { useAuthStore, useUIStore } from '@/stores';
 
 // Lazy load all pages for code splitting
-const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(m => ({ default: m.LoginPage })));
-const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const OrdersPage = lazy(() => import('@/pages/orders/OrdersPage').then(m => ({ default: m.OrdersPage })));
-const ShipmentsPage = lazy(() => import('@/pages/shipments/ShipmentsPage').then(m => ({ default: m.ShipmentsPage })));
-const InventoryPage = lazy(() => import('@/pages/inventory/InventoryPage').then(m => ({ default: m.InventoryPage })));
-const WarehousesPage = lazy(() => import('@/pages/warehouses/WarehousesPage').then(m => ({ default: m.WarehousesPage })));
-const CarriersPage = lazy(() => import('@/pages/carriers/CarriersPage').then(m => ({ default: m.CarriersPage })));
-const ExceptionsPage = lazy(() => import('@/pages/exceptions/ExceptionsPage').then(m => ({ default: m.ExceptionsPage })));
-const ReturnsPage = lazy(() => import('@/pages/returns/ReturnsPage').then(m => ({ default: m.ReturnsPage })));
-const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
-const SLAManagementPage = lazy(() => import('@/pages/sla/SLAManagementPage').then(m => ({ default: m.SLAManagementPage })));
-const FinancePage = lazy(() => import('@/pages/finance/FinancePage').then(m => ({ default: m.FinancePage })));
-const HelpSupportPage = lazy(() => import('@/pages/help/HelpSupportPage').then(m => ({ default: m.HelpSupportPage })));
-const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const LoginPage = lazy(() => import('@/pages/auth').then(m => ({ default: m.LoginPage })));
+const DashboardPage = lazy(() => import('@/pages/dashboard').then(m => ({ default: m.DashboardPage })));
+const OrdersPage = lazy(() => import('@/pages/orders').then(m => ({ default: m.OrdersPage })));
+const ShipmentsPage = lazy(() => import('@/pages/shipments').then(m => ({ default: m.ShipmentsPage })));
+const InventoryPage = lazy(() => import('@/pages/inventory').then(m => ({ default: m.InventoryPage })));
+const WarehousesPage = lazy(() => import('@/pages/warehouses').then(m => ({ default: m.WarehousesPage })));
+const CarriersPage = lazy(() => import('@/pages/carriers').then(m => ({ default: m.CarriersPage })));
+const ExceptionsPage = lazy(() => import('@/pages/exceptions').then(m => ({ default: m.ExceptionsPage })));
+const ReturnsPage = lazy(() => import('@/pages/returns').then(m => ({ default: m.ReturnsPage })));
+const AnalyticsPage = lazy(() => import('@/pages/analytics').then(m => ({ default: m.AnalyticsPage })));
+const SLAManagementPage = lazy(() => import('@/pages/sla').then(m => ({ default: m.SLAManagementPage })));
+const FinancePage = lazy(() => import('@/pages/finance').then(m => ({ default: m.FinancePage })));
+const HelpSupportPage = lazy(() => import('@/pages/help').then(m => ({ default: m.HelpSupportPage })));
+const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })));
 
 // Query client configuration
 const queryClient = new QueryClient({

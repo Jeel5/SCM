@@ -1,81 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Timer, AlertTriangle, CheckCircle, Clock, Download, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Button, Tabs, DataTable, StatusBadge } from '@/components/ui';
-import { formatDate, formatPercentage, cn } from '@/lib/utils';
-import { slaApi } from '@/api/services';
-import { mockApi } from '@/api/mockData';
+import { formatDate, formatPercentage } from '@/lib/utils';
 import type { SLAPolicy, SLAViolation } from '@/types';
+import { useSLA } from './hooks/useSLA';
 
 export function SLAManagementPage() {
-  const [policies, setPolicies] = useState<SLAPolicy[]>([]);
-  const [violations, setViolations] = useState<SLAViolation[]>([]);
-  const [dashboardData, setDashboardData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-  const [page, setPage] = useState(1);
+  const [page, _setPage] = useState(1);
   const pageSize = 10;
+  const { policies, violations, dashboardData, isLoading } = useSLA(page, pageSize);
 
+  // Tab badges reflect current counts
   const tabs = [
     { id: 'overview', label: 'Overview' },
-    { id: 'policies', label: 'Policies' },
-    { id: 'violations', label: 'Violations' },
+    { id: 'policies', label: 'Policies', count: policies.length },
+    { id: 'violations', label: 'Violations', count: violations.length },
   ];
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      const useMock = localStorage.getItem('useMockApi') === 'true';
-
-      try {
-        if (useMock) {
-          const [policiesRes, violationsRes] = await Promise.all([
-            mockApi.getSLAPolicies(),
-            mockApi.getSLAViolations(page, pageSize),
-          ]);
-          setPolicies(policiesRes.data);
-          setViolations(violationsRes.data);
-          setDashboardData({
-            overallCompliance: 94.5,
-            totalShipments: 1250,
-            onTimeDeliveries: 1182,
-            violations: { pending: 12, resolved: 45, waived: 11 },
-            topCarriers: [],
-          });
-        } else {
-          const [policiesRes, violationsRes, dashRes] = await Promise.all([
-            slaApi.getSLAPolicies(),
-            slaApi.getSLAViolations(page, pageSize),
-            slaApi.getSLADashboard(),
-          ]);
-          setPolicies(policiesRes.data || []);
-          setViolations(violationsRes.data || []);
-          setDashboardData(dashRes.data || {
-            overallCompliance: 0,
-            totalShipments: 0,
-            onTimeDeliveries: 0,
-            violations: { pending: 0, resolved: 0, waived: 0 },
-            topCarriers: [],
-          });
-        }
-      } catch (error) {
-        console.error('Failed to fetch SLA data:', error);
-        setPolicies([]);
-        setViolations([]);
-        setDashboardData({
-          overallCompliance: 0,
-          totalShipments: 0,
-          onTimeDeliveries: 0,
-          violations: { pending: 0, resolved: 0, waived: 0 },
-          topCarriers: [],
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [page]);
 
   const policyColumns = [
     {
@@ -118,7 +60,7 @@ export function SLAManagementPage() {
       header: 'Violation',
       render: (violation: SLAViolation) => (
         <div>
-          <p className="font-medium text-gray-900 dark:text-white">{violation.trackingNumber}</p>
+          <p className="font-medium text-gray-900 dark:text-white">{violation.shipmentId}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">{violation.policyName}</p>
         </div>
       ),
@@ -127,7 +69,7 @@ export function SLAManagementPage() {
       key: 'reason',
       header: 'Reason',
       render: (violation: SLAViolation) => (
-        <span className="text-gray-700 dark:text-gray-200">{violation.violationReason || 'Late delivery'}</span>
+        <span className="text-gray-700 dark:text-gray-200">{violation.rootCause || 'Late delivery'}</span>
       ),
     },
     {
@@ -141,7 +83,7 @@ export function SLAManagementPage() {
       key: 'violatedAt',
       header: 'Violated At',
       render: (violation: SLAViolation) => (
-        <span className="text-gray-500 dark:text-gray-400">{formatDate(violation.violatedAt)}</span>
+        <span className="text-gray-500 dark:text-gray-400">{formatDate(violation.createdAt)}</span>
       ),
     },
     {
@@ -281,7 +223,7 @@ export function SLAManagementPage() {
                   {violations.slice(0, 5).map((v) => (
                     <div key={v.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{v.trackingNumber}</p>
+                        <p className="font-medium text-gray-900 dark:text-white">{v.shipmentId}</p>
                         <p className="text-sm text-gray-500 dark:text-gray-300">{v.policyName}</p>
                       </div>
                       <span className="text-red-600 dark:text-red-400 font-medium">${v.penaltyAmount.toFixed(2)}</span>

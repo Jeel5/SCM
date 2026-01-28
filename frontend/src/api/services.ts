@@ -261,7 +261,7 @@ export const exceptionsApi = {
 // ==================== DASHBOARD & ANALYTICS ====================
 export const dashboardApi = {
   async getDashboardStats(): Promise<ApiResponse<DashboardMetrics>> {
-    const response = await get<{ success: boolean; data: DashboardStats }>('/dashboard/stats');
+    const response = await get<{ success: boolean; data: any }>('/dashboard/stats');
     // Transform backend response to match frontend DashboardMetrics type
     const data = response.data || {};
     return {

@@ -1,148 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import {
-  AlertTriangle,
-  AlertCircle,
-  Clock,
-  CheckCircle2,
-  Eye,
-  MessageSquare,
-  Download,
-  RefreshCw,
-} from 'lucide-react';
-import {
-  Card,
-  Button,
-  DataTable,
-  StatusBadge,
-  SeverityBadge,
-  Modal,
-  Tabs,
-} from '@/components/ui';
-import { formatDate, formatRelativeTime, cn } from '@/lib/utils';
-import { exceptionsApi } from '@/api/services';
-import { mockApi } from '@/api/mockData';
+import { AlertTriangle, AlertCircle, Clock, CheckCircle2, Eye, Download, RefreshCw } from 'lucide-react';
+import { Card, Button, DataTable, StatusBadge, SeverityBadge, Tabs } from '@/components/ui';
+import { formatRelativeTime, cn } from '@/lib/utils';
 import type { Exception } from '@/types';
-
-// Exception Details Modal
-function ExceptionDetailsModal({
-  exception,
-  isOpen,
-  onClose,
-}: {
-  exception: Exception | null;
-  isOpen: boolean;
-  onClose: () => void;
-}) {
-  if (!exception) return null;
-
-  const severityColors = {
-    low: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300',
-    medium: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-300',
-    high: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300',
-    critical: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300',
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Exception Details" size="lg">
-      <div className="space-y-6">
-        {/* Header */}
-        <div
-          className={cn(
-            'p-4 rounded-xl border',
-            severityColors[exception.severity]
-          )}
-        >
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-6 w-6" />
-              <div>
-                <h3 className="font-semibold capitalize">
-                  {exception.type.replace('_', ' ')} Exception
-                </h3>
-                <p className="text-sm mt-1">{exception.description}</p>
-              </div>
-            </div>
-            <SeverityBadge severity={exception.severity} />
-          </div>
-        </div>
-
-        {/* Info Grid */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
-            <div className="mt-1">
-              <StatusBadge status={exception.status} />
-            </div>
-          </div>
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Created</p>
-            <p className="font-medium text-gray-900 dark:text-white">{formatDate(exception.createdAt)}</p>
-          </div>
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Order ID</p>
-            <p className="font-medium text-gray-900 dark:text-white">{exception.orderId}</p>
-          </div>
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Shipment ID</p>
-            <p className="font-medium text-gray-900 dark:text-white">{exception.shipmentId || 'N/A'}</p>
-          </div>
-        </div>
-
-        {/* Resolution */}
-        {exception.resolution && (
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
-            <div className="flex items-center gap-2 text-green-700 dark:text-green-300 mb-2">
-              <CheckCircle2 className="h-5 w-5" />
-              <span className="font-medium">Resolution</span>
-            </div>
-            <p className="text-green-700 dark:text-green-300">{exception.resolution}</p>
-            {exception.resolvedAt && (
-              <p className="text-sm text-green-600 dark:text-green-400 mt-2">
-                Resolved: {formatDate(exception.resolvedAt)}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Actions */}
-        {exception.status !== 'resolved' && (
-          <div className="flex items-center gap-3">
-            <Button variant="primary" className="flex-1" leftIcon={<CheckCircle2 className="h-4 w-4" />}>
-              Mark as Resolved
-            </Button>
-            <Button variant="outline" className="flex-1" leftIcon={<MessageSquare className="h-4 w-4" />}>
-              Add Note
-            </Button>
-          </div>
-        )}
-      </div>
-    </Modal>
-  );
-}
+import { ExceptionDetailsModal } from './components/ExceptionDetailsModal';
+import { useExceptions } from './hooks/useExceptions';
 
 // Main Exceptions Page
 export function ExceptionsPage() {
-  const [exceptions, setExceptions] = useState<Exception[]>([]);
-  const [totalExceptions, setTotalExceptions] = useState(0);
   const [page, setPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
+  const pageSize = 10;
+  const { exceptions, totalExceptions, isLoading } = useExceptions(page, pageSize);
   const [selectedException, setSelectedException] = useState<Exception | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
-
-  const pageSize = 10;
 
   // Calculate stats
   const criticalCount = exceptions.filter((e) => e.severity === 'critical').length;
   const openCount = exceptions.filter((e) => e.status === 'open').length;
   const resolvedCount = exceptions.filter((e) => e.status === 'resolved').length;
 
+  // Count exceptions per status for tab badges
+  const statusCounts = exceptions.reduce<Record<string, number>>((acc, exception) => {
+    acc[exception.status] = (acc[exception.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Filter list by active tab
+  const filteredExceptions = exceptions.filter((exception) => activeTab === 'all' || exception.status === activeTab);
+
   const tabs = [
-    { id: 'all', label: 'All Exceptions', count: totalExceptions },
-    { id: 'open', label: 'Open', count: openCount },
-    { id: 'in_progress', label: 'In Progress' },
-    { id: 'resolved', label: 'Resolved', count: resolvedCount },
+    { id: 'all', label: 'All Exceptions', count: exceptions.length },
+    { id: 'open', label: 'Open', count: statusCounts.open || 0 },
+    { id: 'in_progress', label: 'In Progress', count: statusCounts.in_progress || 0 },
+    { id: 'resolved', label: 'Resolved', count: statusCounts.resolved || 0 },
   ];
 
   const columns = [
@@ -219,28 +111,6 @@ export function ExceptionsPage() {
       ),
     },
   ];
-
-  useEffect(() => {
-    const fetchExceptions = async () => {
-      const useMockApi = localStorage.getItem('useMockApi') === 'true';
-      setIsLoading(true);
-      try {
-        const response = useMockApi
-          ? await mockApi.getExceptions(page, pageSize)
-          : await exceptionsApi.getExceptions(page, pageSize);
-        setExceptions(response.data);
-        setTotalExceptions(response.total);
-      } catch (error) {
-        console.error('Failed to fetch exceptions:', error);
-        setExceptions([]);
-        setTotalExceptions(0);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchExceptions();
-  }, [page]);
 
   return (
     <div className="p-6 space-y-6">
@@ -347,7 +217,7 @@ export function ExceptionsPage() {
 
         <DataTable
           columns={columns}
-          data={exceptions}
+          data={filteredExceptions}
           isLoading={isLoading}
           searchPlaceholder="Search exceptions..."
           pagination={{
