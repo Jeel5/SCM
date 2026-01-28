@@ -92,9 +92,13 @@ BACKEND PROGRESS
    ✅ Job queue structure
    ✅ Job listing
    ✅ Job status tracking
-   ❌ Scheduled jobs (cron)
-   ❌ Retry mechanisms
-   ❌ Job priorities
+   ✅ Job creation API
+   ✅ Retry mechanisms
+   ✅ Job priorities
+   ✅ Job cancellation
+   ✅ Cron schedules CRUD
+   ✅ Job execution logs
+   ❌ Job workers/processors
    ❌ Dead letter queue
 
 ❌ 12. Alerting & Notifications

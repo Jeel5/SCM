@@ -1,200 +1,242 @@
-// Jobs Controller - handles background job management
-import pool from '../configs/db.js';
+// Background jobs controller - manages job creation, monitoring, and scheduling
+import { jobsService } from '../services/jobsService.js';
 
-// Get jobs list with filters and pagination
+// Get all jobs with filtering
 export async function listJobs(req, res) {
   try {
-    const { page = 1, limit = 20, status, jobType } = req.query;
-    const offset = (page - 1) * limit;
+    const { status, job_type, priority, page = 1, limit = 20 } = req.query;
     
-    let query = 'SELECT * FROM jobs WHERE 1=1';
-    const params = [];
-    
-    if (status) {
-      params.push(status);
-      query += ` AND status = $${params.length}`;
-    }
-    
-    if (jobType) {
-      params.push(jobType);
-      query += ` AND job_type = $${params.length}`;
-    }
-    
-    query += ` ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
-    
-    const result = await pool.query(query, params);
-    
-    const countResult = await pool.query(
-      'SELECT COUNT(*) FROM jobs WHERE 1=1' + 
-      (status ? ' AND status = $1' : '') +
-      (jobType ? ` AND job_type = $${status ? '2' : '1'}` : ''),
-      [status, jobType].filter(Boolean)
-    );
+    const filters = {};
+    if (status) filters.status = status;
+    if (job_type) filters.job_type = job_type;
+    if (priority) filters.priority = parseInt(priority);
+
+    const result = await jobsService.getJobs(filters, parseInt(page), parseInt(limit));
     
     res.json({
       success: true,
-      data: result.rows.map(j => ({
-        id: j.id,
-        jobType: j.job_type,
-        status: j.status,
-        priority: j.priority,
-        payload: j.payload,
-        result: j.result,
-        error: j.error,
-        attempts: j.attempts,
-        maxAttempts: j.max_attempts,
-        scheduledAt: j.scheduled_at,
-        startedAt: j.started_at,
-        completedAt: j.completed_at,
-        createdAt: j.created_at
-      })),
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].count)
-      }
+      data: result.jobs,
+      pagination: result.pagination
     });
   } catch (error) {
     console.error('List jobs error:', error);
-    res.status(500).json({ error: 'Failed to list jobs' });
+    res.status(500).json({ error: 'Failed to fetch jobs' });
   }
 }
 
-export async function getJob(req, res) {
+// Get job details by ID
+export async function getJobDetails(req, res) {
   try {
     const { id } = req.params;
+    const job = await jobsService.getJobById(id);
+    const logs = await jobsService.getJobLogs(id);
     
-    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    
-    const j = result.rows[0];
     res.json({
       success: true,
       data: {
-        id: j.id,
-        jobType: j.job_type,
-        status: j.status,
-        priority: j.priority,
-        payload: j.payload,
-        result: j.result,
-        error: j.error,
-        attempts: j.attempts,
-        maxAttempts: j.max_attempts,
-        scheduledAt: j.scheduled_at,
-        startedAt: j.started_at,
-        completedAt: j.completed_at,
-        createdAt: j.created_at
+        ...job,
+        execution_logs: logs
       }
     });
   } catch (error) {
-    console.error('Get job error:', error);
-    res.status(500).json({ error: 'Failed to get job' });
+    console.error('Get job details error:', error);
+    
+    if (error.message === 'Job not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to fetch job details' });
   }
 }
 
+// Create a new background job
 export async function createJob(req, res) {
   try {
-    const { jobType, priority = 'normal', payload, scheduledAt } = req.body;
-    
-    const result = await pool.query(
-      `INSERT INTO jobs (job_type, priority, payload, scheduled_at)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [jobType, priority, JSON.stringify(payload), scheduledAt || null]
+    const { job_type, payload, priority, scheduled_for } = req.body;
+    const userId = req.user?.userId;
+
+    if (!job_type) {
+      return res.status(400).json({ error: 'job_type is required' });
+    }
+
+    const job = await jobsService.createJob(
+      job_type,
+      payload || {},
+      priority || 5,
+      scheduled_for,
+      userId
     );
     
-    res.status(201).json({ success: true, data: result.rows[0] });
+    res.status(201).json({
+      success: true,
+      data: job
+    });
   } catch (error) {
     console.error('Create job error:', error);
     res.status(500).json({ error: 'Failed to create job' });
   }
 }
 
-export async function cancelJob(req, res) {
-  try {
-    const { id } = req.params;
-    
-    const result = await pool.query(
-      `UPDATE jobs SET status = 'cancelled' WHERE id = $1 AND status = 'pending' RETURNING *`,
-      [id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Job not found or cannot be cancelled' });
-    }
-    
-    res.json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('Cancel job error:', error);
-    res.status(500).json({ error: 'Failed to cancel job' });
-  }
-}
-
+// Retry a failed job
 export async function retryJob(req, res) {
   try {
     const { id } = req.params;
+    const job = await jobsService.retryJob(id);
     
-    const result = await pool.query(
-      `UPDATE jobs SET status = 'pending', attempts = 0, error = NULL 
-       WHERE id = $1 AND status = 'failed' RETURNING *`,
-      [id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Job not found or cannot be retried' });
-    }
-    
-    res.json({ success: true, data: result.rows[0] });
+    res.json({
+      success: true,
+      data: job,
+      message: 'Job queued for retry'
+    });
   } catch (error) {
     console.error('Retry job error:', error);
     res.status(500).json({ error: 'Failed to retry job' });
   }
 }
 
-export async function getJobStats(req, res) {
+// Cancel a pending job
+export async function cancelJob(req, res) {
   try {
-    const statsResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_jobs,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-        COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
-        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
-        COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled
-      FROM jobs
-      WHERE created_at >= NOW() - INTERVAL '24 hours'
-    `);
-    
-    const byTypeResult = await pool.query(`
-      SELECT job_type, COUNT(*) as count
-      FROM jobs
-      WHERE created_at >= NOW() - INTERVAL '24 hours'
-      GROUP BY job_type
-    `);
-    
-    const stats = statsResult.rows[0];
+    const { id } = req.params;
+    const job = await jobsService.cancelJob(id);
     
     res.json({
       success: true,
-      data: {
-        total: parseInt(stats.total_jobs),
-        byStatus: {
-          pending: parseInt(stats.pending),
-          processing: parseInt(stats.processing),
-          completed: parseInt(stats.completed),
-          failed: parseInt(stats.failed),
-          cancelled: parseInt(stats.cancelled)
-        },
-        byType: byTypeResult.rows.map(t => ({
-          type: t.job_type,
-          count: parseInt(t.count)
-        }))
-      }
+      data: job,
+      message: 'Job cancelled'
+    });
+  } catch (error) {
+    console.error('Cancel job error:', error);
+    res.status(500).json({ error: 'Failed to cancel job' });
+  }
+}
+
+// Get job statistics
+export async function getJobStats(req, res) {
+  try {
+    const statsQuery = `
+      SELECT 
+        status,
+        COUNT(*) as count,
+        AVG(CASE 
+          WHEN completed_at IS NOT NULL AND started_at IS NOT NULL 
+          THEN EXTRACT(EPOCH FROM (completed_at - started_at))
+          ELSE NULL 
+        END) as avg_execution_time_seconds
+      FROM background_jobs
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+      GROUP BY status
+    `;
+    
+    const pool = (await import('../configs/db.js')).default;
+    const result = await pool.query(statsQuery);
+    
+    const stats = {
+      by_status: result.rows.reduce((acc, row) => {
+        acc[row.status] = {
+          count: parseInt(row.count),
+          avg_execution_time: row.avg_execution_time_seconds ? 
+            parseFloat(row.avg_execution_time_seconds) : null
+        };
+        return acc;
+      }, {}),
+      total_24h: result.rows.reduce((sum, row) => sum + parseInt(row.count), 0)
+    };
+    
+    res.json({
+      success: true,
+      data: stats
     });
   } catch (error) {
     console.error('Get job stats error:', error);
-    res.status(500).json({ error: 'Failed to get job stats' });
+    res.status(500).json({ error: 'Failed to fetch job statistics' });
+  }
+}
+
+// Cron schedule management
+export async function listCronSchedules(req, res) {
+  try {
+    const schedules = await jobsService.getCronSchedules();
+    
+    res.json({
+      success: true,
+      data: schedules
+    });
+  } catch (error) {
+    console.error('List cron schedules error:', error);
+    res.status(500).json({ error: 'Failed to fetch cron schedules' });
+  }
+}
+
+export async function createCronSchedule(req, res) {
+  try {
+    const { name, job_type, cron_expression, payload } = req.body;
+
+    if (!name || !job_type || !cron_expression) {
+      return res.status(400).json({ 
+        error: 'name, job_type, and cron_expression are required' 
+      });
+    }
+
+    const schedule = await jobsService.createCronSchedule(
+      name,
+      job_type,
+      cron_expression,
+      payload || {}
+    );
+    
+    res.status(201).json({
+      success: true,
+      data: schedule
+    });
+  } catch (error) {
+    console.error('Create cron schedule error:', error);
+    
+    if (error.message.includes('Invalid cron expression')) {
+      return res.status(400).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to create cron schedule' });
+  }
+}
+
+export async function updateCronSchedule(req, res) {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const schedule = await jobsService.updateCronSchedule(id, updates);
+    
+    res.json({
+      success: true,
+      data: schedule
+    });
+  } catch (error) {
+    console.error('Update cron schedule error:', error);
+    
+    if (error.message === 'Schedule not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    
+    if (error.message === 'No fields to update') {
+      return res.status(400).json({ error: error.message });
+    }
+    
+    res.status(500).json({ error: 'Failed to update cron schedule' });
+  }
+}
+
+export async function deleteCronSchedule(req, res) {
+  try {
+    const { id } = req.params;
+    await jobsService.deleteCronSchedule(id);
+    
+    res.json({
+      success: true,
+      message: 'Cron schedule deleted'
+    });
+  } catch (error) {
+    console.error('Delete cron schedule error:', error);
+    res.status(500).json({ error: 'Failed to delete cron schedule' });
   }
 }
