@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { dashboardApi, shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 import type { DashboardMetrics, ChartDataPoint, Shipment, CarrierPerformance, WarehouseUtilization } from '@/types';
 
 export function useDashboard() {
@@ -10,7 +11,7 @@ export function useDashboard() {
   const [carrierPerformance, setCarrierPerformance] = useState<CarrierPerformance[]>([]);
   const [warehouseUtilization, setWarehouseUtilization] = useState<WarehouseUtilization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [useRealApi] = useState(localStorage.getItem('useMockApi') !== 'true');
+  const { useRealApi } = useApiMode();
 
   useEffect(() => {
     const fetchData = async () => {

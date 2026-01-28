@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { exceptionsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 import type { Exception } from '@/types';
 
 export function useExceptions(page: number, pageSize: number) {
   const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [totalExceptions, setTotalExceptions] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchExceptions = async () => {
-      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
         const response = useMockApi

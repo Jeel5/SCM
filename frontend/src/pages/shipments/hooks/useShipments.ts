@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 import type { Shipment } from '@/types';
 
 export function useShipments(page: number, pageSize: number) {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [totalShipments, setTotalShipments] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchShipments = async () => {
-      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
         const response = useMockApi

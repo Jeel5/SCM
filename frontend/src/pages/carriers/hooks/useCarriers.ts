@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { carriersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 import type { Carrier } from '@/types';
 
 export function useCarriers() {
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchCarriers = async () => {
-      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
         const response = useMockApi

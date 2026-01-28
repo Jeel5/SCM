@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { slaApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 import type { SLAPolicy, SLAViolation, SLADashboardData } from '@/types';
 
 export function useSLA(page: number, pageSize: number) {
@@ -8,14 +9,14 @@ export function useSLA(page: number, pageSize: number) {
   const [violations, setViolations] = useState<SLAViolation[]>([]);
   const [dashboardData, setDashboardData] = useState<SLADashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const useMock = localStorage.getItem('useMockApi') === 'true';
 
       try {
-        if (useMock) {
+        if (useMockApi) {
           const [policiesRes, violationsRes] = await Promise.all([
             mockApi.getSLAPolicies(),
             mockApi.getSLAViolations(page, pageSize),

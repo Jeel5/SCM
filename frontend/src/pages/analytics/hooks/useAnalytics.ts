@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { dashboardApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 
 interface OrderTrendData {
   date: string;
@@ -55,14 +56,14 @@ export function useAnalytics(timeRange: string) {
     deliveryTimeChange: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const useMock = localStorage.getItem('useMockApi') === 'true';
 
       try {
-        if (useMock) {
+        if (useMockApi) {
           const [metricsRes, ordersRes, carrierRes, warehouseRes] = await Promise.all([
             mockApi.getDashboardMetrics(),
             mockApi.getOrdersChart(parseInt(timeRange) || 30),

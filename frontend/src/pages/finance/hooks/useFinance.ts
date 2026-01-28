@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 
 interface FinanceData {
   outstandingInvoices: number;
@@ -26,14 +27,14 @@ interface FinanceData {
 export function useFinance() {
   const [data, setData] = useState<FinanceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const useMock = localStorage.getItem('useMockApi') === 'true';
 
       try {
-        if (useMock) {
+        if (useMockApi) {
           const response = await mockApi.getFinanceData();
           setData(response.data);
         } else {

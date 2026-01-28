@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { ordersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 import type { Order } from '@/types';
 
 export function useOrders(page: number, pageSize: number) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchOrders = async () => {
-      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
         const response = useMockApi 

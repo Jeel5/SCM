@@ -489,3 +489,6 @@ export interface PaginationOptions {
   page: number;
   pageSize: number;
 }
+
+// Re-export API types
+export * from './api';

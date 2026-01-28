@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { inventoryApi, warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks';
 import type { InventoryItem, Warehouse } from '@/types';
 
 export function useInventory(page: number, pageSize: number) {
@@ -8,10 +9,10 @@ export function useInventory(page: number, pageSize: number) {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const { useMockApi } = useApiMode();
 
   useEffect(() => {
     const fetchData = async () => {
-      const useMockApi = localStorage.getItem('useMockApi') === 'true';
       setIsLoading(true);
       try {
         const [inventoryRes, warehouseRes] = useMockApi
