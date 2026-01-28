@@ -46,11 +46,11 @@ export const ordersApi = {
       { page, limit: pageSize, ...filters }
     );
     return {
-      data: response.data || [],
-      total: response.pagination?.total || 0,
-      page: response.pagination?.page || page,
-      pageSize: response.pagination?.limit || pageSize,
-      totalPages: Math.ceil((response.pagination?.total || 0) / (response.pagination?.limit || pageSize)),
+      data: response.data,
+      total: response.pagination.total,
+      page: response.pagination.page,
+      pageSize: response.pagination.limit,
+      totalPages: Math.ceil(response.pagination.total / response.pagination.limit),
     };
   },
 
@@ -75,7 +75,7 @@ export const shipmentsApi = {
       { page, limit: pageSize, ...filters }
     );
     return {
-      data: response.data || [],
+      data: response.data,
       total: response.pagination?.total || 0,
       page: response.pagination?.page || 1,
       pageSize: response.pagination?.limit || pageSize,
@@ -89,7 +89,7 @@ export const shipmentsApi = {
 
   async getShipmentTimeline(id: string): Promise<ApiResponse<Shipment['events']>> {
     const response = await get<{ success: boolean; data: Shipment['events'] }>(`/shipments/${id}/timeline`);
-    return { data: response.data || [], success: true };
+    return { data: response.data, success: true };
   },
 
   async createShipment(data: Partial<Shipment>): Promise<ApiResponse<Shipment>> {
@@ -105,7 +105,7 @@ export const shipmentsApi = {
 export const warehousesApi = {
   async getWarehouses(filters?: Record<string, unknown>): Promise<ApiResponse<Warehouse[]>> {
     const response = await get<{ success: boolean; data: Warehouse[] }>('/warehouses', filters);
-    return { data: response.data || [], success: true };
+    return { data: response.data, success: true };
   },
 
   async getWarehouse(id: string): Promise<ApiResponse<Warehouse>> {
@@ -125,11 +125,11 @@ export const inventoryApi = {
       { page, limit: pageSize, ...filters }
     );
     return {
-      data: response.data || [],
-      total: response.pagination?.total || 0,
-      page: response.pagination?.page || page,
-      pageSize: response.pagination?.limit || pageSize,
-      totalPages: Math.ceil((response.pagination?.total || 0) / (response.pagination?.limit || pageSize)),
+      data: response.data,
+      total: response.pagination.total,
+      page: response.pagination.page,
+      pageSize: response.pagination.limit,
+      totalPages: Math.ceil(response.pagination.total / response.pagination.limit),
     };
   },
 
@@ -150,7 +150,7 @@ export const inventoryApi = {
 export const carriersApi = {
   async getCarriers(filters?: Record<string, unknown>): Promise<ApiResponse<Carrier[]>> {
     const response = await get<{ success: boolean; data: Carrier[] }>('/carriers', filters);
-    return { data: response.data || [], success: true };
+    return { data: response.data, success: true };
   },
 
   async getCarrier(id: string): Promise<ApiResponse<Carrier>> {
@@ -170,7 +170,7 @@ export const carriersApi = {
 export const slaApi = {
   async getSLAPolicies(): Promise<ApiResponse<SLAPolicy[]>> {
     const response = await get<{ success: boolean; data: SLAPolicy[] }>('/sla/policies');
-    return { data: response.data || [], success: true };
+    return { data: response.data, success: true };
   },
 
   async getSLAViolations(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<SLAViolation>> {
@@ -179,11 +179,11 @@ export const slaApi = {
       { page, limit: pageSize, ...filters }
     );
     return {
-      data: response.data || [],
-      total: response.pagination?.total || 0,
-      page: response.pagination?.page || page,
-      pageSize: response.pagination?.limit || pageSize,
-      totalPages: Math.ceil((response.pagination?.total || 0) / (response.pagination?.limit || pageSize)),
+      data: response.data,
+      total: response.pagination.total,
+      page: response.pagination.page,
+      pageSize: response.pagination.limit,
+      totalPages: Math.ceil(response.pagination.total / response.pagination.limit),
     };
   },
 
@@ -204,11 +204,11 @@ export const returnsApi = {
       { page, limit: pageSize, ...filters }
     );
     return {
-      data: response.data || [],
-      total: response.pagination?.total || 0,
-      page: response.pagination?.page || page,
-      pageSize: response.pagination?.limit || pageSize,
-      totalPages: Math.ceil((response.pagination?.total || 0) / (response.pagination?.limit || pageSize)),
+      data: response.data,
+      total: response.pagination.total,
+      page: response.pagination.page,
+      pageSize: response.pagination.limit,
+      totalPages: Math.ceil(response.pagination.total / response.pagination.limit),
     };
   },
 
@@ -237,8 +237,8 @@ export const exceptionsApi = {
       { page, limit: pageSize, ...filters }
     );
     return {
-      data: response.data || [],
-      total: response.pagination?.total || (response.data?.length || 0),
+      data: response.data,
+      total: response.pagination?.total || response.data.length,
       page: response.pagination?.page || page,
       pageSize: response.pagination?.limit || pageSize,
       totalPages: response.pagination ? Math.ceil(response.pagination.total / response.pagination.limit) : 1,
@@ -261,7 +261,7 @@ export const exceptionsApi = {
 // ==================== DASHBOARD & ANALYTICS ====================
 export const dashboardApi = {
   async getDashboardStats(): Promise<ApiResponse<DashboardMetrics>> {
-    const response = await get<{ success: boolean; data: any }>('/dashboard/stats');
+    const response = await get<{ success: boolean; data: { orders?: { total: number; totalValue: number }; shipments?: { inTransit: number; onTimeRate: number }; returns?: { pending: number }; exceptions?: { active: number } } }>('/dashboard/stats');
     // Transform backend response to match frontend DashboardMetrics type
     const data = response.data || {};
     return {
@@ -299,7 +299,7 @@ export const dashboardApi = {
 
   async getOrdersChart(days = 30): Promise<ApiResponse<ChartDataPoint[]>> {
     const response = await get<{ success: boolean; data: { ordersOverTime: Array<{ date: string; count: number }> } }>('/analytics', { period: `${days}d` });
-    const chartData = response.data?.ordersOverTime?.map((item: ChartDataPoint | { date: string; count: number }) => ({
+    const chartData = response.data.ordersOverTime?.map((item: ChartDataPoint | { date: string; count: number }) => ({
       date: item.date,
       value: 'count' in item ? item.count : item.value,
     })) || [];
@@ -308,7 +308,7 @@ export const dashboardApi = {
 
   async getCarrierPerformance(): Promise<ApiResponse<CarrierPerformance[]>> {
     const response = await get<{ success: boolean; data: Carrier[] }>('/carriers');
-    const performance: CarrierPerformance[] = (response.data || []).map((carrier: Carrier) => ({
+    const performance: CarrierPerformance[] = response.data.map((carrier: Carrier) => ({
       carrierId: carrier.id,
       carrierName: carrier.name,
       totalShipments: carrier.totalShipments || 0,
@@ -324,7 +324,7 @@ export const dashboardApi = {
 
   async getWarehouseUtilization(): Promise<ApiResponse<WarehouseUtilization[]>> {
     const response = await get<{ success: boolean; data: Warehouse[] }>('/warehouses');
-    const utilization: WarehouseUtilization[] = (response.data || []).map((wh: Warehouse) => ({
+    const utilization: WarehouseUtilization[] = response.data.map((wh: Warehouse) => ({
       warehouseId: wh.id,
       warehouseName: wh.name,
       capacity: wh.capacity,

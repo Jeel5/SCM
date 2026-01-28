@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { slaApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
-import type { SLAPolicy, SLAViolation } from '@/types';
+import type { SLAPolicy, SLAViolation, SLADashboardData } from '@/types';
 
 export function useSLA(page: number, pageSize: number) {
   const [policies, setPolicies] = useState<SLAPolicy[]>([]);
   const [violations, setViolations] = useState<SLAViolation[]>([]);
-  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [dashboardData, setDashboardData] = useState<SLADashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {

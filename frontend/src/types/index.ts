@@ -267,6 +267,14 @@ export interface SLAViolation {
   resolvedAt?: string;
 }
 
+export interface SLADashboardData {
+  overallCompliance: number;
+  totalShipments: number;
+  onTimeDeliveries: number;
+  violations: { pending: number; resolved: number; waived: number };
+  topCarriers: unknown[];
+}
+
 // Return Types
 export type ReturnStatus = 
   | 'pending'

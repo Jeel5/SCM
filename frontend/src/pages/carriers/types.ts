@@ -1,12 +1,14 @@
+import type { Carrier } from '@/types';
+
 export interface CarrierCardProps {
-  carrier: any;
+  carrier: Carrier;
   onViewDetails: () => void;
   index?: number;
   totalInRow?: number;
 }
 
 export interface CarrierDetailsModalProps {
-  carrier: any | null;
+  carrier: Carrier | null;
   isOpen: boolean;
   onClose: () => void;
 }

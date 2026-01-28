@@ -46,12 +46,12 @@ export function FinancePage() {
     {
       key: 'amount',
       header: 'Amount',
-      render: (inv: any) => formatCurrency(inv.amount),
+      render: (inv: { amount: number }) => formatCurrency(inv.amount),
     },
     {
       key: 'status',
       header: 'Status',
-      render: (inv: any) => (
+      render: (inv: { status: string }) => (
         <span
           className={`px-2 py-1 text-xs rounded-full ${
             inv.status === 'paid'
@@ -73,12 +73,12 @@ export function FinancePage() {
     {
       key: 'amount',
       header: 'Amount',
-      render: (ref: any) => formatCurrency(ref.amount),
+      render: (ref: { amount: number }) => formatCurrency(ref.amount),
     },
     {
       key: 'status',
       header: 'Status',
-      render: (ref: any) => (
+      render: (ref: { status: string }) => (
         <span
           className={`px-2 py-1 text-xs rounded-full ${
             ref.status === 'processed'
