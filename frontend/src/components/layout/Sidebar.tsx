@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -18,6 +19,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore, useAuthStore } from '@/stores';
+import { exceptionsApi } from '@/api/services';
+import { mockApi } from '@/api/mockData';
 import type { UserRole } from '@/types';
 
 interface NavItem {
@@ -30,7 +33,7 @@ interface NavItem {
   children?: NavItem[];
 }
 
-const navigation: NavItem[] = [
+const getNavigation = (exceptionCount: number): NavItem[] => [
   {
     id: 'dashboard',
     label: 'Dashboard',
@@ -84,7 +87,7 @@ const navigation: NavItem[] = [
     label: 'Exceptions',
     icon: <AlertTriangle className="h-5 w-5" />,
     path: '/exceptions',
-    badge: 5,
+    badge: exceptionCount,
     roles: ['admin', 'operations_manager', 'customer_support'],
   },
   {
@@ -121,6 +124,33 @@ export function Sidebar() {
   const location = useLocation();
   const { sidebarCollapsed, toggleSidebar, sidebarMobileOpen, setMobileSidebarOpen } = useUIStore();
   const user = useAuthStore((state) => state.user);
+  const [openExceptionsCount, setOpenExceptionsCount] = useState(0);
+
+  // Fetch open exceptions count
+  useEffect(() => {
+    const fetchExceptionsCount = async () => {
+      const useMockApi = localStorage.getItem('useMockApi') === 'true';
+      try {
+        const response = useMockApi
+          ? await mockApi.getExceptions(1, 100)
+          : await exceptionsApi.getExceptions(1, 100);
+        // Count only open and in_progress exceptions
+        const openCount = response.data.filter(
+          (e) => e.status === 'open' || e.status === 'in_progress'
+        ).length;
+        setOpenExceptionsCount(openCount);
+      } catch (error) {
+        console.error('Failed to fetch exceptions count:', error);
+      }
+    };
+
+    fetchExceptionsCount();
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchExceptionsCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const navigation = getNavigation(openExceptionsCount);
   
   const filteredNav = navigation.filter((item) => {
     if (!item.roles) return true;

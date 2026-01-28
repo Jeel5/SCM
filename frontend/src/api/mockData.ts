@@ -24,6 +24,36 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Mock Data Generators
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+type SLADashboardData = {
+  overallCompliance: number;
+  totalShipments: number;
+  onTimeDeliveries: number;
+  violations: { pending: number; resolved: number; waived: number };
+  topCarriers: Array<{ name: string; reliabilityScore: number; shipmentCount: number }>;
+};
+
+type FinanceData = {
+  outstandingInvoices: number;
+  refundsProcessed: number;
+  disputes: number;
+  payoutStatus: string;
+  invoices: Array<{
+    id: string;
+    invoiceNumber: string;
+    carrier: string;
+    amount: number;
+    status: 'pending' | 'paid';
+    dueDate: string;
+  }>;
+  refunds: Array<{
+    id: string;
+    orderNumber: string;
+    amount: number;
+    status: 'processed' | 'pending';
+    processedAt: string;
+  }>;
+};
+
 // Users Mock Data
 const mockUsers: User[] = [
   {
@@ -678,7 +708,8 @@ const generateWarehouseUtilization = (): WarehouseUtilization[] => {
 // Mock API Functions
 export const mockApi = {
   // Auth
-  async login(email: string, password: string): Promise<ApiResponse<{ user: User; accessToken: string; refreshToken: string }>> {
+  async login(email: string, _password: string): Promise<ApiResponse<{ user: User; accessToken: string; refreshToken: string }>> {
+    void _password;
     await delay(800);
     // Find user by email or use default admin
     const user = mockUsers.find(u => u.email === email) || mockUsers[0];
@@ -902,7 +933,7 @@ export const mockApi = {
   },
 
   // SLA Dashboard
-  async getSLADashboard(): Promise<ApiResponse<any>> {
+  async getSLADashboard(): Promise<ApiResponse<SLADashboardData>> {
     await delay(400);
     return {
       data: {
@@ -921,7 +952,7 @@ export const mockApi = {
   },
 
   // Finance
-  async getFinanceData(): Promise<ApiResponse<any>> {
+  async getFinanceData(): Promise<ApiResponse<FinanceData>> {
     await delay(400);
     return {
       data: {

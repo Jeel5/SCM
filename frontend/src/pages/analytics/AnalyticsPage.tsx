@@ -1,14 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Package,
-  Truck,
-  DollarSign,
-  Clock,
-  Download,
-  ArrowUpRight,
-  ArrowDownRight,
-} from 'lucide-react';
+import { Package, Truck, DollarSign, Clock, Download } from 'lucide-react';
 import {
   AreaChart,
   Area,
@@ -26,75 +18,16 @@ import {
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent, Button, Select, Tabs } from '@/components/ui';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
-import { dashboardApi } from '@/api/services';
-import { mockApi } from '@/api/mockData';
+import { KPICard } from './components/KPICard';
+import { useAnalytics } from './hooks/useAnalytics';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-
-// KPI Card Component
-function KPICard({
-  title,
-  value,
-  change,
-  trend,
-  icon: Icon,
-  color,
-}: {
-  title: string;
-  value: string | number;
-  change: number;
-  trend: 'up' | 'down';
-  icon: React.ElementType;
-  color: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="p-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all duration-300"
-    >
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-          <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{value}</p>
-          <div className="flex items-center gap-1 mt-2">
-            {trend === 'up' ? (
-              <ArrowUpRight className="h-4 w-4 text-green-500" />
-            ) : (
-              <ArrowDownRight className="h-4 w-4 text-red-500" />
-            )}
-            <span className={cn('text-sm font-medium', trend === 'up' ? 'text-green-500' : 'text-red-500')}>
-              {Math.abs(change)}%
-            </span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">vs last period</span>
-          </div>
-        </div>
-        <div className={cn('h-12 w-12 rounded-xl flex items-center justify-center', color)}>
-          <Icon className="h-6 w-6" />
-        </div>
-      </div>
-    </motion.div>
-  );
-}
 
 // Main Analytics Page
 export function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [timeRange, setTimeRange] = useState('30d');
-  const [orderTrendData, setOrderTrendData] = useState<Array<{ date: string; orders: number; revenue: number }>>([]);
-  const [carrierData, setCarrierData] = useState<Array<{ name: string; count: number }>>([]);
-  const [warehouseData, setWarehouseData] = useState<Array<{ name: string; utilization: number }>>([]);
-  const [kpiData, setKpiData] = useState({
-    totalOrders: 0,
-    ordersChange: 0,
-    totalRevenue: 0,
-    revenueChange: 0,
-    activeShipments: 0,
-    shipmentsChange: 0,
-    avgDeliveryTime: 0,
-    deliveryTimeChange: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  const { orderTrendData, carrierData, warehouseData, deliveryPerformance, kpiData, isLoading } = useAnalytics(timeRange);
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -103,129 +36,6 @@ export function AnalyticsPage() {
     { id: 'carriers', label: 'Carriers' },
     { id: 'warehouses', label: 'Warehouses' },
   ];
-
-  const [deliveryPerformance, setDeliveryPerformance] = useState([
-    { name: 'On Time', value: 85 },
-    { name: 'Late', value: 10 },
-    { name: 'Early', value: 5 },
-  ]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      const useMock = localStorage.getItem('useMockApi') === 'true';
-
-      try {
-        if (useMock) {
-          const [metricsRes, ordersRes, carrierRes, warehouseRes] = await Promise.all([
-            mockApi.getDashboardMetrics(),
-            mockApi.getOrdersChart(parseInt(timeRange) || 30),
-            mockApi.getCarrierPerformance(),
-            mockApi.getWarehouseUtilization(),
-          ]);
-
-          setKpiData({
-            totalOrders: metricsRes.data.totalOrders || 0,
-            ordersChange: metricsRes.data.ordersChange || 0,
-            totalRevenue: metricsRes.data.revenue || metricsRes.data.totalRevenue || 0,
-            revenueChange: metricsRes.data.revenueChange || 0,
-            activeShipments: metricsRes.data.activeShipments || 0,
-            shipmentsChange: metricsRes.data.shipmentsChange || 0,
-            avgDeliveryTime: metricsRes.data.avgDeliveryTime || 0,
-            deliveryTimeChange: metricsRes.data.deliveryTimeChange || 0,
-          });
-
-          const onTimeRate = metricsRes.data.deliveryRate || 85;
-          setDeliveryPerformance([
-            { name: 'On Time', value: onTimeRate },
-            { name: 'Late', value: Math.max(0, 100 - onTimeRate - 5) },
-            { name: 'Early', value: 5 },
-          ]);
-
-          setOrderTrendData(
-            ordersRes.data.map((item) => ({
-              date: item.date,
-              orders: 'value' in item ? (item as any).value ?? 0 : (item as any).count ?? 0,
-              revenue: 'value' in item ? (item as any).value ?? 0 : 0,
-            }))
-          );
-
-          setCarrierData(
-            carrierRes.data.map((c) => ({
-              name: (c as any).carrierName || (c as any).carrier || (c as any).name,
-              count: (c as any).totalShipments || (c as any).onTimeRate || 0,
-            }))
-          );
-
-          setWarehouseData(
-            warehouseRes.data.map((w) => ({
-              name: (w as any).warehouseName || (w as any).name,
-              utilization: (w as any).utilizationRate || (w as any).utilization || 0,
-            }))
-          );
-        } else {
-          const analyticsRes = await dashboardApi.getAnalytics(timeRange);
-          const data = analyticsRes.data || {};
-
-          const orders = (data.ordersOverTime || []).map((item: any) => ({
-            date: item.date,
-            orders: item.count || 0,
-            revenue: item.value || 0,
-          }));
-          setOrderTrendData(orders);
-
-          const totalOrders = orders.reduce((sum, item) => sum + (item.orders || 0), 0);
-          const totalRevenue = orders.reduce((sum, item) => sum + (item.revenue || 0), 0);
-          const carrier = (data.shipmentsByCarrier || []).map((c: any) => ({ name: c.carrier, count: c.count || 0 }));
-          setCarrierData(carrier);
-
-          const warehouse = (data.warehouseUtilization || []).map((w: any) => ({
-            name: w.name,
-            utilization: w.utilization || (w.capacity ? Math.round(((w.currentStock || 0) / w.capacity) * 100) : 0),
-          }));
-          setWarehouseData(warehouse);
-
-          setKpiData({
-            totalOrders,
-            ordersChange: 0,
-            totalRevenue,
-            revenueChange: 0,
-            activeShipments: carrier.reduce((sum, c) => sum + (c.count || 0), 0),
-            shipmentsChange: 0,
-            avgDeliveryTime: 0,
-            deliveryTimeChange: 0,
-          });
-
-          // Try to get on-time rate from analytics or calculate
-          const onTimeRate = 85; // Default if not available
-          setDeliveryPerformance([
-            { name: 'On Time', value: onTimeRate },
-            { name: 'Late', value: Math.max(0, 100 - onTimeRate - 5) },
-            { name: 'Early', value: 5 },
-          ]);
-        }
-      } catch (error) {
-        console.error('Failed to load analytics:', error);
-        setOrderTrendData([]);
-        setCarrierData([]);
-        setWarehouseData([]);
-        setKpiData({
-          totalOrders: 0,
-          ordersChange: 0,
-          totalRevenue: 0,
-          revenueChange: 0,
-          activeShipments: 0,
-          shipmentsChange: 0,
-          avgDeliveryTime: 0,
-          deliveryTimeChange: 0,
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [timeRange]);
 
   return (
     <div className="p-6 space-y-6">

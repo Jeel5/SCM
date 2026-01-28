@@ -62,6 +62,24 @@ export function DataTable<T extends { id: string }>({
     onSearch?.(value);
   };
 
+  // Local search when no external handler is provided
+  const filteredData = onSearch ? data : data.filter((item) => {
+    if (!searchQuery) return true;
+    const searchLower = searchQuery.toLowerCase();
+    return Object.values(item).some(value => 
+      String(value).toLowerCase().includes(searchLower)
+    );
+  });
+
+  // Local sort for client-side tables
+  const sortedData = sortKey && !pagination ? [...filteredData].sort((a, b) => {
+    const aVal = (a as Record<string, unknown>)[sortKey];
+    const bVal = (b as Record<string, unknown>)[sortKey];
+    if (aVal === bVal) return 0;
+    const comparison = (aVal as any) > (bVal as any) ? 1 : -1;
+    return sortDirection === 'asc' ? comparison : -comparison;
+  }) : filteredData;
+
   const totalPages = pagination ? Math.ceil(pagination.total / pagination.pageSize) : 1;
 
   return (
@@ -137,7 +155,7 @@ export function DataTable<T extends { id: string }>({
                     ))}
                   </tr>
                 ))
-              ) : data.length === 0 ? (
+              ) : sortedData.length === 0 ? (
                 // Empty state
                 <tr>
                   <td colSpan={columns.length} className="px-6 py-12 text-center">
@@ -156,7 +174,7 @@ export function DataTable<T extends { id: string }>({
                 </tr>
               ) : (
                 // Data rows
-                data.map((item, index) => (
+                sortedData.map((item, index) => (
                   <motion.tr
                     key={item.id}
                     initial={{ opacity: 0, y: 10 }}
