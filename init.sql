@@ -386,6 +386,12 @@ CREATE INDEX idx_background_jobs_type ON background_jobs(job_type);
 CREATE INDEX idx_job_execution_logs_job_id ON job_execution_logs(job_id);
 CREATE INDEX idx_cron_schedules_active ON cron_schedules(is_active, next_run_at);
 
+-- Additional Indexes for Performance
+CREATE INDEX idx_sla_violations_violated_at ON sla_violations(violated_at);
+CREATE INDEX idx_sla_violations_resolved_at ON sla_violations(resolved_at);
+CREATE INDEX idx_exceptions_priority ON exceptions(priority, status);
+CREATE INDEX idx_exceptions_escalation ON exceptions(escalation_level);
+
 BEGIN;
 
 -- Users (admin, ops, warehouse, carrier, finance, support)
