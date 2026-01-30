@@ -25,6 +25,7 @@ interface FilterPanelProps {
   onApply: () => void;
   isOpen?: boolean;
   onToggle?: () => void;
+  isLoading?: boolean;
 }
 
 export function FilterPanel({
@@ -35,6 +36,7 @@ export function FilterPanel({
   onApply,
   isOpen = true,
   onToggle,
+  isLoading = false,
 }: FilterPanelProps) {
   const [localValues, setLocalValues] = useState(values);
 
@@ -96,7 +98,7 @@ export function FilterPanel({
               <Button
                 variant="ghost"
                 onClick={handleReset}
-                disabled={!hasActiveFilters}
+                disabled={!hasActiveFilters || isLoading}
                 className="text-gray-600 dark:text-gray-400"
               >
                 <X className="h-4 w-4 mr-2" />
@@ -104,9 +106,11 @@ export function FilterPanel({
               </Button>
               <Button
                 onClick={onApply}
+                disabled={isLoading}
+                isLoading={isLoading}
                 className="bg-blue-600 text-white hover:bg-blue-700"
               >
-                Apply Filters
+                {isLoading ? 'Applying...' : 'Apply Filters'}
               </Button>
             </div>
           </motion.div>
@@ -261,7 +265,7 @@ function MultiSelect({ options, selected, onChange, placeholder }: MultiSelectPr
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto"
+            className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto scrollbar-thin"
           >
             {options.map((option) => (
               <label

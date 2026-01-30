@@ -16,7 +16,7 @@ export function CarrierDetailsModal({
   if (!carrier) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={carrier.name} size="xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={carrier.name} size="full">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between p-4 bg-linear-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">

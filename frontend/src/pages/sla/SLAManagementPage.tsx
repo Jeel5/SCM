@@ -8,9 +8,9 @@ import { useSLA } from './hooks/useSLA';
 
 export function SLAManagementPage() {
   const [activeTab, setActiveTab] = useState('overview');
-  const [page, _setPage] = useState(1);
+  const [page, setPage] = useState(1);
   const pageSize = 10;
-  const { policies, violations, dashboardData, isLoading } = useSLA(page, pageSize);
+  const { policies, violations, dashboardData, isLoading, totalViolations: violationsTotal } = useSLA(page, pageSize);
 
   // Tab badges reflect current counts
   const tabs = [
@@ -43,7 +43,7 @@ export function SLAManagementPage() {
     {
       key: 'penaltyAmount',
       header: 'Penalty',
-      render: (policy: SLAPolicy) => <span className="text-gray-700">${policy.penaltyAmount}/hr</span>,
+      render: (policy: SLAPolicy) => <span className="text-gray-700 dark:text-gray-300">${policy.penaltyAmount}/hr</span>,
     },
     {
       key: 'isActive',
@@ -281,6 +281,12 @@ export function SLAManagementPage() {
             isLoading={isLoading}
             searchPlaceholder="Search violations..."
             emptyMessage="No violations found"
+            pagination={{
+              page,
+              pageSize,
+              total: violationsTotal || violations.length,
+              onPageChange: setPage,
+            }}
           />
         </Card>
       )}

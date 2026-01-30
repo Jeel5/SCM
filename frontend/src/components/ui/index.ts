@@ -14,3 +14,4 @@ export * from './Progress';
 export * from './Tabs';
 export * from './FilterPanel';
 export * from './Loading';
+export * from './ErrorBoundary';

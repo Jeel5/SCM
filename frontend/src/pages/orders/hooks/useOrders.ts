@@ -29,7 +29,7 @@ export function useOrders(page: number, pageSize: number) {
     };
 
     fetchOrders();
-  }, [page, pageSize]);
+  }, [page, pageSize, useMockApi]);
 
   return { orders, totalOrders, isLoading };
 }

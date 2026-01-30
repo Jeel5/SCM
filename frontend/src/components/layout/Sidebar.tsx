@@ -211,7 +211,7 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
+        <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-thin">
           <ul className="space-y-1">
             {filteredNav.map((item) => {
               const isActive = location.pathname.startsWith(item.path);

@@ -119,7 +119,7 @@ export function Header() {
                       </button>
                     )}
                   </div>
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="max-h-96 overflow-y-auto scrollbar-thin">
                     {notifications.length === 0 ? (
                       <div className="p-8 text-center">
                         <Bell className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />

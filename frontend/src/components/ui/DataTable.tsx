@@ -32,7 +32,7 @@ interface DataTableProps<T> {
   className?: string;
 }
 
-export function DataTable<T extends { id: string }>({
+export function DataTable<T extends { id: string | number }>({
   columns,
   data,
   isLoading = false,
@@ -108,7 +108,7 @@ export function DataTable<T extends { id: string }>({
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto scrollbar-thin">
         <table className="w-full">
           <thead>
             <tr className="bg-gray-50/80 dark:bg-gray-900/50">

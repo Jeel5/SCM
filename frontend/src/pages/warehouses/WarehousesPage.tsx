@@ -51,6 +51,15 @@ export function WarehousesPage() {
     : 0;
   const activeWarehouses = warehouses.filter((w) => w.status === 'active').length;
 
+  // Calculate map center based on warehouse locations
+  const mapCenter = warehouses.length > 0
+    ? {
+        longitude: warehouses.reduce((sum, w) => sum + w.location.lng, 0) / warehouses.length,
+        latitude: warehouses.reduce((sum, w) => sum + w.location.lat, 0) / warehouses.length,
+        zoom: warehouses.length === 1 ? 10 : 4,
+      }
+    : { longitude: 78.9629, latitude: 20.5937, zoom: 4 }; // Default to India if no warehouses
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -149,10 +158,12 @@ export function WarehousesPage() {
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {warehouses.map((warehouse) => (
+          {warehouses.map((warehouse, index) => (
             <WarehouseCard
               key={warehouse.id}
               warehouse={warehouse}
+              index={index}
+              totalInRow={3}
               onViewDetails={() => {
                 setSelectedWarehouse(warehouse);
                 setIsDetailsOpen(true);
@@ -164,11 +175,7 @@ export function WarehousesPage() {
         <Card>
           <div className="h-125 rounded-xl overflow-hidden">
             <Map
-              initialViewState={{
-                longitude: 78.9629,
-                latitude: 20.5937,
-                zoom: 4,
-              }}
+              initialViewState={mapCenter}
               style={{ width: '100%', height: '500px' }}
               mapStyle={MAP_STYLE}
             >

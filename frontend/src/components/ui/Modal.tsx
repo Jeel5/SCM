@@ -77,13 +77,13 @@ export function Modal({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2, type: 'spring', damping: 25, stiffness: 300 }}
             className={cn(
-              'w-full bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden',
+              'w-full bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden',
               sizes[size],
               className
             )}
           >
             {(title || showClose) && (
-              <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
                 <div>
                   {title && (
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h2>
@@ -104,7 +104,7 @@ export function Modal({
                 )}
               </div>
             )}
-            <div className="p-6">{children}</div>
+            <div className="p-6 overflow-y-auto flex-1 scrollbar-thin">{children}</div>
           </motion.div>
         </motion.div>
       )}

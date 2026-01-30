@@ -375,3 +375,66 @@ input[type="checkbox"]:focus {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Modern Glassmorphic Scrollbar */
+.scrollbar-thin {
+  scrollbar-width: auto;
+  scrollbar-color: rgba(59, 130, 246, 0.6) rgba(243, 244, 246, 0.3);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 14px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: rgba(243, 244, 246, 0.5);
+  border-radius: 100px;
+  margin: 4px 0;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  border-radius: 100px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  background-clip: padding-box;
+  transition: all 0.3s ease;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+  transform: scale(1.05);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 50%, #1e3a8a 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark .scrollbar-thin {
+  scrollbar-color: rgba(96, 165, 250, 0.6) rgba(31, 41, 55, 0.5);
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.6);
+  border: 3px solid transparent;
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%);
+  border: 3px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #93c5fd 0%, #60a5fa 50%, #3b82f6 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 16px rgba(96, 165, 250, 0.6);
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%);
+  border-color: rgba(255, 255, 255, 0.05);
+}

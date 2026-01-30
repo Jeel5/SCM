@@ -3,6 +3,31 @@ import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
+// Singleton socket instance to prevent multiple connections
+let socketInstance: Socket | null = null;
+let socketRefCount = 0;
+
+function getSocket(): Socket {
+  if (!socketInstance) {
+    socketInstance = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+  }
+  socketRefCount++;
+  return socketInstance;
+}
+
+function releaseSocket(): void {
+  socketRefCount--;
+  if (socketRefCount <= 0 && socketInstance) {
+    socketInstance.disconnect();
+    socketInstance = null;
+    socketRefCount = 0;
+  }
+}
+
 interface RiderLocation {
   riderId: string;
   shipmentId: string;
@@ -26,34 +51,29 @@ export function useSocket(): UseSocketReturn {
   const [riderLocations, setRiderLocations] = useState<Map<string, RiderLocation>>(new Map());
 
   useEffect(() => {
-    // Initialize socket connection
-    socketRef.current = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
+    // Use singleton socket instance
+    const socket = getSocket();
+    socketRef.current = socket;
 
-    const socket = socketRef.current;
-
-    socket.on('connect', () => {
+    const handleConnect = () => {
       console.log('Socket connected');
       setIsConnected(true);
-    });
+    };
 
-    socket.on('disconnect', () => {
+    const handleDisconnect = () => {
       console.log('Socket disconnected');
       setIsConnected(false);
-    });
+    };
 
-    socket.on('rider:location', (data: RiderLocation) => {
+    const handleRiderLocation = (data: RiderLocation) => {
       setRiderLocations((prev) => {
         const newMap = new Map(prev);
         newMap.set(data.shipmentId, data);
         return newMap;
       });
-    });
+    };
 
-    socket.on('rider:locations:batch', (data: RiderLocation[]) => {
+    const handleRiderLocationsBatch = (data: RiderLocation[]) => {
       setRiderLocations((prev) => {
         const newMap = new Map(prev);
         data.forEach((location) => {
@@ -61,10 +81,24 @@ export function useSocket(): UseSocketReturn {
         });
         return newMap;
       });
-    });
+    };
+
+    // Check if already connected
+    if (socket.connected) {
+      setIsConnected(true);
+    }
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('rider:location', handleRiderLocation);
+    socket.on('rider:locations:batch', handleRiderLocationsBatch);
 
     return () => {
-      socket.disconnect();
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('rider:location', handleRiderLocation);
+      socket.off('rider:locations:batch', handleRiderLocationsBatch);
+      releaseSocket();
     };
   }, []);
 
