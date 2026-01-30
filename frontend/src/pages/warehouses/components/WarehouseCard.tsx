@@ -1,3 +1,4 @@
+import React from 'react';
 import { motion } from 'framer-motion';
 import { Building2, MapPin, MoreHorizontal, Eye, Edit, Boxes, Truck } from 'lucide-react';
 import { Badge, Progress, Dropdown } from '@/components/ui';
@@ -7,10 +8,18 @@ import type { Warehouse } from '@/types';
 export function WarehouseCard({
   warehouse,
   onViewDetails,
+  index,
+  totalInRow = 3,
 }: {
   warehouse: Warehouse;
   onViewDetails: () => void;
+  index?: number;
+  totalInRow?: number;
 }) {
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  // Determine if this is in the rightmost column
+  const isRightmost = index !== undefined && (index % totalInRow) === (totalInRow - 1);
+
   const utilizationColor =
     warehouse.utilizationPercentage >= 90
       ? 'text-red-600'
@@ -23,10 +32,15 @@ export function WarehouseCard({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ y: -4 }}
-      className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-300"
+      className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all duration-300"
+      style={{ 
+        overflow: 'visible', 
+        position: 'relative',
+        zIndex: isDropdownOpen ? 9999 : 'auto'
+      }}
     >
       {/* Header */}
-      <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+      <div className="p-4 border-b border-gray-100 dark:border-gray-700 rounded-t-2xl">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div
@@ -50,6 +64,7 @@ export function WarehouseCard({
             </div>
           </div>
           <Dropdown
+            align={isRightmost ? 'right' : 'left'}
             trigger={
               <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                 <MoreHorizontal className="h-4 w-4 text-gray-500" />
@@ -61,7 +76,9 @@ export function WarehouseCard({
             ]}
             onSelect={(value) => {
               if (value === 'view') onViewDetails();
+              setIsDropdownOpen(false);
             }}
+            onOpenChange={setIsDropdownOpen}
           />
         </div>
       </div>
@@ -95,7 +112,7 @@ export function WarehouseCard({
       </div>
 
       {/* Footer Stats */}
-      <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between border-t border-gray-100 dark:border-gray-700">
+      <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between border-t border-gray-100 dark:border-gray-700 rounded-b-2xl">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-300">
             <Boxes className="h-4 w-4" />

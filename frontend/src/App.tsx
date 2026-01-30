@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { MainLayout, AuthLayout } from '@/components/layout';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ToastContainer } from '@/components/ui/ToastContainer';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useAuthStore, useUIStore } from '@/stores';
 
 // Lazy load all pages for code splitting
@@ -130,18 +131,19 @@ function App() {
   }, [theme]);
   
   return (
-    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
-      <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          <ToastContainer />
-          <BrowserRouter>
-            <Routes>
-              {/* Public Routes */}
-              <Route
-                path="/login"
-                element={
-                  <PublicRoute>
-                    <AuthLayout>
+    <ErrorBoundary>
+      <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <ToastContainer />
+            <BrowserRouter>
+              <Routes>
+                {/* Public Routes */}
+                <Route
+                  path="/login"
+                  element={
+                    <PublicRoute>
+                      <AuthLayout>
                       <PageLoader>
                         <LoginPage />
                       </PageLoader>
@@ -273,6 +275,7 @@ function App() {
         </ToastProvider>
       </QueryClientProvider>
     </GoogleOAuthProvider>
+    </ErrorBoundary>
   );
 }
 

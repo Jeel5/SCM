@@ -130,15 +130,21 @@ export function ReturnsPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Returns</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage product returns and refunds</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Returns</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage product returns and refunds</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} className="hidden sm:flex">
             Export
           </Button>
-          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsCreateOpen(true)}>
-            New Return
+          <Button variant="outline" className="flex sm:hidden p-2">
+            <Download className="h-4 w-4" />
+          </Button>
+          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsCreateOpen(true)} className="hidden sm:flex">
+            Create Return
+          </Button>
+          <Button variant="primary" onClick={() => setIsCreateOpen(true)} className="flex sm:hidden p-2">
+            <Plus className="h-4 w-4" />
           </Button>
         </div>
       </motion.div>
@@ -170,7 +176,7 @@ export function ReturnsPage() {
 
       {/* Data Table */}
       <Card padding="none">
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+        <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
 

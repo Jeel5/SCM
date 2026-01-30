@@ -107,7 +107,7 @@ export function CircularProgress({
           fill="none"
           stroke="currentColor"
           strokeWidth={strokeWidth}
-          className="text-gray-100"
+          className="text-gray-100 dark:text-gray-700"
         />
         {/* Progress circle */}
         <motion.circle
@@ -153,8 +153,8 @@ export function StatsProgress({ label, value, total, variant = 'default', classN
   return (
     <div className={cn('space-y-2', className)}>
       <div className="flex justify-between items-center">
-        <span className="text-sm text-gray-600">{label}</span>
-        <span className="text-sm font-medium text-gray-900">
+        <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>
+        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
           {value.toLocaleString()} / {total.toLocaleString()}
         </span>
       </div>

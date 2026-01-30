@@ -14,10 +14,10 @@ export function OrderStats({ orders, totalOrders }: OrderStatsProps) {
   }, {} as Record<OrderStatus, number>);
 
   const stats = [
-    { label: 'Total Orders', value: totalOrders, color: 'text-gray-900' },
-    { label: 'Processing', value: statusCounts['processing'] || 0, color: 'text-yellow-600' },
-    { label: 'Shipped', value: statusCounts['shipped'] || 0, color: 'text-purple-600' },
-    { label: 'Delivered', value: statusCounts['delivered'] || 0, color: 'text-green-600' },
+    { label: 'Total Orders', value: totalOrders, color: 'text-gray-900 dark:text-white' },
+    { label: 'Processing', value: statusCounts['processing'] || 0, color: 'text-yellow-600 dark:text-yellow-400' },
+    { label: 'Shipped', value: statusCounts['shipped'] || 0, color: 'text-purple-600 dark:text-purple-400' },
+    { label: 'Delivered', value: statusCounts['delivered'] || 0, color: 'text-green-600 dark:text-green-400' },
   ];
 
   return (

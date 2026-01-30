@@ -78,7 +78,9 @@ export function OrdersPage() {
       key: 'items',
       header: 'Items',
       render: (order: Order) => (
-        <Badge variant="default">{order.items?.length || 0} item(s)</Badge>
+        <Badge variant="default" className="whitespace-nowrap">
+          {order.items?.length || 0} <span className="hidden sm:inline">item(s)</span><span className="sm:hidden">items</span>
+        </Badge>
       ),
     },
     {
@@ -102,7 +104,7 @@ export function OrdersPage() {
           }}
           className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
-          <Eye className="h-4 w-4 text-gray-500" />
+          <Eye className="h-4 w-4 text-gray-500 dark:text-gray-400" />
         </button>
       ),
     },
@@ -122,10 +124,10 @@ export function OrdersPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Orders</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage and track all customer orders</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Orders</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage and track all customer orders</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
             Export
           </Button>
@@ -140,7 +142,7 @@ export function OrdersPage() {
 
       {/* Tabs */}
       <Card padding="none">
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
 

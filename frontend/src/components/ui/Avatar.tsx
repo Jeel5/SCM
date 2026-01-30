@@ -122,7 +122,7 @@ export function AvatarGroup({ avatars, max = 4, size = 'md', className }: Avatar
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: max * 0.05 }}
           className={cn(
-            'rounded-full bg-gray-200 flex items-center justify-center font-medium text-gray-600 ring-2 ring-white',
+            'rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-medium text-gray-600 dark:text-gray-300 ring-2 ring-white dark:ring-gray-800',
             size === 'xs' && 'h-6 w-6 text-[10px]',
             size === 'sm' && 'h-8 w-8 text-xs',
             size === 'md' && 'h-10 w-10 text-xs',

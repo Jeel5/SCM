@@ -7,6 +7,7 @@ import type { SLAPolicy, SLAViolation, SLADashboardData } from '@/types';
 export function useSLA(page: number, pageSize: number) {
   const [policies, setPolicies] = useState<SLAPolicy[]>([]);
   const [violations, setViolations] = useState<SLAViolation[]>([]);
+  const [totalViolations, setTotalViolations] = useState(0);
   const [dashboardData, setDashboardData] = useState<SLADashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { useMockApi } = useApiMode();
@@ -23,6 +24,7 @@ export function useSLA(page: number, pageSize: number) {
           ]);
           setPolicies(policiesRes.data);
           setViolations(violationsRes.data);
+          setTotalViolations(violationsRes.total || violationsRes.data.length);
           setDashboardData({
             overallCompliance: 94.5,
             totalShipments: 1250,
@@ -38,6 +40,7 @@ export function useSLA(page: number, pageSize: number) {
           ]);
           setPolicies(policiesRes.data || []);
           setViolations(violationsRes.data || []);
+          setTotalViolations(violationsRes.total || 0);
           setDashboardData(dashRes.data || {
             overallCompliance: 0,
             totalShipments: 0,
@@ -50,6 +53,7 @@ export function useSLA(page: number, pageSize: number) {
         console.error('Failed to fetch SLA data:', error);
         setPolicies([]);
         setViolations([]);
+        setTotalViolations(0);
         setDashboardData({
           overallCompliance: 0,
           totalShipments: 0,
@@ -63,7 +67,7 @@ export function useSLA(page: number, pageSize: number) {
     };
 
     fetchData();
-  }, [page, pageSize]);
+  }, [page, pageSize, useMockApi]);
 
-  return { policies, violations, dashboardData, isLoading };
+  return { policies, violations, totalViolations, dashboardData, isLoading };
 }

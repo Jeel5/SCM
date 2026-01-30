@@ -39,10 +39,10 @@ export function DashboardPage() {
         className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
             Welcome back, {user?.name?.split(' ')[0]} 👋
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
             Here's what's happening with your logistics today.
           </p>
         </div>

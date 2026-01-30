@@ -41,10 +41,10 @@ export function WarehouseDetailsModal({
   if (!warehouse) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={warehouse.name} size="xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={warehouse.name} size="full">
       <div className="space-y-6">
         {/* Map */}
-        <div className="h-48 rounded-xl overflow-hidden border border-gray-200">
+        <div className="h-48 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
           <Map
             initialViewState={{
               longitude: warehouse.location.lng,
@@ -93,24 +93,24 @@ export function WarehouseDetailsModal({
         </div>
 
         {/* Location Details */}
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <h4 className="font-medium text-gray-900 mb-3">Location Details</h4>
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Location Details</h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-gray-500">Address</p>
-              <p className="text-gray-900">{warehouse.address.street}</p>
+              <p className="text-gray-500 dark:text-gray-400">Address</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.address.street}</p>
             </div>
             <div>
-              <p className="text-gray-500">City</p>
-              <p className="text-gray-900">{warehouse.address.city}</p>
+              <p className="text-gray-500 dark:text-gray-400">City</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.address.city}</p>
             </div>
             <div>
-              <p className="text-gray-500">State</p>
-              <p className="text-gray-900">{warehouse.address.state}</p>
+              <p className="text-gray-500 dark:text-gray-400">State</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.address.state}</p>
             </div>
             <div>
-              <p className="text-gray-500">Country</p>
-              <p className="text-gray-900">{warehouse.address.country}</p>
+              <p className="text-gray-500 dark:text-gray-400">Country</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.address.country}</p>
             </div>
           </div>
         </div>
@@ -118,22 +118,22 @@ export function WarehouseDetailsModal({
         {/* Zones */}
         {warehouse.zones > 0 && (
           <div>
-            <h4 className="font-medium text-gray-900 mb-3">Warehouse Zones: {warehouse.zones}</h4>
+            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Warehouse Zones: {warehouse.zones}</h4>
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: warehouse.zones }, (_, i) => (
                 <div
                   key={i}
-                  className="p-3 bg-gray-50 rounded-lg border border-gray-100 hover:border-blue-200 transition-colors"
+                  className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-blue-200 dark:hover:border-blue-600 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-gray-900">Zone {i + 1}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">Zone {i + 1}</span>
                     <Badge variant="default" className="capitalize">
                       Storage
                     </Badge>
                   </div>
                   <div className="space-y-1">
                     <Progress value={((i * 17 + 7) % 80) + 20} size="sm" />
-                    <p className="text-xs text-gray-500">Active</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Active</p>
                   </div>
                 </div>
               ))}
@@ -142,20 +142,20 @@ export function WarehouseDetailsModal({
         )}
 
         {/* Contact */}
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <h4 className="font-medium text-gray-900 mb-3">Contact Information</h4>
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Contact Information</h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-gray-500">Manager ID</p>
-              <p className="text-gray-900">{warehouse.managerId || 'N/A'}</p>
+              <p className="text-gray-500 dark:text-gray-400">Manager ID</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.managerId || 'N/A'}</p>
             </div>
             <div>
-              <p className="text-gray-500">Phone</p>
-              <p className="text-gray-900">{warehouse.contactPhone}</p>
+              <p className="text-gray-500 dark:text-gray-400">Phone</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.contactPhone}</p>
             </div>
             <div className="col-span-2">
-              <p className="text-gray-500">Email</p>
-              <p className="text-gray-900">{warehouse.contactEmail}</p>
+              <p className="text-gray-500 dark:text-gray-400">Email</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.contactEmail}</p>
             </div>
           </div>
         </div>

@@ -1,9 +1,12 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
-import { motion } from 'framer-motion';
+import { motion, type HTMLMotionProps } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+// Omit conflicting props from HTMLMotionProps
+type MotionButtonProps = Omit<HTMLMotionProps<'button'>, 'ref'>;
+
+export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof MotionButtonProps>, MotionButtonProps {
   variant?: 'default' | 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive' | 'success';
   size?: 'sm' | 'md' | 'lg' | 'icon';
   isLoading?: boolean;
@@ -60,7 +63,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || isLoading}
         whileHover={{ scale: disabled || isLoading ? 1 : 1.02 }}
         whileTap={{ scale: disabled || isLoading ? 1 : 0.98 }}
-        {...(props as React.ComponentProps<typeof motion.button>)}
+        {...props}
       >
         {isLoading ? (
           <Loader2 className="h-4 w-4 animate-spin" />

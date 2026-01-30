@@ -26,7 +26,7 @@ export function useWarehouses() {
     };
 
     fetchWarehouses();
-  }, []);
+  }, [useMockApi]);
 
   return { warehouses, isLoading };
 }

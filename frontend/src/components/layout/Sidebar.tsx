@@ -122,7 +122,7 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
 
 export function Sidebar() {
   const location = useLocation();
-  const { sidebarCollapsed, toggleSidebar, sidebarMobileOpen, setMobileSidebarOpen } = useUIStore();
+  const { sidebarMobileOpen, setMobileSidebarOpen } = useUIStore();
   const user = useAuthStore((state) => state.user);
   const [openExceptionsCount, setOpenExceptionsCount] = useState(0);
 
@@ -174,119 +174,78 @@ export function Sidebar() {
       </AnimatePresence>
 
       {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ width: sidebarCollapsed ? 80 : 280 }}
+      <aside
         className={cn(
-          'fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 z-50 flex flex-col transition-colors duration-300',
+          'group fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 z-50 flex flex-col',
+          'w-[52px] hover:w-[225px]',
+          'transition-all duration-300 ease-out-quint',
           'lg:relative lg:translate-x-0',
-          sidebarMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          sidebarMobileOpen ? 'translate-x-0 w-[280px]' : '-translate-x-full lg:translate-x-0',
+          'overflow-hidden'
         )}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-100 dark:border-gray-700">
-          <AnimatePresence mode="wait">
-            {!sidebarCollapsed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-3"
-              >
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
-                  <Truck className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="font-bold text-gray-900 dark:text-gray-100">LogiTower</h1>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Control Center</p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {sidebarCollapsed && (
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center mx-auto">
-              <Truck className="h-6 w-6 text-white" />
-            </div>
-          )}
-        </div>
+        <Link
+          to="/dashboard"
+          className="h-16 flex items-center gap-3 px-2 border-b border-gray-100 dark:border-gray-700 shrink-0"
+        >
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shrink-0">
+            <Truck className="h-5 w-5 text-white" />
+          </div>
+          <div className="min-w-0 overflow-hidden">
+            <h1 className="font-bold text-gray-900 dark:text-gray-100 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              LogiTower
+            </h1>
+          </div>
+        </Link>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
-          <ul className="space-y-1">
+        <nav className="flex-1 overflow-y-auto py-4 px-2 scrollbar-hide">
+          <ul className="flex flex-col gap-0.5">
             {filteredNav.map((item) => {
               const isActive = location.pathname.startsWith(item.path);
               return (
-                <li key={item.id}>
+                <li key={item.id} className="min-w-[36px]">
                   <Link
                     to={item.path}
                     onClick={() => setMobileSidebarOpen(false)}
                     className={cn(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200',
+                      'flex items-center gap-2 px-2 py-2 rounded-lg transition-all duration-200',
                       'hover:bg-gray-100 dark:hover:bg-gray-700',
-                      isActive && 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                      isActive && 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+                      'h-9 w-full'
                     )}
                   >
                     <span
                       className={cn(
-                        'shrink-0',
+                        'shrink-0 flex items-center justify-center',
                         isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
                       )}
                     >
                       {item.icon}
                     </span>
-                    <AnimatePresence mode="wait">
-                      {!sidebarCollapsed && (
-                        <motion.span
-                          initial={{ opacity: 0, width: 0 }}
-                          animate={{ opacity: 1, width: 'auto' }}
-                          exit={{ opacity: 0, width: 0 }}
-                          className={cn(
-                            'font-medium text-sm truncate',
-                            isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
-                          )}
-                        >
-                          {item.label}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                    {!sidebarCollapsed && item.badge !== undefined && item.badge > 0 && (
-                      <motion.span
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="ml-auto px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full"
+                    <div className="flex items-center justify-between flex-1 min-w-0 overflow-hidden">
+                      <span
+                        className={cn(
+                          'font-medium text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300',
+                          isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
+                        )}
                       >
-                        {item.badge}
-                      </motion.span>
-                    )}
-                    {sidebarCollapsed && item.badge !== undefined && item.badge > 0 && (
-                      <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full" />
-                    )}
+                        {item.label}
+                      </span>
+                      {item.badge !== undefined && item.badge > 0 && (
+                        <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
                   </Link>
                 </li>
               );
             })}
           </ul>
         </nav>
-
-        {/* Collapse Toggle */}
-        <div className="p-3 border-t border-gray-100 dark:border-gray-700 hidden lg:block">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={toggleSidebar}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-          >
-            {sidebarCollapsed ? (
-              <ChevronRight className="h-5 w-5" />
-            ) : (
-              <>
-                <ChevronLeft className="h-5 w-5" />
-                <span className="text-sm font-medium">Collapse</span>
-              </>
-            )}
-          </motion.button>
-        </div>
-      </motion.aside>
+      </aside>
     </>
   );
 }

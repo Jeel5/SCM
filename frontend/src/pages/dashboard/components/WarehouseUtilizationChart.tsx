@@ -5,6 +5,7 @@ import {
   Cell,
   Tooltip,
   ResponsiveContainer,
+  TooltipProps,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui';
 import type { WarehouseUtilization } from '@/types';
@@ -14,6 +15,24 @@ export interface WarehouseUtilizationChartProps {
 }
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B'];
+
+// Custom Tooltip Component
+const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+          {payload[0].payload.warehouseName}
+        </p>
+        <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+          {Number(payload[0].value).toFixed(1)}%
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Utilization</p>
+      </div>
+    );
+  }
+  return null;
+};
 
 export function WarehouseUtilizationChart({ data }: WarehouseUtilizationChartProps) {
   // Cast data for Recharts compatibility
@@ -52,10 +71,7 @@ export function WarehouseUtilizationChart({ data }: WarehouseUtilizationChartPro
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip
-                formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Utilization']}
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-              />
+              <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -67,9 +83,9 @@ export function WarehouseUtilizationChart({ data }: WarehouseUtilizationChartPro
                   className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: COLORS[index % COLORS.length] }}
                 />
-                <span className="text-sm text-gray-600 truncate">{warehouse.warehouseName.split(' ')[0]}</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300 truncate">{warehouse.warehouseName.split(' ')[0]}</span>
               </div>
-              <span className="text-sm font-medium text-gray-900">{warehouse.utilizationRate.toFixed(0)}%</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{warehouse.utilizationRate.toFixed(0)}%</span>
             </div>
           ))}
         </div>

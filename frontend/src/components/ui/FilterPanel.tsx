@@ -25,6 +25,7 @@ interface FilterPanelProps {
   onApply: () => void;
   isOpen?: boolean;
   onToggle?: () => void;
+  isLoading?: boolean;
 }
 
 export function FilterPanel({
@@ -35,6 +36,7 @@ export function FilterPanel({
   onApply,
   isOpen = true,
   onToggle,
+  isLoading = false,
 }: FilterPanelProps) {
   const [localValues, setLocalValues] = useState(values);
 
@@ -96,7 +98,7 @@ export function FilterPanel({
               <Button
                 variant="ghost"
                 onClick={handleReset}
-                disabled={!hasActiveFilters}
+                disabled={!hasActiveFilters || isLoading}
                 className="text-gray-600 dark:text-gray-400"
               >
                 <X className="h-4 w-4 mr-2" />
@@ -104,9 +106,11 @@ export function FilterPanel({
               </Button>
               <Button
                 onClick={onApply}
+                disabled={isLoading}
+                isLoading={isLoading}
                 className="bg-blue-600 text-white hover:bg-blue-700"
               >
-                Apply Filters
+                {isLoading ? 'Applying...' : 'Apply Filters'}
               </Button>
             </div>
           </motion.div>
@@ -131,7 +135,7 @@ function FilterField({ filter, value, onChange }: FilterFieldProps) {
             {filter.label}
           </label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
             <Input
               type="text"
               placeholder={filter.placeholder || 'Search...'}
@@ -185,7 +189,7 @@ function FilterField({ filter, value, onChange }: FilterFieldProps) {
             {filter.label}
           </label>
           <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
             <Input
               type="date"
               value={(value as string) || ''}
@@ -247,11 +251,11 @@ function MultiSelect({ options, selected, onChange, placeholder }: MultiSelectPr
               </span>
             ))}
             {selected.length > 2 && (
-              <span className="text-xs text-gray-500">+{selected.length - 2} more</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">+{selected.length - 2} more</span>
             )}
           </span>
         ) : (
-          <span className="text-gray-400">{placeholder || 'Select options...'}</span>
+          <span className="text-gray-400 dark:text-gray-500">{placeholder || 'Select options...'}</span>
         )}
       </button>
 
@@ -261,7 +265,7 @@ function MultiSelect({ options, selected, onChange, placeholder }: MultiSelectPr
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto"
+            className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto scrollbar-thin"
           >
             {options.map((option) => (
               <label
@@ -299,7 +303,7 @@ function DateRangeFilter({ label, value = {}, onChange }: DateRangeFilterProps) 
       </label>
       <div className="flex items-center gap-2">
         <div className="flex-1 relative">
-          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
           <Input
             type="date"
             value={value.start || ''}
@@ -308,9 +312,9 @@ function DateRangeFilter({ label, value = {}, onChange }: DateRangeFilterProps) 
             placeholder="Start date"
           />
         </div>
-        <span className="text-gray-400">to</span>
+        <span className="text-gray-400 dark:text-gray-500">to</span>
         <div className="flex-1 relative">
-          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
           <Input
             type="date"
             value={value.end || ''}

@@ -39,11 +39,11 @@ export function CarriersPage() {
       sortable: true,
       render: (carrier: Carrier) => (
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-            <Truck className="h-5 w-5 text-blue-600" />
+          <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+            <Truck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <p className="font-medium text-gray-900">{carrier.name}</p>
+            <p className="font-medium text-gray-900 dark:text-white">{carrier.name}</p>
             <RatingStars rating={carrier.rating} />
           </div>
         </div>
@@ -65,13 +65,13 @@ export function CarriersPage() {
       header: 'Active Shipments',
       sortable: true,
       render: (carrier: Carrier) => (
-        <span className="font-medium">{formatNumber(carrier.activeShipments)}</span>
+        <span className="font-medium dark:text-gray-200">{formatNumber(carrier.activeShipments)}</span>
       ),
     },
     {
       key: 'avgTime',
       header: 'Avg. Time',
-      render: (carrier: Carrier) => <span>{carrier.averageDeliveryTime}h</span>,
+      render: (carrier: Carrier) => <span className="dark:text-gray-300">{carrier.averageDeliveryTime}h</span>,
     },
     {
       key: 'status',

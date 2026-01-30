@@ -32,7 +32,7 @@ interface DataTableProps<T> {
   className?: string;
 }
 
-export function DataTable<T extends { id: string }>({
+export function DataTable<T extends { id: string | number }>({
   columns,
   data,
   isLoading = false,
@@ -96,7 +96,7 @@ export function DataTable<T extends { id: string }>({
                 leftIcon={<Search className="h-4 w-4" />}
                 rightIcon={
                   searchQuery ? (
-                    <button onClick={() => handleSearch('')} className="hover:text-gray-600">
+                    <button onClick={() => handleSearch('')} className="hover:text-gray-600 dark:hover:text-gray-300">
                       <X className="h-4 w-4" />
                     </button>
                   ) : undefined
@@ -108,7 +108,7 @@ export function DataTable<T extends { id: string }>({
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto scrollbar-thin">
         <table className="w-full">
           <thead>
             <tr className="bg-gray-50/80 dark:bg-gray-900/50">
@@ -116,7 +116,7 @@ export function DataTable<T extends { id: string }>({
                 <th
                   key={column.key}
                   className={cn(
-                    'px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider',
+                    'px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap',
                     column.sortable && 'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors'
                   )}
                   style={{ width: column.width }}
@@ -125,7 +125,7 @@ export function DataTable<T extends { id: string }>({
                   <div className="flex items-center gap-2">
                     {column.header}
                     {column.sortable && (
-                      <span className="text-gray-400">
+                      <span className="text-gray-400 dark:text-gray-500">
                         {sortKey === column.key ? (
                           sortDirection === 'asc' ? (
                             <ChevronUp className="h-4 w-4" />
@@ -149,7 +149,7 @@ export function DataTable<T extends { id: string }>({
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={`skeleton-${i}`}>
                     {columns.map((column) => (
-                      <td key={column.key} className="px-6 py-4">
+                      <td key={column.key} className="px-3 sm:px-6 py-3 sm:py-4">
                         <Skeleton className="h-4 w-full" />
                       </td>
                     ))}
@@ -158,7 +158,7 @@ export function DataTable<T extends { id: string }>({
               ) : sortedData.length === 0 ? (
                 // Empty state
                 <tr>
-                  <td colSpan={columns.length} className="px-6 py-12 text-center">
+                  <td colSpan={columns.length} className="px-3 sm:px-6 py-8 sm:py-12 text-center">
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -187,7 +187,7 @@ export function DataTable<T extends { id: string }>({
                     )}
                   >
                     {columns.map((column) => (
-                      <td key={column.key} className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
+                      <td key={column.key} className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
                         {column.render
                           ? column.render(item)
                           : String((item as Record<string, unknown>)[column.key] ?? '')}
@@ -203,8 +203,8 @@ export function DataTable<T extends { id: string }>({
 
       {/* Pagination */}
       {pagination && totalPages > 1 && (
-        <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+        <div className="px-4 sm:px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left">
             Showing{' '}
             <span className="font-medium">
               {(pagination.page - 1) * pagination.pageSize + 1}
@@ -215,18 +215,28 @@ export function DataTable<T extends { id: string }>({
             </span>{' '}
             of <span className="font-medium">{pagination.total}</span> results
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => pagination.onPageChange(pagination.page - 1)}
               disabled={pagination.page === 1}
               leftIcon={<ChevronLeft className="h-4 w-4" />}
+              className="hidden sm:flex"
             >
               Previous
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => pagination.onPageChange(pagination.page - 1)}
+              disabled={pagination.page === 1}
+              className="flex sm:hidden p-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
             <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, totalPages) }).map((_, i) => {
+              {Array.from({ length: Math.min(window.innerWidth < 640 ? 3 : 5, totalPages) }).map((_, i) => {
                 let pageNum: number;
                 if (totalPages <= 5) {
                   pageNum = i + 1;
@@ -245,7 +255,7 @@ export function DataTable<T extends { id: string }>({
                     whileTap={{ scale: 0.95 }}
                     onClick={() => pagination.onPageChange(pageNum)}
                     className={cn(
-                      'h-8 w-8 rounded-lg text-sm font-medium transition-colors',
+                      'h-7 w-7 sm:h-8 sm:w-8 rounded-lg text-xs sm:text-sm font-medium transition-colors',
                       pageNum === pagination.page
                         ? 'bg-blue-600 text-white'
                         : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -262,8 +272,18 @@ export function DataTable<T extends { id: string }>({
               onClick={() => pagination.onPageChange(pagination.page + 1)}
               disabled={pagination.page === totalPages}
               rightIcon={<ChevronRight className="h-4 w-4" />}
+              className="hidden sm:flex"
             >
               Next
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => pagination.onPageChange(pagination.page + 1)}
+              disabled={pagination.page === totalPages}
+              className="flex sm:hidden p-2"
+            >
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>

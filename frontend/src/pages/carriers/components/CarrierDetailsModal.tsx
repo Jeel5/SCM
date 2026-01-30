@@ -16,7 +16,7 @@ export function CarrierDetailsModal({
   if (!carrier) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={carrier.name} size="xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={carrier.name} size="full">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between p-4 bg-linear-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
@@ -45,26 +45,26 @@ export function CarrierDetailsModal({
         </div>
 
         {/* Performance Metrics */}
-        <div className="grid grid-cols-4 gap-4">
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl text-center">
-            <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.onTimeDeliveryRate}%</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">On-Time</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <div className="p-3 sm:p-4 bg-green-50 dark:bg-green-900/20 rounded-xl text-center">
+            <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6 text-green-600 dark:text-green-400 mx-auto mb-2" />
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.onTimeDeliveryRate}%</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">On-Time</p>
           </div>
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl text-center">
-            <XCircle className="h-6 w-6 text-red-600 dark:text-red-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.damageRate}%</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Damage Rate</p>
+          <div className="p-3 sm:p-4 bg-red-50 dark:bg-red-900/20 rounded-xl text-center">
+            <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-red-600 dark:text-red-400 mx-auto mb-2" />
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.damageRate}%</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Damage Rate</p>
           </div>
-          <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-center">
-            <AlertTriangle className="h-6 w-6 text-yellow-600 dark:text-yellow-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.lossRate}%</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Loss Rate</p>
+          <div className="p-3 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-center">
+            <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600 dark:text-yellow-400 mx-auto mb-2" />
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.lossRate}%</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Loss Rate</p>
           </div>
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-center">
-            <Clock className="h-6 w-6 text-blue-600 dark:text-blue-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{carrier.averageDeliveryTime}h</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Avg Time</p>
+          <div className="p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-center">
+            <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 dark:text-blue-400 mx-auto mb-2" />
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.averageDeliveryTime}h</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Time</p>
           </div>
         </div>
 

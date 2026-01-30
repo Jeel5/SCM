@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  TooltipProps,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui';
 import { formatDate } from '@/lib/utils';
@@ -15,6 +16,26 @@ import type { ChartDataPoint } from '@/types';
 export interface OrdersTrendChartProps {
   data: ChartDataPoint[];
 }
+
+// Custom Tooltip Component
+const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+          {formatDate(label, 'MMM dd, yyyy')}
+        </p>
+        <div className="flex items-baseline gap-2">
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+            {payload[0].value}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">orders</p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 
 export function OrdersTrendChart({ data }: OrdersTrendChartProps) {
   return (
@@ -40,17 +61,14 @@ export function OrdersTrendChart({ data }: OrdersTrendChartProps) {
                 <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-gray-200 dark:stroke-gray-700" />
             <XAxis
               dataKey="date"
               tickFormatter={(value) => formatDate(value, 'MMM dd')}
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 12, fill: 'currentColor', className: 'text-gray-600 dark:text-gray-400' }}
             />
-            <YAxis tick={{ fontSize: 12 }} />
-            <Tooltip
-              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-              labelFormatter={(value) => formatDate(value, 'MMM dd, yyyy')}
-            />
+            <YAxis tick={{ fontSize: 12, fill: 'currentColor', className: 'text-gray-600 dark:text-gray-400' }} />
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#3B82F6', strokeWidth: 1, strokeDasharray: '5 5' }} />
             <Area
               type="monotone"
               dataKey="value"

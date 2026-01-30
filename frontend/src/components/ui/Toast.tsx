@@ -78,7 +78,7 @@ export function Toast({ id, type, title, message, onClose }: ToastProps) {
         onClick={() => onClose(id)}
         className="shrink-0 p-1 rounded-lg hover:bg-black/5 transition-colors"
       >
-        <X className="h-4 w-4 text-gray-400" />
+        <X className="h-4 w-4 text-gray-400 dark:text-gray-500" />
       </motion.button>
     </motion.div>
   );
