@@ -135,7 +135,7 @@ function FilterField({ filter, value, onChange }: FilterFieldProps) {
             {filter.label}
           </label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
             <Input
               type="text"
               placeholder={filter.placeholder || 'Search...'}
@@ -189,7 +189,7 @@ function FilterField({ filter, value, onChange }: FilterFieldProps) {
             {filter.label}
           </label>
           <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
             <Input
               type="date"
               value={(value as string) || ''}
@@ -251,11 +251,11 @@ function MultiSelect({ options, selected, onChange, placeholder }: MultiSelectPr
               </span>
             ))}
             {selected.length > 2 && (
-              <span className="text-xs text-gray-500">+{selected.length - 2} more</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">+{selected.length - 2} more</span>
             )}
           </span>
         ) : (
-          <span className="text-gray-400">{placeholder || 'Select options...'}</span>
+          <span className="text-gray-400 dark:text-gray-500">{placeholder || 'Select options...'}</span>
         )}
       </button>
 
@@ -303,7 +303,7 @@ function DateRangeFilter({ label, value = {}, onChange }: DateRangeFilterProps) 
       </label>
       <div className="flex items-center gap-2">
         <div className="flex-1 relative">
-          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
           <Input
             type="date"
             value={value.start || ''}
@@ -312,9 +312,9 @@ function DateRangeFilter({ label, value = {}, onChange }: DateRangeFilterProps) 
             placeholder="Start date"
           />
         </div>
-        <span className="text-gray-400">to</span>
+        <span className="text-gray-400 dark:text-gray-500">to</span>
         <div className="flex-1 relative">
-          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
           <Input
             type="date"
             value={value.end || ''}

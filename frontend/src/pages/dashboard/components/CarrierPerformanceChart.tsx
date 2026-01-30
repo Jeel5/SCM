@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  TooltipProps,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui';
 import type { CarrierPerformance } from '@/types';
@@ -15,9 +16,28 @@ export interface CarrierPerformanceChartProps {
   data: CarrierPerformance[];
 }
 
+// Custom Tooltip Component
+const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+          {payload[0].payload.name}
+        </p>
+        <p className="text-lg font-bold text-green-600 dark:text-green-400">
+          {Number(payload[0].value).toFixed(1)}%
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">On-time delivery</p>
+      </div>
+    );
+  }
+  return null;
+};
+
 export function CarrierPerformanceChart({ data }: CarrierPerformanceChartProps) {
   const chartData = data.map((d) => ({
     name: d.carrierName.split(' ')[0],
+    fullName: d.carrierName,
     onTime: d.onTimeRate,
     late: 100 - d.onTimeRate,
   }));
@@ -39,13 +59,22 @@ export function CarrierPerformanceChart({ data }: CarrierPerformanceChartProps) 
         ) : (
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={chartData} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-            <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-            <YAxis type="category" dataKey="name" width={60} />
-            <Tooltip
-              formatter={(value) => [`${Number(value).toFixed(1)}%`, '']}
-              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} className="stroke-gray-200 dark:stroke-gray-700" />
+            <XAxis 
+              type="number" 
+              domain={[0, 100]} 
+              tickFormatter={(v) => `${v}%`}
+              tick={{ fill: 'currentColor', fontSize: 12 }}
+              className="text-gray-600 dark:text-gray-300"
             />
+            <YAxis 
+              type="category" 
+              dataKey="name" 
+              width={70}
+              tick={{ fill: 'currentColor', fontSize: 13 }}
+              className="text-gray-700 dark:text-gray-200 font-medium"
+            />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }} />
             <Bar dataKey="onTime" stackId="a" fill="#10B981" radius={[0, 4, 4, 0]} name="On Time" />
           </BarChart>
         </ResponsiveContainer>

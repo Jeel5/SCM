@@ -37,7 +37,7 @@ export function Tabs({
   return (
     <div
       className={cn(
-        'flex gap-1',
+        'flex gap-1 overflow-x-auto scrollbar-hide',
         variant === 'default' && 'p-1 bg-gray-100 dark:bg-gray-800 rounded-xl',
         variant === 'underline' && 'border-b border-gray-200 dark:border-gray-700',
         fullWidth && 'w-full',
@@ -51,7 +51,7 @@ export function Tabs({
             key={tab.id}
             onClick={() => onChange(tab.id)}
             className={cn(
-              'relative flex items-center gap-2 font-medium transition-colors',
+              'relative flex items-center gap-2 font-medium transition-colors whitespace-nowrap shrink-0',
               sizes[size],
               fullWidth && 'flex-1 justify-center',
               variant === 'default' && [

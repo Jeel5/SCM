@@ -163,7 +163,7 @@ export function ShipmentsPage() {
 
       {/* Data Table */}
       <Card padding="none">
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+        <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
 

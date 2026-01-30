@@ -92,7 +92,7 @@ export function CardSkeleton() {
 // Metric Card Skeleton
 export function MetricCardSkeleton() {
   return (
-    <div className="p-6 rounded-2xl border border-gray-100 bg-white">
+    <div className="p-6 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
       <div className="flex items-center justify-between mb-4">
         <Skeleton className="h-4 w-24" />
         <Skeleton variant="circular" width={40} height={40} />
@@ -125,18 +125,18 @@ export function DashboardSkeleton() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="p-6 rounded-2xl border border-gray-100 bg-white">
+        <div className="p-6 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
           <Skeleton className="h-6 w-40 mb-4" />
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
-        <div className="p-6 rounded-2xl border border-gray-100 bg-white">
+        <div className="p-6 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
           <Skeleton className="h-6 w-40 mb-4" />
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
       </div>
 
       {/* Table */}
-      <div className="p-6 rounded-2xl border border-gray-100 bg-white">
+      <div className="p-6 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
         <Skeleton className="h-6 w-40 mb-4" />
         <TableSkeleton rows={5} columns={5} />
       </div>
