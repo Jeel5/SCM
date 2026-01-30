@@ -89,7 +89,7 @@ export function CarrierCard({
           <span className="text-sm text-gray-500 dark:text-gray-400">Damage Rate</span>
           <div className="flex items-center gap-2">
             <Progress
-              value={100 - carrier.damageRate}
+              value={carrier.damageRate}
               variant={carrier.damageRate > 5 ? 'error' : 'success'}
               size="sm"
               className="w-24"

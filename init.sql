@@ -1,3 +1,22 @@
+-- ================================================================================
+-- SCM Database Initialization Script
+-- ================================================================================
+-- This script creates all tables, indexes, and initial data for the SCM system
+-- 
+-- WEBHOOK ENHANCEMENTS (for external integrations):
+-- - Orders: Added external_order_id, platform, tax_amount, shipping_amount
+--   Made order_number nullable for external orders
+-- - Inventory: Added sku, product_name, quantity, bin_location for warehouse webhooks
+--   Created unique index on (warehouse_id, sku) for upsert operations
+-- - Shipments: Added tracking_events JSONB column for carrier tracking updates
+-- - Returns: Added external_return_id, customer_name, customer_email, items JSONB
+--   Made rma_number nullable for external returns
+-- - Order Items: product_id made nullable to support external orders without product mapping
+--
+-- BACKGROUND JOBS: Includes tables for job queue, execution logs, cron schedules, and DLQ
+-- USER SESSIONS: Includes tables for notification preferences and session management
+-- ================================================================================
+
 -- Create these tables in order (dependencies matter)
 
 -- 1. Organizations & Users
@@ -89,8 +108,11 @@ CREATE TABLE carriers (
   service_type VARCHAR(50), -- express, standard, bulk
   contact_email VARCHAR(255),
   contact_phone VARCHAR(20),
+  website VARCHAR(500),
   reliability_score DECIMAL(3,2) DEFAULT 0.85,
   is_active BOOLEAN DEFAULT true,
+  availability_status VARCHAR(20) DEFAULT 'available', -- available, busy, offline
+  last_status_change TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -139,14 +161,20 @@ CREATE TABLE inventory (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   warehouse_id UUID REFERENCES warehouses(id),
   product_id UUID REFERENCES products(id),
+  sku VARCHAR(100), -- Added for webhook inventory
+  product_name VARCHAR(255), -- Added for webhook inventory
+  quantity INTEGER DEFAULT 0, -- Added for webhook inventory
   available_quantity INTEGER DEFAULT 0,
   reserved_quantity INTEGER DEFAULT 0,
   damaged_quantity INTEGER DEFAULT 0,
+  bin_location VARCHAR(50), -- Added for webhook inventory
   last_stock_check TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(warehouse_id, product_id)
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Create unique index for warehouse + SKU (for webhook inventory upserts)
+CREATE UNIQUE INDEX idx_inventory_warehouse_sku ON inventory(warehouse_id, sku);
 
 CREATE TABLE stock_movements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -164,13 +192,17 @@ CREATE TABLE stock_movements (
 -- 4. Orders
 CREATE TABLE orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_number VARCHAR(50) UNIQUE NOT NULL,
+  order_number VARCHAR(50) UNIQUE, -- Made nullable for external orders
+  external_order_id VARCHAR(100), -- Added for webhook orders
+  platform VARCHAR(50), -- Added for webhook orders (amazon, shopify, etc.)
   customer_name VARCHAR(255) NOT NULL,
   customer_email VARCHAR(255),
   customer_phone VARCHAR(20),
   status VARCHAR(50) DEFAULT 'created', -- created, confirmed, allocated, shipped, delivered, returned, cancelled
   priority VARCHAR(20) DEFAULT 'standard', -- express, standard, bulk
   total_amount DECIMAL(10,2),
+  tax_amount DECIMAL(10,2) DEFAULT 0, -- Added for webhook orders
+  shipping_amount DECIMAL(10,2) DEFAULT 0, -- Added for webhook orders
   currency VARCHAR(3) DEFAULT 'USD',
   shipping_address JSONB NOT NULL,
   billing_address JSONB,
@@ -180,6 +212,10 @@ CREATE TABLE orders (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add indexes for webhook orders
+CREATE INDEX idx_orders_external_order_id ON orders(external_order_id);
+CREATE INDEX idx_orders_platform ON orders(platform);
 
 CREATE TABLE order_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -194,11 +230,41 @@ CREATE TABLE order_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Shipments & Tracking
+-- 5. Carrier Assignment & Requests
+CREATE TABLE carrier_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+  carrier_id UUID REFERENCES carriers(id),
+  service_type VARCHAR(50), -- express, standard, bulk
+  status VARCHAR(50) DEFAULT 'pending', -- pending, assigned, accepted, rejected, busy, expired, cancelled
+  pickup_address JSONB,
+  delivery_address JSONB,
+  estimated_pickup TIMESTAMPTZ,
+  estimated_delivery TIMESTAMPTZ,
+  special_instructions TEXT,
+  request_payload JSONB, -- Full order/item details sent to carrier for review
+  acceptance_payload JSONB, -- Carrier response with dispatch info
+  carrier_reference_id VARCHAR(100), -- Carrier's internal order/job ID
+  rejected_reason TEXT,
+  requested_at TIMESTAMPTZ DEFAULT NOW(),
+  assigned_at TIMESTAMPTZ,
+  accepted_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ, -- Assignment expires if not accepted within 24 hours
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_carrier_assignments_status ON carrier_assignments(status);
+CREATE INDEX idx_carrier_assignments_order_id ON carrier_assignments(order_id);
+CREATE INDEX idx_carrier_assignments_carrier_id ON carrier_assignments(carrier_id);
+CREATE INDEX idx_carrier_assignments_expires_at ON carrier_assignments(expires_at);
+
+-- 5.5. Shipments & Tracking
 CREATE TABLE shipments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tracking_number VARCHAR(100) UNIQUE NOT NULL,
   order_id UUID REFERENCES orders(id),
+  carrier_assignment_id UUID REFERENCES carrier_assignments(id),
   carrier_id UUID REFERENCES carriers(id),
   warehouse_id UUID REFERENCES warehouses(id),
   status VARCHAR(50) DEFAULT 'pending', -- pending, picked_up, in_transit, at_hub, out_for_delivery, delivered, failed_delivery, returned
@@ -211,10 +277,15 @@ CREATE TABLE shipments (
   pickup_actual TIMESTAMPTZ,
   delivery_scheduled TIMESTAMPTZ, -- frontend: estimatedDelivery
   delivery_actual TIMESTAMPTZ, -- frontend: actualDelivery
-  current_location JSONB, -- {lat, lng, city, state}
+  current_location JSONB, -- {lat, lng, city, state} from OSRM/carrier data
+  route_geometry JSONB, -- GeoJSON LineString from OSRM for Maplibre
+  tracking_events JSONB DEFAULT '[]'::jsonb, -- Added for webhook tracking updates
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Index for tracking events queries
+CREATE INDEX idx_shipments_tracking_events ON shipments USING gin(tracking_events);
 
 CREATE TABLE shipment_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -243,7 +314,10 @@ CREATE TABLE sla_violations (
 -- 7. Returns & Reverse Logistics
 CREATE TABLE returns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  rma_number VARCHAR(50) UNIQUE NOT NULL,
+  rma_number VARCHAR(50) UNIQUE, -- Made nullable for external returns
+  external_return_id VARCHAR(100), -- Added for webhook returns
+  customer_name VARCHAR(255), -- Added for webhook returns
+  customer_email VARCHAR(255), -- Added for webhook returns
   order_id UUID REFERENCES orders(id),
   shipment_id UUID REFERENCES shipments(id),
   reason VARCHAR(255),
@@ -252,10 +326,14 @@ CREATE TABLE returns (
   quality_check_result VARCHAR(50), -- passed, failed, damaged
   refund_amount DECIMAL(10,2),
   restocking_fee DECIMAL(10,2),
+  items JSONB, -- Added for webhook returns with item details
   requested_at TIMESTAMPTZ DEFAULT NOW(),
   resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add indexes for webhook returns
+CREATE INDEX idx_returns_external_return_id ON returns(external_return_id);
 
 CREATE TABLE return_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

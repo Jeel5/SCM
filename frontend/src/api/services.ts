@@ -158,7 +158,17 @@ export const carriersApi = {
   },
 
   async createCarrier(data: Partial<Carrier>): Promise<ApiResponse<Carrier>> {
-    return post('/carriers', data);
+    // Transform camelCase to snake_case for backend
+    const backendData = {
+      name: data.name,
+      contact_email: data.contactEmail,
+      contact_phone: data.contactPhone,
+      website: data.website,
+      status: data.status,
+      services_offered: data.servicesOffered,
+      service_type: data.serviceType
+    };
+    return post('/carriers', backendData);
   },
 
   async getCarrierRates(carrierId: string): Promise<ApiResponse<unknown[]>> {

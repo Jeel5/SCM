@@ -129,18 +129,19 @@ export async function listCarriers(req, res) {
       name: c.name,
       type: c.service_type === 'express' ? 'multimodal' : 'ground',
       status: c.is_active ? 'active' : 'inactive',
-      rating: parseFloat(c.reliability_score) * 5 || 4.0,
-      onTimeDeliveryRate: parseFloat(c.reliability_score) * 100 || 90,
-      damageRate: 1.0,
-      lossRate: 0.2,
-      averageDeliveryTime: 2.5,
+      rating: 0, // Will be calculated from actual shipment data
+      onTimeDeliveryRate: 0,
+      damageRate: 0,
+      lossRate: 0,
+      averageDeliveryTime: 0,
       activeShipments: parseInt(c.active_shipments) || 0,
       totalShipments: parseInt(c.total_shipments) || 0,
       services: ['Express', 'Standard'],
       serviceAreas: ['North America'],
       rateCard: [],
-      contactEmail: c.contact_email,
-      contactPhone: c.contact_phone,
+      contactEmail: c.contact_email || null,
+      contactPhone: c.contact_phone || null,
+      apiEndpoint: c.website || null,
       createdAt: c.created_at
     }));
     
@@ -170,15 +171,58 @@ export async function getCarrier(req, res) {
 
 export async function createCarrier(req, res) {
   try {
-    const { code, name, serviceType, contactEmail, contactPhone, reliabilityScore } = req.body;
+    // Accept snake_case from frontend
+    const { code, name, service_type, contact_email, contact_phone, website, status, services_offered, reliability_score } = req.body;
+    
+    console.log('Received carrier data:', { code, name, service_type, contact_email, contact_phone, website, status });
+    
+    // Validate code is provided
+    if (!code) {
+      return res.status(400).json({ error: 'Carrier code is required (e.g., DHL-001, FEDEX-001)' });
+    }
+    
+    // Validate code format (uppercase letters, numbers, hyphens)
+    if (!/^[A-Z0-9-]+$/.test(code)) {
+      return res.status(400).json({ error: 'Carrier code must contain only uppercase letters, numbers, and hyphens' });
+    }
+    
+    const carrierCode = code;
     
     const result = await pool.query(
-      `INSERT INTO carriers (code, name, service_type, contact_email, contact_phone, reliability_score)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [code, name, serviceType, contactEmail, contactPhone, reliabilityScore || 0.85]
+      `INSERT INTO carriers (code, name, service_type, contact_email, contact_phone, website, reliability_score, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [carrierCode, name, service_type || 'standard', contact_email || null, contact_phone || null, website || null, reliability_score || 0, status === 'active']
     );
     
-    res.status(201).json({ success: true, data: result.rows[0] });
+    const carrier = result.rows[0];
+    console.log('Created carrier:', carrier);
+    
+    // Transform to camelCase for frontend
+    const transformedCarrier = {
+      id: carrier.id,
+      code: carrier.code,
+      name: carrier.name,
+      serviceType: carrier.service_type,
+      contactEmail: carrier.contact_email,
+      contactPhone: carrier.contact_phone,
+      reliabilityScore: parseFloat(carrier.reliability_score),
+      isActive: carrier.is_active,
+      status: carrier.is_active ? 'active' : 'inactive',
+      // All stats at 0 until actual shipments are processed
+      rating: 0,
+      onTimeDeliveryRate: 0,
+      damageRate: 0,
+      lossRate: 0,
+      averageDeliveryTime: 0,
+      activeShipments: 0,
+      totalShipments: 0,
+      services: services_offered || ['Express', 'Standard'],
+      apiEndpoint: carrier.website,
+      createdAt: carrier.created_at,
+      updatedAt: carrier.updated_at
+    };
+    
+    res.status(201).json({ success: true, data: transformedCarrier });
   } catch (error) {
     console.error('Create carrier error:', error);
     res.status(500).json({ error: 'Failed to create carrier' });

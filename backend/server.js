@@ -27,6 +27,7 @@ import returnsRoutes from './routes/returns.js';
 import jobsRoutes from './routes/jobs.js';
 import financeRoutes from './routes/finance.js';
 import webhooksRoutes from './routes/webhooks.js';
+import assignmentsRoutes from './routes/assignments.js';
 
 // Security headers middleware
 app.use(helmet());
@@ -34,7 +35,12 @@ app.use(helmet());
 // CORS configuration - allows frontend to communicate with backend
 app.use(
 	cors({
-		origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'],
+		origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+			'http://localhost:5173',
+			'http://localhost:5500',
+			'http://127.0.0.1:5500',
+			'null' // Allow file:// protocol
+		],
 		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 		credentials: true,
 	})
@@ -64,6 +70,7 @@ app.use(API_PREFIX, slaRoutes);
 app.use(API_PREFIX, returnsRoutes);
 app.use(API_PREFIX, jobsRoutes);
 app.use(API_PREFIX, financeRoutes);
+app.use(API_PREFIX, assignmentsRoutes); // Carrier assignment routes
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes

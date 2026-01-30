@@ -3,6 +3,7 @@ import slaService from '../services/slaService.js';
 import exceptionService from '../services/exceptionService.js';
 import invoiceService from '../services/invoiceService.js';
 import returnsService from '../services/returnsService.js';
+import assignmentRetryService from '../services/assignmentRetryService.js';
 import logger from '../utils/logger.js';
 import pool from '../configs/db.js';
 
@@ -399,42 +400,38 @@ async function handleUpdateTracking(payload) {
     
     logger.info(`Updating tracking for ${tracking_number}: ${status}`);
     
-    // Convert location to JSONB format if it's a string
-    const locationJson = typeof location === 'string' 
-      ? JSON.stringify({ city: location }) 
-      : JSON.stringify(location);
-    
-    // Update shipment in database
-    const result = await pool.query(
-      `UPDATE shipments 
-       SET status = $1, current_location = $2::jsonb, tracking_events = 
-         COALESCE(tracking_events, '[]'::jsonb) || $3::jsonb,
-         updated_at = NOW()
-       WHERE tracking_number = $4
-       RETURNING id`,
-      [
-        status,
-        locationJson,
-        JSON.stringify([{
-          timestamp: new Date().toISOString(),
-          status,
-          status_detail,
-          location
-        }]),
-        tracking_number
-      ]
+    // Find shipment by tracking number
+    const shipmentResult = await pool.query(
+      'SELECT id FROM shipments WHERE tracking_number = $1',
+      [tracking_number]
     );
-    
-    if (result.rows.length === 0) {
+
+    if (shipmentResult.rows.length === 0) {
       logger.warn(`Shipment not found for tracking number: ${tracking_number}`);
       return { success: false, reason: 'shipment_not_found' };
     }
+
+    // Import and use shipment tracking service
+    const shipmentTrackingService = (await import('../services/shipmentTrackingService.js')).default;
+    
+    const trackingEvent = {
+      eventType: status,
+      description: status_detail || status,
+      location: typeof location === 'string' 
+        ? { city: location } 
+        : location
+    };
+
+    await shipmentTrackingService.updateShipmentTracking(
+      shipmentResult.rows[0].id,
+      trackingEvent
+    );
     
     logger.info(`✅ Tracking updated for ${tracking_number}`);
     
     return {
       success: true,
-      shipmentId: result.rows[0].id,
+      shipmentId: shipmentResult.rows[0].id,
       status,
       duration: `${Date.now() - startTime}ms`
     };
@@ -604,6 +601,29 @@ async function handleProcessRates(payload) {
   }
 }
 
+/**
+ * Carrier Assignment Retry Job
+ * Handles expired, busy, and rejected carrier assignments
+ */
+async function handleCarrierAssignmentRetry(payload) {
+  const startTime = Date.now();
+  
+  try {
+    const result = await assignmentRetryService.run();
+    
+    return {
+      success: result.success,
+      expiredProcessed: result.expiredProcessed,
+      busyRetried: result.busyRetried,
+      rejectedRetried: result.rejectedRetried,
+      duration: `${Date.now() - startTime}ms`,
+    };
+  } catch (error) {
+    logger.error('Carrier assignment retry job failed:', error);
+    throw error;
+  }
+}
+
 // Job handler registry
 export const jobHandlers = {
   'sla_monitoring': handleSLAMonitoring,
@@ -619,6 +639,7 @@ export const jobHandlers = {
   'sync_inventory': handleSyncInventory,
   'process_return': handleProcessReturn,
   'process_rates': handleProcessRates,
+  'carrier_assignment_retry': handleCarrierAssignmentRetry,
 };
 
 export default jobHandlers;
