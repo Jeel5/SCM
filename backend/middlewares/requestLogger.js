@@ -5,10 +5,13 @@ import logger, { logRequest } from '../utils/logger.js';
 export function requestLogger(req, res, next) {
   const startTime = Date.now();
   
-  // Log when response finishes
+  // Log when response finishes (only log errors or slow requests)
   res.on('finish', () => {
     const responseTime = Date.now() - startTime;
-    logRequest(req, res, responseTime);
+    // Only log errors (4xx, 5xx) or requests taking > 1 second
+    if (res.statusCode >= 400 || responseTime > 1000) {
+      logRequest(req, res, responseTime);
+    }
   });
   
   next();

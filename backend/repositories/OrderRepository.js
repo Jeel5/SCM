@@ -13,9 +13,26 @@ class OrderRepository extends BaseRepository {
     let paramCount = 1;
     
     let query = `
-      SELECT o.*,
+      SELECT 
+        o.*,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', oi.id,
+              'product_id', oi.product_id,
+              'sku', oi.sku,
+              'product_name', oi.product_name,
+              'quantity', oi.quantity,
+              'unit_price', oi.unit_price,
+              'weight', oi.weight,
+              'warehouse_id', oi.warehouse_id
+            ) ORDER BY oi.id
+          ) FILTER (WHERE oi.id IS NOT NULL),
+          '[]'::json
+        ) as items,
         COUNT(*) OVER() as total_count
       FROM orders o
+      LEFT JOIN order_items oi ON o.id = oi.order_id
       WHERE 1=1
     `;
 
@@ -35,6 +52,9 @@ class OrderRepository extends BaseRepository {
       params.push(`%${search}%`);
       paramCount++;
     }
+
+    // Group by for aggregation
+    query += ` GROUP BY o.id`;
 
     // Sorting
     const validSortColumns = ['created_at', 'updated_at', 'total_amount', 'status', 'order_number'];
@@ -70,7 +90,6 @@ class OrderRepository extends BaseRepository {
             'product_name', oi.product_name,
             'quantity', oi.quantity,
             'unit_price', oi.unit_price,
-            'total_price', oi.total_price,
             'weight', oi.weight,
             'warehouse_id', oi.warehouse_id
           ) ORDER BY oi.id

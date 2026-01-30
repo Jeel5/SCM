@@ -324,6 +324,286 @@ async function generateInventorySnapshotReport(parameters) {
   };
 }
 
+/**
+ * Process Order Job (from webhook)
+ * Processes incoming order from e-commerce platforms
+ */
+async function handleProcessOrder(payload) {
+  const startTime = Date.now();
+  
+  try {
+    const { source, order } = payload;
+    
+    logger.info(`Processing order from ${source}: ${order.external_order_id}`);
+    
+    // Insert order into database
+    const result = await pool.query(
+      `INSERT INTO orders (
+        external_order_id, platform, customer_name, customer_email, 
+        customer_phone, shipping_address, total_amount, tax_amount, 
+        shipping_amount, status, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING id`,
+      [
+        order.external_order_id,
+        order.platform,
+        order.customer_name,
+        order.customer_email,
+        order.customer_phone,
+        JSON.stringify(order.shipping_address),
+        order.total_amount,
+        order.tax_amount || 0,
+        order.shipping_amount || 0,
+        'pending',
+        new Date()
+      ]
+    );
+    
+    const orderId = result.rows[0].id;
+    
+    // Insert order items
+    if (order.items && order.items.length > 0) {
+      const itemValues = order.items.map(item => 
+        `('${orderId}', '${item.sku}', '${item.name.replace(/'/g, "''")}', ${item.quantity}, ${item.price})`
+      ).join(',');
+      
+      await pool.query(`
+        INSERT INTO order_items (order_id, sku, product_name, quantity, unit_price)
+        VALUES ${itemValues}
+      `);
+    }
+    
+    logger.info(`✅ Order ${order.external_order_id} processed as ID ${orderId}`);
+    
+    return {
+      success: true,
+      orderId,
+      itemsCount: order.items?.length || 0,
+      duration: `${Date.now() - startTime}ms`
+    };
+  } catch (error) {
+    logger.error('Process order job failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update Tracking Job (from webhook)
+ * Updates shipment tracking information
+ */
+async function handleUpdateTracking(payload) {
+  const startTime = Date.now();
+  
+  try {
+    const { tracking_number, carrier, status, status_detail, location } = payload;
+    
+    logger.info(`Updating tracking for ${tracking_number}: ${status}`);
+    
+    // Convert location to JSONB format if it's a string
+    const locationJson = typeof location === 'string' 
+      ? JSON.stringify({ city: location }) 
+      : JSON.stringify(location);
+    
+    // Update shipment in database
+    const result = await pool.query(
+      `UPDATE shipments 
+       SET status = $1, current_location = $2::jsonb, tracking_events = 
+         COALESCE(tracking_events, '[]'::jsonb) || $3::jsonb,
+         updated_at = NOW()
+       WHERE tracking_number = $4
+       RETURNING id`,
+      [
+        status,
+        locationJson,
+        JSON.stringify([{
+          timestamp: new Date().toISOString(),
+          status,
+          status_detail,
+          location
+        }]),
+        tracking_number
+      ]
+    );
+    
+    if (result.rows.length === 0) {
+      logger.warn(`Shipment not found for tracking number: ${tracking_number}`);
+      return { success: false, reason: 'shipment_not_found' };
+    }
+    
+    logger.info(`✅ Tracking updated for ${tracking_number}`);
+    
+    return {
+      success: true,
+      shipmentId: result.rows[0].id,
+      status,
+      duration: `${Date.now() - startTime}ms`
+    };
+  } catch (error) {
+    logger.error('Update tracking job failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sync Inventory Job (from webhook)
+ * Synchronizes inventory from warehouse system
+ */
+async function handleSyncInventory(payload) {
+  const startTime = Date.now();
+  
+  try {
+    const { warehouse_id, items } = payload;
+    
+    logger.info(`Syncing inventory for warehouse ${warehouse_id}: ${items?.length || 0} items`);
+    
+    // Look up warehouse UUID by code (warehouse_id might be a code like "WH-001")
+    const warehouseResult = await pool.query(
+      'SELECT id FROM warehouses WHERE code = $1 OR id::text = $1 LIMIT 1',
+      [warehouse_id]
+    );
+    
+    let actualWarehouseId = warehouse_id;
+    
+    // If warehouse doesn't exist, create it with basic info
+    if (warehouseResult.rows.length === 0) {
+      logger.warn(`Warehouse ${warehouse_id} not found, creating placeholder`);
+      try {
+        const newWarehouse = await pool.query(
+          `INSERT INTO warehouses (code, name, address, is_active, created_at)
+           VALUES ($1, $2, $3, true, NOW())
+           ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
+           RETURNING id`,
+          [
+            warehouse_id,
+            `Warehouse ${warehouse_id}`,
+            JSON.stringify({ street: 'TBD', city: 'TBD', state: 'TBD', postal_code: '00000', country: 'US' })
+          ]
+        );
+        actualWarehouseId = newWarehouse.rows[0].id;
+        logger.info(`Created placeholder warehouse with ID ${actualWarehouseId}`);
+      } catch (error) {
+        // Race condition: another job created it, fetch it again
+        if (error.code === '23505') {
+          const retryResult = await pool.query(
+            'SELECT id FROM warehouses WHERE code = $1 LIMIT 1',
+            [warehouse_id]
+          );
+          actualWarehouseId = retryResult.rows[0].id;
+          logger.info(`Warehouse ${warehouse_id} was created by another job, using ID ${actualWarehouseId}`);
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      actualWarehouseId = warehouseResult.rows[0].id;
+    }
+    
+    let updatedCount = 0;
+    
+    for (const item of items || []) {
+      const result = await pool.query(
+        `INSERT INTO inventory (warehouse_id, sku, product_name, quantity, bin_location, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (warehouse_id, sku)
+         DO UPDATE SET 
+           quantity = EXCLUDED.quantity,
+           bin_location = EXCLUDED.bin_location,
+           product_name = EXCLUDED.product_name,
+           updated_at = NOW()
+         RETURNING id`,
+        [actualWarehouseId, item.sku, item.product_name, item.new_quantity, item.bin_location]
+      );
+      
+      if (result.rows.length > 0) updatedCount++;
+    }
+    
+    logger.info(`✅ Inventory synced for warehouse ${warehouse_id}: ${updatedCount} items updated`);
+    
+    return {
+      success: true,
+      warehouse_id,
+      itemsUpdated: updatedCount,
+      duration: `${Date.now() - startTime}ms`
+    };
+  } catch (error) {
+    logger.error('Sync inventory job failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Process Return Job (from webhook)
+ * Processes return requests
+ */
+async function handleProcessReturn(payload) {
+  const startTime = Date.now();
+  
+  try {
+    const { return_id, original_order_id, customer, items, refund_amount } = payload;
+    
+    logger.info(`Processing return ${return_id} for order ${original_order_id}`);
+    
+    // Insert return into database
+    const result = await pool.query(
+      `INSERT INTO returns (
+        external_return_id, order_id, customer_name, customer_email,
+        items, refund_amount, status, created_at
+      ) VALUES ($1, 
+        (SELECT id FROM orders WHERE external_order_id = $2 LIMIT 1),
+        $3, $4, $5, $6, 'pending', NOW())
+      RETURNING id`,
+      [
+        return_id,
+        original_order_id,
+        customer.name,
+        customer.email,
+        JSON.stringify(items),
+        refund_amount
+      ]
+    );
+    
+    logger.info(`✅ Return ${return_id} processed as ID ${result.rows[0].id}`);
+    
+    return {
+      success: true,
+      returnId: result.rows[0].id,
+      itemsCount: items?.length || 0,
+      duration: `${Date.now() - startTime}ms`
+    };
+  } catch (error) {
+    logger.error('Process return job failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Process Rates Job (from webhook)
+ * Stores carrier rate information
+ */
+async function handleProcessRates(payload) {
+  const startTime = Date.now();
+  
+  try {
+    const { request_id, rates } = payload;
+    
+    logger.info(`Processing rates for request ${request_id}: ${rates?.length || 0} rates`);
+    
+    // Store rates in database (you might have a carrier_rates table)
+    // For now, just log them
+    logger.info(`Received rates: ${JSON.stringify(rates, null, 2)}`);
+    
+    return {
+      success: true,
+      request_id,
+      ratesCount: rates?.length || 0,
+      duration: `${Date.now() - startTime}ms`
+    };
+  } catch (error) {
+    logger.error('Process rates job failed:', error);
+    throw error;
+  }
+}
+
 // Job handler registry
 export const jobHandlers = {
   'sla_monitoring': handleSLAMonitoring,
@@ -334,6 +614,11 @@ export const jobHandlers = {
   'data_cleanup': handleDataCleanup,
   'notification_dispatch': handleNotificationDispatch,
   'inventory_sync': handleInventorySync,
+  'process_order': handleProcessOrder,
+  'update_tracking': handleUpdateTracking,
+  'sync_inventory': handleSyncInventory,
+  'process_return': handleProcessReturn,
+  'process_rates': handleProcessRates,
 };
 
 export default jobHandlers;

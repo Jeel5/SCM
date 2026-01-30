@@ -120,13 +120,7 @@ export function authorize(resource) {
       throw new ForbiddenError(`Insufficient permissions. Required: ${resource}`);
     }
     
-    // Log successful authorization
-    logAuth('AuthorizationSuccess', userId, {
-      resource,
-      role,
-      path: req.path,
-      method: req.method
-    });
+    // Authorization successful - no verbose logging
     
     next();
   };
@@ -171,12 +165,7 @@ export function requireRoles(...allowedRoles) {
       throw new ForbiddenError(`Access denied. Required roles: ${allowedRoles.join(', ')}`);
     }
     
-    logAuth('RoleCheckSuccess', userId, {
-      allowedRoles,
-      userRole: role,
-      path: req.path,
-      method: req.method
-    });
+    // Role check successful - no verbose logging
     
     next();
   };

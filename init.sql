@@ -310,9 +310,9 @@ CREATE TABLE notifications (
 -- 11. Background Jobs & Scheduler
 CREATE TABLE background_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  job_type VARCHAR(100) NOT NULL, -- invoice_generation, sla_check, report_generation, etc.
+  job_type VARCHAR(255) NOT NULL, -- invoice_generation, sla_check, report_generation, etc.
   priority INTEGER DEFAULT 5, -- 1 (highest) to 10 (lowest)
-  status VARCHAR(50) DEFAULT 'pending', -- pending, running, completed, failed, retrying
+  status VARCHAR(100) DEFAULT 'pending', -- pending, running, completed, failed, retrying
   payload JSONB, -- Job parameters
   result JSONB, -- Job output
   error_message TEXT,

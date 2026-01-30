@@ -118,7 +118,8 @@ class JobWorker {
       });
 
       // Start job execution
-      logId = await jobsService.startJobExecution(jobId);
+      const logResult = await jobsService.startJobExecution(jobId);
+      logId = logResult.id; // Extract just the ID from the log object
 
       // Get the appropriate handler for this job type
       const handler = jobHandlers[job.job_type];

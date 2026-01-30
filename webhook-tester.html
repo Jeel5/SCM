@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCM Webhook Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 1.4em;
+        }
+        
+        .card p {
+            color: #666;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        button:hover {
+            opacity: 0.9;
+        }
+        
+        button:active {
+            transform: scale(0.98);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .dashboard {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        
+        .dashboard h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .stat {
+            text-align: center;
+            padding: 16px;
+            background: #f7f9fc;
+            border-radius: 8px;
+        }
+        
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .log {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        
+        .log-entry {
+            margin-bottom: 4px;
+        }
+        
+        .log-time {
+            color: #888;
+        }
+        
+        .log-success {
+            color: #00ff00;
+        }
+        
+        .log-error {
+            color: #ff4444;
+        }
+        
+        .log-info {
+            color: #00aaff;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .controls button {
+            flex: 1;
+        }
+        
+        .sample-data {
+            background: #f7f9fc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .sample-data pre {
+            margin: 0;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 SCM Webhook Tester</h1>
+        
+        <div class="dashboard">
+            <h2>📊 Dashboard</h2>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="totalWebhooks">0</div>
+                    <div class="stat-label">Total Webhooks</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="successCount">0</div>
+                    <div class="stat-label">Successful</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="failedCount">0</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="pendingCount">0</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button onclick="refreshDashboard()">🔄 Refresh Dashboard</button>
+                <button onclick="clearLogs()">🗑️ Clear Logs</button>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>📦 Amazon Order</h2>
+                <p>Simulate an order webhook from Amazon with random customer data and items.</p>
+                <button onclick="sendWebhook('amazon_order')">Send Amazon Order</button>
+                <button onclick="showSample('amazon_order')" style="margin-top: 8px; background: #555;">Preview Data</button>
+                <div id="sample-amazon_order" class="sample-data" style="display:none;"></div>
+            </div>
+            
+            <div class="card">
+                <h2>🛒 Shopify Order</h2>
+                <p>Simulate an order webhook from Shopify with line items and customer info.</p>
+                <button onclick="sendWebhook('shopify_order')">Send Shopify Order</button>
+                <button onclick="showSample('shopify_order')" style="margin-top: 8px; background: #555;">Preview Data</button>
+                <div id="sample-shopify_order" class="sample-data" style="display:none;"></div>
+            </div>
+            
+            <div class="card">
+                <h2>🚚 Carrier Tracking</h2>
+                <p>Simulate tracking updates from carriers like FedEx, UPS with location history.</p>
+                <button onclick="sendWebhook('tracking')">Send Tracking Update</button>
+                <button onclick="showSample('tracking')" style="margin-top: 8px; background: #555;">Preview Data</button>
+                <div id="sample-tracking" class="sample-data" style="display:none;"></div>
+            </div>
+            
+            <div class="card">
+                <h2>📊 Warehouse Inventory</h2>
+                <p>Simulate inventory updates from warehouse management system with stock changes.</p>
+                <button onclick="sendWebhook('inventory')">Send Inventory Update</button>
+                <button onclick="showSample('inventory')" style="margin-top: 8px; background: #555;">Preview Data</button>
+                <div id="sample-inventory" class="sample-data" style="display:none;"></div>
+            </div>
+            
+            <div class="card">
+                <h2>↩️ Return Request</h2>
+                <p>Simulate customer return requests with reasons and refund amounts.</p>
+                <button onclick="sendWebhook('return')">Send Return Request</button>
+                <button onclick="showSample('return')" style="margin-top: 8px; background: #555;">Preview Data</button>
+                <div id="sample-return" class="sample-data" style="display:none;"></div>
+            </div>
+            
+            <div class="card">
+                <h2>💰 Shipping Rates</h2>
+                <p>Simulate carrier rate responses with pricing from multiple carriers.</p>
+                <button onclick="sendWebhook('rates')">Send Rate Response</button>
+                <button onclick="showSample('rates')" style="margin-top: 8px; background: #555;">Preview Data</button>
+                <div id="sample-rates" class="sample-data" style="display:none;"></div>
+            </div>
+        </div>
+        
+        <div class="dashboard">
+            <h2>📝 Activity Log</h2>
+            <div id="log" class="log">
+                <div class="log-entry log-info">
+                    <span class="log-time">[Ready]</span> Webhook tester ready. Click any button above to send a webhook.
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000/api/webhooks';
+        
+        const WEBHOOK_ENDPOINTS = {
+            'amazon_order': '/orders',
+            'shopify_order': '/orders',
+            'tracking': '/tracking',
+            'inventory': '/inventory',
+            'return': '/returns',
+            'rates': '/rates'
+        };
+        
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
+            logEl.insertBefore(entry, logEl.firstChild);
+        }
+        
+        async function sendWebhook(type) {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = 'Sending...';
+            
+            try {
+                log(`🔄 Generating ${type} webhook data...`, 'info');
+                
+                // Get sample data first
+                const sampleRes = await fetch(`${API_BASE}/sample/${type}`);
+                const sampleData = await sampleRes.json();
+                
+                if (!sampleData.success) {
+                    throw new Error('Failed to generate sample data');
+                }
+                
+                log(`📤 Sending ${type} webhook to ${WEBHOOK_ENDPOINTS[type]}...`, 'info');
+                
+                // Send webhook
+                const endpoint = WEBHOOK_ENDPOINTS[type];
+                const res = await fetch(`${API_BASE}${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(sampleData.sample)
+                });
+                
+                const result = await res.json();
+                
+                if (result.success) {
+                    log(`✅ ${type} webhook sent successfully! Job ID: ${result.job_id}`, 'success');
+                } else {
+                    log(`❌ ${type} webhook failed: ${result.message}`, 'error');
+                }
+                
+                // Refresh dashboard
+                await refreshDashboard();
+                
+            } catch (error) {
+                log(`❌ Error sending ${type} webhook: ${error.message}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = button.textContent.replace('Sending...', 'Send ' + type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '));
+            }
+        }
+        
+        async function showSample(type) {
+            const sampleDiv = document.getElementById(`sample-${type}`);
+            
+            if (sampleDiv.style.display === 'block') {
+                sampleDiv.style.display = 'none';
+                event.target.textContent = 'Preview Data';
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_BASE}/sample/${type}`);
+                const data = await res.json();
+                
+                if (data.success) {
+                    sampleDiv.innerHTML = `<pre>${JSON.stringify(data.sample, null, 2)}</pre>`;
+                    sampleDiv.style.display = 'block';
+                    event.target.textContent = 'Hide Preview';
+                }
+            } catch (error) {
+                log(`❌ Error fetching sample data: ${error.message}`, 'error');
+            }
+        }
+        
+        async function refreshDashboard() {
+            try {
+                const res = await fetch(`${API_BASE}/dashboard`);
+                const data = await res.json();
+                
+                if (data.success) {
+                    const summary = data.data.summary;
+                    document.getElementById('totalWebhooks').textContent = summary.total_webhooks || 0;
+                    document.getElementById('successCount').textContent = summary.successful || 0;
+                    document.getElementById('failedCount').textContent = summary.failed || 0;
+                    document.getElementById('pendingCount').textContent = summary.pending || 0;
+                    
+                    log(`📊 Dashboard refreshed - ${summary.total_webhooks} total webhooks`, 'info');
+                }
+            } catch (error) {
+                log(`⚠️ Could not refresh dashboard: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearLogs() {
+            const logEl = document.getElementById('log');
+            logEl.innerHTML = '<div class="log-entry log-info"><span class="log-time">[Ready]</span> Logs cleared.</div>';
+        }
+        
+        // Auto-refresh dashboard every 10 seconds
+        setInterval(refreshDashboard, 10000);
+        
+        // Initial dashboard load
+        refreshDashboard();
+    </script>
+</body>
+</html>

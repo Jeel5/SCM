@@ -26,6 +26,7 @@ import slaRoutes from './routes/sla.js';
 import returnsRoutes from './routes/returns.js';
 import jobsRoutes from './routes/jobs.js';
 import financeRoutes from './routes/finance.js';
+import webhooksRoutes from './routes/webhooks.js';
 
 // Security headers middleware
 app.use(helmet());
@@ -63,6 +64,7 @@ app.use(API_PREFIX, slaRoutes);
 app.use(API_PREFIX, returnsRoutes);
 app.use(API_PREFIX, jobsRoutes);
 app.use(API_PREFIX, financeRoutes);
+app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);

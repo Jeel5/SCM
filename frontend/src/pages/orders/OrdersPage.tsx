@@ -78,7 +78,7 @@ export function OrdersPage() {
       key: 'items',
       header: 'Items',
       render: (order: Order) => (
-        <Badge variant="default">{order.items.length} item(s)</Badge>
+        <Badge variant="default">{order.items?.length || 0} item(s)</Badge>
       ),
     },
     {

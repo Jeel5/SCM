@@ -12,8 +12,6 @@ export async function login(req, res) {
       return res.status(400).json({ error: 'Email and password required' });
     }
     
-    console.log('Login attempt for:', email);
-    
     const result = await pool.query(
       `SELECT u.*, o.name as organization_name, 
               COALESCE(array_agg(up.permission) FILTER (WHERE up.permission IS NOT NULL), '{}') as permissions
@@ -25,22 +23,14 @@ export async function login(req, res) {
       [email]
     );
     
-    console.log('User found:', result.rows.length > 0);
-    
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
     const user = result.rows[0];
-    console.log('Password hash exists:', !!user.password_hash);
     
-    // Ensure password is a string
-    const passwordString = String(password);
-    const passwordHash = String(user.password_hash);
-    console.log(passwordString, passwordHash)
-    
-    const isValid = await bcrypt.compare(passwordString, passwordHash);
-    console.log('Password valid:', isValid);
+    // Verify password
+    const isValid = await bcrypt.compare(String(password), String(user.password_hash));
     
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
