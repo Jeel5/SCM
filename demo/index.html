@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCM Two-Phase Quote System - Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 50px;
+            text-align: center;
+        }
+        .hero h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .hero p {
+            font-size: 1.3em;
+            opacity: 0.95;
+            line-height: 1.6;
+        }
+        .content {
+            padding: 50px;
+        }
+        .section {
+            margin-bottom: 40px;
+        }
+        .section h2 {
+            color: #667eea;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-top: 30px;
+        }
+        .card {
+            background: #f8f9fa;
+            border: 3px solid #dee2e6;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+        }
+        .card-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        .card h3 {
+            font-size: 1.5em;
+            color: #495057;
+            margin-bottom: 15px;
+        }
+        .card p {
+            color: #6c757d;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 15px 35px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 1.1em;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .features {
+            list-style: none;
+            margin-top: 20px;
+        }
+        .features li {
+            padding: 12px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            border-radius: 4px;
+        }
+        .features li::before {
+            content: "✓ ";
+            color: #28a745;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .workflow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        .workflow-step {
+            flex: 1;
+            min-width: 200px;
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin: 10px;
+        }
+        .workflow-step .step-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 0 auto 15px;
+        }
+        .workflow-step h4 {
+            color: #495057;
+            margin-bottom: 10px;
+        }
+        .workflow-arrow {
+            font-size: 2em;
+            color: #667eea;
+        }
+        .info-box {
+            background: #e7f3ff;
+            border-left: 5px solid #2196F3;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .info-box h4 {
+            color: #1976D2;
+            margin-bottom: 10px;
+        }
+        .info-box p {
+            color: #455a64;
+            line-height: 1.6;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .warning-box h4 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero">
+            <h1>🚚 SCM Two-Phase Quote System</h1>
+            <p>Experience complete data visibility through every step of the shipping quote process</p>
+        </div>
+        
+        <div class="content">
+            <div class="section">
+                <h2>🎯 Choose Your Portal</h2>
+                <div class="cards">
+                    <div class="card" onclick="window.location.href='customer.html'">
+                        <div class="card-icon">🛍️</div>
+                        <h3>Customer Portal</h3>
+                        <p>Shop products, get instant estimates, and place orders. Start here to begin the simulation.</p>
+                        <a href="customer.html" class="btn">Start Shopping</a>
+                    </div>
+                    
+                    <div class="card" onclick="window.location.href='carrier-portal.html'">
+                        <div class="card-icon">🚚</div>
+                        <h3>Carrier Portal</h3>
+                        <p>Review quote requests, see all data details, and accept or reject shipments.</p>
+                        <a href="carrier-portal.html" class="btn">Open Portal</a>
+                    </div>
+                    
+                    <div class="card" onclick="window.location.href='order-tracking.html'">
+                        <div class="card-icon">📊</div>
+                        <h3>Order Tracking</h3>
+                        <p>Monitor the complete quote flow, see all responses, and track carrier selection.</p>
+                        <a href="order-tracking.html" class="btn">Track Orders</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📋 How It Works</h2>
+                <div class="workflow">
+                    <div class="workflow-step">
+                        <div class="step-number">1</div>
+                        <h4>Customer Shops</h4>
+                        <p>Select product, get Phase 1 estimate</p>
+                    </div>
+                    <div class="workflow-arrow">→</div>
+                    <div class="workflow-step">
+                        <div class="step-number">2</div>
+                        <h4>Place Order</h4>
+                        <p>Payment triggers Phase 2 quotes</p>
+                    </div>
+                    <div class="workflow-arrow">→</div>
+                    <div class="workflow-step">
+                        <div class="step-number">3</div>
+                        <h4>Carriers Respond</h4>
+                        <p>Accept/reject with pricing</p>
+                    </div>
+                    <div class="workflow-arrow">→</div>
+                    <div class="workflow-step">
+                        <div class="step-number">4</div>
+                        <h4>Best Selected</h4>
+                        <p>System picks optimal carrier</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>✨ Key Features</h2>
+                <ul class="features">
+                    <li><strong>Complete Data Visibility</strong> - See exactly what data is sent and received at every step</li>
+                    <li><strong>Two-Phase System</strong> - Fast estimates during checkout, accurate quotes after payment</li>
+                    <li><strong>Multiple Carriers</strong> - Simulate DHL, FedEx, BlueDart, and Delhivery</li>
+                    <li><strong>Accept/Reject Logic</strong> - Carriers can reject based on weight, route, capacity</li>
+                    <li><strong>Automatic Selection</strong> - Best carrier chosen using weighted scoring</li>
+                    <li><strong>JSON Data Display</strong> - All requests/responses shown in readable format</li>
+                    <li><strong>Timeline View</strong> - Visual tracking of order progress</li>
+                    <li><strong>No Complex Setup</strong> - Just open in browser and explore</li>
+                </ul>
+            </div>
+            
+            <div class="info-box">
+                <h4>💡 Getting Started</h4>
+                <p>
+                    <strong>Step 1:</strong> Make sure your backend is running on port 3000<br>
+                    <strong>Step 2:</strong> Open Customer Portal and select a product<br>
+                    <strong>Step 3:</strong> Place order to trigger Phase 2<br>
+                    <strong>Step 4:</strong> Switch to Carrier Portal and respond to quote<br>
+                    <strong>Step 5:</strong> Check Order Tracking to see complete flow
+                </p>
+            </div>
+            
+            <div class="warning-box">
+                <h4>⚙️ Prerequisites</h4>
+                <p>
+                    <strong>Backend Server:</strong> Must be running on http://localhost:3000<br>
+                    <strong>Database:</strong> PostgreSQL with carriers table populated<br>
+                    <strong>Browser:</strong> Modern browser with JavaScript enabled<br>
+                    <strong>CORS:</strong> Backend must allow localhost origins
+                </p>
+            </div>
+            
+            <div class="section" style="text-align: center; margin-top: 50px;">
+                <h2>🚀 Ready to Start?</h2>
+                <p style="margin: 20px 0; color: #6c757d;">Begin with the Customer Portal to place your first order</p>
+                <a href="customer.html" class="btn" style="font-size: 1.3em; padding: 20px 50px;">
+                    Launch Customer Portal →
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

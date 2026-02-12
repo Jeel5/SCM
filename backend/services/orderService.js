@@ -2,6 +2,7 @@ import OrderRepository from '../repositories/OrderRepository.js';
 import InventoryRepository from '../repositories/InventoryRepository.js';
 import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index.js';
 import { logEvent, logPerformance } from '../utils/logger.js';
+import { withTransaction } from '../utils/dbTransaction.js';
 
 // Order Service - contains business logic and orchestrates order operations
 class OrderService {
@@ -43,78 +44,75 @@ class OrderService {
       throw new BusinessLogicError('Order must have at least one item');
     }
 
-    const client = await OrderRepository.beginTransaction();
-    
     try {
-      // Prepare order data
-      // Build order record with defaults
-      const orderRecord = {
-        order_number: orderData.order_number || `ORD-${Date.now()}`,
-        customer_name: orderData.customer_name,
-        customer_email: orderData.customer_email,
-        customer_phone: orderData.customer_phone || null,
-        status: orderData.status || 'created',
-        priority: orderData.priority || 'standard',
-        total_amount: orderData.total_amount,
-        currency: orderData.currency || 'USD',
-        shipping_address: JSON.stringify(orderData.shipping_address),
-        billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
-        estimated_delivery: orderData.estimated_delivery || null,
-        notes: orderData.notes || null
-      };
+      const order = await withTransaction(async (tx) => {
+        // Prepare order data
+        // Build order record with defaults
+        const orderRecord = {
+          order_number: orderData.order_number || `ORD-${Date.now()}`,
+          customer_name: orderData.customer_name,
+          customer_email: orderData.customer_email,
+          customer_phone: orderData.customer_phone || null,
+          status: orderData.status || 'created',
+          priority: orderData.priority || 'standard',
+          total_amount: orderData.total_amount,
+          currency: orderData.currency || 'USD',
+          shipping_address: JSON.stringify(orderData.shipping_address),
+          billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
+          estimated_delivery: orderData.estimated_delivery || null,
+          notes: orderData.notes || null
+        };
 
-      // Prepare items with calculated totals
-      const items = orderData.items.map(item => ({
-        product_id: item.product_id,
-        sku: item.sku,
-        product_name: item.product_name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.quantity * item.unit_price,
-        weight: item.weight || null,
-        warehouse_id: item.warehouse_id || null
-      }));
+        // Prepare items
+        const items = orderData.items.map(item => ({
+          product_id: item.product_id,
+          sku: item.sku,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          weight: item.weight || null,
+          warehouse_id: item.warehouse_id || null
+        }));
 
-      // Create order with items in transaction
-      const order = await OrderRepository.createOrderWithItems(orderRecord, items, client);
+        // Create order with items in transaction
+        const order = await OrderRepository.createOrderWithItems(orderRecord, items, tx);
 
-      // Reserve inventory for each item
-      for (const item of orderData.items) {
-        if (item.warehouse_id && item.sku) {
-          const reserved = await InventoryRepository.reserveStock(
-            item.sku,
-            item.warehouse_id,
-            item.quantity,
-            client
-          );
-          
-          if (!reserved) {
-            throw new BusinessLogicError(`Insufficient inventory for SKU: ${item.sku}`);
+        // Reserve inventory for each item
+        for (const item of orderData.items) {
+          if (item.warehouse_id && item.sku) {
+            const reserved = await InventoryRepository.reserveStock(
+              item.sku,
+              item.warehouse_id,
+              item.quantity,
+              tx
+            );
+            
+            if (!reserved) {
+              throw new BusinessLogicError(`Insufficient inventory for SKU: ${item.sku}`);
+            }
           }
         }
-      }
 
-      await OrderRepository.commitTransaction(client);
+        return order;
+      });
       
-      // Log order creation event
+      // Log order creation event after successful commit
       logEvent('OrderCreated', {
         orderId: order.id,
         orderNumber: order.order_number,
         customerEmail: order.customer_email,
         totalAmount: order.total_amount,
-        itemCount: items.length,
+        itemCount: order.items.length,
       });
       
       logPerformance('createOrder', Date.now() - startTime, {
         orderId: order.id,
-        itemCount: items.length,
+        itemCount: order.items.length,
       });
       
       return order;
       
     } catch (error) {
-      await OrderRepository.rollbackTransaction(client);
-      
       logEvent('OrderCreationFailed', {
         customerEmail: orderData.customer_email,
         error: error.message,

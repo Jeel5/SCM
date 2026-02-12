@@ -2,79 +2,75 @@
 import pool from '../configs/db.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
+import { withTransaction } from '../utils/dbTransaction.js';
 
 class WarehouseOpsService {
   /**
    * Create pick list for orders ready to be picked
    */
   async createPickList(warehouseId, orderIds, assignedTo) {
-    const client = await pool.connect();
-    
     try {
-      await client.query('BEGIN');
+      const pickList = await withTransaction(async (tx) => {
+        // Generate pick list number
+        const pickListNumber = `PL-${Date.now()}`;
 
-      // Generate pick list number
-      const pickListNumber = `PL-${Date.now()}`;
-
-      // Get order items for the orders at this warehouse
-      const itemsResult = await client.query(
-        `SELECT oi.*, p.name as product_name
-         FROM order_items oi
-         JOIN products p ON p.id = oi.product_id
-         WHERE oi.warehouse_id = $1
-         AND oi.order_id = ANY($2)
-         AND oi.pick_status = 'pending'
-         ORDER BY p.category, p.sku`,
-        [warehouseId, orderIds]
-      );
-
-      if (itemsResult.rows.length === 0) {
-        throw new BusinessLogicError('No items available for picking');
-      }
-
-      // Create pick list
-      const pickListResult = await client.query(
-        `INSERT INTO pick_lists 
-        (pick_list_number, warehouse_id, assigned_to, status, total_items)
-        VALUES ($1, $2, $3, 'pending', $4)
-        RETURNING *`,
-        [pickListNumber, warehouseId, assignedTo, itemsResult.rows.length]
-      );
-
-      const pickList = pickListResult.rows[0];
-
-      // Add items to pick list
-      for (const item of itemsResult.rows) {
-        await client.query(
-          `INSERT INTO pick_list_items 
-          (pick_list_id, order_item_id, product_id, quantity_required, location, status)
-          VALUES ($1, $2, $3, $4, $5, 'pending')`,
-          [pickList.id, item.id, item.product_id, item.quantity, 'A1-B2', ] // Location from inventory
+        // Get order items for the orders at this warehouse
+        const itemsResult = await tx.query(
+          `SELECT oi.*, p.name as product_name
+           FROM order_items oi
+           JOIN products p ON p.id = oi.product_id
+           WHERE oi.warehouse_id = $1
+           AND oi.order_id = ANY($2)
+           AND oi.pick_status = 'pending'
+           ORDER BY p.category, p.sku`,
+          [warehouseId, orderIds]
         );
 
-        // Update order item status
-        await client.query(
-          'UPDATE order_items SET pick_status = $1 WHERE id = $2',
-          ['assigned', item.id]
-        );
-      }
+        if (itemsResult.rows.length === 0) {
+          throw new BusinessLogicError('No items available for picking');
+        }
 
-      await client.query('COMMIT');
+        // Create pick list
+        const pickListResult = await tx.query(
+          `INSERT INTO pick_lists 
+          (pick_list_number, warehouse_id, assigned_to, status, total_items)
+          VALUES ($1, $2, $3, 'pending', $4)
+          RETURNING *`,
+          [pickListNumber, warehouseId, assignedTo, itemsResult.rows.length]
+        );
+
+        const pickList = pickListResult.rows[0];
+
+        // Add items to pick list
+        for (const item of itemsResult.rows) {
+          await tx.query(
+            `INSERT INTO pick_list_items 
+            (pick_list_id, order_item_id, product_id, quantity_required, location, status)
+            VALUES ($1, $2, $3, $4, $5, 'pending')`,
+            [pickList.id, item.id, item.product_id, item.quantity, 'A1-B2', ] // Location from inventory
+          );
+
+          // Update order item status
+          await tx.query(
+            'UPDATE order_items SET pick_status = $1 WHERE id = $2',
+            ['assigned', item.id]
+          );
+        }
+
+        return pickList;
+      });
 
       logEvent('PickListCreated', {
         pickListId: pickList.id,
-        pickListNumber,
+        pickListNumber: pickList.pick_list_number,
         warehouseId,
-        itemsCount: itemsResult.rows.length
+        itemsCount: pickList.total_items
       });
 
       return pickList;
 
     } catch (error) {
-      await client.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   }
 

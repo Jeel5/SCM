@@ -1,6 +1,7 @@
 import pool from '../configs/db.js';
 import logger from '../utils/logger.js';
 import axios from 'axios';
+import { withTransaction } from '../utils/dbTransaction.js';
 
 class CarrierAssignmentService {
   /**
@@ -14,96 +15,125 @@ class CarrierAssignmentService {
         items: orderData.items?.length
       });
 
-      // Get order details
-      const orderResult = await pool.query(
-        `SELECT id, customer_name, customer_email, customer_phone, priority, 
-                status, shipping_address, total_amount, created_at
-         FROM orders WHERE id = $1`,
-        [orderId]
-      );
-
-      if (orderResult.rows.length === 0) {
-        throw new Error(`Order ${orderId} not found`);
-      }
-
-      const order = orderResult.rows[0];
-
-      // Find eligible carriers based on service type
-      const serviceType = order.priority || 'standard'; // standard, express, bulk
-      const carriersResult = await pool.query(
-        `SELECT id, code, name, contact_email, service_type, is_active
-         FROM carriers 
-         WHERE is_active = true 
-         AND (service_type = $1 OR service_type = 'all')
-         ORDER BY reliability_score DESC
-         LIMIT 3`,
-        [serviceType]
-      );
-
-      if (carriersResult.rows.length === 0) {
-        throw new Error(`No available carriers for service type: ${serviceType}`);
-      }
-
-      const assignments = [];
-
-      for (const carrier of carriersResult.rows) {
-        // Create assignment record
-        const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour window for acceptance
-
-        const requestPayload = {
-          orderId,
-          orderNumber: order.order_number,
-          customerName: order.customer_name,
-          customerEmail: order.customer_email,
-          customerPhone: order.customer_phone,
-          serviceType,
-          totalAmount: parseFloat(order.total_amount),
-          shippingAddress: order.shipping_address,
-          items: orderData.items || [],
-          requestedAt: new Date()
-        };
-
-        const assignmentResult = await pool.query(
-          `INSERT INTO carrier_assignments 
-           (order_id, carrier_id, service_type, status, pickup_address, delivery_address,
-            estimated_pickup, estimated_delivery, request_payload, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           RETURNING id, carrier_id, order_id, status, created_at`,
-          [
-            orderId,
-            carrier.id,
-            serviceType,
-            'pending',
-            order.shipping_address, // Using this as pickup (from warehouse)
-            order.shipping_address, // Using this as delivery
-            new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
-            new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
-            JSON.stringify(requestPayload),
-            expiresAt
-          ]
+      // Use transaction to ensure atomicity
+      const result = await withTransaction(async (tx) => {
+        // Get order details
+        const orderResult = await tx.query(
+          `SELECT id, customer_name, customer_email, customer_phone, priority, 
+                  status, shipping_address, total_amount, created_at, order_number
+           FROM orders WHERE id = $1`,
+          [orderId]
         );
 
-        const assignment = assignmentResult.rows[0];
-        assignments.push(assignment);
+        if (orderResult.rows.length === 0) {
+          throw new Error(`Order ${orderId} not found`);
+        }
 
-        logger.info(`Created carrier assignment request`, {
-          assignmentId: assignment.id,
-          carrierId: carrier.id,
-          carrierName: carrier.name,
-          orderId
+        const order = orderResult.rows[0];
+
+        // Find eligible carriers based on service type
+        const serviceType = order.priority || 'standard'; // standard, express, bulk
+        const carriersResult = await tx.query(
+          `SELECT id, code, name, contact_email, service_type, is_active
+           FROM carriers 
+           WHERE is_active = true 
+           AND (service_type = $1 OR service_type = 'all')
+           ORDER BY reliability_score DESC
+           LIMIT 3`,
+          [serviceType]
+        );
+
+        if (carriersResult.rows.length === 0) {
+          throw new Error(`No available carriers for service type: ${serviceType}`);
+        }
+
+        const assignments = [];
+        const carriersToNotify = [];
+
+        for (const carrier of carriersResult.rows) {
+          // Create assignment record
+          const expiresAt = new Date();
+          expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour window for acceptance
+
+          const requestPayload = {
+            orderId,
+            orderNumber: order.order_number,
+            customerName: order.customer_name,
+            customerEmail: order.customer_email,
+            customerPhone: order.customer_phone,
+            serviceType,
+            totalAmount: parseFloat(order.total_amount),
+            shippingAddress: order.shipping_address,
+            items: orderData.items || [],
+            requestedAt: new Date()
+          };
+
+          // Generate idempotency key
+          const idempotencyKey = `${orderId}-carrier-${carrier.id}-${Date.now()}`;
+
+          const assignmentResult = await tx.query(
+            `INSERT INTO carrier_assignments 
+             (order_id, carrier_id, service_type, status, pickup_address, delivery_address,
+              estimated_pickup, estimated_delivery, request_payload, expires_at, idempotency_key)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             RETURNING id, carrier_id, order_id, status, created_at`,
+            [
+              orderId,
+              carrier.id,
+              serviceType,
+              'pending',
+              order.shipping_address, // Using this as pickup (from warehouse)
+              order.shipping_address, // Using this as delivery
+              new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
+              new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+              JSON.stringify(requestPayload),
+              expiresAt,
+              idempotencyKey
+            ]
+          );
+
+          const assignment = assignmentResult.rows[0];
+          assignments.push(assignment);
+
+          logger.info(`Created carrier assignment request`, {
+            assignmentId: assignment.id,
+            carrierId: carrier.id,
+            carrierName: carrier.name,
+            orderId,
+            idempotencyKey
+          });
+
+          // Store carrier info for notification after transaction commits
+          carriersToNotify.push({ assignment, carrier, requestPayload });
+        }
+
+        // Update order status to pending_carrier_assignment
+        await tx.query(
+          'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
+          ['pending_carrier_assignment', orderId]
+        );
+
+        return { assignments, carriersToNotify, orderId };
+      });
+
+      // After transaction commits, send notifications to carriers
+      // This happens outside transaction because external API calls can't be rolled back
+      for (const { assignment, carrier, requestPayload } of result.carriersToNotify) {
+        // Fire and forget - don't await
+        this.sendAssignmentToCarrier(assignment.id, carrier, requestPayload).catch(err => {
+          logger.error('Failed to notify carrier', {
+            assignmentId: assignment.id,
+            carrierCode: carrier.code,
+            error: err.message
+          });
         });
-
-        // Simulate sending assignment request to carrier's webhook
-        // In real system, this would call carrier's API endpoint
-        this.sendAssignmentThancarrier(assignment.id, carrier, requestPayload);
       }
 
       return {
-        orderId,
-        assignments,
-        pendingAcceptance: assignments.length,
-        message: `Assignment request sent to ${assignments.length} carriers. Waiting for acceptance.`
+        orderId: result.orderId,
+        assignments: result.assignments,
+        pendingAcceptance: result.assignments.length,
+        message: `Assignment request sent to ${result.assignments.length} carriers. Waiting for acceptance.`
       };
     } catch (error) {
       logger.error('Carrier assignment request failed', {
@@ -261,119 +291,114 @@ class CarrierAssignmentService {
    * Accept an assignment and create shipment
    */
   async acceptAssignment(assignmentId, carrierId, acceptanceData = {}) {
-    const client = await pool.connect();
-
     try {
-      await client.query('BEGIN');
+      const result = await withTransaction(async (tx) => {
+        // Get assignment
+        const assignmentResult = await tx.query(
+          `SELECT ca.*, o.id as order_id, o.shipping_address, o.customer_name,
+                  o.total_amount, c.id as carrier_id
+           FROM carrier_assignments ca
+           JOIN orders o ON ca.order_id = o.id
+           JOIN carriers c ON ca.carrier_id = c.id
+           WHERE ca.id = $1 AND ca.carrier_id = $2`,
+          [assignmentId, carrierId]
+        );
 
-      // Get assignment
-      const assignmentResult = await client.query(
-        `SELECT ca.*, o.id as order_id, o.shipping_address, o.customer_name,
-                o.total_amount, c.id as carrier_id
-         FROM carrier_assignments ca
-         JOIN orders o ON ca.order_id = o.id
-         JOIN carriers c ON ca.carrier_id = c.id
-         WHERE ca.id = $1 AND ca.carrier_id = $2`,
-        [assignmentId, carrierId]
-      );
+        if (assignmentResult.rows.length === 0) {
+          throw new Error('Assignment not found or unauthorized');
+        }
 
-      if (assignmentResult.rows.length === 0) {
-        throw new Error('Assignment not found or unauthorized');
-      }
+        const assignment = assignmentResult.rows[0];
 
-      const assignment = assignmentResult.rows[0];
+        // Update assignment to accepted
+        const acceptancePayload = {
+          carrierReferenceId: acceptanceData.carrierReferenceId || `JOB-${Date.now()}`,
+          dispatchTime: acceptanceData.dispatchTime || new Date(),
+          estimatedPickup: acceptanceData.estimatedPickup || assignment.estimated_pickup,
+          estimatedDelivery: acceptanceData.estimatedDelivery || assignment.estimated_delivery,
+          driverName: acceptanceData.driverName,
+          driverPhone: acceptanceData.driverPhone,
+          vehicleInfo: acceptanceData.vehicleInfo,
+          additionalInfo: acceptanceData.additionalInfo
+        };
 
-      // Update assignment to accepted
-      const acceptancePayload = {
-        carrierReferenceId: acceptanceData.carrierReferenceId || `JOB-${Date.now()}`,
-        dispatchTime: acceptanceData.dispatchTime || new Date(),
-        estimatedPickup: acceptanceData.estimatedPickup || assignment.estimated_pickup,
-        estimatedDelivery: acceptanceData.estimatedDelivery || assignment.estimated_delivery,
-        driverName: acceptanceData.driverName,
-        driverPhone: acceptanceData.driverPhone,
-        vehicleInfo: acceptanceData.vehicleInfo,
-        additionalInfo: acceptanceData.additionalInfo
-      };
+        const updateResult = await tx.query(
+          `UPDATE carrier_assignments 
+           SET status = 'accepted', 
+               accepted_at = NOW(),
+               carrier_reference_id = $1,
+               acceptance_payload = $2
+           WHERE id = $3
+           RETURNING *`,
+          [
+            acceptancePayload.carrierReferenceId,
+            JSON.stringify(acceptancePayload),
+            assignmentId
+          ]
+        );
 
-      const updateResult = await client.query(
-        `UPDATE carrier_assignments 
-         SET status = 'accepted', 
-             accepted_at = NOW(),
-             carrier_reference_id = $1,
-             acceptance_payload = $2
-         WHERE id = $3
-         RETURNING *`,
-        [
-          acceptancePayload.carrierReferenceId,
-          JSON.stringify(acceptancePayload),
-          assignmentId
-        ]
-      );
+        const updatedAssignment = updateResult.rows[0];
 
-      const updatedAssignment = updateResult.rows[0];
+        // Create shipment from accepted assignment
+        const trackingNumber = `TRACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-      // Create shipment from accepted assignment
-      const trackingNumber = `TRACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const shipmentResult = await tx.query(
+          `INSERT INTO shipments 
+           (tracking_number, order_id, carrier_assignment_id, carrier_id, warehouse_id,
+            status, origin_address, destination_address, delivery_scheduled,
+            created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+           RETURNING *`,
+          [
+            trackingNumber,
+            assignment.order_id,
+            assignmentId,
+            assignment.carrier_id,
+            null, // warehouse_id would come from order allocation
+            'pending',
+            assignment.pickup_address,
+            assignment.delivery_address,
+            acceptancePayload.estimatedDelivery
+          ]
+        );
 
-      const shipmentResult = await client.query(
-        `INSERT INTO shipments 
-         (tracking_number, order_id, carrier_assignment_id, carrier_id, warehouse_id,
-          status, origin_address, destination_address, delivery_scheduled,
-          created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-         RETURNING *`,
-        [
-          trackingNumber,
-          assignment.order_id,
-          assignmentId,
-          assignment.carrier_id,
-          null, // warehouse_id would come from order allocation
-          'pending',
-          assignment.pickup_address,
-          assignment.delivery_address,
-          acceptancePayload.estimatedDelivery
-        ]
-      );
+        const shipment = shipmentResult.rows[0];
 
-      const shipment = shipmentResult.rows[0];
+        // Update order status to 'shipped'
+        await tx.query(
+          `UPDATE orders 
+           SET status = 'shipped', updated_at = NOW()
+           WHERE id = $1`,
+          [assignment.order_id]
+        );
 
-      // Update order status to 'shipped'
-      await client.query(
-        `UPDATE orders 
-         SET status = 'shipped', updated_at = NOW()
-         WHERE id = $1`,
-        [assignment.order_id]
-      );
-
-      await client.query('COMMIT');
+        return { updatedAssignment, shipment, trackingNumber };
+      });
 
       logger.info('Assignment accepted and shipment created', {
         assignmentId,
-        shipmentId: shipment.id,
-        trackingNumber,
+        shipmentId: result.shipment.id,
+        trackingNumber: result.trackingNumber,
         carrierId
       });
 
       return {
-        assignment: updatedAssignment,
+        assignment: result.updatedAssignment,
         shipment: {
-          id: shipment.id,
-          trackingNumber,
-          status: shipment.status,
-          createdAt: shipment.created_at
+          id: result.shipment.id,
+          trackingNumber: result.trackingNumber,
+          status: result.shipment.status,
+          createdAt: result.shipment.created_at
         },
         message: 'Assignment accepted. Shipment created successfully.'
       };
     } catch (error) {
-      await client.query('ROLLBACK');
       logger.error('Failed to accept assignment', {
         assignmentId,
         carrierId,
         error: error.message
       });
       throw error;
-    } finally {
-      client.release();
     }
   }
 

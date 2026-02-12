@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carrier Partner Portal - Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header p { font-size: 1.1em; opacity: 0.9; }
+        
+        .carrier-selector {
+            display: flex;
+            gap: 15px;
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 3px solid #dee2e6;
+        }
+        .carrier-btn {
+            flex: 1;
+            padding: 15px;
+            border: 3px solid #dee2e6;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+        .carrier-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .carrier-btn.active {
+            border-color: #f5576c;
+            background: #fff5f7;
+            color: #f5576c;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        .section-title {
+            font-size: 1.8em;
+            margin-bottom: 25px;
+            color: #f5576c;
+            border-bottom: 3px solid #f5576c;
+            padding-bottom: 10px;
+        }
+        
+        .quote-request {
+            background: #f8f9fa;
+            border: 3px solid #dee2e6;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            transition: all 0.3s;
+        }
+        .quote-request:hover {
+            border-color: #f5576c;
+            box-shadow: 0 5px 20px rgba(245, 87, 108, 0.1);
+        }
+        
+        .request-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .request-header h3 {
+            font-size: 1.5em;
+            color: #f5576c;
+        }
+        .request-time {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .data-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #e9ecef;
+        }
+        .data-section h4 {
+            color: #f5576c;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        .data-display {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .data-display pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .shipment-details {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #e9ecef;
+            margin-bottom: 20px;
+        }
+        .detail-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            padding: 10px;
+            border-bottom: 1px solid #f1f3f5;
+        }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label {
+            font-weight: bold;
+            color: #495057;
+        }
+        .detail-value {
+            color: #212529;
+        }
+        
+        .action-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 25px;
+        }
+        .action-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #e9ecef;
+        }
+        .action-card h4 {
+            color: #495057;
+            margin-bottom: 15px;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #495057;
+            font-size: 0.9em;
+        }
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #f5576c;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1em;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        .btn-accept {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+        }
+        .btn-accept:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(40, 167, 69, 0.4);
+        }
+        .btn-reject {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+        }
+        .btn-reject:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(220, 53, 69, 0.4);
+        }
+        
+        .response-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #e8f5e9;
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+            display: none;
+        }
+        .response-section.reject {
+            background: #ffebee;
+            border-color: #f44336;
+        }
+        .response-section h4 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+        .response-section.reject h4 {
+            color: #c62828;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+        .empty-state h3 {
+            font-size: 2em;
+            margin-bottom: 15px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .badge-pending {
+            background: #ffc107;
+            color: #000;
+        }
+        .badge-fragile {
+            background: #dc3545;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚚 Carrier Partner Portal</h1>
+            <p>Review incoming quote requests and respond with accept/reject</p>
+        </div>
+        
+        <div class="carrier-selector">
+            <button class="carrier-btn active" onclick="selectCarrier(event, 'DHL')">🟦 DHL Express</button>
+            <button class="carrier-btn" onclick="selectCarrier(event, 'FEDEX')">🟪 FedEx</button>
+            <button class="carrier-btn" onclick="selectCarrier(event, 'BLUEDART')">🟥 Blue Dart</button>
+            <button class="carrier-btn" onclick="selectCarrier(event, 'DELHIVERY')">🟩 Delhivery</button>
+        </div>
+        
+        <div class="content">
+            <div class="section-title">
+                📬 Pending Quote Requests for <span id="currentCarrierName">DHL Express</span>
+            </div>
+            
+            <div id="requestsContainer">
+                <div class="empty-state">
+                    <h3>📭 No Pending Requests</h3>
+                    <p>Waiting for customers to place orders...</p>
+                    <p style="margin-top: 15px; font-size: 0.9em;">
+                        <strong>Tip:</strong> Go to customer portal and place an order to see requests here.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        let currentCarrier = 'DHL';
+        let pollingInterval = null;
+        
+        function selectCarrier(evt, carrier) {
+            currentCarrier = carrier;
+            
+            // Update UI
+            document.querySelectorAll('.carrier-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (evt && evt.currentTarget) {
+                evt.currentTarget.classList.add('active');
+            }
+            
+            document.getElementById('currentCarrierName').textContent = 
+                carrier === 'DHL' ? 'DHL Express' :
+                carrier === 'FEDEX' ? 'FedEx' :
+                carrier === 'BLUEDART' ? 'Blue Dart' :
+                'Delhivery';
+            
+            loadPendingRequests();
+        }
+        
+        async function loadPendingRequests() {
+            try {
+                // For demo, we'll check localStorage for the last order
+                const orderData = localStorage.getItem('orderData');
+                if (!orderData) {
+                    showEmptyState();
+                    return;
+                }
+                
+                const order = JSON.parse(orderData);
+                
+                // Only update if orderId changed or container is empty
+                const currentOrderId = document.getElementById('requestsContainer').dataset.orderId;
+                if (currentOrderId !== order.orderId) {
+                    displayQuoteRequest(order);
+                }
+                
+            } catch (error) {
+                console.error('Error loading requests:', error);
+                showEmptyState();
+            }
+        }
+        
+        function showEmptyState() {
+            document.getElementById('requestsContainer').innerHTML = `
+                <div class="empty-state">
+                    <h3>📭 No Pending Requests</h3>
+                    <p>Waiting for customers to place orders...</p>
+                    <p style="margin-top: 15px; font-size: 0.9em;">
+                        <strong>Tip:</strong> Go to customer portal and place an order to see requests here.
+                    </p>
+                </div>
+            `;
+        }
+        
+        function displayQuoteRequest(order) {
+            const requestData = order.requestSent;
+            const items = requestData.items[0];
+            
+            const container = document.getElementById('requestsContainer');
+            container.dataset.orderId = order.orderId; // Track current order
+            container.innerHTML = `
+                <div class="quote-request">
+                    <div class="request-header">
+                        <h3>Order #${order.orderId}</h3>
+                        <div class="request-time">
+                            <span class="badge badge-pending">⏳ PENDING</span>
+                            ${items.is_fragile ? '<span class="badge badge-fragile">⚠️ FRAGILE</span>' : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="shipment-details">
+                        <h4 style="margin-bottom: 15px; color: #495057;">📦 Shipment Details</h4>
+                        <div class="detail-row">
+                            <div class="detail-label">Product:</div>
+                            <div class="detail-value">${items.name}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Weight:</div>
+                            <div class="detail-value">${items.weight} kg</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Dimensions:</div>
+                            <div class="detail-value">${items.dimensions.length}×${items.dimensions.width}×${items.dimensions.height} cm</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Value:</div>
+                            <div class="detail-value">₹${items.value.toLocaleString()}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">From:</div>
+                            <div class="detail-value">${requestData.origin.address}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">To:</div>
+                            <div class="detail-value">${requestData.destination.address}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Distance:</div>
+                            <div class="detail-value">~${calculateDistance(requestData.origin, requestData.destination)} km</div>
+                        </div>
+                    </div>
+                    
+                    <div class="data-grid">
+                        <div class="data-section">
+                            <h4>📤 Complete Request Data Received</h4>
+                            <div class="data-display">
+                                <pre>${JSON.stringify(requestData, null, 2)}</pre>
+                            </div>
+                        </div>
+                        
+                        <div class="data-section">
+                            <h4>📊 Internal Analysis</h4>
+                            <div class="data-display">
+                                <pre>${JSON.stringify({
+                                    carrier: currentCarrier,
+                                    canAccept: checkIfCanAccept(items, requestData),
+                                    estimatedCost: calculateCarrierPrice(items, requestData),
+                                    estimatedDays: calculateDeliveryDays(requestData),
+                                    riskFactors: getRiskFactors(items, requestData)
+                                }, null, 2)}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="action-section">
+                        <div class="action-card">
+                            <h4>✅ Accept Quote</h4>
+                            <div class="input-group">
+                                <label>Quoted Price (₹)</label>
+                                <input type="number" id="quotedPrice" value="${calculateCarrierPrice(items, requestData)}" step="0.01">
+                            </div>
+                            <div class="input-group">
+                                <label>Delivery Days</label>
+                                <input type="number" id="deliveryDays" value="${calculateDeliveryDays(requestData)}" min="1">
+                            </div>
+                            <div class="input-group">
+                                <label>Service Type</label>
+                                <select id="serviceType">
+                                    <option value="EXPRESS" ${currentCarrier === 'DHL' ? 'selected' : ''}>Express</option>
+                                    <option value="STANDARD" ${currentCarrier !== 'DHL' ? 'selected' : ''}>Standard</option>
+                                    <option value="SURFACE">Surface</option>
+                                </select>
+                            </div>
+                            <button type="button" class="btn btn-accept" onclick="acceptQuote('${order.orderId}')">
+                                ✓ Accept Shipment
+                            </button>
+                        </div>
+                        
+                        <div class="action-card">
+                            <h4>❌ Reject Quote</h4>
+                            <div class="input-group">
+                                <label>Rejection Reason</label>
+                                <select id="rejectionReason">
+                                    <option value="weight_exceeded">Weight Exceeded</option>
+                                    <option value="route_not_serviceable">Route Not Serviceable</option>
+                                    <option value="at_capacity">At Capacity</option>
+                                    <option value="no_cold_storage">No Cold Storage Available</option>
+                                    <option value="fragile_handling_unavailable">Fragile Handling Unavailable</option>
+                                    <option value="pricing_not_viable">Pricing Not Viable</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label>Additional Message</label>
+                                <input type="text" id="rejectionMessage" placeholder="Optional details...">
+                            </div>
+                            <button type="button" class="btn btn-reject" onclick="rejectQuote('${order.orderId}')">
+                                ✗ Reject Shipment
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="responseDisplay-${order.orderId}" class="response-section"></div>
+                </div>
+            `;
+        }
+        
+        function calculateDistance(origin, destination) {
+            const R = 6371;
+            const lat1 = origin.lat * Math.PI / 180;
+            const lat2 = destination.lat * Math.PI / 180;
+            const deltaLat = (destination.lat - origin.lat) * Math.PI / 180;
+            const deltaLon = (destination.lon - origin.lon) * Math.PI / 180;
+            const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
+                     Math.cos(lat1) * Math.cos(lat2) *
+                     Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return Math.round(R * c);
+        }
+        
+        function checkIfCanAccept(items, request) {
+            if (currentCarrier === 'DELHIVERY' && items.weight > 20) return false;
+            if (items.is_fragile && Math.random() > 0.9) return false;
+            return true;
+        }
+        
+        function calculateCarrierPrice(items, request) {
+            const basePrices = {
+                'DHL': 50,
+                'FEDEX': 45,
+                'BLUEDART': 40,
+                'DELHIVERY': 35
+            };
+            const baseRate = basePrices[currentCarrier] || 50;
+            const distance = calculateDistance(request.origin, request.destination);
+            return Math.round(baseRate + (items.weight * 15) + (distance * 0.05));
+        }
+        
+        function calculateDeliveryDays(request) {
+            const distance = calculateDistance(request.origin, request.destination);
+            const daysMap = {
+                'DHL': distance > 500 ? 2 : 1,
+                'FEDEX': distance > 500 ? 3 : 2,
+                'BLUEDART': distance > 500 ? 3 : 2,
+                'DELHIVERY': distance > 500 ? 4 : 2
+            };
+            return daysMap[currentCarrier] || 3;
+        }
+        
+        function getRiskFactors(items, request) {
+            const factors = [];
+            if (items.is_fragile) factors.push('Fragile item - handle with care');
+            if (items.weight > 2) factors.push('Heavy item - special handling');
+            if (items.value > 50000) factors.push('High value - insurance required');
+            return factors.length > 0 ? factors : ['No special risks identified'];
+        }
+        
+        async function acceptQuote(orderId) {
+            const quotedPrice = parseFloat(document.getElementById('quotedPrice').value);
+            const deliveryDays = parseInt(document.getElementById('deliveryDays').value);
+            const serviceType = document.getElementById('serviceType').value;
+            
+            const responseData = {
+                orderId,
+                carrier: currentCarrier,
+                accepted: true,
+                quotedPrice,
+                estimatedDeliveryDays: deliveryDays,
+                serviceType,
+                currency: 'INR',
+                validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                breakdown: {
+                    baseRate: quotedPrice * 0.7,
+                    fuelSurcharge: quotedPrice * 0.15,
+                    handlingFee: quotedPrice * 0.10,
+                    insurance: quotedPrice * 0.05
+                },
+                respondedAt: new Date().toISOString()
+            };
+            
+            try {
+                // Send to backend
+                const response = await fetch(`${API_BASE}/carriers/webhook/${currentCarrier}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(responseData)
+                });
+                
+                // Store in localStorage for demo
+                const existingResponses = JSON.parse(localStorage.getItem('carrierResponses') || '{}');
+                if (!existingResponses[orderId]) existingResponses[orderId] = [];
+                existingResponses[orderId].push(responseData);
+                localStorage.setItem('carrierResponses', JSON.stringify(existingResponses));
+                
+                // Display response
+                displayResponse(orderId, responseData, true);
+                
+            } catch (error) {
+                console.error('Error sending acceptance:', error);
+                displayResponse(orderId, responseData, true);
+            }
+        }
+        
+        async function rejectQuote(orderId) {
+            const reason = document.getElementById('rejectionReason').value;
+            const message = document.getElementById('rejectionMessage').value || 
+                          getRejectionMessage(reason);
+            
+            const responseData = {
+                orderId,
+                carrier: currentCarrier,
+                accepted: false,
+                reason,
+                message,
+                respondedAt: new Date().toISOString()
+            };
+            
+            try {
+                // Send to backend
+                const response = await fetch(`${API_BASE}/carriers/webhook/${currentCarrier}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(responseData)
+                });
+                
+                // Store in localStorage for demo
+                const existingResponses = JSON.parse(localStorage.getItem('carrierResponses') || '{}');
+                if (!existingResponses[orderId]) existingResponses[orderId] = [];
+                existingResponses[orderId].push(responseData);
+                localStorage.setItem('carrierResponses', JSON.stringify(existingResponses));
+                
+                // Display response
+                displayResponse(orderId, responseData, false);
+                
+            } catch (error) {
+                console.error('Error sending rejection:', error);
+                displayResponse(orderId, responseData, false);
+            }
+        }
+        
+        function getRejectionMessage(reason) {
+            const messages = {
+                'weight_exceeded': 'Shipment weight exceeds our capacity limits',
+                'route_not_serviceable': 'This route is not currently serviceable',
+                'at_capacity': 'We are at maximum capacity and cannot accept new shipments',
+                'no_cold_storage': 'Cold storage facilities not available',
+                'fragile_handling_unavailable': 'Fragile handling service unavailable on this route',
+                'pricing_not_viable': 'Unable to provide competitive pricing for this shipment'
+            };
+            return messages[reason] || 'Unable to accept this shipment';
+        }
+        
+        function displayResponse(orderId, responseData, isAccepted) {
+            const responseDiv = document.getElementById(`responseDisplay-${orderId}`);
+            responseDiv.className = 'response-section ' + (isAccepted ? '' : 'reject');
+            responseDiv.style.display = 'block';
+            
+            responseDiv.innerHTML = `
+                <h4>${isAccepted ? '✅ Quote Accepted!' : '❌ Quote Rejected'}</h4>
+                <p style="margin-bottom: 15px; color: #495057;">
+                    Response sent to SCM backend at ${new Date().toLocaleTimeString()}
+                </p>
+                <h4 style="margin-top: 15px; color: #495057;">📤 Response Data Sent:</h4>
+                <div class="data-display">
+                    <pre>${JSON.stringify(responseData, null, 2)}</pre>
+                </div>
+                <p style="margin-top: 15px; text-align: center; font-size: 0.9em; color: #6c757d;">
+                    ℹ️ Check the Order Tracking page to see how SCM processes this response
+                </p>
+            `;
+        }
+        
+        // Load requests on page load
+        window.onload = () => {
+            loadPendingRequests();
+            // Refresh every 5 seconds to check for new orders
+            setInterval(loadPendingRequests, 5000);
+        };
+    </script>
+</body>
+</html>

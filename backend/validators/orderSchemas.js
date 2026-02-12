@@ -73,7 +73,7 @@ export const createOrderSchema = {
     items: {
       product_id: {
         type: 'string',
-        required: true
+        required: false
       },
       sku: {
         type: 'string',

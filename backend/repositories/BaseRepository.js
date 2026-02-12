@@ -1,5 +1,6 @@
 // Base Repository - provides common CRUD operations inherited by all repositories
 import pool from '../configs/db.js';
+import { Transaction } from '../utils/dbTransaction.js';
 
 class BaseRepository {
   constructor(tableName) {
@@ -7,10 +8,22 @@ class BaseRepository {
     this.pool = pool;
   }
 
-  // Execute SQL query with optional transaction client
+  // Execute SQL query with optional transaction client or Transaction instance
   async query(text, params, client = null) {
+    // Support both Transaction class and raw client
+    if (client instanceof Transaction) {
+      return await client.query(text, params);
+    }
     const db = client || this.pool;
     return await db.query(text, params);
+  }
+
+  // Get client from Transaction or return as-is
+  _getClient(txOrClient) {
+    if (txOrClient instanceof Transaction) {
+      return txOrClient.getClient();
+    }
+    return txOrClient;
   }
 
   // Find all records with optional filtering, sorting, and pagination

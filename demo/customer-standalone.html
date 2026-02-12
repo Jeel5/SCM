@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Portal - SCM Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .section-title {
+            font-size: 1.5em;
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        /* Products */
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .product-card {
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .product-card.selected {
+            border-color: #667eea;
+            background: #f7faff;
+        }
+        .product-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+        .product-price {
+            font-size: 1.5em;
+            color: #667eea;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .product-details {
+            font-size: 0.9em;
+            color: #718096;
+        }
+        
+        /* Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover:not(:disabled) {
+            background: #218838;
+        }
+        .btn:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+        }
+        
+        /* Result sections */
+        .result-box {
+            background: #f7faff;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+        .result-box h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        .price-display {
+            font-size: 2.5em;
+            color: #667eea;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+        .price-range {
+            color: #718096;
+            font-size: 1.1em;
+            margin-bottom: 15px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 8px 15px;
+            background: #e6fffa;
+            color: #047857;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        
+        /* Data display */
+        .data-section {
+            margin-top: 25px;
+        }
+        .data-section h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .json-display {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 30px;
+        }
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Hidden - not used, using inline styles instead */
+        .hidden {
+            display: none !important;
+        }
+        
+        /* Success message */
+        .success-message {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .success-message h3 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+        
+        /* Error message */
+        .error-message {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛒 Customer Portal</h1>
+            <p>SCM Demo - Phase 1 & 2 Quote Flow</p>
+        </div>
+        
+        <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 20px; margin-bottom: 20px; color: #856404;">
+            <h3 style="margin: 0 0 10px 0;">⚠️ Important: Disable Live Server Auto-Reload</h3>
+            <p style="margin: 0; line-height: 1.6;">
+                <strong>If results disappear after 1 second:</strong> VS Code Live Server is auto-reloading the page!<br>
+                <strong>Solution 1:</strong> Right-click this HTML file → "Open with" → Chrome/Firefox (don't use Live Server)<br>
+                <strong>Solution 2:</strong> Or click the test button below to verify display works without API calls
+            </p>
+        </div>
+
+        <!-- Step 1: Product Selection -->
+        <div id="step1" class="card">
+            <div class="section-title">📦 Step 1: Select Product</div>
+            
+            <div class="products-grid">
+                <div class="product-card" data-product="laptop">
+                    <div class="product-name">💻 Dell XPS 15</div>
+                    <div class="product-price">₹89,999</div>
+                    <div class="product-details">
+                        Weight: 2.5 kg<br>
+                        Dimensions: 40×28×18 cm<br>
+                        Fragile: Yes
+                    </div>
+                </div>
+                
+                <div class="product-card" data-product="phone">
+                    <div class="product-name">📱 iPhone 15</div>
+                    <div class="product-price">₹79,999</div>
+                    <div class="product-details">
+                        Weight: 0.5 kg<br>
+                        Dimensions: 15×7×1 cm<br>
+                        Fragile: Yes
+                    </div>
+                </div>
+                
+                <div class="product-card" data-product="book">
+                    <div class="product-name">📚 JavaScript Guide</div>
+                    <div class="product-price">₹599</div>
+                    <div class="product-details">
+                        Weight: 1.2 kg<br>
+                        Dimensions: 24×18×3 cm<br>
+                        Fragile: No
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>📍 Delivery Location</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label style="font-weight: normal; font-size: 0.9em;">From Pincode</label>
+                        <input type="text" id="fromPincode" value="110001" readonly>
+                    </div>
+                    <div>
+                        <label style="font-weight: normal; font-size: 0.9em;">To Pincode</label>
+                        <input type="text" id="toPincode" value="400001" placeholder="e.g., 400001">
+                    </div>
+                    <div>
+                        <label style="font-weight: normal; font-size: 0.9em;">Service Type</label>
+                        <select id="serviceType">
+                            <option value="standard">Standard</option>
+                            <option value="express">Express</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-primary" id="getEstimateBtn">
+                📊 Get Shipping Estimate
+            </button>
+            
+            <button type="button" class="btn" style="background: #ff6b6b; color: white; margin-top: 10px;" onclick="testDisplay(); return false;">
+                🧪 Test Display (No API)
+            </button>
+        </div>
+
+        <!-- Step 2: Estimate Results -->
+        <div id="step2" class="card" style="display: none;">
+            <div class="section-title">💰 Step 2: Shipping Estimate (Phase 1)</div>
+            
+            <div id="estimateLoading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Calculating estimate...</p>
+            </div>
+
+            <div id="estimateResult" style="display: none;">
+                <div class="result-box">
+                    <h3>💰 Estimated Shipping Cost</h3>
+                    <div class="price-display" id="estimatePrice">₹0</div>
+                    <div class="price-range" id="estimateRange">Range: ₹0 - ₹0</div>
+                    <span class="badge">⚡ Quick Estimate (No Carrier APIs)</span>
+                    
+                    <p style="margin-top: 20px; color: #718096; line-height: 1.6;">
+                        <strong>Note:</strong> This is an approximate estimate based on distance and weight. 
+                        Actual cost will be determined after order placement when we contact all carriers 
+                        for real-time quotes (Phase 2).
+                    </p>
+                </div>
+
+                <button type="button" class="btn btn-success" id="placeOrderBtn">
+                    💳 Place Order & Pay Now
+                </button>
+
+                <div class="data-section">
+                    <h4>📤 Request Sent to Backend:</h4>
+                    <div class="json-display" id="requestData"></div>
+                </div>
+
+                <div class="data-section">
+                    <h4>📥 Response Received:</h4>
+                    <div class="json-display" id="responseData"></div>
+                </div>
+            </div>
+
+            <div id="estimateError" class="error-message" style="display: none;"></div>
+        </div>
+
+        <!-- Step 3: Order Placed -->
+        <div id="step3" class="card" style="display: none;">
+            <div class="section-title">✅ Step 3: Order Placed Successfully!</div>
+            
+            <div class="success-message">
+                <h3>Order ID: <span id="orderIdDisplay"></span></h3>
+                <p style="margin-top: 15px; font-size: 1.1em;">
+                    🚀 Your order has been placed and quote requests have been sent to all carriers!
+                </p>
+                <p style="margin-top: 10px;">
+                    Carriers are now reviewing your shipment details. This is <strong>Phase 2</strong> - 
+                    carriers will accept or reject based on their capacity, routes, and policies.
+                </p>
+            </div>
+
+            <div class="data-section">
+                <h4>📤 Data Sent to Carriers:</h4>
+                <div class="json-display" id="carrierRequestData"></div>
+            </div>
+
+            <div class="data-section">
+                <h4>📥 Backend Response:</h4>
+                <div class="json-display" id="orderResponseData"></div>
+            </div>
+
+            <div style="margin-top: 30px; text-align: center;">
+                <p style="font-size: 1.1em; margin-bottom: 15px;">
+                    🔗 View your order status in other demo pages:
+                </p>
+                <a href="carrier-portal.html" style="display: inline-block; margin: 10px; padding: 15px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                    🚚 Open Carrier Portal
+                </a>
+                <a href="order-tracking.html" style="display: inline-block; margin: 10px; padding: 15px 30px; background: #28a745; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                    📍 Track Order
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        
+        const PRODUCTS = {
+            laptop: {
+                name: 'Dell XPS 15',
+                weight: 2.5,
+                price: 89999,
+                dimensions: { length: 40, width: 28, height: 18 },
+                is_fragile: true
+            },
+            phone: {
+                name: 'iPhone 15',
+                weight: 0.5,
+                price: 79999,
+                dimensions: { length: 15, width: 7, height: 1 },
+                is_fragile: true
+            },
+            book: {
+                name: 'JavaScript Guide',
+                weight: 1.2,
+                price: 599,
+                dimensions: { length: 24, width: 18, height: 3 },
+                is_fragile: false
+            }
+        };
+
+        let selectedProduct = null;
+        let estimateData = null;
+        let resultShown = false; // Flag to prevent hiding result once shown
+
+        // TEST FUNCTION - Display result without API call
+        function testDisplay() {
+            console.log('=== TEST DISPLAY (NO API) ===');
+            
+            const step2 = document.getElementById('step2');
+            const loading = document.getElementById('estimateLoading');
+            const result = document.getElementById('estimateResult');
+            const errorDiv = document.getElementById('estimateError');
+            
+            step2.style.display = 'block';
+            loading.style.display = 'none';
+            errorDiv.style.display = 'none';
+            
+            // Set test data
+            document.getElementById('estimatePrice').textContent = '₹150';
+            document.getElementById('estimateRange').textContent = 'Range: ₹120 - ₹180';
+            document.getElementById('requestData').textContent = JSON.stringify({test: 'data'}, null, 2);
+            document.getElementById('responseData').textContent = JSON.stringify({estimatedCost: 150}, null, 2);
+            
+            // Show result
+            result.style.display = 'block';
+            resultShown = true;
+            
+            console.log('Test result displayed');
+            console.log('result.style.display:', result.style.display);
+            
+            // Monitor visibility
+            const keepVisible = setInterval(() => {
+                if (result.style.display !== 'block') {
+                    console.warn('Test result was hidden! Restoring...');
+                    result.style.display = 'block';
+                }
+            }, 100);
+            
+            result.dataset.keepVisibleInterval = keepVisible;
+            
+            return false;
+        }
+
+        // Prevent any accidental page reloads
+        let blockUnload = false;
+        
+        window.addEventListener('beforeunload', function(e) {
+            if (resultShown || blockUnload) {
+                console.log('⚠️ Attempting to prevent page unload');
+                e.preventDefault();
+                e.returnValue = 'Data will be lost. Are you sure?';
+                return 'Data will be lost. Are you sure?';
+            }
+        });
+        
+        // Block all navigation during fetch
+        let fetchInProgress = false;
+        
+        window.addEventListener('popstate', function(e) {
+            if (fetchInProgress) {
+                console.warn('Navigation blocked during fetch');
+                e.preventDefault();
+                history.pushState(null, '', window.location.href);
+                return false;
+            }
+        });
+
+        // Product selection
+        document.querySelectorAll('.product-card').forEach(card => {
+            card.addEventListener('click', function() {
+                document.querySelectorAll('.product-card').forEach(c => c.classList.remove('selected'));
+                this.classList.add('selected');
+                selectedProduct = this.dataset.product;
+                console.log('Product selected:', selectedProduct);
+            });
+        });
+
+        // Get estimate button
+        document.getElementById('getEstimateBtn').addEventListener('click', function(event) {
+            console.log('Button clicked, preventing all defaults');
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+            }
+            getEstimate();
+            return false;
+        }, true);
+        
+        async function getEstimate() {
+            console.log('=== GET ESTIMATE CALLED ===');
+            
+            if (!selectedProduct) {
+                alert('Please select a product first');
+                return false;
+            }
+
+            const btn = document.getElementById('getEstimateBtn');
+            if (btn.disabled) {
+                console.log('Button already processing, ignoring');
+                return false;
+            }
+            btn.disabled = true;
+            
+            const step2 = document.getElementById('step2');
+            const loading = document.getElementById('estimateLoading');
+            const result = document.getElementById('estimateResult');
+            const errorDiv = document.getElementById('estimateError');
+            
+            // Show step 2 and loading
+            step2.style.display = 'block';
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            errorDiv.style.display = 'none';
+
+            const product = PRODUCTS[selectedProduct];
+            const requestData = {
+                fromPincode: document.getElementById('fromPincode').value,
+                toPincode: document.getElementById('toPincode').value,
+                weightKg: product.weight,
+                serviceType: document.getElementById('serviceType').value
+            };
+
+            console.log('Request data:', requestData);
+
+            // Create abort controller with long timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                console.log('Fetch timeout after 30 seconds');
+                controller.abort();
+            }, 30000);
+            
+            // Block navigation during fetch
+            fetchInProgress = true;
+            blockUnload = true;
+            console.log('Fetch started - blocking navigation');
+
+            try {
+                console.log('Calling API...');
+                const response = await fetch(`${API_BASE}/shipping/estimate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestData),
+                    signal: controller.signal,
+                    keepalive: true
+                });
+
+                clearTimeout(timeoutId);
+                console.log('Response received:', response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('=== DATA RECEIVED ===');
+                console.log(JSON.stringify(data, null, 2));
+
+                estimateData = data;
+
+                // Display request and response in JSON sections
+                document.getElementById('requestData').textContent = JSON.stringify(requestData, null, 2);
+                document.getElementById('responseData').textContent = JSON.stringify(data, null, 2);
+
+                // Extract cost values
+                const cost = data.data?.estimatedCost || data.estimatedCost || 0;
+                const minCost = data.data?.minCost || data.minCost || 0;
+                const maxCost = data.data?.maxCost || data.maxCost || 0;
+
+                console.log('Costs extracted:', { cost, minCost, maxCost });
+
+                // Update displayed values
+                document.getElementById('estimatePrice').textContent = `₹${cost}`;
+                document.getElementById('estimateRange').textContent = `Range: ₹${minCost} - ₹${maxCost}`;
+
+                // CRITICAL: SHOW THE RESULT
+                loading.style.display = 'none';
+                result.style.display = 'block';
+                result.style.visibility = 'visible';
+                result.style.opacity = '1';
+                resultShown = true;
+                
+                console.log('=== RESULT DISPLAYED ===');
+                console.log('result element display:', result.style.display);
+                
+                // Keep checking and restoring visibility every 100ms
+                const keepVisible = setInterval(() => {
+                    const currentDisplay = window.getComputedStyle(result).display;
+                    if (currentDisplay === 'none' || result.style.display !== 'block') {
+                        console.warn('Result was hidden! Restoring... (computed:', currentDisplay, 'inline:', result.style.display, ')');
+                        result.style.display = 'block';
+                        result.style.visibility = 'visible';
+                        result.style.opacity = '1';
+                    }
+                }, 100);
+                
+                // Store interval ID to clear later if needed
+                result.dataset.keepVisibleInterval = keepVisible;
+                
+                console.log('Visibility monitor started');
+                
+                return false; // Prevent any default behavior
+                
+            } catch (err) {
+                clearTimeout(timeoutId);
+                console.error('=== ERROR ===');
+                console.error('Error type:', err.name);
+                console.error('Error message:', err.message);
+                
+                if (err.name === 'AbortError') {
+                    console.error('⚠️⚠️⚠️ FETCH WAS ABORTED - Page might be reloading!');
+                    errorDiv.textContent = 'Request was cancelled. This usually means the page reloaded. Try opening the page WITHOUT Live Server (directly open the HTML file).';
+                } else {
+                    errorDiv.textContent = `Error: ${err.message}. Make sure backend is running on port 3000.`;
+                }
+                
+                loading.style.display = 'none';
+                errorDiv.style.display = 'block';
+                
+                return false;
+            } finally {
+                fetchInProgress = false;
+                blockUnload = false;
+                btn.disabled = false;
+                console.log('Button re-enabled, navigation unblocked');
+            }
+        }
+
+        // Place order button
+        document.getElementById('placeOrderBtn').addEventListener('click', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            placeOrder();
+        });
+        
+        async function placeOrder() {
+            const btn = document.getElementById('placeOrderBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Placing order...';
+
+            const product = PRODUCTS[selectedProduct];
+            const estimateCost = estimateData.data?.estimatedCost || estimateData.estimatedCost || 0;
+
+            const orderData = {
+                customer_name: 'Demo Customer',
+                customer_email: 'demo@example.com',
+                customer_phone: '9876543210',
+                total_amount: product.price + estimateCost,
+                priority: 'standard',
+                currency: 'INR',
+                shipping_address: {
+                    street: '123 Main St',
+                    city: 'Mumbai',
+                    state: 'Maharashtra',
+                    postal_code: document.getElementById('toPincode').value,
+                    country: 'India'
+                },
+                items: [{
+                    product_id: null,
+                    sku: `SKU-${selectedProduct.toUpperCase()}`,
+                    product_name: product.name,
+                    quantity: 1,
+                    unit_price: product.price,
+                    weight: product.weight,
+                    dimensions: product.dimensions
+                }],
+                estimated_shipping_cost: estimateCost,
+                notes: `Demo order for ${product.name}`
+            };
+
+            console.log('=== CREATING ORDER ===');
+            console.log('Order data:', orderData);
+
+            try {
+                // Create order
+                const orderResponse = await fetch(`${API_BASE}/orders`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderData)
+                });
+
+                if (!orderResponse.ok) {
+                    throw new Error(`Order creation failed: ${orderResponse.status}`);
+                }
+
+                const orderResult = await orderResponse.json();
+                const orderId = orderResult.data?.id || orderResult.id;
+                
+                console.log('Order created:', orderResult);
+
+                // Request real quotes from carriers (Phase 2)
+                const quoteData = {
+                    orderId: orderId,
+                    origin: {
+                        lat: 28.7041,
+                        lon: 77.1025,
+                        address: 'Delhi Warehouse, Connaught Place, New Delhi',
+                        pin_code: document.getElementById('fromPincode').value
+                    },
+                    destination: {
+                        lat: 19.0760,
+                        lon: 72.8777,
+                        address: 'Customer Address, Mumbai',
+                        pin_code: document.getElementById('toPincode').value
+                    },
+                    items: [{
+                        weight: product.weight,
+                        dimensions: product.dimensions,
+                        name: product.name
+                    }],
+                    serviceType: document.getElementById('serviceType').value
+                };
+
+                console.log('=== REQUESTING CARRIER QUOTES ===');
+                console.log('Quote data:', quoteData);
+
+                const quoteResponse = await fetch(`${API_BASE}/shipping/quotes/real`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(quoteData)
+                });
+
+                const quoteResult = await quoteResponse.json();
+                console.log('Quote requests sent:', quoteResult);
+
+                // Store in localStorage for other pages
+                localStorage.setItem('currentOrderId', orderId);
+                localStorage.setItem('orderData', JSON.stringify(orderData));
+                localStorage.setItem('quoteData', JSON.stringify(quoteData));
+
+                // Show success step
+                document.getElementById('orderIdDisplay').textContent = orderId;
+                document.getElementById('carrierRequestData').textContent = JSON.stringify(quoteData, null, 2);
+                document.getElementById('orderResponseData').textContent = JSON.stringify(orderResult, null, 2);
+                
+                document.getElementById('step3').style.display = 'block';
+                
+                console.log('=== ORDER PLACED SUCCESSFULLY ===');
+                
+                // Scroll to step 3
+                document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
+
+            } catch (error) {
+                console.error('=== ORDER ERROR ===');
+                console.error('Error:', error);
+                alert(`Error placing order: ${error.message}`);
+                btn.disabled = false;
+                btn.textContent = '💳 Place Order & Pay Now';
+            }
+        }
+
+        // Select first product by default
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded');
+            const firstCard = document.querySelector('.product-card[data-product="laptop"]');
+            if (firstCard) {
+                firstCard.click();
+            }
+        });
+        
+        // Prevent any form submissions globally
+        document.addEventListener('submit', function(e) {
+            console.log('Form submit prevented');
+            e.preventDefault();
+            return false;
+        });
+        
+        // Log any navigation attempts
+        window.addEventListener('beforeunload', function(e) {
+            console.log('Page trying to unload/reload');
+        });
+    </script>
+</body>
+</html>

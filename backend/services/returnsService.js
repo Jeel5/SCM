@@ -62,105 +62,100 @@ class ReturnsService {
    * Receive and inspect returned items at warehouse
    */
   async inspectReturn(returnId, qualityCheckResult, inspectionNotes, inspectedBy) {
-    const client = await pool.connect();
-
     try {
-      await client.query('BEGIN');
-
-      // Get return details
-      const returnResult = await client.query(
-        'SELECT * FROM returns WHERE id = $1',
-        [returnId]
-      );
-
-      if (returnResult.rows.length === 0) {
-        throw new NotFoundError('Return not found');
-      }
-
-      const returnData = returnResult.rows[0];
-
-      // Update return with inspection results
-      const updateResult = await client.query(
-        `UPDATE returns
-         SET quality_check_result = $1,
-             inspection_notes = $2,
-             status = 'inspected'
-         WHERE id = $3
-         RETURNING *`,
-        [qualityCheckResult, inspectionNotes, returnId]
-      );
-
-      // If quality check passed, add items back to inventory
-      if (qualityCheckResult === 'passed') {
-        const itemsResult = await client.query(
-          `SELECT ri.*, oi.warehouse_id, p.sku
-           FROM return_items ri
-           JOIN order_items oi ON oi.id = ri.order_item_id
-           JOIN products p ON p.id = ri.product_id
-           WHERE ri.return_id = $1`,
+      const result = await withTransaction(async (tx) => {
+        // Get return details
+        const returnResult = await tx.query(
+          'SELECT * FROM returns WHERE id = $1',
           [returnId]
         );
 
-        for (const item of itemsResult.rows) {
-          // Add back to available inventory
-          await client.query(
-            `INSERT INTO inventory (warehouse_id, product_id, available_quantity)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (warehouse_id, product_id)
-             DO UPDATE SET available_quantity = inventory.available_quantity + $3`,
-            [item.warehouse_id, item.product_id, item.quantity]
-          );
-
-          // Record stock movement
-          await client.query(
-            `INSERT INTO stock_movements 
-            (warehouse_id, product_id, movement_type, quantity, reference_type, reference_id, notes)
-            VALUES ($1, $2, 'inbound', $3, 'return', $4, $5)`,
-            [
-              item.warehouse_id,
-              item.product_id,
-              item.quantity,
-              returnId,
-              `Return inspection passed: ${inspectionNotes}`
-            ]
-          );
+        if (returnResult.rows.length === 0) {
+          throw new NotFoundError('Return not found');
         }
-      } else {
-        // Mark as damaged inventory
-        const itemsResult = await client.query(
-          `SELECT ri.*, oi.warehouse_id
-           FROM return_items ri
-           JOIN order_items oi ON oi.id = ri.order_item_id
-           WHERE ri.return_id = $1`,
-          [returnId]
+
+        const returnData = returnResult.rows[0];
+
+        // Update return with inspection results
+        const updateResult = await tx.query(
+          `UPDATE returns
+           SET quality_check_result = $1,
+               inspection_notes = $2,
+               status = 'inspected'
+           WHERE id = $3
+           RETURNING *`,
+          [qualityCheckResult, inspectionNotes, returnId]
         );
 
-        for (const item of itemsResult.rows) {
-          await client.query(
-            `UPDATE inventory
-             SET damaged_quantity = damaged_quantity + $1
-             WHERE warehouse_id = $2 AND product_id = $3`,
-            [item.quantity, item.warehouse_id, item.product_id]
+        // If quality check passed, add items back to inventory
+        if (qualityCheckResult === 'passed') {
+          const itemsResult = await tx.query(
+            `SELECT ri.*, oi.warehouse_id, p.sku
+             FROM return_items ri
+             JOIN order_items oi ON oi.id = ri.order_item_id
+             JOIN products p ON p.id = ri.product_id
+             WHERE ri.return_id = $1`,
+            [returnId]
           );
-        }
-      }
 
-      await client.query('COMMIT');
+          for (const item of itemsResult.rows) {
+            // Add back to available inventory
+            await tx.query(
+              `INSERT INTO inventory (warehouse_id, product_id, available_quantity)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (warehouse_id, product_id)
+               DO UPDATE SET available_quantity = inventory.available_quantity + $3`,
+              [item.warehouse_id, item.product_id, item.quantity]
+            );
+
+            // Record stock movement
+            await tx.query(
+              `INSERT INTO stock_movements 
+              (warehouse_id, product_id, movement_type, quantity, reference_type, reference_id, notes)
+              VALUES ($1, $2, 'inbound', $3, 'return', $4, $5)`,
+              [
+                item.warehouse_id,
+                item.product_id,
+                item.quantity,
+                returnId,
+                `Return inspection passed: ${inspectionNotes}`
+              ]
+            );
+          }
+        } else {
+          // Mark as damaged inventory
+          const itemsResult = await tx.query(
+            `SELECT ri.*, oi.warehouse_id
+             FROM return_items ri
+             JOIN order_items oi ON oi.id = ri.order_item_id
+             WHERE ri.return_id = $1`,
+            [returnId]
+          );
+
+          for (const item of itemsResult.rows) {
+            await tx.query(
+              `UPDATE inventory
+               SET damaged_quantity = damaged_quantity + $1
+               WHERE warehouse_id = $2 AND product_id = $3`,
+              [item.quantity, item.warehouse_id, item.product_id]
+            );
+          }
+        }
+
+        return { returnData, updatedReturn: updateResult.rows[0] };
+      });
 
       logEvent('ReturnInspected', {
         returnId,
-        rmaNumber: returnData.rma_number,
+        rmaNumber: result.returnData.rma_number,
         qualityCheckResult,
         inspectedBy
       });
 
-      return updateResult.rows[0];
+      return result.updatedReturn;
 
     } catch (error) {
-      await client.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   }
 

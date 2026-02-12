@@ -13,7 +13,7 @@ import { cronScheduler } from './workers/cronScheduler.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT;
 const API_PREFIX = '/api';
 
 // Import route modules
@@ -28,6 +28,8 @@ import jobsRoutes from './routes/jobs.js';
 import financeRoutes from './routes/finance.js';
 import webhooksRoutes from './routes/webhooks.js';
 import assignmentsRoutes from './routes/assignments.js';
+import shippingRoutes from './routes/shipping.js';
+import carriersRoutes from './routes/carriers.js';
 
 // Security headers middleware
 app.use(helmet());
@@ -35,12 +37,24 @@ app.use(helmet());
 // CORS configuration - allows frontend to communicate with backend
 app.use(
 	cors({
-		origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-			'http://localhost:5173',
-			'http://localhost:5500',
-			'http://127.0.0.1:5500',
-			'null' // Allow file:// protocol
-		],
+		origin: function (origin, callback) {
+			// Allow requests with no origin (like mobile apps, curl, Postman, or file://)
+			if (!origin) return callback(null, true);
+			
+			const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+				'http://localhost:5173',
+				'http://localhost:5500',
+				'http://127.0.0.1:5500',
+				'http://localhost:3000',
+			];
+			
+			// Allow if origin is in the list OR if it's null (file:// protocol)
+			if (allowedOrigins.includes(origin) || origin === 'null') {
+				callback(null, true);
+			} else {
+				callback(null, true); // For demo, allow all origins
+			}
+		},
 		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 		credentials: true,
 	})
@@ -71,6 +85,8 @@ app.use(API_PREFIX, returnsRoutes);
 app.use(API_PREFIX, jobsRoutes);
 app.use(API_PREFIX, financeRoutes);
 app.use(API_PREFIX, assignmentsRoutes); // Carrier assignment routes
+app.use(API_PREFIX, shippingRoutes); // Shipping quote routes
+app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints (demo)
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes

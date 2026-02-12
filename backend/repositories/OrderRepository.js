@@ -123,10 +123,10 @@ class OrderRepository extends BaseRepository {
     // Insert order items
     if (items && items.length > 0) {
       const itemsQuery = `
-        INSERT INTO order_items (order_id, product_id, sku, product_name, quantity, unit_price, total_price, weight, warehouse_id)
+        INSERT INTO order_items (order_id, product_id, sku, product_name, quantity, unit_price, weight, warehouse_id)
         VALUES ${items.map((_, idx) => {
-          const base = idx * 9;
-          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9})`;
+          const base = idx * 8;
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`;
         }).join(', ')}
         RETURNING *
       `;
@@ -138,7 +138,6 @@ class OrderRepository extends BaseRepository {
         item.product_name,
         item.quantity,
         item.unit_price,
-        item.total_price || (item.quantity * item.unit_price),
         item.weight || null,
         item.warehouse_id || null
       ]);

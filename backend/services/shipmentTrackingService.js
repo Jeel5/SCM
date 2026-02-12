@@ -1,6 +1,7 @@
 import pool from '../configs/db.js';
 import axios from 'axios';
 import logger from '../utils/logger.js';
+import { withTransaction } from '../utils/dbTransaction.js';
 
 const OSRM_URL = process.env.OSRM_API_URL || 'http://router.project-osrm.org';
 
@@ -52,102 +53,96 @@ class ShipmentTrackingService {
    * Called when carrier sends tracking webhook
    */
   async updateShipmentTracking(shipmentId, trackingEvent) {
-    const client = await pool.connect();
-
     try {
-      await client.query('BEGIN');
-
-      // Get current shipment
-      const shipmentResult = await client.query(
-        'SELECT * FROM shipments WHERE id = $1',
-        [shipmentId]
-      );
-
-      if (shipmentResult.rows.length === 0) {
-        throw new Error('Shipment not found');
-      }
-
-      const shipment = shipmentResult.rows[0];
-      const trackingEvents = JSON.parse(shipment.tracking_events || '[]');
-
-      // Add new event with timestamp
-      const newEvent = {
-        ...trackingEvent,
-        timestamp: new Date(),
-        id: `EVT-${Date.now()}`
-      };
-
-      trackingEvents.push(newEvent);
-
-      // Update shipment status based on event type
-      let newStatus = shipment.status;
-      switch (trackingEvent.eventType) {
-        case 'picked_up':
-          newStatus = 'picked_up';
-          break;
-        case 'in_transit':
-          newStatus = 'in_transit';
-          break;
-        case 'out_for_delivery':
-          newStatus = 'out_for_delivery';
-          break;
-        case 'delivered':
-          newStatus = 'delivered';
-          break;
-        case 'exception':
-        case 'failed_delivery':
-          newStatus = 'failed_delivery';
-          break;
-      }
-
-      // If location provided, update current location
-      let currentLocation = shipment.current_location;
-      if (trackingEvent.location) {
-        currentLocation = JSON.stringify(trackingEvent.location);
-      }
-
-      // Update shipment
-      const updateResult = await client.query(
-        `UPDATE shipments 
-         SET status = $1,
-             tracking_events = $2,
-             current_location = $3,
-             updated_at = NOW()
-         WHERE id = $4
-         RETURNING *`,
-        [newStatus, JSON.stringify(trackingEvents), currentLocation, shipmentId]
-      );
-
-      // Create shipment event record
-      await client.query(
-        `INSERT INTO shipment_events 
-         (shipment_id, event_type, location, description, event_timestamp)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          shipmentId,
-          trackingEvent.eventType,
-          trackingEvent.location ? JSON.stringify(trackingEvent.location) : null,
-          trackingEvent.description || '',
-          new Date(trackingEvent.timestamp || Date.now())
-        ]
-      );
-
-      // If delivered, update order status
-      if (newStatus === 'delivered') {
-        await client.query(
-          `UPDATE orders SET status = 'delivered', updated_at = NOW()
-           WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
+      const result = await withTransaction(async (tx) => {
+        // Get current shipment
+        const shipmentResult = await tx.query(
+          'SELECT * FROM shipments WHERE id = $1',
           [shipmentId]
         );
-      }
 
-      await client.query('COMMIT');
+        if (shipmentResult.rows.length === 0) {
+          throw new Error('Shipment not found');
+        }
 
-      logger.info('Shipment tracking updated', {
-        shipmentId,
-        newStatus,
-        eventType: trackingEvent.eventType
+        const shipment = shipmentResult.rows[0];
+        const trackingEvents = JSON.parse(shipment.tracking_events || '[]');
+
+        // Add new event with timestamp
+        const newEvent = {
+          ...trackingEvent,
+          timestamp: new Date(),
+          id: `EVT-${Date.now()}`
+        };
+
+        trackingEvents.push(newEvent);
+
+        // Update shipment status based on event type
+        let newStatus = shipment.status;
+        switch (trackingEvent.eventType) {
+          case 'picked_up':
+            newStatus = 'picked_up';
+            break;
+          case 'in_transit':
+            newStatus = 'in_transit';
+            break;
+          case 'out_for_delivery':
+            newStatus = 'out_for_delivery';
+            break;
+          case 'delivered':
+            newStatus = 'delivered';
+            break;
+          case 'exception':
+          case 'failed_delivery':
+            newStatus = 'failed_delivery';
+            break;
+        }
+
+        // If location provided, update current location
+        let currentLocation = shipment.current_location;
+        if (trackingEvent.location) {
+          currentLocation = JSON.stringify(trackingEvent.location);
+        }
+
+        // Update shipment
+        const updateResult = await tx.query(
+          `UPDATE shipments 
+           SET status = $1,
+               tracking_events = $2,
+               current_location = $3,
+               updated_at = NOW()
+           WHERE id = $4
+           RETURNING *`,
+          [newStatus, JSON.stringify(trackingEvents), currentLocation, shipmentId]
+        );
+
+        // Create shipment event record
+        await tx.query(
+          `INSERT INTO shipment_events 
+           (shipment_id, event_type, location, description, event_timestamp)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            shipmentId,
+            trackingEvent.eventType,
+            trackingEvent.location ? JSON.stringify(trackingEvent.location) : null,
+            trackingEvent.description || '',
+            new Date(trackingEvent.timestamp || Date.now())
+          ]
+        );
+
+        // If delivered, update order status
+        if (newStatus === 'delivered') {
+          await tx.query(
+            `UPDATE orders SET status = 'delivered', updated_at = NOW()
+             WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
+            [shipmentId]
+          );
+        }
+
+        return { shipmentId, newStatus, eventType: trackingEvent.eventType };
       });
+
+      logger.info('Shipment tracking updated', result);
 
       return updateResult.rows[0];
     } catch (error) {
