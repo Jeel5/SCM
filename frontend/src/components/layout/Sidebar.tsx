@@ -11,8 +11,6 @@ import {
   RotateCcw,
   BarChart3,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   Building2,
   Timer,
   DollarSign,
@@ -136,7 +134,7 @@ export function Sidebar() {
           : await exceptionsApi.getExceptions(1, 100);
         // Count only open and in_progress exceptions
         const openCount = response.data.filter(
-          (e) => e.status === 'open' || e.status === 'in_progress'
+          (e) => e.status === 'investigating' || e.status === 'pending_resolution'
         ).length;
         setOpenExceptionsCount(openCount);
       } catch (error) {
@@ -193,7 +191,12 @@ export function Sidebar() {
             <Truck className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0 overflow-hidden">
-            <h1 className="font-bold text-gray-900 dark:text-gray-100 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <h1
+              className={cn(
+                'font-bold text-gray-900 dark:text-gray-100 whitespace-nowrap transition-opacity duration-300',
+                sidebarMobileOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              )}
+            >
               LogiTower
             </h1>
           </div>
@@ -227,14 +230,20 @@ export function Sidebar() {
                     <div className="flex items-center justify-between flex-1 min-w-0 overflow-hidden">
                       <span
                         className={cn(
-                          'font-medium text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300',
+                          'font-medium text-sm whitespace-nowrap transition-opacity duration-300',
+                          sidebarMobileOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
                           isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
                         )}
                       >
                         {item.label}
                       </span>
                       {item.badge !== undefined && item.badge > 0 && (
-                        <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <span
+                          className={cn(
+                            'ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full transition-opacity duration-300',
+                            sidebarMobileOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                          )}
+                        >
                           {item.badge}
                         </span>
                       )}
