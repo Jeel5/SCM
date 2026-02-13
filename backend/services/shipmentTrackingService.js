@@ -228,7 +228,7 @@ class ShipmentTrackingService {
         location: location || {
           lat: 40.7128 + Math.random() * 0.1,
           lng: -74.0060 + Math.random() * 0.1,
-          city: 'New York',
+          city: 'Mumbai',
           state: 'NY'
         },
         description: description || `Shipment ${status.replace('_', ' ')}`

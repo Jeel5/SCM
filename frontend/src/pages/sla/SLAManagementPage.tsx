@@ -43,7 +43,7 @@ export function SLAManagementPage() {
     {
       key: 'penaltyAmount',
       header: 'Penalty',
-      render: (policy: SLAPolicy) => <span className="text-gray-700 dark:text-gray-300">${policy.penaltyAmount}/hr</span>,
+      render: (policy: SLAPolicy) => <span className="text-gray-700 dark:text-gray-300">₹{policy.penaltyAmount}/hr</span>,
     },
     {
       key: 'isActive',
@@ -76,7 +76,7 @@ export function SLAManagementPage() {
       key: 'penalty',
       header: 'Penalty',
       render: (violation: SLAViolation) => (
-        <span className="font-medium text-red-600 dark:text-red-400">${violation.penaltyAmount.toFixed(2)}</span>
+        <span className="font-medium text-red-600 dark:text-red-400">₹{violation.penaltyAmount.toFixed(2)}</span>
       ),
     },
     {
@@ -226,7 +226,7 @@ export function SLAManagementPage() {
                         <p className="font-medium text-gray-900 dark:text-white">{v.shipmentId}</p>
                         <p className="text-sm text-gray-500 dark:text-gray-300">{v.policyName}</p>
                       </div>
-                      <span className="text-red-600 dark:text-red-400 font-medium">${v.penaltyAmount.toFixed(2)}</span>
+                      <span className="text-red-600 dark:text-red-400 font-medium">₹{v.penaltyAmount.toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -249,7 +249,7 @@ export function SLAManagementPage() {
                         <p className="font-medium text-gray-900 dark:text-white">{p.name}</p>
                         <p className="text-sm text-gray-500 dark:text-gray-400">{p.targetDeliveryHours}h target</p>
                       </div>
-                      <span className="text-gray-600 dark:text-gray-300">${p.penaltyAmount}/hr</span>
+                      <span className="text-gray-600 dark:text-gray-300">₹{p.penaltyAmount}/hr</span>
                     </div>
                   ))}
                 </div>

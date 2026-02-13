@@ -58,7 +58,7 @@ class OrderService {
           status: orderData.status || 'created',
           priority: orderData.priority || 'standard',
           total_amount: orderData.total_amount,
-          currency: orderData.currency || 'USD',
+          currency: orderData.currency || 'INR',
           shipping_address: JSON.stringify(orderData.shipping_address),
           billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
           estimated_delivery: orderData.estimated_delivery || null,

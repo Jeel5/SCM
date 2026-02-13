@@ -17,7 +17,7 @@ export function HelpSupportPage() {
     {
       title: 'Getting Started',
       icon: Book,
-      description: 'Learn the basics of using LogiTower',
+      description: 'Learn the basics of using TwinChain',
       link: '#',
     },
     {

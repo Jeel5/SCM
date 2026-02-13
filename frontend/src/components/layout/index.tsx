@@ -43,7 +43,7 @@ export function MainLayout() {
             </svg>
           </div>
           <div className="text-center">
-            <p className="text-gray-900 dark:text-gray-100 font-semibold">LogiTower</p>
+            <p className="text-gray-900 dark:text-gray-100 font-semibold">TwinChain</p>
             <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
           </div>
         </motion.div>

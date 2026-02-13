@@ -78,7 +78,7 @@ export function LoginPage() {
       setError(null);
       
       // Use mock API for demo login
-      const response = await mockApi.login('admin@logitower.com', 'demo');
+      const response = await mockApi.login('admin@twinchain.in', 'demo');
       
       if (response.success) {
         login(response.data.user, response.data.accessToken);
@@ -116,7 +116,7 @@ export function LoginPage() {
                   <Truck className="h-7 w-7 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-white">LogiTower</h1>
+                  <h1 className="text-2xl font-bold text-white">TwinChain</h1>
                   <p className="text-blue-200 text-sm">Control Center</p>
                 </div>
               </div>
@@ -187,7 +187,7 @@ export function LoginPage() {
                       id="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="admin@logitower.com"
+                      placeholder="admin@twinchain.in"
                       className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none text-gray-900 placeholder:text-gray-400"
                     />
                   </div>
@@ -336,7 +336,7 @@ export function LoginPage() {
         transition={{ delay: 0.5 }}
         className="text-center text-blue-200/60 text-sm mt-8"
       >
-        © 2024 LogiTower. Enterprise Logistics Control Tower.
+        © 2026 TwinChain. Enterprise Logistics Control Tower.
       </motion.p>
     </motion.div>
   );

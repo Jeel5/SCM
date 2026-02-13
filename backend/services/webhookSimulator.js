@@ -64,8 +64,8 @@ class WebhookSimulator {
         order_number: `#${1000 + Math.floor(Math.random() * 9000)}`,
         email: `customer${Math.floor(Math.random() * 10000)}@example.com`,
         created_at: new Date().toISOString(),
-        total_price: (Math.random() * 500 + 50).toFixed(2),
-        currency: 'USD',
+        total_price: (Math.random() * 50000 + 5000).toFixed(2),
+        currency: 'INR',
         financial_status: 'paid',
         fulfillment_status: null,
         line_items: this.generateOrderItems(Math.floor(Math.random() * 3) + 1).map(item => ({
@@ -128,7 +128,7 @@ class WebhookSimulator {
           {
             timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
             status: 'picked_up',
-            location: 'Warehouse - Chicago, IL'
+            location: 'Warehouse - Mumbai, MH'
           },
           {
             timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
@@ -234,8 +234,8 @@ class WebhookSimulator {
         rates: carriers.map(carrier => ({
           carrier: carrier,
           service: Math.random() > 0.5 ? 'Ground' : 'Express',
-          rate: (Math.random() * 50 + 10).toFixed(2),
-          currency: 'USD',
+          rate: (Math.random() * 5000 + 1000).toFixed(2),
+          currency: 'INR',
           estimated_days: Math.floor(Math.random() * 7) + 1,
           delivery_date: new Date(Date.now() + (Math.floor(Math.random() * 7) + 1) * 24 * 60 * 60 * 1000).toISOString(),
           available: Math.random() > 0.1
@@ -285,7 +285,7 @@ class WebhookSimulator {
 
   randomAddress() {
     const streets = ['Main St', 'Oak Ave', 'Maple Dr', 'Cedar Ln', 'Pine Rd'];
-    const cities = ['New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Houston, TX', 'Phoenix, AZ'];
+    const cities = ['Mumbai, MH', 'Delhi, DL', 'Bangalore, KA', 'Hyderabad, TS', 'Chennai, TN'];
     const cityState = cities[Math.floor(Math.random() * cities.length)];
 
     return {
@@ -293,14 +293,14 @@ class WebhookSimulator {
       city: cityState.split(', ')[0],
       state: cityState.split(', ')[1],
       zip: `${Math.floor(Math.random() * 90000) + 10000}`,
-      country: 'USA'
+      country: 'India'
     };
   }
 
   randomCity() {
     const cities = [
-      'New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Houston, TX',
-      'Phoenix, AZ', 'Philadelphia, PA', 'San Antonio, TX', 'San Diego, CA'
+      'Mumbai, MH', 'Delhi, DL', 'Bangalore, KA', 'Hyderabad, TS',
+      'Chennai, TN', 'Kolkata, WB', 'Pune, MH', 'Ahmedabad, GJ'
     ];
     return cities[Math.floor(Math.random() * cities.length)];
   }

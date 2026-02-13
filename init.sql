@@ -203,7 +203,7 @@ CREATE TABLE orders (
   total_amount DECIMAL(10,2),
   tax_amount DECIMAL(10,2) DEFAULT 0, -- Added for webhook orders
   shipping_amount DECIMAL(10,2) DEFAULT 0, -- Added for webhook orders
-  currency VARCHAR(3) DEFAULT 'USD',
+  currency VARCHAR(3) DEFAULT 'INR',
   shipping_address JSONB NOT NULL,
   billing_address JSONB,
   estimated_delivery TIMESTAMPTZ,
@@ -547,13 +547,13 @@ BEGIN;
 -- Users (admin, ops, warehouse, carrier, finance, support)
 INSERT INTO users (email, password_hash, name, role, organization_id, avatar, is_active)
 SELECT * FROM (VALUES
-  ('admin@logitower.com','$2b$10$demoHashedPassword','John Admin','admin', (SELECT id FROM organizations WHERE code='DEMO001'),'https://api.dicebear.com/7.x/avataaars/svg?seed=John',true),
-  ('ops@logitower.com','$2b$10$demoHashedPassword','Sarah Operations','operations_manager', (SELECT id FROM organizations WHERE code='DEMO001'),'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',true),
-  ('wh1@logitower.com','$2b$10$demoHashedPassword','Luis Warehouse','warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
-  ('wh2@logitower.com','$2b$10$demoHashedPassword','Priya Warehouse','warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
-  ('carrier@logitower.com','$2b$10$demoHashedPassword','DHL Partner','carrier_partner', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
-  ('finance@logitower.com','$2b$10$demoHashedPassword','Alice Finance','finance', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
-  ('support@logitower.com','$2b$10$demoHashedPassword','Bob Support','customer_support', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
+  ('admin@twinchain.in','$2b$10$demoHashedPassword','Raj Admin','admin', (SELECT id FROM organizations WHERE code='DEMO001'),'https://api.dicebear.com/7.x/avataaars/svg?seed=Raj',true),
+  ('ops@twinchain.in','$2b$10$demoHashedPassword','Priya Operations','operations_manager', (SELECT id FROM organizations WHERE code='DEMO001'),'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',true),
+  ('wh1@twinchain.in','$2b$10$demoHashedPassword','Amit Warehouse','warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
+  ('wh2@twinchain.in','$2b$10$demoHashedPassword','Neha Warehouse','warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
+  ('carrier@twinchain.in','$2b$10$demoHashedPassword','Delhivery Partner','carrier_partner', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
+  ('finance@twinchain.in','$2b$10$demoHashedPassword','Ananya Finance','finance', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
+  ('support@twinchain.in','$2b$10$demoHashedPassword','Rohan Support','customer_support', (SELECT id FROM organizations WHERE code='DEMO001'),NULL,true),
   ('admin@acme.com','$2b$10$demoHashedPassword','Acme Admin','admin', (SELECT id FROM organizations WHERE code='ACME001'),NULL,true)
 ) AS v(email, password_hash, name, role, organization_id, avatar, is_active)
 ON CONFLICT (email) DO NOTHING;

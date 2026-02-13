@@ -8,8 +8,8 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Format currency
-export function formatCurrency(amount: number, currency: string = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
+export function formatCurrency(amount: number, currency: string = 'INR'): string {
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency,
   }).format(amount);
@@ -17,7 +17,7 @@ export function formatCurrency(amount: number, currency: string = 'USD'): string
 
 // Format number with commas
 export function formatNumber(num: number): string {
-  return new Intl.NumberFormat('en-US').format(num);
+  return new Intl.NumberFormat('en-IN').format(num);
 }
 
 // Format percentage

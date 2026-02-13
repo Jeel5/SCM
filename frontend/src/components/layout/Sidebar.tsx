@@ -197,7 +197,7 @@ export function Sidebar() {
                 sidebarMobileOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
               )}
             >
-              LogiTower
+              TwinChain
             </h1>
           </div>
         </Link>

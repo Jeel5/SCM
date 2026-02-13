@@ -42,7 +42,7 @@ export async function listWarehouses(req, res) {
       zones: Math.floor(Math.random() * 6) + 3,
       location: w.address?.coordinates || { lat: 0, lng: 0 },
       status: w.is_active ? 'active' : 'inactive',
-      contactEmail: `${w.code.toLowerCase()}@logitower.com`,
+      contactEmail: `${w.code.toLowerCase()}@twinchain.in`,
       contactPhone: '+1-555-0100',
       operatingHours: { open: '06:00', close: '22:00', timezone: 'America/Los_Angeles' },
       managerId: w.manager_id,
