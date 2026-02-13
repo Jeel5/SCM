@@ -277,15 +277,16 @@
         </div>
         
         <div class="carrier-selector">
-            <button class="carrier-btn active" onclick="selectCarrier(event, 'DHL')">🟦 DHL Express</button>
-            <button class="carrier-btn" onclick="selectCarrier(event, 'FEDEX')">🟪 FedEx</button>
-            <button class="carrier-btn" onclick="selectCarrier(event, 'BLUEDART')">🟥 Blue Dart</button>
-            <button class="carrier-btn" onclick="selectCarrier(event, 'DELHIVERY')">🟩 Delhivery</button>
+            <button class="carrier-btn" onclick="selectCarrier(event, 'UPS')">📦 UPS</button>
+            <button class="carrier-btn" onclick="selectCarrier(event, 'DTDC')">🚚 DTDC</button>
+            <button class="carrier-btn active" onclick="selectCarrier(event, 'DELHIVERY')">🟩 Delhivery</button>
+            <button class="carrier-btn" onclick="selectCarrier(event, 'DHL')">🟦 DHL Express</button>
+            <button class="carrier-btn" onclick="selectCarrier(event, 'ECOM')">📮 Ecom Express</button>
         </div>
         
         <div class="content">
             <div class="section-title">
-                📬 Pending Quote Requests for <span id="currentCarrierName">DHL Express</span>
+                📬 Pending Quote Requests for <span id="currentCarrierName">Delhivery</span>
             </div>
             
             <div id="requestsContainer">
@@ -302,8 +303,21 @@
 
     <script>
         const API_BASE = 'http://localhost:3000/api';
-        let currentCarrier = 'DHL';
+        let currentCarrier = 'DELHIVERY';
+        let currentCarrierId = null; // Store current carrier ID
         let pollingInterval = null;
+        
+        // Map carrier button names to database codes
+        const CARRIER_CODE_MAP = {
+            'DHL': 'DHL-001',
+            'FEDEX': 'FEDEX-001',
+            'BLUEDART': 'BLUEDART-001',
+            'DELHIVERY': 'DELHIVERY',
+            'UPS': 'UPS-001',
+            'DTDC': 'DTDC-001',
+            'ECOM': 'ECOM-001',
+            'XPRESSBEES': 'XPRESSBEES-001'
+        };
         
         function selectCarrier(evt, carrier) {
             currentCarrier = carrier;
@@ -320,27 +334,41 @@
                 carrier === 'DHL' ? 'DHL Express' :
                 carrier === 'FEDEX' ? 'FedEx' :
                 carrier === 'BLUEDART' ? 'Blue Dart' :
-                'Delhivery';
+                carrier === 'DELHIVERY' ? 'Delhivery' :
+                carrier === 'UPS' ? 'UPS Supply Chain' :
+                carrier === 'DTDC' ? 'DTDC Courier' :
+                carrier === 'ECOM' ? 'Ecom Express' :
+                carrier === 'XPRESSBEES' ? 'XpressBees' :
+                carrier;
             
             loadPendingRequests();
         }
         
         async function loadPendingRequests() {
             try {
-                // For demo, we'll check localStorage for the last order
-                const orderData = localStorage.getItem('orderData');
-                if (!orderData) {
+                // Map carrier name to database code
+                const carrierCode = CARRIER_CODE_MAP[currentCarrier] || currentCarrier;
+                
+                // Fetch actual pending assignments from backend API
+                const response = await fetch(`${API_BASE}/carriers/assignments/pending?carrierId=${carrierCode}`);
+                
+                if (!response.ok) {
+                    console.error('Failed to load assignments:', response.status);
                     showEmptyState();
                     return;
                 }
                 
-                const order = JSON.parse(orderData);
+                const result = await response.json();
                 
-                // Only update if orderId changed or container is empty
-                const currentOrderId = document.getElementById('requestsContainer').dataset.orderId;
-                if (currentOrderId !== order.orderId) {
-                    displayQuoteRequest(order);
+                if (!result.success || !result.data || result.data.length === 0) {
+                    showEmptyState();
+                    return;
                 }
+                
+                // Display the first pending assignment
+                const assignment = result.data[0];
+                currentCarrierId = assignment.carrierId; // Store carrier ID
+                displayAssignment(assignment);
                 
             } catch (error) {
                 console.error('Error loading requests:', error);
@@ -360,102 +388,112 @@
             `;
         }
         
-        function displayQuoteRequest(order) {
-            const requestData = order.requestSent;
-            const items = requestData.items[0];
-            
+        function displayAssignment(assignment) {
             const container = document.getElementById('requestsContainer');
-            container.dataset.orderId = order.orderId; // Track current order
+            container.dataset.assignmentId = assignment.id; // Track current assignment
+            
+            const orderData = assignment.orderData || {};
+            const items = orderData.items || [];
+            const firstItem = items[0] || {};
+            const shippingAddr = assignment.shippingAddress || {};
+            
             container.innerHTML = `
                 <div class="quote-request">
                     <div class="request-header">
-                        <h3>Order #${order.orderId}</h3>
+                        <h3>Order ${assignment.orderNumber}</h3>
                         <div class="request-time">
                             <span class="badge badge-pending">⏳ PENDING</span>
-                            ${items.is_fragile ? '<span class="badge badge-fragile">⚠️ FRAGILE</span>' : ''}
+                            <small style="display: block; margin-top: 5px;">Expires: ${new Date(assignment.expiresAt).toLocaleString()}</small>
                         </div>
                     </div>
                     
                     <div class="shipment-details">
                         <h4 style="margin-bottom: 15px; color: #495057;">📦 Shipment Details</h4>
                         <div class="detail-row">
+                            <div class="detail-label">Customer:</div>
+                            <div class="detail-value">${assignment.customerName}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Email:</div>
+                            <div class="detail-value">${assignment.customerEmail}</div>
+                        </div>
+                        <div class="detail-row">
                             <div class="detail-label">Product:</div>
-                            <div class="detail-value">${items.name}</div>
+                            <div class="detail-value">${firstItem.productName || 'N/A'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Quantity:</div>
+                            <div class="detail-value">${firstItem.quantity || 1}</div>
                         </div>
                         <div class="detail-row">
                             <div class="detail-label">Weight:</div>
-                            <div class="detail-value">${items.weight} kg</div>
+                            <div class="detail-value">${firstItem.weight || 'N/A'} kg</div>
                         </div>
                         <div class="detail-row">
-                            <div class="detail-label">Dimensions:</div>
-                            <div class="detail-value">${items.dimensions.length}×${items.dimensions.width}×${items.dimensions.height} cm</div>
+                            <div class="detail-label">Order Value:</div>
+                            <div class="detail-value">₹${assignment.totalAmount.toLocaleString()}</div>
                         </div>
                         <div class="detail-row">
-                            <div class="detail-label">Value:</div>
-                            <div class="detail-value">₹${items.value.toLocaleString()}</div>
+                            <div class="detail-label">Delivery To:</div>
+                            <div class="detail-value">${shippingAddr.city || 'N/A'}, ${shippingAddr.state || ''} ${shippingAddr.postal_code || ''}</div>
                         </div>
                         <div class="detail-row">
-                            <div class="detail-label">From:</div>
-                            <div class="detail-value">${requestData.origin.address}</div>
+                            <div class="detail-label">Service Type:</div>
+                            <div class="detail-value">${assignment.serviceType}</div>
                         </div>
                         <div class="detail-row">
-                            <div class="detail-label">To:</div>
-                            <div class="detail-value">${requestData.destination.address}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Distance:</div>
-                            <div class="detail-value">~${calculateDistance(requestData.origin, requestData.destination)} km</div>
+                            <div class="detail-label">Requested:</div>
+                            <div class="detail-value">${new Date(assignment.requestedAt).toLocaleString()}</div>
                         </div>
                     </div>
                     
                     <div class="data-grid">
                         <div class="data-section">
-                            <h4>📤 Complete Request Data Received</h4>
+                            <h4>📄 Full Request Payload</h4>
                             <div class="data-display">
-                                <pre>${JSON.stringify(requestData, null, 2)}</pre>
+                                <pre>${JSON.stringify(orderData, null, 2)}</pre>
                             </div>
                         </div>
                         
                         <div class="data-section">
-                            <h4>📊 Internal Analysis</h4>
-                            <div class="data-display">
-                                <pre>${JSON.stringify({
-                                    carrier: currentCarrier,
-                                    canAccept: checkIfCanAccept(items, requestData),
-                                    estimatedCost: calculateCarrierPrice(items, requestData),
-                                    estimatedDays: calculateDeliveryDays(requestData),
-                                    riskFactors: getRiskFactors(items, requestData)
-                                }, null, 2)}</pre>
+                            <h4>🎯 Assignment Info</h4>
+                            <div style="padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                                <p><strong>Assignment ID:</strong> ${assignment.id}</p>
+                                <p><strong>Order ID:</strong> ${assignment.orderId}</p>
+                                <p><strong>Status:</strong> ${assignment.status}</p>
+                                <p><strong>Hours until expiry:</strong> ${assignment.hoursUntilExpiry || 'N/A'}</p>
+                                <p style="margin-top: 10px;"><strong>Suggested Price:</strong> ₹${Math.round(assignment.totalAmount * 0.15)}</p>
+                                <p><strong>Estimated Days:</strong> 2-3 days</p>
                             </div>
                         </div>
                     </div>
                     
                     <div class="action-section">
                         <div class="action-card">
-                            <h4>✅ Accept Quote</h4>
+                            <h4>✅ Accept Assignment</h4>
                             <div class="input-group">
                                 <label>Quoted Price (₹)</label>
-                                <input type="number" id="quotedPrice" value="${calculateCarrierPrice(items, requestData)}" step="0.01">
+                                <input type="number" id="quotedPrice" value="${Math.round(assignment.totalAmount * 0.15)}" step="0.01">
                             </div>
                             <div class="input-group">
                                 <label>Delivery Days</label>
-                                <input type="number" id="deliveryDays" value="${calculateDeliveryDays(requestData)}" min="1">
+                                <input type="number" id="deliveryDays" value="2" min="1">
                             </div>
                             <div class="input-group">
                                 <label>Service Type</label>
                                 <select id="serviceType">
-                                    <option value="EXPRESS" ${currentCarrier === 'DHL' ? 'selected' : ''}>Express</option>
-                                    <option value="STANDARD" ${currentCarrier !== 'DHL' ? 'selected' : ''}>Standard</option>
-                                    <option value="SURFACE">Surface</option>
+                                    <option value="express" ${currentCarrier === 'DHL' ? 'selected' : ''}>Express</option>
+                                    <option value="standard" ${currentCarrier !== 'DHL' ? 'selected' : ''}>Standard</option>
+                                    <option value="overnight">Overnight</option>
                                 </select>
                             </div>
-                            <button type="button" class="btn btn-accept" onclick="acceptQuote('${order.orderId}')">
-                                ✓ Accept Shipment
+                            <button type="button" class="btn btn-accept" onclick="acceptAssignment('${assignment.id}')">
+                                ✅ Accept & Create Shipment
                             </button>
                         </div>
                         
                         <div class="action-card">
-                            <h4>❌ Reject Quote</h4>
+                            <h4>❌ Reject Assignment</h4>
                             <div class="input-group">
                                 <label>Rejection Reason</label>
                                 <select id="rejectionReason">
@@ -471,13 +509,13 @@
                                 <label>Additional Message</label>
                                 <input type="text" id="rejectionMessage" placeholder="Optional details...">
                             </div>
-                            <button type="button" class="btn btn-reject" onclick="rejectQuote('${order.orderId}')">
-                                ✗ Reject Shipment
+                            <button type="button" class="btn btn-reject" onclick="rejectAssignment('${assignment.id}')">
+                                ❌ Reject Assignment
                             </button>
                         </div>
                     </div>
                     
-                    <div id="responseDisplay-${order.orderId}" class="response-section"></div>
+                    <div id="responseDisplay-${assignment.id}" class="response-section"></div>
                 </div>
             `;
         }
@@ -532,86 +570,68 @@
             return factors.length > 0 ? factors : ['No special risks identified'];
         }
         
-        async function acceptQuote(orderId) {
+        async function acceptAssignment(assignmentId) {
             const quotedPrice = parseFloat(document.getElementById('quotedPrice').value);
             const deliveryDays = parseInt(document.getElementById('deliveryDays').value);
             const serviceType = document.getElementById('serviceType').value;
             
-            const responseData = {
-                orderId,
-                carrier: currentCarrier,
-                accepted: true,
-                quotedPrice,
-                estimatedDeliveryDays: deliveryDays,
-                serviceType,
-                currency: 'INR',
-                validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                breakdown: {
-                    baseRate: quotedPrice * 0.7,
-                    fuelSurcharge: quotedPrice * 0.15,
-                    handlingFee: quotedPrice * 0.10,
-                    insurance: quotedPrice * 0.05
-                },
-                respondedAt: new Date().toISOString()
+            const acceptanceData = {
+                carrierReferenceId: `${currentCarrier}-${Date.now()}`,
+                dispatchTime: new Date().toISOString(),
+                estimatedPickup: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+                estimatedDelivery: new Date(Date.now() + deliveryDays * 24 * 60 * 60 * 1000).toISOString(),
+                driverName: 'Demo Driver',
+                driverPhone: '+91-9876543210',
+                vehicleInfo: 'TN-01-AB-1234',
+                additionalInfo: `Service Type: ${serviceType}, Quoted Price: ₹${quotedPrice}`
             };
             
             try {
-                // Send to backend
-                const response = await fetch(`${API_BASE}/carriers/webhook/${currentCarrier}`, {
+                // Send acceptance to backend with carrierId query param
+                const response = await fetch(`${API_BASE}/assignments/${assignmentId}/accept?carrierId=${currentCarrierId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(responseData)
+                    body: JSON.stringify(acceptanceData)
                 });
                 
-                // Store in localStorage for demo
-                const existingResponses = JSON.parse(localStorage.getItem('carrierResponses') || '{}');
-                if (!existingResponses[orderId]) existingResponses[orderId] = [];
-                existingResponses[orderId].push(responseData);
-                localStorage.setItem('carrierResponses', JSON.stringify(existingResponses));
+                const result = await response.json();
                 
-                // Display response
-                displayResponse(orderId, responseData, true);
+                if (result.success) {
+                    displayResponse(assignmentId, result.data, true);
+                } else {
+                    throw new Error(result.error || 'Failed to accept assignment');
+                }
                 
             } catch (error) {
-                console.error('Error sending acceptance:', error);
-                displayResponse(orderId, responseData, true);
+                console.error('Error accepting assignment:', error);
+                alert('Error: ' + error.message);
             }
         }
         
-        async function rejectQuote(orderId) {
+        async function rejectAssignment(assignmentId) {
             const reason = document.getElementById('rejectionReason').value;
             const message = document.getElementById('rejectionMessage').value || 
                           getRejectionMessage(reason);
             
-            const responseData = {
-                orderId,
-                carrier: currentCarrier,
-                accepted: false,
-                reason,
-                message,
-                respondedAt: new Date().toISOString()
-            };
-            
             try {
-                // Send to backend
-                const response = await fetch(`${API_BASE}/carriers/webhook/${currentCarrier}`, {
+                // Send rejection to backend with carrierId query param
+                const response = await fetch(`${API_BASE}/assignments/${assignmentId}/reject?carrierId=${currentCarrierId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(responseData)
+                    body: JSON.stringify({ reason, message })
                 });
                 
-                // Store in localStorage for demo
-                const existingResponses = JSON.parse(localStorage.getItem('carrierResponses') || '{}');
-                if (!existingResponses[orderId]) existingResponses[orderId] = [];
-                existingResponses[orderId].push(responseData);
-                localStorage.setItem('carrierResponses', JSON.stringify(existingResponses));
+                const result = await response.json();
                 
-                // Display response
-                displayResponse(orderId, responseData, false);
+                if (result.success) {
+                    displayResponse(assignmentId, result.data, false);
+                } else {
+                    throw new Error(result.error || 'Failed to reject assignment');
+                }
                 
             } catch (error) {
-                console.error('Error sending rejection:', error);
-                displayResponse(orderId, responseData, false);
+                console.error('Error rejecting assignment:', error);
+                alert('Error: ' + error.message);
             }
         }
         
@@ -627,24 +647,35 @@
             return messages[reason] || 'Unable to accept this shipment';
         }
         
-        function displayResponse(orderId, responseData, isAccepted) {
-            const responseDiv = document.getElementById(`responseDisplay-${orderId}`);
+        function displayResponse(assignmentId, responseData, isAccepted) {
+            const responseDiv = document.getElementById(`responseDisplay-${assignmentId}`);
             responseDiv.className = 'response-section ' + (isAccepted ? '' : 'reject');
             responseDiv.style.display = 'block';
             
             responseDiv.innerHTML = `
-                <h4>${isAccepted ? '✅ Quote Accepted!' : '❌ Quote Rejected'}</h4>
+                <h4>${isAccepted ? '✅ Assignment Accepted & Shipment Created!' : '❌ Assignment Rejected'}</h4>
                 <p style="margin-bottom: 15px; color: #495057;">
-                    Response sent to SCM backend at ${new Date().toLocaleTimeString()}
+                    Response processed at ${new Date().toLocaleTimeString()}
                 </p>
-                <h4 style="margin-top: 15px; color: #495057;">📤 Response Data Sent:</h4>
+                ${isAccepted ? `
+                    <div style="background: #d4edda; border: 2px solid #c3e6cb; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <h4 style="color: #155724; margin-bottom: 10px;">📦 Shipment Details</h4>
+                        <p><strong>Tracking Number:</strong> ${responseData.shipment?.trackingNumber || 'N/A'}</p>
+                        <p><strong>Status:</strong> ${responseData.shipment?.status || 'pending'}</p>
+                        <p><strong>Created:</strong> ${new Date(responseData.shipment?.createdAt || Date.now()).toLocaleString()}</p>
+                    </div>
+                ` : ''}
+                <h4 style="margin-top: 15px; color: #495057;">📤 Response Data:</h4>
                 <div class="data-display">
                     <pre>${JSON.stringify(responseData, null, 2)}</pre>
                 </div>
                 <p style="margin-top: 15px; text-align: center; font-size: 0.9em; color: #6c757d;">
-                    ℹ️ Check the Order Tracking page to see how SCM processes this response
+                    ℹ️ Assignment has been processed. Refreshing in 3 seconds...
                 </p>
             `;
+            
+            // Reload after 3 seconds
+            setTimeout(() => loadPendingRequests(), 3000);
         }
         
         // Load requests on page load

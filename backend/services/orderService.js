@@ -3,6 +3,8 @@ import InventoryRepository from '../repositories/InventoryRepository.js';
 import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index.js';
 import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
+import pool from '../configs/db.js';
+import logger from '../utils/logger.js';
 
 // Order Service - contains business logic and orchestrates order operations
 class OrderService {
@@ -35,8 +37,8 @@ class OrderService {
     return order;
   }
 
-  // Create new order with items, reserves inventory in transaction
-  async createOrder(orderData) {
+  // Create new order with items, reserves inventory, and requests carrier assignment - ALL in one transaction
+  async createOrder(orderData, requestCarrierAssignment = true) {
     const startTime = Date.now();
     
     // Validate order has items
@@ -45,7 +47,7 @@ class OrderService {
     }
 
     try {
-      const order = await withTransaction(async (tx) => {
+      const result = await withTransaction(async (tx) => {
         // Prepare order data
         // Build order record with defaults
         const orderRecord = {
@@ -93,8 +95,106 @@ class OrderService {
           }
         }
 
-        return order;
+        // Request carrier assignment within same transaction
+        let assignments = [];
+        let carriersToNotify = [];
+        
+        if (requestCarrierAssignment) {
+          const serviceType = order.priority || 'standard';
+          
+          // Find eligible carriers
+          const carriersResult = await tx.query(
+            `SELECT id, code, name, contact_email, service_type, is_active
+             FROM carriers 
+             WHERE is_active = true 
+             AND (service_type = $1 OR service_type = 'all')
+             ORDER BY reliability_score DESC
+             LIMIT 3`,
+            [serviceType]
+          );
+
+          if (carriersResult.rows.length === 0) {
+            throw new BusinessLogicError(`No available carriers for service type: ${serviceType}`);
+          }
+
+          // Create carrier assignments within same transaction
+          for (const carrier of carriersResult.rows) {
+            const expiresAt = new Date();
+            expiresAt.setHours(expiresAt.getHours() + 24);
+
+            const requestPayload = {
+              orderId: order.id,
+              orderNumber: order.order_number,
+              customerName: order.customer_name,
+              customerEmail: order.customer_email,
+              customerPhone: order.customer_phone,
+              serviceType,
+              totalAmount: parseFloat(order.total_amount),
+              shippingAddress: order.shipping_address,
+              items: orderData.items || [],
+              requestedAt: new Date()
+            };
+
+            const idempotencyKey = `${order.id}-carrier-${carrier.id}-${Date.now()}`;
+
+            const assignmentResult = await tx.query(
+              `INSERT INTO carrier_assignments 
+               (order_id, carrier_id, service_type, status, pickup_address, delivery_address,
+                estimated_pickup, estimated_delivery, request_payload, expires_at, idempotency_key)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               RETURNING id, carrier_id, order_id, status, created_at`,
+              [
+                order.id,
+                carrier.id,
+                serviceType,
+                'pending',
+                order.shipping_address,
+                order.shipping_address,
+                new Date(Date.now() + 2 * 60 * 60 * 1000),
+                new Date(Date.now() + 24 * 60 * 60 * 1000),
+                JSON.stringify(requestPayload),
+                expiresAt,
+                idempotencyKey
+              ]
+            );
+
+            const assignment = assignmentResult.rows[0];
+            assignments.push(assignment);
+            carriersToNotify.push({ assignment, carrier, requestPayload });
+
+            logger.info(`Created carrier assignment in transaction`, {
+              assignmentId: assignment.id,
+              carrierId: carrier.id,
+              orderId: order.id,
+              idempotencyKey
+            });
+          }
+
+          // Update order status to pending_carrier_assignment
+          await tx.query(
+            'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
+            ['pending_carrier_assignment', order.id]
+          );
+        }
+
+        return { order, assignments, carriersToNotify };
       });
+      
+      const order = result.order;
+      
+      // After transaction commits successfully, send notifications to carriers
+      // External API calls happen outside transaction
+      if (result.carriersToNotify && result.carriersToNotify.length > 0) {
+        setImmediate(() => {
+          for (const { assignment, carrier } of result.carriersToNotify) {
+            // In production: POST to carrier webhook
+            logger.info(`Notifying carrier: ${carrier.name}`, {
+              assignmentId: assignment.id,
+              carrierId: carrier.id
+            });
+          }
+        });
+      }
       
       // Log order creation event after successful commit
       logEvent('OrderCreated', {
@@ -103,6 +203,7 @@ class OrderService {
         customerEmail: order.customer_email,
         totalAmount: order.total_amount,
         itemCount: order.items.length,
+        carrierAssignments: result.assignments.length
       });
       
       logPerformance('createOrder', Date.now() - startTime, {

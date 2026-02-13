@@ -1,5 +1,4 @@
 import orderService from '../services/orderService.js';
-import carrierAssignmentService from '../services/carrierAssignmentService.js';
 import { asyncHandler } from '../errors/index.js';
 
 // Orders Controller - handles HTTP requests and delegates to service layer
@@ -95,23 +94,15 @@ export const getOrder = asyncHandler(async (req, res) => {
   });
 });
 
-// Create order
+// Create order (includes carrier assignment in same transaction)
 export const createOrder = asyncHandler(async (req, res) => {
-  const order = await orderService.createOrder(req.body);
+  // requestCarrierAssignment flag can be set to false if caller wants to handle it separately
+  const requestCarrierAssignment = req.body.requestCarrierAssignment !== false;
   
-  // Auto-request carrier assignment for new orders (async, non-blocking)
-  try {
-    setImmediate(() => {
-      carrierAssignmentService.requestCarrierAssignment(order.id, req.body).catch(err => {
-        console.error('Carrier assignment request failed:', err);
-      });
-    });
-  } catch (err) {
-    // Silently fail if carrier assignment not available
-  }
+  const order = await orderService.createOrder(req.body, requestCarrierAssignment);
   
   res.status(201).json({ 
-      success: true, 
+    success: true, 
     message: 'Order created successfully', 
     data: order 
   });
