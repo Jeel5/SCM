@@ -6,8 +6,8 @@ import dotenv from 'dotenv';
 import { errorHandler, notFoundHandler } from './errors/index.js';
 import { requestLogger, requestId, slowRequestLogger } from './middlewares/requestLogger.js';
 import logger from './utils/logger.js';
-import { jobWorker } from './workers/jobWorker.js';
-import { cronScheduler } from './workers/cronScheduler.js';
+import { jobWorker } from './jobs/jobWorker.js';
+import { cronScheduler } from './jobs/cronScheduler.js';
 
 // Load environment variables from .env file
 dotenv.config();
