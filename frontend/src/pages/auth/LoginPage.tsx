@@ -302,7 +302,7 @@ export function LoginPage() {
               <div className="mt-6 p-4 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                 <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Demo includes these roles:</p>
                 <div className="flex flex-wrap gap-2">
-                  {['Admin', 'Ops Manager', 'Warehouse', 'Finance', 'Support'].map((role) => (
+                  {['Superadmin', 'Admin', 'Ops Manager', 'Warehouse', 'Finance', 'Support'].map((role) => (
                     <span
                       key={role}
                       className="px-2 py-1 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"

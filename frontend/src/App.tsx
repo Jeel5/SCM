@@ -14,6 +14,8 @@ import { useAuthStore, useUIStore } from '@/stores';
 // Lazy load all pages for code splitting
 const LoginPage = lazy(() => import('@/pages/auth').then(m => ({ default: m.LoginPage })));
 const DashboardPage = lazy(() => import('@/pages/dashboard').then(m => ({ default: m.DashboardPage })));
+const SuperAdminDashboard = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.SuperAdminDashboard })));
+const CompaniesPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.CompaniesPage })));
 const OrdersPage = lazy(() => import('@/pages/orders').then(m => ({ default: m.OrdersPage })));
 const ShipmentsPage = lazy(() => import('@/pages/shipments').then(m => ({ default: m.ShipmentsPage })));
 const InventoryPage = lazy(() => import('@/pages/inventory').then(m => ({ default: m.InventoryPage })));
@@ -160,13 +162,28 @@ function App() {
                     <MainLayout />
                   </ProtectedRoute>
                 }
-              >
-                <Route index element={<Navigate to="/dashboard" replace />} />
+              >                <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route
                   path="dashboard"
                   element={
                     <PageLoader>
                       <DashboardPage />
+                    </PageLoader>
+                  }
+                />
+                <Route
+                  path="super-admin/dashboard"
+                  element={
+                    <PageLoader>
+                      <SuperAdminDashboard />
+                    </PageLoader>
+                  }
+                />
+                <Route
+                  path="super-admin/companies"
+                  element={
+                    <PageLoader>
+                      <CompaniesPage />
                     </PageLoader>
                   }
                 />

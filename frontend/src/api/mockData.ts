@@ -57,6 +57,17 @@ type FinanceData = {
 // Users Mock Data
 const mockUsers: User[] = [
   {
+    id: '0',
+    email: 'superadmin@twinchain.in',
+    name: 'Super Admin',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SuperAdmin',
+    role: 'superadmin',
+    organizationId: null,
+    permissions: ['*:*'],
+    createdAt: '2024-01-01T10:00:00Z',
+    lastLogin: '2024-12-24T10:00:00Z',
+  },
+  {
     id: '1',
     email: 'admin@twinchain.in',
     name: 'John Admin',

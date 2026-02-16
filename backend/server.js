@@ -30,6 +30,7 @@ import webhooksRoutes from './routes/webhooks.js';
 import assignmentsRoutes from './routes/assignments.js';
 import shippingRoutes from './routes/shipping.js';
 import carriersRoutes from './routes/carriers.js';
+import companiesRoutes from './routes/companies.js';
 
 // Security headers middleware
 app.use(helmet());
@@ -87,6 +88,7 @@ app.use(API_PREFIX, financeRoutes);
 app.use(API_PREFIX, assignmentsRoutes); // Carrier assignment routes
 app.use(API_PREFIX, shippingRoutes); // Shipping quote routes
 app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints (demo)
+app.use(API_PREFIX, companiesRoutes); // Superadmin company management
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes

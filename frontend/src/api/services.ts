@@ -427,4 +427,92 @@ export const realApi = {
   markAllNotificationsRead: notificationsApi.markAllNotificationsRead,
 };
 
+// ==================== SUPERADMIN ====================
+export const superAdminApi = {
+  async getGlobalStats(): Promise<ApiResponse<{
+    totalCompanies: number;
+    activeCompanies: number;
+    totalUsers: number;
+    totalOrders: number;
+    activeShipments: number;
+    totalRevenue: number;
+    avgSlaCompliance: number;
+    systemHealth: number;
+  }>> {
+    return get('/super-admin/stats');
+  },
+
+  async getCompanies(): Promise<ApiResponse<Array<{
+    id: string;
+    name: string;
+    code: string;
+    email: string;
+    phone: string;
+    address: {
+      street: string;
+      city: string;
+      state: string;
+      country: string;
+      postalCode: string;
+    };
+    admins: number;
+    users: number;
+    orders: number;
+    revenue: number;
+    status: 'active' | 'inactive' | 'suspended';
+    createdAt: string;
+    updatedAt: string;
+  }>>> {
+    return get('/companies');
+  },
+
+  async getCompanyById(id: string): Promise<ApiResponse<{
+    id: string;
+    name: string;
+    code: string;
+    email: string;
+    phone: string;
+    address: object;
+    admins: number;
+    users: number;
+    orders: number;
+    revenue: number;
+    createdAt: string;
+    updatedAt: string;
+  }>> {
+    return get(`/companies/${id}`);
+  },
+
+  async createCompany(data: {
+    name: string;
+    code: string;
+    email: string;
+    phone: string;
+    website?: string;
+    address: {
+      street: string;
+      city: string;
+      state: string;
+      country?: string;
+      postalCode: string;
+    };
+  }): Promise<ApiResponse<object>> {
+    return post('/companies', data);
+  },
+
+  async updateCompany(id: string, data: Partial<{
+    name: string;
+    email: string;
+    phone: string;
+    website: string;
+    address: object;
+  }>): Promise<ApiResponse<object>> {
+    return patch(`/companies/${id}`, data);
+  },
+
+  async getCompanyUsers(id: string): Promise<ApiResponse<User[]>> {
+    return get(`/companies/${id}/users`);
+  },
+};
+
 export default realApi;

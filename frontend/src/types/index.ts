@@ -1,5 +1,6 @@
 // User & Auth Types
 export type UserRole = 
+  | 'superadmin'
   | 'admin' 
   | 'operations_manager' 
   | 'warehouse_manager' 
@@ -13,7 +14,7 @@ export interface User {
   name: string;
   avatar?: string;
   role: UserRole;
-  organizationId: string;
+  organizationId: string | null; // null for superadmin
   permissions: string[];
   createdAt: string;
   lastLogin: string;

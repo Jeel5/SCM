@@ -4,6 +4,7 @@ import { logAuth } from '../utils/logger.js';
 
 // Define all user roles in the system
 export const ROLES = {
+  SUPERADMIN: 'superadmin',
   ADMIN: 'admin',
   OPERATIONS: 'operations',
   WAREHOUSE: 'warehouse',
@@ -13,6 +14,13 @@ export const ROLES = {
 
 // Permission matrix - defines what each role can access (format: 'module:action')
 const PERMISSIONS = {
+  [ROLES.SUPERADMIN]: [
+    '*:*',             // Full access to everything
+    'companies:*',     // Company management
+    'admins:*',        // Admin management across companies
+    'system:*'         // System-level operations
+  ],
+  
   [ROLES.ADMIN]: [
     '*:*' // Full access to everything
   ],

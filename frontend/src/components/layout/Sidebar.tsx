@@ -14,6 +14,8 @@ import {
   Building2,
   Timer,
   DollarSign,
+  Users,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore, useAuthStore } from '@/stores';
@@ -38,6 +40,29 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     icon: <LayoutDashboard className="h-5 w-5" />,
     path: '/dashboard',
   },
+  // Superadmin-only items
+  {
+    id: 'companies',
+    label: 'Companies',
+    icon: <Building2 className="h-5 w-5" />,
+    path: '/super-admin/companies',
+    roles: ['superadmin'],
+  },
+  {
+    id: 'system-users',
+    label: 'System Users',
+    icon: <Users className="h-5 w-5" />,
+    path: '/super-admin/users',
+    roles: ['superadmin'],
+  },
+  {
+    id: 'system-health',
+    label: 'System Health',
+    icon: <Activity className="h-5 w-5" />,
+    path: '/super-admin/health',
+    roles: ['superadmin'],
+  },
+  // Company-level items (hidden for superadmin)
   {
     id: 'orders',
     label: 'Orders',

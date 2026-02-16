@@ -18,9 +18,16 @@ import { CarrierPerformanceChart } from './components/CarrierPerformanceChart';
 import { OrdersTrendChart } from './components/OrdersTrendChart';
 import { WarehouseUtilizationChart } from './components/WarehouseUtilizationChart';
 import { useDashboard } from './hooks/useDashboard';
+import { SuperAdminDashboard } from '@/pages/super-admin';
 
 export function DashboardPage() {
   const { user } = useAuthStore();
+
+  // If user is superadmin, show SuperAdmin dashboard instead
+  if (user?.role === 'superadmin') {
+    return <SuperAdminDashboard />;
+  }
+
   const {
     metrics,
     ordersChart,
