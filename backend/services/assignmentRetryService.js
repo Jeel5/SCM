@@ -50,11 +50,13 @@ class AssignmentRetryService {
 
         if (triedCount >= 9) {
           // Maximum retries reached - escalate to manual review
-          logger.warn(`Order ${order.id} exhausted all carrier retries (${triedCount} carriers). Manual review needed.`);
+          logger.warn(`Order ${order.id} exhausted all carrier retries (${triedCount} carriers). Moving to on_hold.`);
           
           await pool.query(
             `UPDATE orders 
-             SET status = 'pending_manual_assignment', updated_at = NOW()
+             SET status = 'on_hold', 
+                 notes = CONCAT(COALESCE(notes, ''), '\n[SYSTEM] All carrier assignment attempts exhausted (9 carriers tried). Requires manual carrier assignment.'),
+                 updated_at = NOW()
              WHERE id = $1`,
             [order.id]
           );

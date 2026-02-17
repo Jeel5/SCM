@@ -49,7 +49,7 @@ class OrderService {
     try {
       const result = await withTransaction(async (tx) => {
         // Prepare order data
-        // Build order record with defaults
+        // Build order record with all fields from request
         const orderRecord = {
           order_number: orderData.order_number || `ORD-${Date.now()}`,
           customer_name: orderData.customer_name,
@@ -57,22 +57,43 @@ class OrderService {
           customer_phone: orderData.customer_phone || null,
           status: orderData.status || 'created',
           priority: orderData.priority || 'standard',
+          order_type: orderData.order_type || 'sales',
+          is_cod: orderData.is_cod || false,
+          subtotal: orderData.subtotal || null,
+          tax_amount: orderData.tax_amount || 0,
+          shipping_amount: orderData.shipping_amount || 0,
+          discount_amount: orderData.discount_amount || 0,
           total_amount: orderData.total_amount,
           currency: orderData.currency || 'INR',
           shipping_address: JSON.stringify(orderData.shipping_address),
           billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
           estimated_delivery: orderData.estimated_delivery || null,
-          notes: orderData.notes || null
+          notes: orderData.notes || null,
+          special_instructions: orderData.special_instructions || null,
+          tags: orderData.tags ? JSON.stringify(orderData.tags) : null
         };
 
-        // Prepare items
+        // Prepare items with complete shipping attributes
         const items = orderData.items.map(item => ({
           product_id: item.product_id,
           sku: item.sku,
           product_name: item.product_name,
           quantity: item.quantity,
           unit_price: item.unit_price,
+          discount: item.discount || 0,
+          tax: item.tax || 0,
+          total_price: item.total_price || (item.unit_price * item.quantity),
           weight: item.weight || null,
+          dimensions: item.dimensions ? JSON.stringify(item.dimensions) : null,
+          is_fragile: item.is_fragile || false,
+          is_hazardous: item.is_hazardous || false,
+          is_perishable: item.is_perishable || false,
+          requires_cold_storage: item.requires_cold_storage || false,
+          item_type: item.item_type || 'general',
+          package_type: item.package_type || 'box',
+          handling_instructions: item.handling_instructions || null,
+          requires_insurance: item.requires_insurance || false,
+          declared_value: item.declared_value || null,
           warehouse_id: item.warehouse_id || null
         }));
 
@@ -102,11 +123,12 @@ class OrderService {
         if (requestCarrierAssignment) {
           const serviceType = order.priority || 'standard';
           
-          // Find eligible carriers
+          // Find eligible carriers (only available ones)
           const carriersResult = await tx.query(
-            `SELECT id, code, name, contact_email, service_type, is_active
+            `SELECT id, code, name, contact_email, service_type, is_active, availability_status
              FROM carriers 
              WHERE is_active = true 
+             AND availability_status = 'available'
              AND (service_type = $1 OR service_type = 'all')
              ORDER BY reliability_score DESC
              LIMIT 3`,
@@ -114,13 +136,15 @@ class OrderService {
           );
 
           if (carriersResult.rows.length === 0) {
-            throw new BusinessLogicError(`No available carriers for service type: ${serviceType}`);
-          }
+            logger.warn(`No available carriers for new order. Order will remain in pending_carrier_assignment.`, { orderId: order.id, serviceType });
+            // Don't throw error - let retry service handle this
+            // Order stays in pending_carrier_assignment status
+          } else {
 
           // Create carrier assignments within same transaction
           for (const carrier of carriersResult.rows) {
             const expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + 24);
+            expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minute window per batch
 
             const requestPayload = {
               orderId: order.id,
@@ -175,6 +199,7 @@ class OrderService {
             'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
             ['pending_carrier_assignment', order.id]
           );
+          }
         }
 
         return { order, assignments, carriersToNotify };

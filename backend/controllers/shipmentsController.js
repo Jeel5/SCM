@@ -1,5 +1,6 @@
 // Shipments Controller - handles HTTP requests for shipment tracking
 import pool from '../configs/db.js';
+import logger from '../utils/logger.js';
 
 // Get shipments list with filters and pagination
 export async function listShipments(req, res) {
@@ -305,3 +306,148 @@ export async function updateShipmentStatus(req, res) {
     client.release();
   }
 }
+
+/**
+ * Carrier confirms pickup - Method A: Carrier-Only Control
+ * Only carrier can mark shipment as in_transit
+ * SLA timer starts from this timestamp
+ */
+export async function confirmPickup(req, res) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    const { 
+      pickupTimestamp,
+      driverName, 
+      vehicleNumber,
+      pickupProofUrl,
+      gpsLocation,
+      notes 
+    } = req.body;
+
+    // Verify shipment exists and carrier owns it
+    const shipmentResult = await client.query(
+      `SELECT s.*, o.id as order_id, o.order_number, ca.carrier_id
+       FROM shipments s
+       JOIN orders o ON s.order_id = o.id
+       LEFT JOIN carrier_assignments ca ON s.carrier_assignment_id = ca.id
+       WHERE s.id = $1`,
+      [id]
+    );
+
+    if (shipmentResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Shipment not found' });
+    }
+
+    const shipment = shipmentResult.rows[0];
+
+    // Verify carrier authorization
+    // Priority: 1) Webhook auth 2) JWT auth 3) Body param
+    const requestedCarrierId = req.authenticatedCarrier?.id || req.user?.carrier_id || req.body.carrierId;
+    if (shipment.carrier_id !== requestedCarrierId) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Unauthorized: You do not own this shipment' });
+    }
+
+    // Check if already picked up
+    if (shipment.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        error: `Shipment already ${shipment.status}. Cannot confirm pickup.` 
+      });
+    }
+
+    const actualPickupTime = pickupTimestamp ? new Date(pickupTimestamp) : new Date();
+
+    // Update shipment status to in_transit
+    // SLA timer starts from this timestamp
+    const updateResult = await client.query(
+      `UPDATE shipments 
+       SET status = 'in_transit',
+           pickup_actual = $1,
+           current_location = $2,
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [
+        actualPickupTime,
+        gpsLocation ? JSON.stringify(gpsLocation) : null,
+        id
+      ]
+    );
+
+    const updatedShipment = updateResult.rows[0];
+
+    // Create tracking event with proof
+    // Note: shipment_events table structure: id, shipment_id, event_type, location, description, event_timestamp, created_at
+    const eventDescription = [
+      notes || `Package picked up by ${driverName || 'driver'}`,
+      driverName ? `Driver: ${driverName}` : null,
+      vehicleNumber ? `Vehicle: ${vehicleNumber}` : null,
+      pickupProofUrl ? `Proof: ${pickupProofUrl}` : null
+    ].filter(Boolean).join(' | ');
+
+    await client.query(
+      `INSERT INTO shipment_events 
+       (shipment_id, event_type, location, description, event_timestamp)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        id,
+        'picked_up',
+        gpsLocation ? JSON.stringify(gpsLocation) : null,
+        eventDescription,
+        actualPickupTime
+      ]
+    );
+
+    // Update order status to 'shipped'
+    // SLA for order starts from carrier's pickup confirmation
+    await client.query(
+      `UPDATE orders 
+       SET status = 'shipped', 
+           updated_at = NOW()
+       WHERE id = $1`,
+      [shipment.order_id]
+    );
+
+    await client.query('COMMIT');
+
+    logger.info('Carrier confirmed pickup', {
+      shipmentId: id,
+      trackingNumber: shipment.tracking_number,
+      carrierId: shipment.carrier_id,
+      orderId: shipment.order_id,
+      pickupTime: actualPickupTime,
+      driverName,
+      vehicleNumber
+    });
+
+    res.json({
+      success: true,
+      message: 'Pickup confirmed. Shipment is now in transit.',
+      data: {
+        shipmentId: updatedShipment.id,
+        trackingNumber: updatedShipment.tracking_number,
+        status: updatedShipment.status,
+        pickupActual: updatedShipment.pickup_actual,
+        orderNumber: shipment.order_number,
+        orderStatus: 'shipped'
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('Confirm pickup error:', error);
+    res.status(500).json({ 
+      error: 'Failed to confirm pickup',
+      details: error.message 
+    });
+  } finally {
+    client.release();
+  }
+}
+

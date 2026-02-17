@@ -395,7 +395,7 @@ CREATE TABLE orders (
     status VARCHAR(50) DEFAULT 'created' CHECK (status IN (
         'created', 'confirmed', 'processing', 'allocated',
         'ready_to_ship', 'shipped', 'in_transit', 'out_for_delivery',
-        'delivered', 'returned', 'cancelled', 'on_hold'
+        'delivered', 'returned', 'cancelled', 'on_hold', 'pending_carrier_assignment'
     )),
     -- Priority & Type
     priority VARCHAR(20) DEFAULT 'standard' CHECK (priority IN ('express', 'standard', 'bulk', 'same_day')),

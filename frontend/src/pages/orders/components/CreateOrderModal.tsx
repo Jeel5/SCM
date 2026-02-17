@@ -21,9 +21,9 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
     state: '',
     postalCode: '',
     country: 'India',
-    productName: 'Sample Product',
-    quantity: 1,
-    unitPrice: 1000,
+    productName: '',
+    quantity: '',
+    unitPrice: '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -31,12 +31,18 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
     setIsLoading(true);
     
     try {
+      const quantity = parseInt(formData.quantity);
+      const unitPrice = parseFloat(formData.unitPrice);
+      const totalAmount = quantity * unitPrice;
+
       const orderData = {
-        customerName: formData.customerName,
-        customerEmail: formData.customerEmail,
-        customerPhone: formData.customerPhone,
+        customer_name: formData.customerName,
+        customer_email: formData.customerEmail,
+        customer_phone: formData.customerPhone,
         priority: formData.priority,
-        shippingAddress: {
+        total_amount: totalAmount,
+        currency: 'INR',
+        shipping_address: {
           street: formData.street,
           city: formData.city,
           state: formData.state,
@@ -44,15 +50,32 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
           country: formData.country,
         },
         items: [{
-          productName: formData.productName,
+          product_name: formData.productName,
           sku: `SKU-${Date.now()}`,
-          quantity: formData.quantity,
-          unitPrice: formData.unitPrice,
+          quantity: quantity,
+          unit_price: unitPrice,
         }],
       };
 
       await api.post('/orders', orderData);
       success('Order created successfully!');
+      
+      // Reset form
+      setFormData({
+        customerName: '',
+        customerEmail: '',
+        customerPhone: '',
+        priority: 'standard',
+        street: '',
+        city: '',
+        state: '',
+        postalCode: '',
+        country: 'India',
+        productName: '',
+        quantity: '',
+        unitPrice: '',
+      });
+      
       onClose();
       onSuccess?.();
     } catch (err: any) {
@@ -119,14 +142,14 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
             </div>
             <Input 
               label="City" 
-              placeholder="Mumbai" 
+              placeholder="Anand" 
               value={formData.city}
               onChange={(e) => setFormData({ ...formData, city: e.target.value })}
               required
             />
             <Input 
               label="State" 
-              placeholder="Maharashtra" 
+              placeholder="Gujarat" 
               value={formData.state}
               onChange={(e) => setFormData({ ...formData, state: e.target.value })}
               required
@@ -144,8 +167,6 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
               onChange={(e) => setFormData({ ...formData, country: e.target.value })}
               options={[
                 { value: 'India', label: 'India' },
-                { value: 'Bangladesh', label: 'Bangladesh' },
-                { value: 'Nepal', label: 'Nepal' },
               ]}
             />
           </div>
@@ -165,20 +186,23 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
               />
             </div>
             <Input 
-              label="Quantity" 
+              label="Quantity"
+              placeholder="10"
               type="number" 
               min="1"
               value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 })}
+              onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
               required
             />
             <div className="col-span-3">
               <Input 
                 label="Unit Price (₹)" 
                 type="number" 
+                placeholder='100'
                 min="1"
+                step="0.01"
                 value={formData.unitPrice}
-                onChange={(e) => setFormData({ ...formData, unitPrice: parseInt(e.target.value) || 0 })}
+                onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
                 required
               />
             </div>

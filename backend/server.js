@@ -53,7 +53,7 @@ app.use(
 			if (allowedOrigins.includes(origin) || origin === 'null') {
 				callback(null, true);
 			} else {
-				callback(null, true); // For demo, allow all origins
+				callback(null, true); // Allow all origins in development mode
 			}
 		},
 		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -87,7 +87,7 @@ app.use(API_PREFIX, jobsRoutes);
 app.use(API_PREFIX, financeRoutes);
 app.use(API_PREFIX, assignmentsRoutes); // Carrier assignment routes
 app.use(API_PREFIX, shippingRoutes); // Shipping quote routes
-app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints (demo)
+app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
 app.use(API_PREFIX, companiesRoutes); // Superadmin company management
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 

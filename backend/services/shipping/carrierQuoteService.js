@@ -18,18 +18,18 @@ import { checkCarrierRejectionReasons } from './carrierValidationService.js';
 import { storeQuotes, storeRejections } from './quoteDataService.js';
 
 /**
- * Get REAL quotes from ALL active carriers after order is placed
+ * Get shipping quotes from all active carriers after order is placed
  * Sends request to all carriers, waits for accept/reject responses
  * 
- * @param {Object} shipmentDetails - EXACT shipment details
+ * @param {Object} shipmentDetails - Complete shipment details
  * @param {Object} shipmentDetails.origin - Pickup location {lat, lon, address}
  * @param {Object} shipmentDetails.destination - Delivery location {lat, lon, address}
- * @param {Array} shipmentDetails.items - Array of items with ACTUAL weight, dimensions
+ * @param {Array} shipmentDetails.items - Array of items with actual weight, dimensions
  * @param {String} shipmentDetails.orderId - Order ID for tracking
  * @param {Boolean} shipmentDetails.waitForResponses - Wait for all carriers (default true)
  * @returns {Object} Object with acceptedQuotes and rejectedCarriers
  */
-export async function getRealQuotesFromAllCarriers(shipmentDetails) {
+export async function getQuotesFromAllCarriers(shipmentDetails) {
   try {
     const { origin, destination, items, orderId, waitForResponses = true } = shipmentDetails;
 
@@ -38,26 +38,64 @@ export async function getRealQuotesFromAllCarriers(shipmentDetails) {
     const hasFragileItems = items.some(item => item.is_fragile);
     const requiresColdStorage = items.some(item => item.requires_cold_storage);
 
-    // Get all active carriers with API configurations
-    const { rows: carriers } = await db.query(
-      `SELECT id, name, code, api_endpoint, api_key_encrypted, api_version, is_active
+    // Get all active carriers (prefer those with API endpoints for PUSH model)
+    const { rows: carriersWithAPI } = await db.query(
+      `SELECT id, name, code, api_endpoint, api_key_encrypted, is_active, availability_status
        FROM carriers 
        WHERE is_active = true AND api_endpoint IS NOT NULL`
     );
 
-    if (carriers.length === 0) {
-      throw new Error('No active carriers available');
+    // Also get carriers without API (PULL model - they check carrier portal)
+    const { rows: allActiveCarriers } = await db.query(
+      `SELECT id, name, code, api_endpoint, api_key_encrypted, is_active, availability_status
+       FROM carriers 
+       WHERE is_active = true`
+    );
+
+    if (allActiveCarriers.length === 0) {
+      logger.warn('No active carriers in system at all - order will wait in pending state', { orderId });
+      return {
+        acceptedQuotes: [],
+        rejectedCarriers: [],
+        pendingAssignments: [],
+        totalCarriers: 0,
+        acceptanceRate: '0%',
+        message: 'No carriers available. Order queued for manual assignment.'
+      };
     }
 
-    logger.info(`Sending quote request to ${carriers.length} carriers`, {
-      orderId,
+    // Use carriers with API endpoints if available (PUSH model)
+    // Otherwise, carriers will use portal to pull assignments (PULL model)
+    const carriers = carriersWithAPI.length > 0 ? carriersWithAPI : [];
+    
+    logger.info(`📋 Quote request for order ${orderId}`, {
       origin: origin.address,
       destination: destination.address,
       weight: totalWeight,
-      itemCount: items.length
+      itemCount: items.length,
+      totalCarriers: allActiveCarriers.length,
+      carriersWithAPI: carriersWithAPI.length,
+      mode: carriers.length > 0 ? 'PUSH (API)' : 'PULL (Portal only)'
     });
 
-    // Send to ALL carriers and wait for responses (accept/reject)
+    // If no carriers have API, return empty - they'll use portal (PULL model)
+    if (carriers.length === 0) {
+      logger.info(`No carriers with API - order queued for carrier portal (PULL model)`, {
+        orderId,
+        availableCarriers: allActiveCarriers.length
+      });
+      
+      return {
+        acceptedQuotes: [],
+        rejectedCarriers: [],
+        pendingAssignments: allActiveCarriers.map(c => ({ carrierId: c.id, carrierName: c.name })),
+        totalCarriers: allActiveCarriers.length,
+        acceptanceRate: '0%',
+        message: `Order queued for carrier portal. ${allActiveCarriers.length} carriers can view and accept.`
+      };
+    }
+
+    // Send to carriers with API endpoints (PUSH model)
     const carrierPromises = carriers.map(carrier => 
       getCarrierQuoteWithAcceptance(carrier, {
         origin,
@@ -123,14 +161,20 @@ export async function getRealQuotesFromAllCarriers(shipmentDetails) {
     logger.info(`Quote collection complete for order ${orderId}`, {
       accepted: acceptedQuotes.length,
       rejected: rejectedCarriers.length,
-      totalCarriers: carriers.length
+      totalCarriers: allActiveCarriers.length
     });
 
     return {
       acceptedQuotes,
       rejectedCarriers,
-      totalCarriers: carriers.length,
-      acceptanceRate: ((acceptedQuotes.length / carriers.length) * 100).toFixed(1) + '%'
+      pendingAssignments: allActiveCarriers.map(c => ({ carrierId: c.id, carrierName: c.name })),
+      totalCarriers: allActiveCarriers.length,
+      acceptanceRate: allActiveCarriers.length > 0 
+        ? ((acceptedQuotes.length / allActiveCarriers.length) * 100).toFixed(1) + '%' 
+        : '0%',
+      message: acceptedQuotes.length > 0
+        ? `${acceptedQuotes.length} carriers accepted, ${rejectedCarriers.length} rejected`
+        : `Order queued for carrier portal. ${allActiveCarriers.length} carriers can view and accept.`
     };
   } catch (error) {
     logger.error('Error getting real quotes from carriers', { error: error.message });
@@ -188,10 +232,10 @@ export async function getCarrierQuoteWithAcceptance(carrier, shipmentDetails) {
 
 /**
  * DEPRECATED: Old method that auto-selected best carrier
- * Use getRealQuotesFromAllCarriers() instead
+ * Use getQuotesFromAllCarriers() instead
  * Kept for backward compatibility
  */
-export async function getQuotesFromAllCarriers(shipmentDetails) {
+export async function getQuotesFromAllCarriersLegacy(shipmentDetails) {
   try {
     const { origin, destination, items, orderId } = shipmentDetails;
 
@@ -202,7 +246,7 @@ export async function getQuotesFromAllCarriers(shipmentDetails) {
 
     // Get all active carriers
     const { rows: carriers } = await db.query(
-      `SELECT id, name, code, api_endpoint, api_key_encrypted, api_version, is_active
+      `SELECT id, name, code, api_endpoint, api_key_encrypted, is_active
        FROM carriers 
        WHERE is_active = true AND api_endpoint IS NOT NULL`
     );
@@ -493,8 +537,8 @@ async function getGenericQuote(carrier, shipmentDetails) {
 }
 
 export default {
-  getRealQuotesFromAllCarriers,
-  getCarrierQuoteWithAcceptance,
   getQuotesFromAllCarriers,
+  getCarrierQuoteWithAcceptance,
+  getQuotesFromAllCarriersLegacy,
   getQuoteFromCarrier
 };

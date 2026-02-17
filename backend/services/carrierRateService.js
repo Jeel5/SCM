@@ -39,14 +39,14 @@ class CarrierRateService {
   }
 
   /**
-   * PHASE 2: Get REAL quotes from ALL active carriers after order is placed
+   * Get quotes from all active carriers after order is placed
    * Delegates to carrierQuoteService
    */
-  async getRealQuotesFromAllCarriers(shipmentDetails) {
+  async getQuotesFromAllCarriers(shipmentDetails) {
     try {
-      return await carrierQuoteService.getRealQuotesFromAllCarriers(shipmentDetails);
+      return await carrierQuoteService.getQuotesFromAllCarriers(shipmentDetails);
     } catch (error) {
-      logger.error('Error in getRealQuotesFromAllCarriers', { error: error.message });
+      logger.error('Error in getQuotesFromAllCarriers', { error: error.message });
       throw error;
     }
   }
@@ -66,14 +66,14 @@ class CarrierRateService {
 
   /**
    * DEPRECATED: Old method that gets quotes from all carriers
-   * Use getRealQuotesFromAllCarriers() instead
+   * Use getQuotesFromAllCarriers() instead
    * Kept for backward compatibility
    */
-  async getQuotesFromAllCarriers(shipmentDetails) {
+  async getQuotesFromAllCarriersLegacy(shipmentDetails) {
     try {
-      return await carrierQuoteService.getQuotesFromAllCarriers(shipmentDetails);
+      return await carrierQuoteService.getQuotesFromAllCarriersLegacy(shipmentDetails);
     } catch (error) {
-      logger.error('Error in getQuotesFromAllCarriers', { error: error.message });
+      logger.error('Error in getQuotesFromAllCarriersLegacy', { error: error.message });
       throw error;
     }
   }

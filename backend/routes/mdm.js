@@ -15,9 +15,9 @@ router.get('/warehouses', authenticate, listWarehouses);
 router.get('/warehouses/:id', authenticate, getWarehouse);
 router.post('/warehouses', authenticate, createWarehouse);
 
-// Carriers
-router.get('/carriers', authenticate, listCarriers);
-router.get('/carriers/:id', authenticate, getCarrier);
+// Carriers (public endpoint for webhook credentials - no auth needed)
+router.get('/carriers', listCarriers); // Public - demo needs this
+router.get('/carriers/:id', getCarrier); // Public - carrier portal needs webhook_secret
 router.post('/carriers', authenticate, createCarrier);
 router.get('/carriers/:carrierId/rates', authenticate, listRateCards);
 

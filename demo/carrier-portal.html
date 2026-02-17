@@ -267,6 +267,48 @@
             background: #dc3545;
             color: white;
         }
+        
+        .btn-pickup {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            margin-top: 15px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(17, 153, 142, 0.3);
+        }
+        .btn-pickup:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(17, 153, 142, 0.4);
+        }
+        .btn-pickup:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .shipment-card {
+            background: #e8f5e9;
+            border: 3px solid #4caf50;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+        .shipment-status {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            background: #ffc107;
+            color: #000;
+        }
+        .shipment-status.in-transit {
+            background: #17a2b8;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -298,6 +340,17 @@
                     </p>
                 </div>
             </div>
+
+            <div class="section-title" style="margin-top: 40px;">
+                📦 My Shipments - Ready for Pickup
+            </div>
+            
+            <div id="shipmentsContainer">
+                <div class="empty-state">
+                    <h3>📦 No Shipments Waiting</h3>
+                    <p>Accept a quote request to see shipments here.</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -305,6 +358,7 @@
         const API_BASE = 'http://localhost:3000/api';
         let currentCarrier = 'DELHIVERY';
         let currentCarrierId = null; // Store current carrier ID
+        let currentWebhookSecret = null; // Store webhook secret for HMAC signing
         let pollingInterval = null;
         
         // Map carrier button names to database codes
@@ -318,9 +372,93 @@
             'ECOM': 'ECOM-001',
             'XPRESSBEES': 'XPRESSBEES-001'
         };
+
+        /**
+         * HMAC-SHA256 Signature Generation (Industry Standard)
+         * Same pattern used by: Stripe, Shopify, GitHub, Twilio
+         */
+        async function generateHmacSignature(payload, secret, timestamp) {
+            const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+            const signedPayload = `${timestamp}.${payloadString}`;
+            
+            // Convert secret and payload to ArrayBuffer
+            const enc = new TextEncoder();
+            const key = await crypto.subtle.importKey(
+                'raw',
+                enc.encode(secret),
+                { name: 'HMAC', hash: 'SHA-256' },
+                false,
+                ['sign']
+            );
+            
+            const signature = await crypto.subtle.sign(
+                'HMAC',
+                key,
+                enc.encode(signedPayload)
+            );
+            
+            // Convert to hex string
+            const hashArray = Array.from(new Uint8Array(signature));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            
+            return `sha256=${hashHex}`;
+        }
+
+        /**
+         * Send authenticated webhook request
+         * Includes HMAC signature and timestamp
+         */
+        async function sendAuthenticatedRequest(url, method, body) {
+            if (!currentWebhookSecret) {
+                throw new Error('Webhook secret not loaded. Please wait for carrier initialization.');
+            }
+            
+            if (!currentCarrierId) {
+                throw new Error('Carrier ID not loaded. Please wait for carrier initialization.');
+            }
+
+            const timestamp = Math.floor(Date.now() / 1000);
+            const signature = await generateHmacSignature(body, currentWebhookSecret, timestamp);
+
+            console.log('🔐 Sending authenticated request:', {
+                url,
+                carrierId: currentCarrierId,
+                carrierCode: currentCarrier,
+                timestamp,
+                hasSecret: !!currentWebhookSecret
+            });
+
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Carrier-ID': currentCarrierId,
+                    'X-Webhook-Signature': signature,
+                    'X-Webhook-Timestamp': timestamp.toString()
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || `Request failed with status ${response.status}`);
+            }
+
+            return response.json();
+        }
         
-        function selectCarrier(evt, carrier) {
+        async function selectCarrier(evt, carrier) {
+            console.log('🔄 Switching carrier to:', carrier);
+            
             currentCarrier = carrier;
+            currentCarrierId = null; // Reset carrier ID when switching carriers
+            currentWebhookSecret = null; // Reset webhook secret
+            
+            console.log('🔄 Reset state:', { 
+                carrier: currentCarrier, 
+                carrierId: currentCarrierId, 
+                hasSecret: !!currentWebhookSecret 
+            });
             
             // Update UI
             document.querySelectorAll('.carrier-btn').forEach(btn => {
@@ -341,7 +479,9 @@
                 carrier === 'XPRESSBEES' ? 'XpressBees' :
                 carrier;
             
-            loadPendingRequests();
+            // Load assignments first (sets currentCarrierId), then load shipments
+            await loadPendingRequests();
+            await loadMyShipments();
         }
         
         async function loadPendingRequests() {
@@ -367,12 +507,53 @@
                 
                 // Display the first pending assignment
                 const assignment = result.data[0];
-                currentCarrierId = assignment.carrierId; // Store carrier ID
+                const newCarrierId = assignment.carrierId;
+                
+                console.log('📋 Assignment loaded:', {
+                    carrier: currentCarrier,
+                    newCarrierId: newCarrierId,
+                    oldCarrierId: currentCarrierId
+                });
+                
+                // Only update if different or not set
+                if (currentCarrierId !== newCarrierId) {
+                    currentCarrierId = newCarrierId;
+                    // Fetch webhook secret for authentication
+                    await fetchWebhookSecret(currentCarrierId);
+                }
+                
                 displayAssignment(assignment);
                 
             } catch (error) {
                 console.error('Error loading requests:', error);
                 showEmptyState();
+            }
+        }
+
+        /**
+         * Fetch webhook secret for current carrier
+         * Required for HMAC signature generation
+         */
+        async function fetchWebhookSecret(carrierId) {
+            try {
+                const response = await fetch(`${API_BASE}/carriers/${carrierId}`);
+                const result = await response.json();
+                
+                if (result.success && result.data && result.data.webhook_secret) {
+                    currentWebhookSecret = result.data.webhook_secret;
+                    console.log('✅ Webhook secret loaded:', {
+                        carrierId: carrierId,
+                        carrierCode: result.data.code,
+                        carrierName: result.data.name,
+                        currentCarrier: currentCarrier
+                    });
+                } else {
+                    console.warn('⚠️ No webhook secret found for carrier:', carrierId);
+                    currentWebhookSecret = null;
+                }
+            } catch (error) {
+                console.error('❌ Failed to fetch webhook secret:', error);
+                currentWebhookSecret = null;
             }
         }
         
@@ -428,6 +609,26 @@
                         <div class="detail-row">
                             <div class="detail-label">Weight:</div>
                             <div class="detail-value">${firstItem.weight || 'N/A'} kg</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Dimensions:</div>
+                            <div class="detail-value">
+                                ${firstItem.dimensions ? 
+                                    `${firstItem.dimensions.length}×${firstItem.dimensions.width}×${firstItem.dimensions.height} cm` : 
+                                    'N/A'}
+                                ${firstItem.volumetric_weight ? 
+                                    `<small style="color: #6c757d;"> (Vol: ${firstItem.volumetric_weight}kg)</small>` : 
+                                    ''}
+                            </div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Special Handling:</div>
+                            <div class="detail-value">
+                                ${firstItem.is_fragile ? '<span style="color: #dc3545;">⚠️ Fragile</span>' : ''}
+                                ${firstItem.is_hazardous ? '<span style="color: #dc3545;">☢️ Hazardous</span>' : ''}
+                                ${firstItem.requires_cold_storage ? '<span style="color: #0d6efd;">❄️ Cold Storage</span>' : ''}
+                                ${!firstItem.is_fragile && !firstItem.is_hazardous && !firstItem.requires_cold_storage ? 'Standard' : ''}
+                            </div>
                         </div>
                         <div class="detail-row">
                             <div class="detail-label">Order Value:</div>
@@ -577,24 +778,29 @@
             
             const acceptanceData = {
                 carrierReferenceId: `${currentCarrier}-${Date.now()}`,
-                dispatchTime: new Date().toISOString(),
-                estimatedPickup: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-                estimatedDelivery: new Date(Date.now() + deliveryDays * 24 * 60 * 60 * 1000).toISOString(),
-                driverName: 'Demo Driver',
-                driverPhone: '+91-9876543210',
-                vehicleInfo: 'TN-01-AB-1234',
+                trackingNumber: `${currentCarrier}-TRACK-${Date.now()}`,
+                quotedPrice: quotedPrice,
+                price: quotedPrice,
+                currency: 'INR',
+                serviceLevel: serviceType,
+                estimatedPickupTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+                estimatedDeliveryTime: new Date(Date.now() + deliveryDays * 24 * 60 * 60 * 1000).toISOString(),
+                driver: {
+                    name: 'Demo Driver',
+                    phone: '+91-9876543210',
+                    vehicleNumber: 'TN-01-AB-1234',
+                    vehicleType: 'Van'
+                },
                 additionalInfo: `Service Type: ${serviceType}, Quoted Price: ₹${quotedPrice}`
             };
             
             try {
-                // Send acceptance to backend with carrierId query param
-                const response = await fetch(`${API_BASE}/assignments/${assignmentId}/accept?carrierId=${currentCarrierId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(acceptanceData)
-                });
-                
-                const result = await response.json();
+                // Send authenticated request with HMAC signature
+                const result = await sendAuthenticatedRequest(
+                    `${API_BASE}/assignments/${assignmentId}/accept`,
+                    'POST',
+                    acceptanceData
+                );
                 
                 if (result.success) {
                     displayResponse(assignmentId, result.data, true);
@@ -614,14 +820,12 @@
                           getRejectionMessage(reason);
             
             try {
-                // Send rejection to backend with carrierId query param
-                const response = await fetch(`${API_BASE}/assignments/${assignmentId}/reject?carrierId=${currentCarrierId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ reason, message })
-                });
-                
-                const result = await response.json();
+                // Send authenticated request with HMAC signature
+                const result = await sendAuthenticatedRequest(
+                    `${API_BASE}/assignments/${assignmentId}/reject`,
+                    'POST',
+                    { reason, message }
+                );
                 
                 if (result.success) {
                     displayResponse(assignmentId, result.data, false);
@@ -675,14 +879,180 @@
             `;
             
             // Reload after 3 seconds
-            setTimeout(() => loadPendingRequests(), 3000);
+            setTimeout(async () => {
+                await loadPendingRequests();
+                await loadMyShipments();
+            }, 3000);
+        }
+
+        /**
+         * Load shipments that belong to current carrier and are pending pickup
+         * Method A: Carrier-Only Control - Only carrier can mark as picked up
+         */
+        async function loadMyShipments() {
+            try {
+                const carrierCode = CARRIER_CODE_MAP[currentCarrier] || currentCarrier;
+                
+                console.log('📦 Loading shipments for:', {
+                    carrier: currentCarrier,
+                    carrierCode: carrierCode,
+                    existingCarrierId: currentCarrierId
+                });
+                
+                // If currentCarrierId is already set (from loadPendingRequests), use it
+                // Otherwise, fetch carrier by code
+                if (!currentCarrierId) {
+                    const carrierResponse = await fetch(`${API_BASE}/carriers?code=${carrierCode}`);
+                    const carrierData = await carrierResponse.json();
+                    
+                    if (!carrierData.success || !carrierData.data || carrierData.data.length === 0) {
+                        document.getElementById('shipmentsContainer').innerHTML = `
+                            <div class="empty-state">
+                                <h3>❌ Carrier Not Found</h3>
+                                <p>Could not find carrier with code: ${carrierCode}</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    currentCarrierId = carrierData.data[0].id;
+                    console.log('🚚 Fetched new carrier ID:', currentCarrierId);
+                    
+                    // Fetch webhook secret for authentication
+                    await fetchWebhookSecret(currentCarrierId);
+                } else {
+                    console.log('♻️ Reusing existing carrier ID:', currentCarrierId);
+                }
+                
+                // Get shipments for this carrier with status 'pending' (waiting for pickup)
+                const response = await fetch(`${API_BASE}/shipments?carrier_id=${currentCarrierId}&status=pending`);
+                const data = await response.json();
+                
+                if (!data.success || !data.data || data.data.length === 0) {
+                    document.getElementById('shipmentsContainer').innerHTML = `
+                        <div class="empty-state">
+                            <h3>📦 No Shipments Waiting</h3>
+                            <p>Accept a quote request to see shipments here.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const shipmentsHtml = data.data.map(shipment => `
+                    <div class="shipment-card">
+                        <div class="request-header">
+                            <h3>📦 ${shipment.trackingNumber}</h3>
+                            <span class="shipment-status">${shipment.status.toUpperCase()}</span>
+                        </div>
+                        
+                        <div class="request-details">
+                            <div class="detail-row">
+                                <span class="label">Order Number:</span>
+                                <span class="value">${shipment.orderNumber || 'N/A'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="label">Destination:</span>
+                                <span class="value">${shipment.destination?.city || 'N/A'}, ${shipment.destination?.state || ''}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="label">Weight:</span>
+                                <span class="value">${shipment.weight} kg</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="label">Shipping Cost:</span>
+                                <span class="value">₹${shipment.cost}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="label">SLA Deadline:</span>
+                                <span class="value">${new Date(shipment.slaDeadline).toLocaleString()}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="label">Created:</span>
+                                <span class="value">${new Date(shipment.createdAt).toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                            <h4 style="margin-bottom: 10px; color: #856404;">⚠️ Action Required: Confirm Pickup</h4>
+                            <p style="margin-bottom: 15px; color: #856404;">
+                                This shipment is ready for pickup. Once you collect the package, click the button below.
+                                <strong>SLA timer starts from your confirmation timestamp.</strong>
+                            </p>
+                            
+                            <button class="btn-pickup" onclick="confirmPickup('${shipment.id}', '${shipment.trackingNumber}')">
+                                ✅ Confirm Pickup - Start Transit
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                
+                document.getElementById('shipmentsContainer').innerHTML = shipmentsHtml;
+                
+            } catch (error) {
+                console.error('Error loading shipments:', error);
+                document.getElementById('shipmentsContainer').innerHTML = `
+                    <div class="empty-state">
+                        <h3>❌ Error Loading Shipments</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        /**
+         * Confirm package pickup - Method A: Carrier-Only Control
+         * Only carrier can mark shipment as in_transit
+         * SLA starts from this timestamp (tamper-proof)
+         * Uses HMAC-SHA256 signature for authentication
+         */
+        async function confirmPickup(shipmentId, trackingNumber) {
+            if (!confirm(`Confirm that you have picked up shipment ${trackingNumber}?\n\nThis will:\n✓ Mark shipment as IN TRANSIT\n✓ Update order status to SHIPPED\n✓ Start SLA timer (cannot be undone)`)) {
+                return;
+            }
+
+            const pickupData = {
+                carrierId: currentCarrierId,
+                pickupTimestamp: new Date().toISOString(),
+                driverName: `${currentCarrier} Driver`,
+                vehicleNumber: `${currentCarrier.substring(0,2)}-01-AB-${Math.floor(1000 + Math.random() * 9000)}`,
+                gpsLocation: {
+                    lat: 19.076 + (Math.random() - 0.5) * 0.1,
+                    lon: 72.877 + (Math.random() - 0.5) * 0.1,
+                    city: 'Mumbai',
+                    state: 'Maharashtra'
+                },
+                notes: `Package picked up by ${currentCarrier} carrier`
+            };
+
+            try {
+                // Send authenticated request with HMAC signature
+                const result = await sendAuthenticatedRequest(
+                    `${API_BASE}/shipments/${shipmentId}/confirm-pickup`,
+                    'POST',
+                    pickupData
+                );
+
+                if (result.success) {
+                    alert(`✅ Pickup Confirmed!\n\nTracking: ${result.data.trackingNumber}\nStatus: ${result.data.status}\nOrder: ${result.data.orderStatus}\n\nSLA timer has started. Package is now in transit.`);
+                    loadMyShipments(); // Reload to remove from pending list
+                } else {
+                    throw new Error(result.error || 'Failed to confirm pickup');
+                }
+            } catch (error) {
+                console.error('Error confirming pickup:', error);
+                alert('❌ Error: ' + error.message);
+            }
         }
         
         // Load requests on page load
-        window.onload = () => {
-            loadPendingRequests();
-            // Refresh every 5 seconds to check for new orders
-            setInterval(loadPendingRequests, 5000);
+        window.onload = async () => {
+            await loadPendingRequests();
+            await loadMyShipments();
+            // Refresh every 5 seconds to check for new orders and shipments
+            setInterval(async () => {
+                await loadPendingRequests();
+                await loadMyShipments();
+            }, 5000);
         };
     </script>
 </body>

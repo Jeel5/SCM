@@ -1,5 +1,5 @@
 // Companies Controller - handles company management for superadmin
-import { db } from '../configs/db.js';
+import pool from '../configs/db.js';
 import { AppError } from '../errors/index.js';
 import { logInfo } from '../utils/logger.js';
 
@@ -37,7 +37,7 @@ export async function getAllCompanies(req, res, next) {
       ORDER BY o.created_at DESC
     `;
 
-    const { rows } = await db.query(query);
+    const { rows } = await pool.query(query);
 
     logInfo('Companies retrieved', { count: rows.length, user: req.user.id });
 
@@ -90,7 +90,7 @@ export async function getCompanyById(req, res, next) {
       GROUP BY o.id
     `;
 
-    const { rows } = await db.query(query, [id]);
+    const { rows } = await pool.query(query, [id]);
 
     if (rows.length === 0) {
       throw new AppError('Company not found', 404);
@@ -134,7 +134,7 @@ export async function createCompany(req, res, next) {
 
     // Check if company code already exists
     const checkQuery = 'SELECT id FROM organizations WHERE code = $1';
-    const { rows: existing } = await db.query(checkQuery, [code]);
+    const { rows: existing } = await pool.query(checkQuery, [code]);
 
     if (existing.length > 0) {
       throw new AppError('Company code already exists', 400);
@@ -162,7 +162,7 @@ export async function createCompany(req, res, next) {
       address.postalCode,
     ];
 
-    const { rows } = await db.query(insertQuery, values);
+    const { rows } = await pool.query(insertQuery, values);
 
     logInfo('Company created', { companyId: rows[0].id, code, createdBy: req.user.id });
 
@@ -211,7 +211,7 @@ export async function updateCompany(req, res, next) {
       id,
     ];
 
-    const { rows } = await db.query(updateQuery, values);
+    const { rows } = await pool.query(updateQuery, values);
 
     if (rows.length === 0) {
       throw new AppError('Company not found', 404);
@@ -245,7 +245,7 @@ export async function deleteCompany(req, res, next) {
       GROUP BY org.id
     `;
 
-    const { rows: checks } = await db.query(checkQuery, [id]);
+    const { rows: checks } = await pool.query(checkQuery, [id]);
 
     if (checks.length > 0 && (checks[0].user_count > 0 || checks[0].order_count > 0)) {
       throw new AppError(
@@ -255,7 +255,7 @@ export async function deleteCompany(req, res, next) {
     }
 
     const deleteQuery = 'DELETE FROM organizations WHERE id = $1 RETURNING *';
-    const { rows } = await db.query(deleteQuery, [id]);
+    const { rows } = await pool.query(deleteQuery, [id]);
 
     if (rows.length === 0) {
       throw new AppError('Company not found', 404);
@@ -286,7 +286,7 @@ export async function getCompanyUsers(req, res, next) {
       ORDER BY created_at DESC
     `;
 
-    const { rows } = await db.query(query, [id]);
+    const { rows } = await pool.query(query, [id]);
 
     res.json({
       success: true,
@@ -323,7 +323,7 @@ export async function getGlobalStats(req, res, next) {
         ) as sla_scores) as avg_sla_compliance
     `;
 
-    const { rows } = await db.query(statsQuery);
+    const { rows } = await pool.query(statsQuery);
 
     res.json({
       success: true,

@@ -122,24 +122,25 @@ class OrderRepository extends BaseRepository {
 
     // Insert order items
     if (items && items.length > 0) {
+      // Get all item fields from first item (assuming all items have same structure)
+      const itemKeys = Object.keys(items[0]);
+      const itemKeysList = ['order_id', ...itemKeys].join(', ');
+      
+      // Build placeholders for each item
       const itemsQuery = `
-        INSERT INTO order_items (order_id, product_id, sku, product_name, quantity, unit_price, weight, warehouse_id)
+        INSERT INTO order_items (${itemKeysList})
         VALUES ${items.map((_, idx) => {
-          const base = idx * 8;
-          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`;
+          const base = idx * (itemKeys.length + 1);
+          const placeholders = Array.from({ length: itemKeys.length + 1 }, (_, i) => `$${base + i + 1}`).join(', ');
+          return `(${placeholders})`;
         }).join(', ')}
         RETURNING *
       `;
 
+      // Flatten all item parameters (order_id + all item fields)
       const itemsParams = items.flatMap(item => [
         order.id,
-        item.product_id,
-        item.sku,
-        item.product_name,
-        item.quantity,
-        item.unit_price,
-        item.weight || null,
-        item.warehouse_id || null
+        ...itemKeys.map(key => item[key] !== undefined ? item[key] : null)
       ]);
 
       const itemsResult = await this.query(itemsQuery, itemsParams, client);

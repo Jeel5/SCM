@@ -181,4 +181,11 @@ export function logPerformance(operation, duration, metadata = {}) {
   });
 }
 
+/**
+ * Log info message
+ */
+export function logInfo(message, metadata = {}) {
+  logger.info(message, metadata);
+}
+
 export default logger;

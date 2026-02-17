@@ -27,7 +27,7 @@ export const createOrderSchema = {
   status: {
     type: 'string',
     required: false,
-    enum: ['created', 'confirmed', 'allocated', 'processing', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled']
+    enum: ['created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled', 'on_hold', 'pending_carrier_assignment']
   },
   priority: {
     type: 'string',
@@ -111,7 +111,7 @@ export const updateOrderStatusSchema = {
   status: {
     type: 'string',
     required: true,
-    enum: ['created', 'confirmed', 'allocated', 'processing', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled']
+    enum: ['created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled', 'on_hold', 'pending_carrier_assignment']
   },
   notes: {
     type: 'string',
@@ -140,7 +140,7 @@ export const listOrdersQuerySchema = {
   status: {
     type: 'string',
     required: false,
-    enum: ['created', 'confirmed', 'allocated', 'processing', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled']
+    enum: ['created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled', 'on_hold', 'pending_carrier_assignment']
   },
   search: {
     type: 'string',

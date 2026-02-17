@@ -265,8 +265,8 @@
                     <div class="product-price">₹89,999</div>
                     <div class="product-details">
                         Weight: 2.5 kg<br>
-                        Dimensions: 40×28×18 cm<br>
-                        Fragile: Yes
+                        Dimensions: 40×28×2 cm<br>
+                        Fragile: Yes ⚠️
                     </div>
                 </div>
                 
@@ -406,25 +406,52 @@
         
         const PRODUCTS = {
             laptop: {
+                id: null,  // No real product in DB - demo only
                 name: 'Dell XPS 15',
+                sku: 'LAPTOP-XPS15',
                 weight: 2.5,
                 price: 89999,
-                dimensions: { length: 40, width: 28, height: 18 },
-                is_fragile: true
+                dimensions: { length: 40, width: 28, height: 2 },
+                is_fragile: true,
+                is_hazardous: false,
+                is_perishable: false,
+                requires_cold_storage: false,
+                item_type: 'electronics',
+                package_type: 'box',
+                requires_insurance: true,
+                declared_value: 89999
             },
             phone: {
+                id: null,  // No real product in DB - demo only
                 name: 'iPhone 15',
+                sku: 'PHONE-IP15',
                 weight: 0.5,
                 price: 79999,
                 dimensions: { length: 15, width: 7, height: 1 },
-                is_fragile: true
+                is_fragile: true,
+                is_hazardous: false,
+                is_perishable: false,
+                requires_cold_storage: false,
+                item_type: 'electronics',
+                package_type: 'box',
+                requires_insurance: true,
+                declared_value: 79999
             },
             book: {
+                id: null,  // No real product in DB - demo only
                 name: 'JavaScript Guide',
+                sku: 'BOOK-JSGUIDE',
                 weight: 1.2,
                 price: 599,
                 dimensions: { length: 24, width: 18, height: 3 },
-                is_fragile: false
+                is_fragile: false,
+                is_hazardous: false,
+                is_perishable: false,
+                requires_cold_storage: false,
+                item_type: 'general',
+                package_type: 'envelope',
+                requires_insurance: false,
+                declared_value: 599
             }
         };
 
@@ -544,9 +571,38 @@
             errorDiv.style.display = 'none';
 
             const product = PRODUCTS[selectedProduct];
-            const requestData = {
-                fromPincode: document.getElementById('fromPincode').value,
-                toPincode: document.getElementById('toPincode').value,
+            
+            // Pincode to coordinates mapping (for OSRM routing)
+            const pincodeCoords = {
+                '110001': { lat: 28.6139, lon: 77.2090, city: 'Delhi' },      // Delhi
+                '400001': { lat: 19.0760, lon: 72.8777, city: 'Mumbai' },     // Mumbai
+                '560001': { lat: 12.9716, lon: 77.5946, city: 'Bangalore' },  // Bangalore
+                '600001': { lat: 13.0827, lon: 80.2707, city: 'Chennai' },    // Chennai
+                '700001': { lat: 22.5726, lon: 88.3639, city: 'Kolkata' }     // Kolkata
+            };
+            
+            const fromPin = document.getElementById('fromPincode').value;
+            const toPin = document.getElementById('toPincode').value;
+            
+            // Use OSRM format with coordinates if available
+            const requestData = pincodeCoords[fromPin] && pincodeCoords[toPin] ? {
+                origin: {
+                    lat: pincodeCoords[fromPin].lat,
+                    lon: pincodeCoords[fromPin].lon,
+                    postalCode: fromPin
+                },
+                destination: {
+                    lat: pincodeCoords[toPin].lat,
+                    lon: pincodeCoords[toPin].lon,
+                    postalCode: toPin
+                },
+                weightKg: product.weight,
+                dimensions: product.dimensions,
+                serviceType: document.getElementById('serviceType').value
+            } : {
+                // Fallback to legacy format if pincodes not in mapping
+                fromPincode: fromPin,
+                toPincode: toPin,
                 weightKg: product.weight,
                 serviceType: document.getElementById('serviceType').value
             };
@@ -598,12 +654,36 @@
                 const cost = data.data?.estimatedCost || data.estimatedCost || 0;
                 const minCost = data.data?.minCost || data.minCost || 0;
                 const maxCost = data.data?.maxCost || data.maxCost || 0;
+                const distance = data.data?.distance || data.distance;
+                const estimatedDays = data.data?.estimatedDays || data.estimatedDays;
+                const routingEngine = data.data?.routingEngine || data.routingEngine;
+                const routingMethod = data.data?.routingMethod || data.routingMethod;
+                const billableWeight = data.data?.billableWeight || data.billableWeight;
+                const volumetricWeight = data.data?.volumetricWeight || data.volumetricWeight;
 
                 console.log('Costs extracted:', { cost, minCost, maxCost });
 
                 // Update displayed values
                 document.getElementById('estimatePrice').textContent = `₹${cost}`;
-                document.getElementById('estimateRange').textContent = `Range: ₹${minCost} - ₹${maxCost}`;
+                
+                // Enhanced range display with additional details
+                let rangeText = `Range: ₹${minCost} - ₹${maxCost}`;
+                if (distance) {
+                    rangeText += ` | Distance: ${Math.round(distance)}km`;
+                }
+                if (estimatedDays) {
+                    rangeText += ` | ${estimatedDays} days`;
+                }
+                if (routingEngine && routingMethod) {
+                    rangeText += ` | via ${routingEngine === 'osrm' ? 'OSRM' : 'Pincode'}`;
+                    if (routingMethod === 'haversine_fallback') {
+                        rangeText += ' (fallback)';
+                    }
+                }
+                if (volumetricWeight && volumetricWeight > (product.weight || 0)) {
+                    rangeText += ` | Volumetric: ${volumetricWeight.toFixed(2)}kg`;
+                }
+                document.getElementById('estimateRange').textContent = rangeText;
 
                 // CRITICAL: SHOW THE RESULT
                 loading.style.display = 'none';
@@ -672,13 +752,24 @@
 
             const product = PRODUCTS[selectedProduct];
             const estimateCost = estimateData.data?.estimatedCost || estimateData.estimatedCost || 0;
+            const quantity = 1;
+            const itemTotal = product.price * quantity;
+            const subtotal = itemTotal;
+            const taxAmount = subtotal * 0.18; // 18% GST
+            const totalAmount = subtotal + taxAmount + estimateCost;
 
             const orderData = {
                 customer_name: 'Demo Customer',
                 customer_email: 'demo@example.com',
                 customer_phone: '9876543210',
-                total_amount: product.price + estimateCost,
+                order_type: 'sales', // sales order (outbound to customer)
+                status: 'pending_carrier_assignment', // Order ready for carrier pickup
                 priority: 'standard',
+                subtotal: subtotal,
+                tax_amount: taxAmount,
+                shipping_amount: estimateCost,
+                discount_amount: 0,
+                total_amount: totalAmount,
                 currency: 'INR',
                 shipping_address: {
                     street: '123 Main St',
@@ -688,16 +779,26 @@
                     country: 'India'
                 },
                 items: [{
-                    product_id: null,
-                    sku: `SKU-${selectedProduct.toUpperCase()}`,
+                    product_id: product.id,
+                    sku: product.sku,
                     product_name: product.name,
-                    quantity: 1,
+                    quantity: quantity,
                     unit_price: product.price,
+                    total_price: itemTotal,
                     weight: product.weight,
-                    dimensions: product.dimensions
+                    dimensions: product.dimensions,
+                    is_fragile: product.is_fragile,
+                    is_hazardous: product.is_hazardous,
+                    is_perishable: product.is_perishable,
+                    requires_cold_storage: product.requires_cold_storage,
+                    item_type: product.item_type,
+                    package_type: product.package_type,
+                    requires_insurance: product.requires_insurance,
+                    declared_value: product.declared_value
                 }],
                 estimated_shipping_cost: estimateCost,
-                notes: `Demo order for ${product.name}`
+                notes: `Demo order for ${product.name}`,
+                special_instructions: product.is_fragile ? 'Handle with care - Fragile electronics' : null
             };
 
             console.log('=== CREATING ORDER ===');
@@ -721,24 +822,41 @@
                 console.log('Order created:', orderResult);
 
                 // Request real quotes from carriers (Phase 2)
+                const fromPin = document.getElementById('fromPincode').value;
+                const toPin = document.getElementById('toPincode').value;
+                
+                // Pincode to coordinates mapping (same as in estimate)
+                const pincodeCoords = {
+                    '110001': { lat: 28.6139, lon: 77.2090, city: 'Delhi' },
+                    '400001': { lat: 19.0760, lon: 72.8777, city: 'Mumbai' },
+                    '560001': { lat: 12.9716, lon: 77.5946, city: 'Bangalore' },
+                    '600001': { lat: 13.0827, lon: 80.2707, city: 'Chennai' },
+                    '700001': { lat: 22.5726, lon: 88.3639, city: 'Kolkata' }
+                };
+                
+                const originCoords = pincodeCoords[fromPin] || { lat: 28.7041, lon: 77.1025, city: 'Delhi' };
+                const destCoords = pincodeCoords[toPin] || { lat: 19.0760, lon: 72.8777, city: 'Mumbai' };
+                
                 const quoteData = {
                     orderId: orderId,
                     origin: {
-                        lat: 28.7041,
-                        lon: 77.1025,
-                        address: 'Delhi Warehouse, Connaught Place, New Delhi',
-                        pin_code: document.getElementById('fromPincode').value
+                        lat: originCoords.lat,
+                        lon: originCoords.lon,
+                        address: `${originCoords.city} Warehouse, PIN: ${fromPin}`,
+                        postalCode: fromPin
                     },
                     destination: {
-                        lat: 19.0760,
-                        lon: 72.8777,
-                        address: 'Customer Address, Mumbai',
-                        pin_code: document.getElementById('toPincode').value
+                        lat: destCoords.lat,
+                        lon: destCoords.lon,
+                        address: `Customer Address, ${destCoords.city}, PIN: ${toPin}`,
+                        postalCode: toPin
                     },
                     items: [{
                         weight: product.weight,
                         dimensions: product.dimensions,
-                        name: product.name
+                        name: product.name,
+                        is_fragile: product.is_fragile,
+                        requires_cold_storage: product.requires_cold_storage
                     }],
                     serviceType: document.getElementById('serviceType').value
                 };
@@ -746,7 +864,7 @@
                 console.log('=== REQUESTING CARRIER QUOTES ===');
                 console.log('Quote data:', quoteData);
 
-                const quoteResponse = await fetch(`${API_BASE}/shipping/quotes/real`, {
+                const quoteResponse = await fetch(`${API_BASE}/shipping/quotes`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(quoteData)
@@ -754,16 +872,37 @@
 
                 const quoteResult = await quoteResponse.json();
                 console.log('Quote requests sent:', quoteResult);
+                
+                // Display carrier quote stats
+                const stats = quoteResult.data?.stats || {};
+                const quoteMessage = quoteResult.message || 'Quote requests sent to carriers';
+                console.log('Carrier quote stats:', stats);
 
                 // Store in localStorage for other pages
                 localStorage.setItem('currentOrderId', orderId);
                 localStorage.setItem('orderData', JSON.stringify(orderData));
                 localStorage.setItem('quoteData', JSON.stringify(quoteData));
+                localStorage.setItem('quoteResult', JSON.stringify(quoteResult));
 
                 // Show success step
                 document.getElementById('orderIdDisplay').textContent = orderId;
                 document.getElementById('carrierRequestData').textContent = JSON.stringify(quoteData, null, 2);
                 document.getElementById('orderResponseData').textContent = JSON.stringify(orderResult, null, 2);
+                
+                // Update success message with carrier status
+                const successMessageEl = document.querySelector('#step3 .success-message p:nth-child(2)');
+                if (successMessageEl) {
+                    const pendingCount = stats.pendingCount || stats.totalCarriers || 0;
+                    const acceptedCount = stats.acceptedCount || 0;
+                    
+                    if (acceptedCount > 0) {
+                        successMessageEl.innerHTML = `🎉 <strong>${acceptedCount}</strong> carrier(s) accepted immediately! Check carrier portal for details.`;
+                    } else if (pendingCount > 0) {
+                        successMessageEl.innerHTML = `📋 Quote requests sent to <strong>${pendingCount}</strong> carrier(s). They will review and accept via their portal.`;
+                    } else {
+                        successMessageEl.innerHTML = `✅ ${quoteMessage}`;
+                    }
+                }
                 
                 document.getElementById('step3').style.display = 'block';
                 

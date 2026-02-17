@@ -179,11 +179,19 @@ export async function getAssignmentDetails(req, res) {
 export async function acceptAssignment(req, res) {
   try {
     const { assignmentId } = req.params;
-    const { carrierId } = req.query;
+    // Get carrierId from webhook authentication or query param (backward compatibility)
+    const carrierId = req.authenticatedCarrier?.id || req.query.carrierId || req.body.carrierId;
     const acceptanceData = req.body;
 
+    logger.debug('Accept assignment request', { 
+      assignmentId, 
+      carrierId,
+      fromWebhook: !!req.authenticatedCarrier,
+      authenticatedCarrier: req.authenticatedCarrier 
+    });
+
     if (!carrierId) {
-      return res.status(400).json({ error: 'carrierId required' });
+      return res.status(400).json({ error: 'carrierId required (provide via webhook auth or query param)' });
     }
 
     const result = await carrierAssignmentService.acceptAssignment(
@@ -206,11 +214,12 @@ export async function acceptAssignment(req, res) {
 export async function rejectAssignment(req, res) {
   try {
     const { assignmentId } = req.params;
-    const { carrierId } = req.query;
+    // Get carrierId from webhook authentication or query param (backward compatibility)
+    const carrierId = req.authenticatedCarrier?.id || req.query.carrierId || req.body.carrierId;
     const { reason } = req.body;
 
     if (!carrierId) {
-      return res.status(400).json({ error: 'carrierId required' });
+      return res.status(400).json({ error: 'carrierId required (provide via webhook auth or query param)' });
     }
 
     const result = await carrierAssignmentService.rejectAssignment(

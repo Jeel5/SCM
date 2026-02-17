@@ -1,54 +1,134 @@
 import carrierRateService from '../services/carrierRateService.js';
+import * as estimateService from '../services/shipping/estimateService.js';
 import { AppError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import db from '../configs/db.js';
 
 /**
- * PHASE 1: Get quick shipping estimate for e-commerce checkout
+ * Get quick shipping estimate for e-commerce checkout
  * Called BEFORE customer places order to show approximate shipping cost
+ * Uses OSRM routing engine for accurate road distances
  * POST /api/shipping/quick-estimate
+ * POST /api/shipping/estimate (alias)
+ * 
+ * Body: { origin, destination, weightKg, dimensions, serviceType }
+ * OR legacy: { fromPincode, toPincode, weightKg, serviceType }
  */
 export const getQuickEstimate = async (req, res, next) => {
   try {
-    const { fromPincode, toPincode, weightKg, serviceType } = req.body;
+    const { 
+      origin,          // {lat, lon, postalCode} or {warehouse_id}
+      destination,     // {lat, lon, postalCode, address}
+      weightKg,        // Total weight in kg
+      dimensions,      // {length, width, height} in cm (optional)
+      serviceType,     // 'express' | 'standard' | 'economy'
+      // Legacy format
+      fromPincode,
+      toPincode
+    } = req.body;
 
-    // Validate required fields
-    if (!fromPincode || !toPincode) {
-      throw new AppError('Missing required fields: fromPincode, toPincode', 400);
+    // Check if using legacy format (pincode-only, no coordinates)
+    const isLegacyFormat = fromPincode && toPincode && !origin && !destination;
+    
+    if (isLegacyFormat) {
+      // Legacy format - use simple calculation (no OSRM)
+      logger.info('Quick estimate (legacy pincode format)', {
+        fromPincode,
+        toPincode,
+        weightKg: weightKg || 1
+      });
+
+      const weight = weightKg || 1;
+      const svcType = serviceType || 'standard';
+      
+      // Simple zone-based calculation
+      const baseRate = svcType === 'express' ? 100 : 50;
+      const weightRate = weight * 20;
+      const estimatedCost = Math.round(baseRate + weightRate);
+      
+      return res.json({
+        success: true,
+        data: {
+          estimatedCost,
+          minCost: Math.round(estimatedCost * 0.85),
+          maxCost: Math.round(estimatedCost * 1.15),
+          range: `₹${Math.round(estimatedCost * 0.85)} - ₹${Math.round(estimatedCost * 1.15)}`,
+          serviceType: svcType,
+          estimatedDays: svcType === 'express' ? '1-2' : '3-5',
+          message: 'Approximate estimate based on pincode. For accurate estimate, provide coordinates.',
+          calculatedAt: new Date(),
+          isEstimate: true
+        }
+      });
     }
 
-    logger.info('Getting quick shipping estimate', {
-      fromPincode,
-      toPincode,
-      weightKg,
-      serviceType
+    // New format with coordinates - use OSRM
+    if (!destination || !destination.lat || !destination.lon) {
+      throw new AppError('Destination with lat/lon coordinates is required for accurate estimates', 400);
+    }
+
+    // Fetch origin warehouse details if warehouse_id provided
+    let originCoords = origin;
+    if (origin?.warehouse_id) {
+      const warehouseResult = await db.query(
+        `SELECT id, name, address, postal_code, 
+                latitude as lat, longitude as lon
+         FROM warehouses 
+         WHERE id = $1`,
+        [origin.warehouse_id]
+      );
+      
+      if (warehouseResult.rows.length === 0) {
+        throw new AppError('Warehouse not found', 404);
+      }
+      
+      const warehouse = warehouseResult.rows[0];
+      originCoords = {
+        lat: warehouse.lat,
+        lon: warehouse.lon,
+        postalCode: warehouse.postal_code,
+        address: warehouse.address
+      };
+    }
+
+    if (!originCoords || !originCoords.lat || !originCoords.lon) {
+      throw new AppError('Origin with lat/lon coordinates is required', 400);
+    }
+
+    logger.info('Quick estimate with OSRM', {
+      origin: originCoords.postalCode || 'N/A',
+      destination: destination.postalCode || 'N/A',
+      weight: weightKg || 1,
+      serviceType: serviceType || 'standard'
     });
 
-    // Get quick estimate without calling carrier APIs
-    const estimate = await carrierRateService.getQuickEstimate({
-      fromPincode,
-      toPincode,
+    // Call OSRM-based estimate service
+    const estimate = await estimateService.getQuickEstimate({
+      origin: originCoords,
+      destination: destination,
       weightKg: weightKg || 1,
+      dimensions: dimensions || null,
       serviceType: serviceType || 'standard'
     });
 
     res.json({
       success: true,
       data: estimate,
-      message: 'This is an approximate estimate. Final cost determined after order confirmation.'
+      message: 'Estimate calculated using OSRM routing engine. Final cost determined after carrier confirmation.'
     });
+
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * PHASE 2: Get REAL quotes from ALL carriers after order is placed
- * Called AFTER customer has paid and order is confirmed
+ * Get shipping quotes from all carriers after order is placed
+ * Called after customer has paid and order is confirmed
  * Sends to all carriers, collects accept/reject responses
- * POST /api/shipping/quotes/real
+ * POST /api/shipping/quotes
  */
-export const getRealShippingQuotes = async (req, res, next) => {
+export const getShippingQuotes = async (req, res, next) => {
   try {
     const { origin, destination, items, orderId } = req.body;
 
@@ -59,7 +139,7 @@ export const getRealShippingQuotes = async (req, res, next) => {
 
     // Validate orderId
     if (!orderId) {
-      throw new AppError('Order ID is required for real quotes', 400);
+      throw new AppError('Order ID is required', 400);
     }
 
     // Validate origin and destination
@@ -80,15 +160,15 @@ export const getRealShippingQuotes = async (req, res, next) => {
       }
     }
 
-    logger.info('Getting REAL quotes from all carriers', {
+    logger.info('Getting quotes from all carriers', {
       orderId,
       origin: origin.address,
       destination: destination.address,
       itemCount: items.length
     });
 
-    // Send to ALL carriers and collect responses
-    const result = await carrierRateService.getRealQuotesFromAllCarriers({
+    // Send to all carriers and collect responses
+    const result = await carrierRateService.getQuotesFromAllCarriers({
       origin,
       destination,
       items,
@@ -96,24 +176,40 @@ export const getRealShippingQuotes = async (req, res, next) => {
       waitForResponses: true
     });
 
-    const { acceptedQuotes, rejectedCarriers, totalCarriers, acceptanceRate } = result;
+    const { acceptedQuotes, rejectedCarriers, pendingAssignments, totalCarriers, acceptanceRate, message } = result;
 
     // Check if we have any accepted quotes
     if (acceptedQuotes.length === 0) {
-      throw new AppError(
-        'No carriers available to ship this order. All carriers rejected or unavailable.',
-        503,
-        {
-          rejections: rejectedCarriers,
-          totalCarriers
-        }
-      );
+      // No immediate acceptances - carriers will check portal (PULL model)
+      logger.info('No immediate carrier acceptances - quotes pending for carrier portal', {
+        orderId,
+        pendingAssignments: pendingAssignments?.length || 0,
+        rejectedCount: rejectedCarriers.length
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          acceptedQuotes: [],
+          rejectedCarriers,
+          pendingAssignments: pendingAssignments || [],
+          recommended: null,
+          stats: {
+            totalCarriers,
+            acceptedCount: 0,
+            rejectedCount: rejectedCarriers.length,
+            pendingCount: pendingAssignments?.length || 0,
+            acceptanceRate: 0
+          }
+        },
+        message: message || `Quote requests sent to ${totalCarriers} carriers. Waiting for carrier acceptance via portal.`
+      });
     }
 
     // Select best quote from accepted ones
     const bestQuote = carrierRateService.selectBestQuote(acceptedQuotes);
 
-    logger.info('Real quotes collected successfully', {
+    logger.info('Quotes collected successfully', {
       orderId,
       acceptedCount: acceptedQuotes.length,
       rejectedCount: rejectedCarriers.length,
@@ -125,11 +221,13 @@ export const getRealShippingQuotes = async (req, res, next) => {
       data: {
         acceptedQuotes,
         rejectedCarriers,
+        pendingAssignments: pendingAssignments || [],
         recommended: bestQuote,
         stats: {
           totalCarriers,
           acceptedCount: acceptedQuotes.length,
           rejectedCount: rejectedCarriers.length,
+          pendingCount: pendingAssignments?.length || 0,
           acceptanceRate
         }
       },
@@ -141,10 +239,10 @@ export const getRealShippingQuotes = async (req, res, next) => {
 };
 
 /**
- * DEPRECATED: Old endpoint - use getRealShippingQuotes instead
- * POST /api/shipping/quotes
+ * DEPRECATED: Old endpoint - use getShippingQuotes instead
+ * POST /api/shipping/quotes/legacy
  */
-export const getShippingQuotes = async (req, res, next) => {
+export const getShippingQuotesLegacy = async (req, res, next) => {
   try {
     const { origin, destination, items, orderId } = req.body;
 

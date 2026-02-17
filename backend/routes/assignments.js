@@ -9,6 +9,7 @@ import {
   getOrderAssignments,
   updateCarrierAvailability
 } from '../controllers/assignmentController.js';
+import { verifyWebhookSignature } from '../middlewares/webhookAuth.js';
 
 const router = express.Router();
 
@@ -29,13 +30,15 @@ router.get('/carriers/assignments/pending', getPendingAssignments);
 // Get assignment details
 router.get('/assignments/:assignmentId', getAssignmentDetails);
 
-// Accept assignment
-router.post('/assignments/:assignmentId/accept', acceptAssignment);
+// ========== WEBHOOK-PROTECTED CARRIER ENDPOINTS (HMAC Authenticated) ==========
 
-// Reject assignment
-router.post('/assignments/:assignmentId/reject', rejectAssignment);
+// Accept assignment - Protected with HMAC signature verification
+router.post('/assignments/:assignmentId/accept', verifyWebhookSignature(), acceptAssignment);
 
-// Mark assignment as busy (temporary rejection)
-router.post('/assignments/:assignmentId/busy', markAsBusy);
+// Reject assignment - Protected with HMAC signature verification
+router.post('/assignments/:assignmentId/reject', verifyWebhookSignature(), rejectAssignment);
+
+// Mark assignment as busy - Protected with HMAC signature verification
+router.post('/assignments/:assignmentId/busy', verifyWebhookSignature(), markAsBusy);
 
 export default router;
