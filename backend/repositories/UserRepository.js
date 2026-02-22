@@ -21,7 +21,7 @@ class UserRepository extends BaseRepository {
   }
 
   // Get users with pagination and filters (role, active status, search)
-  async findUsers({ page = 1, limit = 20, role = null, is_active = null, search = null }, client = null) {
+  async findUsers({ page = 1, limit = 20, role = null, is_active = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
     let paramCount = 1;
@@ -34,6 +34,15 @@ class UserRepository extends BaseRepository {
       FROM users
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (role) {
       query += ` AND role = $${paramCount++}`;
@@ -98,36 +107,58 @@ class UserRepository extends BaseRepository {
   /**
    * Deactivate user
    */
-  async deactivate(userId, client = null) {
-    const query = `
+  async deactivate(userId, organizationId = undefined, client = null) {
+    let query = `
       UPDATE users
       SET is_active = false, updated_at = NOW()
       WHERE id = $1
-      RETURNING id, username, email, is_active
     `;
-    const result = await this.query(query, [userId], client);
+    const params = [userId];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` RETURNING id, username, email, is_active`;
+    const result = await this.query(query, params, client);
     return result.rows[0];
   }
 
   /**
    * Activate user
    */
-  async activate(userId, client = null) {
-    const query = `
+  async activate(userId, organizationId = undefined, client = null) {
+    let query = `
       UPDATE users
       SET is_active = true, updated_at = NOW()
       WHERE id = $1
-      RETURNING id, username, email, is_active
     `;
-    const result = await this.query(query, [userId], client);
+    const params = [userId];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` RETURNING id, username, email, is_active`;
+    const result = await this.query(query, params, client);
     return result.rows[0];
   }
 
   /**
    * Get user statistics
    */
-  async getUserStats(client = null) {
-    const query = `
+  async getUserStats(organizationId = undefined, client = null) {
+    let query = `
       SELECT 
         COUNT(*) as total_users,
         COUNT(*) FILTER (WHERE is_active = true) as active_users,
@@ -139,53 +170,98 @@ class UserRepository extends BaseRepository {
         COUNT(*) FILTER (WHERE role = 'finance') as finance_count,
         COUNT(*) FILTER (WHERE last_login > NOW() - INTERVAL '7 days') as recent_active_users
       FROM users
+      WHERE 1=1
     `;
-    const result = await this.query(query, [], client);
+    const params = [];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$1`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
     return result.rows[0];
   }
 
   /**
    * Find users by role
    */
-  async findByRole(role, client = null) {
-    const query = `
+  async findByRole(role, organizationId = undefined, client = null) {
+    let query = `
       SELECT id, username, email, full_name, role, department, is_active
       FROM users 
       WHERE role = $1 AND is_active = true
-      ORDER BY full_name
     `;
-    const result = await this.query(query, [role], client);
+    const params = [role];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY full_name`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Update user role
    */
-  async updateRole(userId, role, client = null) {
-    const query = `
+  async updateRole(userId, role, organizationId = undefined, client = null) {
+    let query = `
       UPDATE users
       SET role = $1, updated_at = NOW()
       WHERE id = $2
-      RETURNING id, username, email, full_name, role
     `;
-    const result = await this.query(query, [role, userId], client);
+    const params = [role, userId];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$3`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` RETURNING id, username, email, full_name, role`;
+    const result = await this.query(query, params, client);
     return result.rows[0];
   }
 
   /**
    * Get role distribution
    */
-  async getRoleDistribution(client = null) {
-    const query = `
+  async getRoleDistribution(organizationId = undefined, client = null) {
+    let query = `
       SELECT 
         role,
         COUNT(*) as user_count,
         COUNT(*) FILTER (WHERE is_active = true) as active_count
       FROM users
-      GROUP BY role
-      ORDER BY user_count DESC
+      WHERE 1=1
     `;
-    const result = await this.query(query, [], client);
+    const params = [];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$1`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` GROUP BY role ORDER BY user_count DESC`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 

@@ -7,11 +7,12 @@ interface StockLevelIndicatorProps {
 }
 
 export function StockLevelIndicator({ item }: StockLevelIndicatorProps) {
-  const percentage = (item.quantity / item.maxQuantity) * 100;
+  const max = item.maxStockLevel ?? 0;
+  const percentage = max > 0 ? Math.min((item.quantity / max) * 100, 100) : 0;
   let color = 'bg-green-500';
   let status = 'Healthy';
 
-  if (item.quantity <= item.reorderPoint) {
+  if (item.reorderPoint != null && item.quantity <= item.reorderPoint) {
     color = 'bg-red-500';
     status = 'Critical';
   } else if (percentage <= 30) {

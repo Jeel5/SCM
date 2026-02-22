@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -9,24 +9,24 @@ export function useWarehouses() {
   const [isLoading, setIsLoading] = useState(true);
   const { useMockApi } = useApiMode();
 
-  useEffect(() => {
-    const fetchWarehouses = async () => {
-      setIsLoading(true);
-      try {
-        const response = useMockApi
-          ? await mockApi.getWarehouses()
-          : await warehousesApi.getWarehouses();
-        setWarehouses(response.data);
-      } catch (error) {
-        console.error('Failed to fetch warehouses:', error);
-        setWarehouses([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchWarehouses();
+  const fetchWarehouses = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = useMockApi
+        ? await mockApi.getWarehouses()
+        : await warehousesApi.getWarehouses();
+      setWarehouses(response.data);
+    } catch (error) {
+      console.error('Failed to fetch warehouses:', error);
+      setWarehouses([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, [useMockApi]);
 
-  return { warehouses, isLoading };
+  useEffect(() => {
+    fetchWarehouses();
+  }, [fetchWarehouses]);
+
+  return { warehouses, isLoading, refetch: fetchWarehouses };
 }

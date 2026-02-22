@@ -1,5 +1,5 @@
-import { Boxes, AlertTriangle, Edit, ArrowUpDown } from 'lucide-react';
-import { Modal, Button, Badge, Progress } from '@/components/ui';
+import { Boxes, AlertTriangle, Edit, ArrowUpDown, MapPin } from 'lucide-react';
+import { Modal, Button, Progress } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import type { InventoryItem } from '@/types';
 
@@ -7,12 +7,16 @@ interface InventoryDetailsModalProps {
   item: InventoryItem | null;
   isOpen: boolean;
   onClose: () => void;
+  onAdjustStock?: () => void;
+  onEdit?: () => void;
 }
 
-export function InventoryDetailsModal({ item, isOpen, onClose }: InventoryDetailsModalProps) {
+export function InventoryDetailsModal({ item, isOpen, onClose, onAdjustStock, onEdit }: InventoryDetailsModalProps) {
   if (!item) return null;
 
-  const stockPercentage = (item.quantity / item.maxQuantity) * 100;
+  const max = item.maxStockLevel ?? 0;
+  const stockPercentage = max > 0 ? Math.min((item.quantity / max) * 100, 100) : 0;
+  const location = [item.zone, item.binLocation].filter(Boolean).join(' · ') || '—';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Inventory Details" size="lg">
@@ -24,19 +28,21 @@ export function InventoryDetailsModal({ item, isOpen, onClose }: InventoryDetail
               <Boxes className="h-8 w-8 text-indigo-600 dark:text-indigo-300" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{item.name}</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.sku}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <Badge variant={item.category === 'electronics' ? 'info' : 'default'}>
-                  {item.category}
-                </Badge>
-                <Badge variant="outline">{item.unit}</Badge>
-              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {item.productName || '—'}
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.sku || 'N/A'}</p>
+              {item.productCategory && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 capitalize">{item.productCategory}</p>
+              )}
             </div>
           </div>
           <div className="text-right">
             <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
             <p className="text-sm text-gray-500 dark:text-gray-400">in stock</p>
+            {item.isLowStock && (
+              <p className="text-xs text-red-500 font-medium mt-1">Low stock</p>
+            )}
           </div>
         </div>
 
@@ -45,48 +51,62 @@ export function InventoryDetailsModal({ item, isOpen, onClose }: InventoryDetail
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Stock Level</span>
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              {formatNumber(item.quantity)} / {formatNumber(item.maxQuantity)}
+              {formatNumber(item.quantity)}{max > 0 ? ` / ${formatNumber(max)}` : ''}
             </span>
           </div>
           <Progress value={stockPercentage} size="lg" showLabel />
           <div className="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-gray-400">
-            <span>Min: {formatNumber(item.minQuantity)}</span>
-            <span className="flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3 text-yellow-500" />
-              Reorder: {formatNumber(item.reorderPoint)}
-            </span>
-            <span>Max: {formatNumber(item.maxQuantity)}</span>
+            <span>Available: {formatNumber(item.availableQuantity)}</span>
+            {item.reorderPoint != null && (
+              <span className="flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                Reorder: {formatNumber(item.reorderPoint)}
+              </span>
+            )}
+            <span>Max: {max > 0 ? formatNumber(max) : '—'}</span>
           </div>
         </div>
 
         {/* Details Grid */}
         <div className="grid grid-cols-2 gap-4">
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Unit Cost</p>
-            <p className="text-xl font-semibold text-gray-900 dark:text-white">{formatCurrency(item.unitCost)}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Unit Price</p>
+            <p className="text-xl font-semibold text-gray-900 dark:text-white">
+              {item.unitPrice != null ? formatCurrency(item.unitPrice) : '—'}
+            </p>
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">Total Value</p>
             <p className="text-xl font-semibold text-gray-900 dark:text-white">
-              {formatCurrency(item.quantity * item.unitCost)}
+              {item.unitPrice != null ? formatCurrency(item.quantity * item.unitPrice) : '—'}
             </p>
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">Warehouse</p>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">{item.warehouseName}</p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{item.warehouseName || '—'}</p>
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Location</p>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">{item.location}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+              <MapPin className="h-3 w-3" /> Location
+            </p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{location}</p>
+          </div>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Reserved</p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatNumber(item.reservedQuantity)}</p>
+          </div>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Damaged</p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatNumber(item.damagedQuantity)}</p>
           </div>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-3">
-          <Button variant="primary" className="flex-1" leftIcon={<ArrowUpDown className="h-4 w-4" />}>
+          <Button variant="primary" className="flex-1" leftIcon={<ArrowUpDown className="h-4 w-4" />} onClick={onAdjustStock}>
             Adjust Stock
           </Button>
-          <Button variant="outline" className="flex-1" leftIcon={<Edit className="h-4 w-4" />}>
+          <Button variant="outline" className="flex-1" leftIcon={<Edit className="h-4 w-4" />} onClick={onEdit}>
             Edit Item
           </Button>
         </div>

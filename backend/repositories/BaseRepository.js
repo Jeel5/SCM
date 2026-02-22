@@ -26,21 +26,60 @@ class BaseRepository {
     return txOrClient;
   }
 
-  // Find all records with optional filtering, sorting, and pagination
+  // Build organization filter for multi-tenant data isolation
+  buildOrgFilter(organizationId, tableAlias = null) {
+    // Superadmin (organizationId = null) can see all organizations
+    if (organizationId === null || organizationId === undefined) {
+      return { clause: '', params: [] };
+    }
+
+    const columnName = tableAlias 
+      ? `${tableAlias}.organization_id` 
+      : 'organization_id';
+    
+    return {
+      clause: `${columnName} = `,
+      params: [organizationId]
+    };
+  }
+
+  // Find all records with optional filtering, sorting, pagination, and organization scoping
   async findAll(conditions = {}, options = {}, client = null) {
-    const { limit = 50, offset = 0, orderBy = 'created_at', order = 'DESC' } = options;
+    const { 
+      limit = 50, 
+      offset = 0, 
+      orderBy = 'created_at', 
+      order = 'DESC',
+      organizationId = undefined // For multi-tenant filtering
+    } = options;
     
     let query = `SELECT * FROM ${this.tableName}`;
     const params = [];
     let paramCount = 1;
 
-    // Add WHERE conditions
+    // Build WHERE conditions array
+    const whereClauses = [];
+
+    // Add organization filter if organizationId is provided
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        whereClauses.push(`${orgFilter.clause}$${paramCount++}`);
+        params.push(...orgFilter.params);
+      }
+    }
+
+    // Add other conditions
     if (Object.keys(conditions).length > 0) {
-      const whereClause = Object.keys(conditions)
-        .map(key => `${key} = $${paramCount++}`)
-        .join(' AND ');
-      query += ` WHERE ${whereClause}`;
-      params.push(...Object.values(conditions));
+      Object.keys(conditions).forEach(key => {
+        whereClauses.push(`${key} = $${paramCount++}`);
+        params.push(conditions[key]);
+      });
+    }
+
+    // Combine WHERE clauses
+    if (whereClauses.length > 0) {
+      query += ` WHERE ${whereClauses.join(' AND ')}`;
     }
 
     // Add ORDER BY
@@ -55,11 +94,22 @@ class BaseRepository {
   }
 
   /**
-   * Find a single record by ID
+   * Find a single record by ID with optional organization filtering
    */
-  async findById(id, client = null) {
-    const query = `SELECT * FROM ${this.tableName} WHERE id = $1`;
-    const result = await this.query(query, [id], client);
+  async findById(id, organizationId = undefined, client = null) {
+    let query = `SELECT * FROM ${this.tableName} WHERE id = $1`;
+    const params = [id];
+
+    // Add organization filter if provided
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
     return result.rows[0] || null;
   }
 
@@ -113,17 +163,33 @@ class BaseRepository {
     return result.rows[0];
   }
 
-  // Count records matching conditions
-  async count(conditions = {}, client = null) {
+  // Count records matching conditions with optional organization filtering
+  async count(conditions = {}, organizationId = undefined, client = null) {
     let query = `SELECT COUNT(*) FROM ${this.tableName}`;
     const params = [];
+    let paramCount = 1;
+    const whereClauses = [];
 
+    // Add organization filter if provided
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        whereClauses.push(`${orgFilter.clause}$${paramCount++}`);
+        params.push(...orgFilter.params);
+      }
+    }
+
+    // Add other conditions
     if (Object.keys(conditions).length > 0) {
-      const whereClause = Object.keys(conditions)
-        .map((key, idx) => `${key} = $${idx + 1}`)
-        .join(' AND ');
-      query += ` WHERE ${whereClause}`;
-      params.push(...Object.values(conditions));
+      Object.keys(conditions).forEach(key => {
+        whereClauses.push(`${key} = $${paramCount++}`);
+        params.push(conditions[key]);
+      });
+    }
+
+    // Combine WHERE clauses
+    if (whereClauses.length > 0) {
+      query += ` WHERE ${whereClauses.join(' AND ')}`;
     }
 
     const result = await this.query(query, params, client);

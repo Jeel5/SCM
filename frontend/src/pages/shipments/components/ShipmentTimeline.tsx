@@ -9,6 +9,21 @@ export function ShipmentTimeline({ events }: { events: ShipmentEvent[] }) {
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 
+  const getLocationText = (location: string | { lat?: number; lon?: number; city?: string; state?: string } | undefined): string => {
+    if (!location) return 'Unknown';
+    if (typeof location === 'string') return location;
+    if (typeof location === 'object') {
+      if (location.city && location.state) {
+        return `${location.city}, ${location.state}`;
+      }
+      if (location.city) return location.city;
+      if (location.lat && location.lon) {
+        return `${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}`;
+      }
+    }
+    return 'Unknown';
+  };
+
   return (
     <div className="relative">
       {sortedEvents.map((event, index) => (
@@ -49,7 +64,7 @@ export function ShipmentTimeline({ events }: { events: ShipmentEvent[] }) {
             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1">
                 <MapPin className="h-3 w-3" />
-                {event.location}
+                {getLocationText(event.location)}
               </span>
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />

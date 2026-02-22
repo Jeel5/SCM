@@ -85,7 +85,7 @@ export function WarehouseUtilizationChart({ data }: WarehouseUtilizationChartPro
                 />
                 <span className="text-sm text-gray-600 dark:text-gray-300 truncate">{warehouse.warehouseName.split(' ')[0]}</span>
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-white">{warehouse.utilizationRate.toFixed(0)}%</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{(warehouse.utilizationRate || 0).toFixed(0)}%</span>
             </div>
           ))}
         </div>

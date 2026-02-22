@@ -1,84 +1,234 @@
-# SCM Demo - Platform Fulfilled Logistics
+# SCM Demo Portals
 
-## 🎯 Overview
+> Last updated: 2026-02-22  
+> All three portals are standalone HTML pages — no build step required.
 
-This demo simulates a **platform-fulfilled logistics system** where the platform owns warehouses and controls the entire shipping process. The demo shows the complete **two-phase shipping quote system** with full data visibility.
+---
 
-## 🏗️ Architecture Model
+## Overview
 
-**Platform Fulfilled Model** (like Croma, Apple Store, Flipkart Assured):
-- ✅ Platform owns warehouses and inventory
-- ✅ Platform controls packaging and quality
-- ✅ Platform selects optimal carriers
-- ✅ Platform absorbs shipping cost variance (simplified: weight assumed accurate)
-- ❌ No vendor management, wallets, or settlements
+The demo folder (`/demo/`) contains three HTML pages that visualize the end-to-end order lifecycle:
 
-## 📁 Files
+| File | Purpose | Who uses it |
+|---|---|---|
+| `demo/customer.html` | Place orders via webhook | Simulates a retailer's customer checkout |
+| `demo/carrier-portal.html` | View & respond to assignment requests | Simulates a carrier partner's dashboard |
+| `demo/order-tracking.html` | Track any order by ID or tracking number | Customer / internal ops view |
 
-- **index.html** - Demo overview and instructions
-- **customer.html** - Customer shopping portal (Phase 1 estimate + Order placement)
-- **carrier-portal.html** - Carrier partner portal (receive quotes, accept/reject)
-- **order-tracking.html** - Order tracking dashboard (complete data flow timeline)
+All three talk directly to the backend API at `http://localhost:3000`.  
+No CORS login, no token — the demo routes are open in development (`NODE_ENV !== 'production'`).
 
-## 🚀 How to Run
+---
 
-### 0. Setup Database (First Time Only)
+## Prerequisites
 
-The demo requires two additional tables that aren't in the base init.sql. Run this once:
-
-```bash
-# Connect to your PostgreSQL database
-psql -U your_username -d scm_db -f demo-tables.sql
-
-# Or if using Docker:
-docker exec -i scm_postgres psql -U postgres -d scm_db < demo-tables.sql
-```
-
-This creates:
-- `carrier_quotes` table - stores accepted quotes from carriers
-- `carrier_rejections` table - stores carrier rejections with reasons
-- Demo carrier records (DHL, FedEx, BlueDart, Delhivery)
-
-### 1. Start Backend Server
+### 1. Start the backend
 
 ```bash
 cd backend
-npm start
+npm run dev
+# Server starts on http://localhost:3000
 ```
 
-Server should be running on `http://localhost:3000`
+### 2. Open the HTML files in a browser
 
-### 2. Open Demo Pages
+You can open them directly as `file://` — CORS is configured to allow `null` origin for local files:
 
-Open the HTML files directly in your browser:
+```
+demo/customer.html
+demo/carrier-portal.html
+demo/order-tracking.html
+```
+
+Or serve them with a static server if you prefer:
 
 ```bash
-# Option 1: Double-click the files
-demo/customer.html
-demo/carrier-portal.html  
-demo/order-tracking.html
-
-# Option 2: Use a simple HTTP server
 cd demo
 python3 -m http.server 8080
-# Then visit http://localhost:8080/customer.html
+# Open http://localhost:8080/customer.html
 ```
 
-## 📊 Two-Phase Workflow
+No separate database setup is needed — the schema is in `init.sql` and is applied when Docker creates the `db` container.
 
-### **Phase 1: Quick Estimate (Before Payment)**
+---
 
-Customer enters delivery pincode → SCM calculates zone-based estimate → Customer sees shipping cost at checkout
+## Active Carriers in the Database
 
-**Key Points:**
-- Uses lightweight zone-based calculation
-- No carrier API calls (fast response <50ms)
-- Provides rough estimate for checkout
-- Customer pays based on this estimate
+These carriers are seeded and available today:
 
-### **Phase 2: Real Quotes (After Payment)**
+| Name | Code | Service Type | Status |
+|---|---|---|---|
+| BlueDart Express | `BLUEDART` | standard | available |
+| Delhivery | `DELHIVERY` | standard | available |
+| DTDC Courier | `DTDC` | standard | available |
+| Ecom Express | `ECOM` | standard | available |
+| Shadowfax | `SHADOWFAX` | standard | available |
 
-Order placed → SCM calls ALL carrier APIs → Compares quotes → Selects best carrier → Creates shipment
+The carrier portal loads these dynamically from `GET /api/demo/carriers`.
+
+---
+
+## Active Organizations
+
+| Name | Code | Notes |
+|---|---|---|
+| Croma | `CROMA` | Has a seeded `webhook_token` for order webhooks |
+
+Get the token for testing:
+```sql
+SELECT name, webhook_token FROM organizations WHERE code = 'CROMA';
+```
+
+---
+
+## Complete End-to-End Flow
+
+```
+customer.html                         backend                        carrier-portal.html
+     │                                    │                                   │
+     │  POST /api/webhooks/:token/orders  │                                   │
+     │ ─────────────────────────────────► │                                   │
+     │                                    │  INSERT background_jobs            │
+     │  { job_id: "..." }                 │  (type='process_order')           │
+     │ ◄───────────────────────────────── │                                   │
+     │                                    │                                   │
+     │                              Job Worker polls every 5s                 │
+     │                                    │                                   │
+     │                                    │  INSERT orders + order_items      │
+     │                                    │  INSERT carrier_assignments (x3)  │
+     │                                    │   └─ TOP 3 carriers by score      │
+     │                                    │   └─ status = 'pending'           │
+     │                                    │   └─ expires in 10 min            │
+     │                                    │                                   │
+     │                                    │       GET /api/demo/carriers      │
+     │                                    │ ◄─────────────────────────────────│
+     │                                    │  [BlueDart, Delhivery, DTDC ...]  │
+     │                                    │ ─────────────────────────────────►│
+     │                                    │                                   │ Carrier selected
+     │                                    │  GET /carriers/assignments/pending?carrierId=DELHIVERY
+     │                                    │ ◄─────────────────────────────────│
+     │                                    │  [{ assignmentId, orderData }]    │
+     │                                    │ ─────────────────────────────────►│
+     │                                    │                                   │ User clicks Accept
+     │                                    │  POST /assignments/:id/accept     │
+     │                                    │ ◄─────────────────────────────────│
+     │                                    │  INSERT shipments                 │
+     │                                    │  UPDATE other assignments → cancelled
+     │                                    │ ─────────────────────────────────►│
+```
+
+---
+
+## Customer Portal — `customer.html`
+
+### What it does
+
+1. Loads all active organizations from `GET /api/demo/organizations`
+2. Shows a product catalogue (hardcoded demo products)
+3. On checkout, sends the order to `POST /api/webhooks/:orgToken/orders`
+4. Displays the returned `job_id` and full request/response payload
+
+### Webhook payload sent
+
+```json
+{
+  "event_type": "order.created",
+  "source": "croma",
+  "data": {
+    "external_order_id": "DEMO-1234567890",
+    "customer_name": "Test Customer",
+    "customer_email": "customer@example.com",
+    "customer_phone": "9999999999",
+    "shipping_address": {
+      "street": "123 Main St",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400001",
+      "country": "India"
+    },
+    "items": [
+      { "sku": "IPHONE-15", "name": "iPhone 15", "quantity": 1, "price": 79999 }
+    ],
+    "payment_method": "prepaid",
+    "total_amount": 79999
+  }
+}
+```
+
+The backend also accepts **bare payloads** (no wrapper envelope) — if the body contains `customer_name` or `items` directly, the controller auto-wraps it.
+
+---
+
+## Carrier Portal — `carrier-portal.html`
+
+### What it does
+
+1. On load, calls `GET /api/demo/carriers` → renders one button per carrier
+2. Clicking a carrier selects it and calls `GET /api/carriers/assignments/pending?carrierId=<CODE>`
+3. Shows the first pending assignment: order details, pickup/delivery address, expiry timer
+4. **Accept** → `POST /api/assignments/:id/accept` (HMAC signed)
+5. **Reject** → `POST /api/assignments/:id/reject` (HMAC signed)
+6. **Status Update** panel → `POST /api/carriers/:code/tracking` with tracking event
+7. Polls every 5 seconds — only when a carrier is selected (null guard prevents 404 spam)
+
+### HMAC Authentication
+
+Accept/Reject endpoints require a valid HMAC-SHA256 signature:
+
+```
+X-Carrier-Signature: sha256=<hmac_of_body>
+X-Carrier-Timestamp: <unix_timestamp_ms>
+```
+
+The carrier portal fetches the carrier's `webhook_secret` from `GET /api/demo/carrier-secret/:code`
+and uses it to sign the request body before calling accept/reject.
+
+### Assignment lifecycle
+
+```
+pending → accepted  (carrier accepts — shipment created)
+        → rejected  (carrier rejects — order stays in queue for retry)
+        → busy      (carrier busy — stays pending, can accept later)
+        → cancelled (another carrier accepted — this one auto-cancelled)
+        → expired   (10-min window elapsed — retry scheduled)
+```
+
+---
+
+## Order Tracking — `order-tracking.html`
+
+Tracks any shipment by:
+- Order ID (UUID)
+- External order ID (e.g., `DEMO-123`)
+- Tracking number (from carrier)
+
+Calls `GET /api/shipments/:trackingNumber/tracking` or similar endpoint.
+
+---
+
+## Demo API Endpoints (dev only — 404 in production)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/demo/organizations` | All active orgs with webhook tokens |
+| `GET` | `/api/demo/carriers` | All active carriers (`is_active=true`) |
+| `GET` | `/api/demo/carrier-shipments/:code` | Shipments for a carrier by code |
+| `GET` | `/api/demo/carrier-secret/:code` | Carrier's HMAC webhook secret |
+
+All demo routes are guarded by `devOnly` middleware — if `NODE_ENV=production` they return `404`.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "No active carriers found" | `is_active=false` in DB or wrong column in query | Verify carriers table: `SELECT code, is_active FROM carriers` |
+| "Invalid webhook token" | Wrong token in URL | Get correct token: `SELECT webhook_token FROM organizations WHERE code='CROMA'` |
+| Carrier portal shows "No Pending Requests" | No assignments created yet | Place a new order from customer portal and wait ~5s |
+| `carrierId=null` 404 spam in console | `loadCarriers()` failed before poll started | Check `/api/demo/carriers` returns 200; null guard in poller prevents spam |
+| Job stays `pending` in DB | Job worker not running | Check server started with `npm run dev`; worker starts automatically |
+| Assignment created but carrier not visible | `service_type` mismatch | Carrier assignment queries `service_type='standard'`; ensure order priority maps to this |Order placed → SCM calls ALL carrier APIs → Compares quotes → Selects best carrier → Creates shipment
 
 **Key Points:**
 - Calls DHL, FedEx, BlueDart, Delhivery APIs

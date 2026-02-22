@@ -79,51 +79,105 @@ backend/
 ├── server.js                    ← STARTS HERE! Main entry point
 │
 ├── configs/
-│   └── db.js                    ← Database connection setup
+│   └── db.js                    ← Database connection setup (pg Pool, max 20 connections)
 │
 ├── controllers/                 ← Handle HTTP requests
-│   ├── ordersController.js      ← Orders: Create, list, update
-│   ├── usersController.js       ← Users: Login, profile
-│   ├── inventoryController.js   ← Inventory: Stock levels
-│   └── ...
+│   ├── ordersController.js      ← Orders: create, list, update status
+│   ├── usersController.js       ← Users: login, profile, management
+│   ├── inventoryController.js   ← Inventory: stock levels, adjustments
+│   ├── shipmentsController.js   ← Shipments: tracking, status
+│   ├── returnsController.js     ← Returns: initiate, approve, refund
+│   ├── assignmentController.js  ← Carrier assignment: request, accept, reject
+│   ├── webhooksController.js    ← Incoming webhooks from e-commerce platforms
+│   ├── mdmController.js         ← Master data: carriers, warehouses, products
+│   ├── dashboardController.js   ← Dashboard stats
+│   ├── analyticsController.js   ← Analytics queries
+│   ├── financeController.js     ← Invoices, cost tracking
+│   ├── slaController.js         ← SLA violations and exceptions
+│   ├── jobsController.js        ← Background job management
+│   └── trackingController.js    ← Shipment tracking events
 │
 ├── services/                    ← Business logic
-│   └── orderService.js          ← Order processing logic
+│   ├── carrierAssignmentService.js  ← Core: find carriers, create assignments, accept/reject
+│   ├── assignmentRetryService.js    ← Retry expired/rejected assignments
+│   ├── orderService.js              ← Order creation with inventory reservation
+│   ├── jobsService.js               ← CRUD for background_jobs and cron_schedules
+│   ├── slaService.js                ← SLA violation detection
+│   ├── exceptionService.js          ← Exception lifecycle management
+│   ├── returnsService.js            ← Return processing
+│   ├── invoiceService.js            ← Invoice generation
+│   ├── notificationService.js       ← Email/SMS/push dispatch
+│   ├── shipmentTrackingService.js   ← Tracking event ingestion
+│   ├── carrierPayloadBuilder.js     ← Builds carrier API request payloads
+│   ├── carrierRateService.js        ← Carrier rate fetching
+│   ├── deliveryChargeService.js     ← Zone-based charge calculation
+│   ├── osrmService.js               ← OSRM routing for distance estimates
+│   ├── settingsService.js           ← User/org settings
+│   ├── webhookSimulator.js          ← CLI mock webhook generator
+│   └── shipping/                    ← Shipping quote services
 │
 ├── repositories/                ← Database queries
-│   ├── BaseRepository.js        ← Common database operations
-│   ├── OrderRepository.js       ← Order-specific queries
-│   ├── InventoryRepository.js   ← Inventory queries
-│   └── ...
+│   ├── BaseRepository.js        ← Common CRUD operations (findById, findAll, create, update)
+│   ├── OrderRepository.js       ← Order-specific queries (with items, stats)
+│   ├── InventoryRepository.js   ← Inventory queries (reserve, release, deduct, add)
+│   ├── ShipmentRepository.js    ← Tracking queries, carrier performance
+│   ├── UserRepository.js        ← User auth and role management
+│   └── ReturnRepository.js      ← Returns with refund tracking
 │
 ├── middlewares/                 ← Request processors
-│   ├── auth.js                  ← Check if user is logged in
-│   ├── rbac.js                  ← Check user permissions (roles)
-│   └── requestLogger.js         ← Log all requests
+│   ├── auth.js                  ← authenticate(), authorize(), optionalAuth()
+│   ├── rbac.js                  ← requirePermission(), ROLES, PERMISSIONS matrix
+│   ├── requestLogger.js         ← requestId(), requestLogger(), slowRequestLogger()
+│   ├── multiTenant.js           ← injectOrgContext() — sets req.organizationId from JWT
+│   ├── webhookOrgContext.js     ← resolveWebhookOrg() — validates :orgToken in webhook URLs
+│   └── webhookAuth.js           ← verifyWebhookSignature() — HMAC-SHA256 for carrier endpoints
 │
 ├── routes/                      ← URL definitions
-│   ├── orders.js                ← /api/orders endpoints
-│   ├── users.js                 ← /api/auth endpoints
-│   └── ...
+│   ├── users.js                 ← /api/auth/*, /api/users
+│   ├── orders.js                ← /api/orders
+│   ├── assignments.js           ← /api/orders/:id/request-carriers, /api/assignments/*
+│   ├── shipments.js             ← /api/shipments
+│   ├── inventory.js             ← /api/inventory
+│   ├── returns.js               ← /api/returns
+│   ├── sla.js                   ← /api/sla
+│   ├── finance.js               ← /api/finance
+│   ├── jobs.js                  ← /api/jobs, /api/jobs/cron
+│   ├── mdm.js                   ← /api/warehouses, /api/carriers, /api/products
+│   ├── webhooks.js              ← /api/webhooks/:orgToken/*, /api/webhooks/*
+│   ├── carriers.js              ← /api/carriers/:code/tracking (HMAC)
+│   ├── shipping.js              ← /api/shipping/quote/estimate|real
+│   ├── organizations.js         ← /api/organizations (superadmin)
+│   ├── companies.js             ← /api/companies (superadmin)
+│   └── demo.js                  ← /api/demo/* (dev only — 404 in production)
 │
-├── validators/                  ← Input validation
-│   ├── index.js                 ← Validation framework
-│   ├── orderSchemas.js          ← Order validation rules
-│   └── ...
+├── jobs/                        ← Background processing
+│   ├── jobWorker.js             ← Polls background_jobs every 5s, runs handlers
+│   ├── cronScheduler.js         ← Checks cron_schedules every 60s
+│   └── jobHandlers.js           ← One handler per job_type
+│
+├── validators/                  ← Input validation schemas
+│   ├── index.js                 ← validateRequest() and validateQuery() middleware factories
+│   ├── orderSchemas.js          ← createOrderSchema, updateOrderStatusSchema, etc.
+│   ├── shipmentSchemas.js       ← createShipmentSchema, updateShipmentSchema, etc.
+│   ├── inventorySchemas.js      ← adjustInventorySchema, etc.
+│   ├── userSchemas.js           ← loginSchema, registerSchema
+│   └── returnSchemas.js         ← createReturnSchema, etc.
 │
 ├── errors/                      ← Error handling
-│   ├── AppError.js              ← Custom error classes
-│   └── errorHandler.js          ← Global error handler
+│   ├── AppError.js              ← Base error class with status codes
+│   ├── errorHandler.js          ← Global Express error handler middleware
+│   ├── errorUtils.js            ← Helper utilities (isOperationalError, etc.)
+│   └── index.js                 ← Re-exports: AppError, ForbiddenError, NotFoundError, etc.
 │
 ├── utils/                       ← Utility functions
-│   ├── logger.js                ← Winston logging setup
-│   └── jwt.js                   ← JWT token utilities
+│   ├── logger.js                ← Pino + Winston logging, logAuth() helper
+│   ├── jwt.js                   ← generateAccessToken(), verifyAccessToken(), refresh
+│   └── dbTransaction.js         ← withTransaction(async fn) helper
 │
-└── logs/                        ← Log files
+└── logs/                        ← Log files (git-ignored)
     ├── error.log                ← Only errors
     ├── combined.log             ← All logs
-    └── http.log                 ← HTTP requests
-```
+    └── http.log                 ← HTTP request log
 
 ---
 

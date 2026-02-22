@@ -9,26 +9,29 @@ import {
   getOrderAssignments,
   updateCarrierAvailability
 } from '../controllers/assignmentController.js';
+import { authenticate } from '../middlewares/auth.js';
+import { authorize } from '../middlewares/rbac.js';
+import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { verifyWebhookSignature } from '../middlewares/webhookAuth.js';
 
 const router = express.Router();
 
-// ========== CARRIER ASSIGNMENT ROUTES ==========
+// ========== INTERNAL ASSIGNMENT ROUTES (JWT authenticated) ==========
 
 // Request carrier assignment for an order
-router.post('/orders/:orderId/request-carriers', requestCarrierAssignment);
+router.post('/orders/:orderId/request-carriers', authenticate, injectOrgContext, authorize('shipments:update'), requestCarrierAssignment);
 
 // Get assignments for an order
-router.get('/orders/:orderId/assignments', getOrderAssignments);
+router.get('/orders/:orderId/assignments', authenticate, injectOrgContext, authorize('shipments:read'), getOrderAssignments);
 
-// Carrier notifies availability status (called when carrier becomes active)
-router.post('/carriers/:code/availability', updateCarrierAvailability);
+// Carrier notifies availability (HMAC — called from carrier system)
+router.post('/carriers/:code/availability', verifyWebhookSignature(), updateCarrierAvailability);
 
-// Carrier portal - get pending assignments for a carrier
+// Carrier portal - get pending assignments (carrier-facing, no JWT — carriers identify by carrierId param)
 router.get('/carriers/assignments/pending', getPendingAssignments);
 
 // Get assignment details
-router.get('/assignments/:assignmentId', getAssignmentDetails);
+router.get('/assignments/:assignmentId', authenticate, injectOrgContext, authorize('shipments:read'), getAssignmentDetails);
 
 // ========== WEBHOOK-PROTECTED CARRIER ENDPOINTS (HMAC Authenticated) ==========
 

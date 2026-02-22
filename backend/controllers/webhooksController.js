@@ -11,15 +11,29 @@ import { jobsService } from '../services/jobsService.js';
  */
 export const handleOrderWebhook = async (req, res, next) => {
   try {
-    const { event_type, source, data, timestamp } = req.body;
-    
+    let { event_type, source, data, timestamp } = req.body;
+
+    // Support bare-payload format (no envelope) — demo portal and direct integrations
+    // If the body itself looks like an order (has customer_name or items), wrap it
+    if (!event_type && !source && !data) {
+      const body = req.body;
+      if (body && (body.customer_name || body.items || body.external_order_id)) {
+        logger.debug('📦 Bare order payload detected — wrapping in envelope');
+        event_type = body.event_type || 'order.created';
+        source = body.source || body.platform || 'demo';
+        data = body;
+        timestamp = body.timestamp || new Date().toISOString();
+      }
+    }
+
     logger.info(`📦 Received order webhook: ${event_type} from ${source}`);
 
     // Validate webhook payload
     if (!event_type || !source || !data) {
+      logger.warn('Invalid webhook payload', { body: req.body });
       return res.status(400).json({
         success: false,
-        message: 'Invalid webhook payload'
+        message: 'Invalid webhook payload. Expected: { event_type, source, data } or a bare order object with customer_name/items.'
       });
     }
 
@@ -36,16 +50,18 @@ export const handleOrderWebhook = async (req, res, next) => {
         processedOrder = processEbayOrder(data);
         break;
       default:
-        processedOrder = data; // Generic handler
+        processedOrder = data; // Generic / croma / demo handler
     }
 
     // Create background job to process order
+    // req.webhookOrganizationId is set by resolveWebhookOrg middleware (org-scoped URL)
     const job = await jobsService.createJob(
       'process_order',
       {
         source,
         event_type,
         order: processedOrder,
+        organization_id: req.webhookOrganizationId || null,
         received_at: timestamp || new Date().toISOString()
       },
       data.priority === 'high' ? 1 : 5
@@ -72,7 +88,7 @@ export const handleOrderWebhook = async (req, res, next) => {
 export const handleTrackingWebhook = async (req, res, next) => {
   try {
     const { event_type, source, data, timestamp } = req.body;
-    
+
     logger.info(`🚚 Received tracking webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.tracking_number) {
@@ -119,7 +135,7 @@ export const handleTrackingWebhook = async (req, res, next) => {
 export const handleInventoryWebhook = async (req, res, next) => {
   try {
     const { event_type, source, data, timestamp } = req.body;
-    
+
     logger.info(`📊 Received inventory webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.warehouse_id) {
@@ -139,6 +155,7 @@ export const handleInventoryWebhook = async (req, res, next) => {
         items: data.items,
         updated_by: data.updated_by,
         notes: data.notes,
+        organization_id: req.webhookOrganizationId || null,
         received_at: timestamp || new Date().toISOString()
       },
       data.update_type === 'critical' ? 1 : 5
@@ -165,7 +182,7 @@ export const handleInventoryWebhook = async (req, res, next) => {
 export const handleReturnWebhook = async (req, res, next) => {
   try {
     const { event_type, source, data, timestamp } = req.body;
-    
+
     logger.info(`↩️  Received return webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.return_id) {
@@ -186,6 +203,7 @@ export const handleReturnWebhook = async (req, res, next) => {
         pickup_address: data.pickup_address,
         refund_amount: data.refund_amount,
         status: data.status,
+        organization_id: req.webhookOrganizationId || null,
         received_at: timestamp || new Date().toISOString()
       },
       3
@@ -212,7 +230,7 @@ export const handleReturnWebhook = async (req, res, next) => {
 export const handleRatesWebhook = async (req, res, next) => {
   try {
     const { event_type, source, data, timestamp } = req.body;
-    
+
     logger.info(`💰 Received rates webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.request_id) {
@@ -258,7 +276,7 @@ export const handleGenericWebhook = async (req, res, next) => {
   try {
     const payload = req.body;
     const headers = req.headers;
-    
+
     logger.info(`🔔 Received generic webhook:`, {
       source: headers['x-webhook-source'] || 'unknown',
       event: headers['x-webhook-event'] || payload.event_type || 'unknown',
@@ -286,9 +304,9 @@ export const handleGenericWebhook = async (req, res, next) => {
 export const getWebhookStatus = async (req, res, next) => {
   try {
     const { jobId } = req.params;
-    
+
     const job = await jobsService.getJobById(jobId);
-    
+
     if (!job) {
       return res.status(404).json({
         success: false,
@@ -313,54 +331,6 @@ export const getWebhookStatus = async (req, res, next) => {
 
   } catch (error) {
     logger.error('Error getting webhook status:', error);
-    next(error);
-  }
-};
-
-/**
- * Generate sample webhook data (for testing/preview)
- */
-export const generateSampleWebhook = async (req, res, next) => {
-  try {
-    const { type } = req.params;
-    const webhookSimulator = (await import('../services/webhookSimulator.js')).default;
-    
-    let sample;
-    switch (type) {
-      case 'amazon_order':
-        sample = webhookSimulator.generateAmazonOrder();
-        break;
-      case 'shopify_order':
-        sample = webhookSimulator.generateShopifyOrder();
-        break;
-      case 'tracking':
-        sample = webhookSimulator.generateCarrierTracking('FedEx');
-        break;
-      case 'inventory':
-        sample = webhookSimulator.generateWarehouseInventory();
-        break;
-      case 'return':
-        sample = webhookSimulator.generateReturnRequest();
-        break;
-      case 'rates':
-        sample = webhookSimulator.generateCarrierRates();
-        break;
-      default:
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid webhook type',
-          available: ['amazon_order', 'shopify_order', 'tracking', 'inventory', 'return', 'rates']
-        });
-    }
-    
-    res.json({
-      success: true,
-      type,
-      sample
-    });
-    
-  } catch (error) {
-    logger.error('Error generating sample webhook:', error);
     next(error);
   }
 };

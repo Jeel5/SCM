@@ -6,6 +6,7 @@ import {
   ShoppingCart,
   Truck,
   Package,
+  Package2,
   Warehouse,
   AlertTriangle,
   RotateCcw,
@@ -18,10 +19,11 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useUIStore, useAuthStore } from '@/stores';
+import { useUIStore } from '@/stores';
+import { usePermissions } from '@/hooks/usePermissions';
 import { exceptionsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
-import type { UserRole } from '@/types';
+import type { Permission } from '@/lib/permissions';
 
 interface NavItem {
   id: string;
@@ -29,7 +31,8 @@ interface NavItem {
   icon: React.ReactNode;
   path: string;
   badge?: number;
-  roles?: UserRole[];
+  /** Required permission to see this item. Omit = visible to all authenticated users. */
+  permission?: Permission;
   children?: NavItem[];
 }
 
@@ -39,6 +42,7 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     label: 'Dashboard',
     icon: <LayoutDashboard className="h-5 w-5" />,
     path: '/dashboard',
+    permission: 'dashboard.view',
   },
   // Superadmin-only items
   {
@@ -46,64 +50,71 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     label: 'Companies',
     icon: <Building2 className="h-5 w-5" />,
     path: '/super-admin/companies',
-    roles: ['superadmin'],
+    permission: 'companies.manage',
   },
   {
     id: 'system-users',
     label: 'System Users',
     icon: <Users className="h-5 w-5" />,
     path: '/super-admin/users',
-    roles: ['superadmin'],
+    permission: 'companies.manage',
   },
   {
     id: 'system-health',
     label: 'System Health',
     icon: <Activity className="h-5 w-5" />,
     path: '/super-admin/health',
-    roles: ['superadmin'],
+    permission: 'companies.manage',
   },
-  // Company-level items (hidden for superadmin)
+  // Org-level items
   {
     id: 'orders',
     label: 'Orders',
     icon: <ShoppingCart className="h-5 w-5" />,
     path: '/orders',
-    roles: ['admin', 'operations_manager', 'warehouse_manager', 'customer_support'],
+    permission: 'orders.view',
   },
   {
     id: 'shipments',
     label: 'Shipments',
     icon: <Truck className="h-5 w-5" />,
     path: '/shipments',
-    roles: ['admin', 'operations_manager', 'warehouse_manager', 'carrier_partner'],
+    permission: 'shipments.view',
   },
   {
     id: 'inventory',
     label: 'Inventory',
     icon: <Package className="h-5 w-5" />,
     path: '/inventory',
-    roles: ['admin', 'operations_manager', 'warehouse_manager'],
+    permission: 'inventory.view',
+  },
+  {
+    id: 'products',
+    label: 'Products',
+    icon: <Package2 className="h-5 w-5" />,
+    path: '/products',
+    permission: 'inventory.view',
   },
   {
     id: 'warehouses',
     label: 'Warehouses',
     icon: <Warehouse className="h-5 w-5" />,
     path: '/warehouses',
-    roles: ['admin', 'operations_manager', 'warehouse_manager'],
+    permission: 'warehouses.view',
   },
   {
     id: 'carriers',
     label: 'Carriers',
     icon: <Building2 className="h-5 w-5" />,
     path: '/carriers',
-    roles: ['admin', 'operations_manager', 'carrier_partner'],
+    permission: 'carriers.view',
   },
   {
     id: 'sla',
     label: 'SLA Management',
     icon: <Timer className="h-5 w-5" />,
     path: '/sla',
-    roles: ['admin', 'operations_manager'],
+    permission: 'sla.view',
   },
   {
     id: 'exceptions',
@@ -111,43 +122,50 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     icon: <AlertTriangle className="h-5 w-5" />,
     path: '/exceptions',
     badge: exceptionCount,
-    roles: ['admin', 'operations_manager', 'customer_support'],
+    permission: 'exceptions.view',
   },
   {
     id: 'returns',
     label: 'Returns',
     icon: <RotateCcw className="h-5 w-5" />,
     path: '/returns',
-    roles: ['admin', 'operations_manager', 'warehouse_manager', 'customer_support'],
+    permission: 'returns.view',
   },
   {
     id: 'analytics',
     label: 'Analytics',
     icon: <BarChart3 className="h-5 w-5" />,
     path: '/analytics',
-    roles: ['admin', 'operations_manager', 'finance'],
+    permission: 'analytics.view',
   },
   {
     id: 'finance',
     label: 'Finance',
     icon: <DollarSign className="h-5 w-5" />,
     path: '/finance',
-    roles: ['admin', 'finance'],
+    permission: 'finance.view',
+  },
+  {
+    id: 'team',
+    label: 'Team',
+    icon: <Users className="h-5 w-5" />,
+    path: '/team',
+    permission: 'team.manage',
   },
   {
     id: 'settings',
     label: 'Settings',
     icon: <Settings className="h-5 w-5" />,
     path: '/settings',
-    roles: ['admin'],
+    permission: 'settings.personal',
   },
 ];
 
 export function Sidebar() {
   const location = useLocation();
   const { sidebarMobileOpen, setMobileSidebarOpen } = useUIStore();
-  const user = useAuthStore((state) => state.user);
   const [openExceptionsCount, setOpenExceptionsCount] = useState(0);
+  const can = usePermissions();
 
   // Fetch open exceptions count
   useEffect(() => {
@@ -157,7 +175,6 @@ export function Sidebar() {
         const response = useMockApi
           ? await mockApi.getExceptions(1, 100)
           : await exceptionsApi.getExceptions(1, 100);
-        // Count only open and in_progress exceptions
         const openCount = response.data.filter(
           (e) => e.status === 'investigating' || e.status === 'pending_resolution'
         ).length;
@@ -168,17 +185,16 @@ export function Sidebar() {
     };
 
     fetchExceptionsCount();
-    // Refresh count every 30 seconds
     const interval = setInterval(fetchExceptionsCount, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const navigation = getNavigation(openExceptionsCount);
-  
+
+  // Show item only if user has the required permission (or no permission required)
   const filteredNav = navigation.filter((item) => {
-    if (!item.roles) return true;
-    if (!user) return false;
-    return item.roles.includes(user.role);
+    if (!item.permission) return true;
+    return can(item.permission);
   });
 
   return (

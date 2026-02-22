@@ -1,8 +1,9 @@
 import { Building2, Package, Boxes } from 'lucide-react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
-import { Modal, Badge, Progress } from '@/components/ui';
+import { Modal, Badge, Progress, Button } from '@/components/ui';
 import { formatNumber } from '@/lib/utils';
 import type { Warehouse } from '@/types';
+import { useWarehouseInventory } from '../hooks/useWarehouseInventory';
 
 const MAP_STYLE = {
   version: 8 as const,
@@ -33,12 +34,22 @@ export function WarehouseDetailsModal({
   warehouse,
   isOpen,
   onClose,
+  onEdit,
+  onDelete,
 }: {
   warehouse: Warehouse | null;
   isOpen: boolean;
   onClose: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
+  const { inventory, totalItems, isLoading } = useWarehouseInventory(warehouse?.id);
+
   if (!warehouse) return null;
+
+  const lng = warehouse.location?.lng || 78.9629;
+  const lat = warehouse.location?.lat || 20.5937;
+  const hasCoords = !!(warehouse.location?.lng && warehouse.location?.lat);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={warehouse.name} size="full">
@@ -47,23 +58,25 @@ export function WarehouseDetailsModal({
         <div className="h-48 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
           <Map
             initialViewState={{
-              longitude: warehouse.location.lng,
-              latitude: warehouse.location.lat,
-              zoom: 12,
+              longitude: lng,
+              latitude: lat,
+              zoom: hasCoords ? 12 : 4,
             }}
             style={{ width: '100%', height: '100%' }}
             mapStyle={MAP_STYLE}
           >
             <NavigationControl position="bottom-right" />
-            <Marker
-              longitude={warehouse.location.lng}
-              latitude={warehouse.location.lat}
-              anchor="bottom"
-            >
-              <div className="h-8 w-8 bg-blue-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-                <Building2 className="h-4 w-4 text-white" />
-              </div>
-            </Marker>
+            {hasCoords && (
+              <Marker
+                longitude={lng}
+                latitude={lat}
+                anchor="bottom"
+              >
+                <div className="h-8 w-8 bg-blue-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+                  <Building2 className="h-4 w-4 text-white" />
+                </div>
+              </Marker>
+            )}
           </Map>
         </div>
 
@@ -159,6 +172,50 @@ export function WarehouseDetailsModal({
             </div>
           </div>
         </div>
+
+        {/* Inventory Preview */}
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-medium text-gray-900 dark:text-white">Inventory Items ({totalItems})</h4>
+          </div>
+
+          {isLoading ? (
+            <div className="animate-pulse space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
+              ))}
+            </div>
+          ) : inventory.length > 0 ? (
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {inventory.map((item) => (
+                <div key={item.id} className="flex items-center justify-between p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center gap-3">
+                    <Package className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white text-sm">{item.productName}</p>
+                      <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
+                    <p className="text-xs text-gray-500">{item.binLocation || item.zone || '—'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 text-center py-4">No inventory items found in this warehouse.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
+        <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={onDelete}>
+          Delete Warehouse
+        </Button>
+        <Button variant="primary" onClick={onEdit}>
+          Edit Warehouse
+        </Button>
       </div>
     </Modal>
   );

@@ -1,63 +1,283 @@
-# Carrier Portal & Assignment System
+# Carrier Assignment System & Portal
+
+> Last updated: 2026-02-22
+
+---
 
 ## Overview
-Intelligent carrier assignment system with automatic retry logic, busy/reject handling, and real-time tracking.
 
-## 🎯 How It Works
+When an order is processed by `handleProcessOrder`, the system automatically sends assignment requests to up to 3 carriers simultaneously. Carriers respond through the demo portal or their own systems (HMAC-signed webhook calls). The first carrier to accept wins; the others are auto-cancelled.
 
-### 1. Carrier Assignment Flow
-- **Auto Request**: Order created → Find TOP 3 matching carriers by service type
-- **Simultaneous Requests**: All 3 carriers receive assignment at once
-- **First to Accept Wins**: Race condition - whoever accepts first gets the job
-- **Auto-Cancel Others**: Other pending assignments cancelled automatically
+---
 
-### 2. Carrier Response Types
-```javascript
-Status Options:
-- "accepted" → Shipment created, other assignments cancelled
-- "rejected" → Permanent rejection (wrong route, can't handle)
-- "busy" → Temporary rejection (at capacity, can accept later)
-- "expired" → 24h timeout, system tries next batch
+## Current Carriers (Live in DB)
+
+| Name | Code | Service Type | Status |
+|---|---|---|---|
+| BlueDart Express | `BLUEDART` | standard | available |
+| Delhivery | `DELHIVERY` | standard | available |
+| DTDC Courier | `DTDC` | standard | available |
+| Ecom Express | `ECOM` | standard | available |
+| Shadowfax | `SHADOWFAX` | standard | available |
+
+Carrier codes in the DB are simple uppercase abbreviations. Do **not** use suffix formats like `DTDC-001` or `DHL-001` — those codes do not exist.
+
+---
+
+## Assignment State Machine
+
+```
+order created
+      │
+      ▼
+requestCarrierAssignment(orderId)
+   ├─ SELECT TOP 3 carriers WHERE is_active=true AND availability_status='available'
+   │   ordered by reliability_score DESC
+   └─ For each: INSERT carrier_assignments (status='pending', expires_at=+10min)
+                                │
+         ┌──────────────────────┼───────────────────────┐
+         ▼                      ▼                       ▼
+    pending               pending                  pending
+         │                      │                       │
+    accepted ──────────►  cancelled              cancelled
+    (first to accept)
+         │
+    INSERT shipments
+    UPDATE order (status='shipped')
+    UPDATE other assignments (status='cancelled')
+         │
+    rejected ← permanent — this carrier cannot handle the order
+         │
+    busy     ← temporary — carrier at capacity, keep pending
+         │
+    expired  ← 10-min window elapsed with no response
 ```
 
-### 3. Smart Retry Logic (Automatic)
-**Background Job runs every 30 minutes:**
+After expiry or all-reject: `assignmentRetryService` schedules a retry with the next batch of 3 carriers. Maximum 9 carriers (3 batches) before the order is placed `on_hold` for manual intervention.
 
-**Scenario A: All Carriers Reject**
-- System tries NEXT batch of 3 carriers
-- Maximum 3 batches (9 carriers total)
-- After 9 rejections → Manual review required
+---
 
-**Scenario B: Carriers Mark "Busy"**
-- Assignment stays available for them
-- When carrier changes status to "available" → Assignment becomes pending again
-- They can accept anytime before expiry
+## API Endpoints
 
-**Scenario C: 24h Timeout**
-- Pending assignments marked as "expired"
-- System tries next batch of 3 carriers
-- Original carriers notified of timeout
+### Internal (JWT authenticated)
 
-### 4. Carrier Portal (Standalone HTML)
-**Location**: `carrier-simulation/index.html`
-**Type**: Standalone HTML file (simulates carrier's portal)
+```
+POST /api/orders/:orderId/request-carriers
+  → Manually trigger assignment for an order
+  → Auth: authenticate + authorize('shipments:update')
 
-**How to Use**:
-1. Open `carrier-simulation/index.html` in any browser
-2. Enter carrier code: DHL-001, FEDEX-001, UPS-001, etc.
-3. No authentication needed (simulation only)
+GET /api/orders/:orderId/assignments
+  → List all assignment records for an order
+  → Auth: authenticate + authorize('shipments:read')
 
-**Why Standalone?**
-- In production, each carrier (DHL/FedEx/UPS) has their own portal
-- They receive API requests on their endpoints
-- They process in their own systems
-- They send webhooks back to you
-- This HTML file **simulates** their portal for testing
+GET /api/assignments/:assignmentId
+  → Get full assignment details
+  → Auth: authenticate + authorize('shipments:read')
+```
 
-**Features**:
-- 📦 View all pending assignments
-- ⏰ See expiry countdown (hours remaining)
-- 📍 Pickup and delivery addresses
+### Carrier-facing (HMAC authenticated)
+
+These are called by the carrier's own system (or the demo portal simulating it).  
+Authentication uses HMAC-SHA256 signature:
+
+```
+POST /api/assignments/:assignmentId/accept
+POST /api/assignments/:assignmentId/reject
+POST /api/assignments/:assignmentId/busy
+POST /api/carriers/:code/availability
+```
+
+Required request headers:
+```
+X-Carrier-Signature: sha256=<hmac_sha256(body, webhook_secret)>
+X-Carrier-Timestamp: <unix_ms>
+```
+
+Where `webhook_secret` is the carrier's `webhook_secret` field from the `carriers` table.
+
+### Open (no auth — carrier portal polling)
+
+```
+GET /api/carriers/assignments/pending?carrierId=<CODE_OR_UUID>
+  → Returns pending assignments for a carrier
+  → Accepts either carrier code (e.g., DELHIVERY) or UUID
+  → Used by the demo carrier portal to poll for new requests
+```
+
+---
+
+## Carrier Portal (`demo/carrier-portal.html`)
+
+A standalone HTML page that simulates a carrier partner's dispatch system.
+
+### How to use
+
+1. Start the backend: `cd backend && npm run dev`
+2. Open `demo/carrier-portal.html` in a browser
+3. Carrier buttons load automatically from `GET /api/demo/carriers`
+4. Click a carrier (e.g., "Delhivery") to select it
+5. Pending assignment requests appear for that carrier
+6. Click **Accept**, **Reject**, or **Busy**
+7. The portal polls for new requests every 5 seconds
+
+### What the portal shows for a pending assignment
+
+- Customer name + shipping address
+- Order items and total value
+- Pickup address (warehouse)
+- Expiry countdown (10-minute window per batch)
+- Assignment ID
+
+### Accept flow
+
+The portal generates an HMAC signature using the carrier's `webhook_secret` (fetched from `GET /api/demo/carrier-secret/:code`), then sends:
+
+```json
+POST /api/assignments/:id/accept
+Headers:
+  X-Carrier-Signature: sha256=...
+  X-Carrier-Timestamp: 1740220215000
+
+Body:
+{
+  "driverName": "Rakesh Kumar",
+  "driverPhone": "9876543210",
+  "vehicleNumber": "MH-01-AB-1234",
+  "estimatedPickup": "2026-02-22T16:00:00Z"
+}
+```
+
+On success: shipment row is created, all other pending assignments for the same order are cancelled.
+
+### Reject flow
+
+```json
+POST /api/assignments/:id/reject
+
+{
+  "reason": "Route not serviceable",
+  "reasonCode": "OUT_OF_ZONE"
+}
+```
+
+### Status Update panel
+
+The portal also has a panel to simulate delivery status events:
+
+```json
+POST /api/carriers/:code/tracking
+
+{
+  "trackingNumber": "DLVY-20260222-001",
+  "status": "in_transit",
+  "location": "Pune Hub",
+  "description": "Package arrived at Pune sorting facility"
+}
+```
+
+---
+
+## Carrier Assignment Service
+
+**File:** `backend/services/carrierAssignmentService.js`
+
+Key methods:
+
+| Method | Description |
+|---|---|
+| `requestCarrierAssignment(orderId, orderData)` | Full assignment flow — finds carriers, creates assignment rows, notifies carriers |
+| `getPendingAssignments(carrierId, filters)` | Returns pending assignments for a carrier UUID |
+| `acceptAssignment(assignmentId, payload)` | Processes acceptance — creates shipment, cancels others |
+| `rejectAssignment(assignmentId, reason)` | Marks rejected — triggers retry if all 3 rejected |
+| `markBusy(assignmentId)` | Marks busy — keeps it pending for later |
+
+Carrier selection query:
+```sql
+SELECT id, code, name, contact_email, service_type, is_active, availability_status
+FROM carriers
+WHERE is_active = true
+  AND availability_status = 'available'
+  AND (service_type = $1 OR service_type = 'all')
+ORDER BY reliability_score DESC
+LIMIT 3
+```
+
+`$1` is the order's `priority` field (defaults to `'standard'`).
+
+---
+
+## Retry Logic
+
+**Service:** `backend/services/assignmentRetryService.js`  
+**Cron:** Every 30 minutes (configured in `cron_schedules` table)  
+**Job type:** `assignment_retry`
+
+Handles four scenarios each run:
+
+1. **Expired assignments** — any `status='pending'` rows past `expires_at` → mark expired, try next batch
+2. **Busy carriers now available** — carriers whose `availability_status` changed back to `'available'` → reset their assignment to `pending`
+3. **All-rejected batch** — if all 3 assignments for an order are `rejected` → immediately try next batch
+4. **Max attempts exceeded** — if `COUNT(DISTINCT carrier_id) >= 9` for an order → set order `status='on_hold'`, note manual review required
+
+---
+
+## Testing Scenarios
+
+### Scenario A: Normal acceptance
+
+1. Place order via `demo/customer.html`
+2. Wait 5s (job worker processes)
+3. Open `demo/carrier-portal.html` → select "Delhivery"
+4. Assignment appears → click Accept
+5. Check DB: `SELECT status FROM orders WHERE external_order_id='...'` → `shipped`
+6. `SELECT * FROM shipments` → new row with tracking number
+
+### Scenario B: Race condition (multiple browsers)
+
+1. Open `demo/carrier-portal.html` in 3 browser windows
+2. Window 1: select "Delhivery", Window 2: select "DTDC", Window 3: select "ECOM"
+3. All three should show the same pending assignment
+4. Click Accept in Window 1
+5. Windows 2 and 3: assignment disappears on next 5s poll (auto-cancelled)
+
+### Scenario C: All reject → retry
+
+1. All 3 carriers reject
+2. Retry service detects zero accepted + all rejected
+3. Next batch of 3 carriers gets assignments
+4. Repeat up to 9 total carrier attempts
+
+### Useful DB queries
+
+```sql
+-- See all assignments for an order
+SELECT ca.id, ca.status, ca.expires_at, c.code as carrier, c.name
+FROM carrier_assignments ca
+JOIN carriers c ON ca.carrier_id = c.id
+WHERE ca.order_id = '<orderId>'
+ORDER BY ca.created_at;
+
+-- Pending assignments per carrier
+SELECT c.code, COUNT(*) as pending_count
+FROM carrier_assignments ca
+JOIN carriers c ON ca.carrier_id = c.id
+WHERE ca.status = 'pending'
+GROUP BY c.code;
+
+-- Orders awaiting assignment
+SELECT id, order_number, status, created_at
+FROM orders
+WHERE status = 'pending_carrier_assignment';
+```
+
+---
+
+## Production Notes
+
+- In production, each carrier has their **own external system** — we send HTTP webhook requests to their API endpoint, and they respond with an HMAC-signed callback to our `/api/assignments/:id/accept` (or reject).
+- The demo portal **replaces** that round-trip for local testing.
+- Never use `DHL-001`, `FEDEX-001`, `UPS-001` style codes — those are from older docs. Current DB uses `BLUEDART`, `DELHIVERY`, `DTDC`, `ECOM`, `SHADOWFAX`.
+- The expiry window is **10 minutes** per assignment batch (not 24 hours as in older docs).
 - 💰 Order value and items list
 - ✅ Accept with driver details
 - ⏸️ Mark as "Busy" (temporary rejection)

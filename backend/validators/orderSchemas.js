@@ -1,160 +1,134 @@
 // Order validation schemas - defines rules for order creation and updates
+import Joi from 'joi';
 
-export const createOrderSchema = {
-  order_number: {
-    type: 'string',
-    required: false, // Auto-generated if not provided
-    minLength: 3,
-    maxLength: 50
-  },
-  customer_name: {
-    type: 'string',
-    required: true,
-    minLength: 2,
-    maxLength: 255
-  },
-  customer_email: {
-    type: 'string',
-    required: true,
-    email: true
-  },
-  customer_phone: {
-    type: 'string',
-    required: false,
-    minLength: 10,
-    maxLength: 20
-  },
-  status: {
-    type: 'string',
-    required: false,
-    enum: ['created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled', 'on_hold', 'pending_carrier_assignment']
-  },
-  priority: {
-    type: 'string',
-    required: false,
-    enum: ['express', 'standard', 'bulk']
-  },
-  total_amount: {
-    type: 'number',
-    required: true,
-    min: 0
-  },
-  currency: {
-    type: 'string',
-    required: false,
-    enum: ['USD', 'EUR', 'GBP', 'INR']
-  },
-  shipping_address: {
-    type: 'object',
-    required: true,
-    custom: (value) => {
-      if (!value.street || !value.city || !value.postal_code || !value.country) {
-        return 'Shipping address must include street, city, postal_code, and country';
-      }
-    }
-  },
-  billing_address: {
-    type: 'object',
-    required: false
-  },
-  estimated_delivery: {
-    type: 'string',
-    required: false
-  },
-  notes: {
-    type: 'string',
-    required: false,
-    maxLength: 1000
-  },
-  items: {
-    type: 'array',
-    required: true,
-    minItems: 1,
-    items: {
-      product_id: {
-        type: 'string',
-        required: false
-      },
-      sku: {
-        type: 'string',
-        required: true
-      },
-      product_name: {
-        type: 'string',
-        required: true
-      },
-      quantity: {
-        type: 'number',
-        required: true,
-        min: 1,
-        integer: true
-      },
-      unit_price: {
-        type: 'number',
-        required: true,
-        min: 0
-      },
-      weight: {
-        type: 'number',
-        required: false,
-        min: 0
-      },
-      warehouse_id: {
-        type: 'string',
-        required: false
-      }
-    }
-  }
-};
+const dimensionsSchema = Joi.object({
+  length: Joi.number().min(0).optional(),
+  width: Joi.number().min(0).optional(),
+  height: Joi.number().min(0).optional(),
+  unit: Joi.string().valid('cm', 'in').optional().default('cm')
+});
 
-export const updateOrderStatusSchema = {
-  status: {
-    type: 'string',
-    required: true,
-    enum: ['created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled', 'on_hold', 'pending_carrier_assignment']
-  },
-  notes: {
-    type: 'string',
-    required: false,
-    maxLength: 1000
-  }
-};
+const orderItemSchema = Joi.object({
+  // Identity
+  product_id: Joi.string().uuid().optional(),
+  sku: Joi.string().max(100).required(),
+  product_name: Joi.string().max(255).required(),
+  // Quantities
+  quantity: Joi.number().integer().min(1).required(),
+  // Pricing (all computed server-side if omitted, but frontend can send them)
+  unit_price: Joi.number().min(0).required(),
+  discount: Joi.number().min(0).optional().default(0),
+  tax: Joi.number().min(0).optional().default(0),
+  total_price: Joi.number().min(0).optional(), // computed as unit_price*qty if omitted
+  // Physical attributes (needed for shipping estimates)
+  weight: Joi.number().min(0).optional(),
+  dimensions: dimensionsSchema.optional(),
+  // Handling flags
+  is_fragile: Joi.boolean().optional().default(false),
+  is_hazardous: Joi.boolean().optional().default(false),
+  is_perishable: Joi.boolean().optional().default(false),
+  requires_cold_storage: Joi.boolean().optional().default(false),
+  // Classification
+  item_type: Joi.string().valid('general', 'electronics', 'fragile', 'hazardous', 'perishable', 'document', 'apparel').optional().default('general'),
+  package_type: Joi.string().valid('box', 'envelope', 'pallet', 'tube', 'bag').optional().default('box'),
+  handling_instructions: Joi.string().max(500).optional().allow(''),
+  // Insurance
+  requires_insurance: Joi.boolean().optional().default(false),
+  declared_value: Joi.number().min(0).optional(),
+  // Fulfillment
+  warehouse_id: Joi.string().uuid().optional()
+});
 
-export const listOrdersQuerySchema = {
-  page: {
-    type: 'string',
-    required: false,
-    custom: (value) => {
-      const num = parseInt(value);
-      if (isNaN(num) || num < 1) return 'Page must be a positive integer';
-    }
-  },
-  limit: {
-    type: 'string',
-    required: false,
-    custom: (value) => {
-      const num = parseInt(value);
-      if (isNaN(num) || num < 1 || num > 100) return 'Limit must be between 1 and 100';
-    }
-  },
-  status: {
-    type: 'string',
-    required: false,
-    enum: ['created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'cancelled', 'on_hold', 'pending_carrier_assignment']
-  },
-  search: {
-    type: 'string',
-    required: false,
-    maxLength: 100
-  },
-  sortBy: {
-    type: 'string',
-    required: false,
-    enum: ['created_at', 'updated_at', 'total_amount', 'status']
-  },
-  sortOrder: {
-    type: 'string',
-    required: false,
-    enum: ['ASC', 'DESC']
-  }
-};
+const addressSchema = Joi.object({
+  street: Joi.string().required(),
+  city: Joi.string().required(),
+  state: Joi.string().optional().allow(''),
+  postal_code: Joi.string().required(),
+  country: Joi.string().required(),
+  lat: Joi.number().optional(),
+  lon: Joi.number().optional()
+});
+
+export const createOrderSchema = Joi.object({
+  // order_type must match DB check constraint: regular, replacement, cod, transfer
+  order_type: Joi.string().valid('regular', 'replacement', 'cod', 'transfer').optional().default('regular'),
+  order_number: Joi.string().min(3).max(50).optional(),
+  customer_name: Joi.string().min(2).max(255).required(),
+  customer_email: Joi.string().email().required(),
+  customer_phone: Joi.string().min(7).max(20).optional().allow(''),
+  status: Joi.string().valid(
+    'created', 'confirmed', 'allocated', 'processing', 'ready_to_ship',
+    'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned',
+    'cancelled', 'on_hold', 'pending_carrier_assignment'
+  ).optional().default('created'),
+  priority: Joi.string().valid('express', 'standard', 'bulk', 'same_day').optional().default('standard'),
+  is_cod: Joi.boolean().optional().default(false),
+  // Financial breakdown (total_amount is required; subtotals are optional but validated if present)
+  subtotal: Joi.number().min(0).optional(),
+  tax_amount: Joi.number().min(0).optional().default(0),
+  shipping_amount: Joi.number().min(0).optional().default(0),
+  discount_amount: Joi.number().min(0).optional().default(0),
+  total_amount: Joi.number().min(0).required(),
+  currency: Joi.string().valid('USD', 'EUR', 'GBP', 'INR').optional().default('INR'),
+  // Addresses
+  shipping_address: addressSchema.required(),
+  billing_address: addressSchema.optional(),
+  // Timing
+  estimated_delivery: Joi.string().isoDate().optional(),
+  // Payment
+  payment_method: Joi.string().valid('prepaid', 'cod', 'credit', 'wallet', 'upi', 'netbanking', 'card').optional(),
+  // Notes
+  notes: Joi.string().max(1000).optional().allow(''),
+  special_instructions: Joi.string().max(1000).optional().allow(''),
+  tags: Joi.array().items(Joi.string()).optional(),
+  // Items
+  items: Joi.array().items(orderItemSchema).min(1).required(),
+  // Controller flag - not stored in DB
+  requestCarrierAssignment: Joi.boolean().optional()
+});
+
+export const updateOrderStatusSchema = Joi.object({
+  status: Joi.string().valid(
+    'created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 
+    'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 
+    'cancelled', 'on_hold', 'pending_carrier_assignment'
+  ).required(),
+  notes: Joi.string().max(1000).optional().allow('')
+});
+
+export const listOrdersQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  status: Joi.string().valid(
+    'created', 'confirmed', 'allocated', 'processing', 'ready_to_ship', 
+    'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 
+    'cancelled', 'on_hold', 'pending_carrier_assignment'
+  ).optional(),
+  search: Joi.string().max(100).optional().allow(''),
+  sortBy: Joi.string().valid('created_at', 'updated_at', 'total_amount', 'status').optional().default('created_at'),
+  sortOrder: Joi.string().valid('ASC', 'DESC').optional().default('DESC')
+});
+
+// Transfer Order Schema - for warehouse-to-warehouse inventory transfers
+// This creates an order that tracks inventory movement between warehouses
+// When delivered, automatically executes inventory transfer
+export const createTransferOrderSchema = Joi.object({
+  from_warehouse_id: Joi.string().required(),
+  to_warehouse_id: Joi.string().required().invalid(Joi.ref('from_warehouse_id')).messages({
+    'any.invalid': 'Destination warehouse must be different from source warehouse'
+  }),
+  items: Joi.array().items(
+    Joi.object({
+      product_id: Joi.string().required(),
+      sku: Joi.string().required(),
+      product_name: Joi.string().required(),
+      quantity: Joi.number().integer().min(1).required(),
+      unit_cost: Joi.number().min(0).optional().default(0)
+    })
+  ).min(1).required(),
+  priority: Joi.string().valid('express', 'standard', 'bulk').optional().default('standard'),
+  reason: Joi.string().min(5).max(500).required(),
+  requested_by: Joi.string().optional(),
+  notes: Joi.string().max(1000).optional().allow(''),
+  expected_delivery_date: Joi.date().iso().min('now').optional()
+});

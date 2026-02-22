@@ -4,8 +4,13 @@ import pool from '../configs/db.js';
 // Get returns list with filters and pagination
 export async function listReturns(req, res) {
   try {
-    const { page = 1, limit = 20, status, reason } = req.query;
+    // Use validatedQuery for Joi-validated params (with type coercion)
+    const queryParams = req.validatedQuery || req.query;
+    const { page, limit, status, reason } = queryParams;
     const offset = (page - 1) * limit;
+    
+    // Get organization context for multi-tenancy
+    const organizationId = req.orgContext?.organizationId;
     
     let query = `
       SELECT r.*, o.order_number, p.name as product_name, p.sku, ri.product_id
@@ -17,6 +22,12 @@ export async function listReturns(req, res) {
     `;
     const params = [];
     
+    // Multi-tenant filter: restrict to user's organization
+    if (organizationId) {
+      params.push(organizationId);
+      query += ` AND r.organization_id = $${params.length}`;
+    }
+    
     if (status) {
       params.push(status);
       query += ` AND r.status = $${params.length}`;
@@ -27,15 +38,13 @@ export async function listReturns(req, res) {
       query += ` AND r.reason = $${params.length}`;
     }
     
+    // Build count query using same filter params
+    const countQuery = query.replace(/SELECT .* FROM/, 'SELECT COUNT(*) FROM').split('ORDER BY')[0];
+    const countResult = await pool.query(countQuery, params);
+    
     query += ` ORDER BY r.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
     
     const result = await pool.query(query, params);
-    
-    const countResult = await pool.query(`
-      SELECT COUNT(*) FROM returns r WHERE 1=1
-      ${status ? 'AND r.status = $1' : ''}
-      ${reason ? `AND r.reason = $${status ? '2' : '1'}` : ''}
-    `, [status, reason].filter(Boolean));
     
     res.json({
       success: true,
@@ -74,14 +83,25 @@ export async function getReturn(req, res) {
   try {
     const { id } = req.params;
     
-    const result = await pool.query(`
+    // Get organization context for multi-tenancy
+    const organizationId = req.orgContext?.organizationId;
+    
+    let query = `
       SELECT r.*, o.order_number, p.name as product_name, p.sku,
              o.shipping_address as customer_address
       FROM returns r
       JOIN orders o ON r.order_id = o.id
       LEFT JOIN products p ON r.product_id = p.id
       WHERE r.id = $1
-    `, [id]);
+    `;
+    const params = [id];
+    
+    if (organizationId) {
+      params.push(organizationId);
+      query += ` AND r.organization_id = $${params.length}`;
+    }
+    
+    const result = await pool.query(query, params);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Return not found' });
@@ -119,15 +139,22 @@ export async function getReturn(req, res) {
 
 export async function createReturn(req, res) {
   try {
-    const { orderId, productId, quantity, reason, notes } = req.body;
+    const { order_id, items, reason, reason_details, requested_by, customer_email, refund_amount, refund_method } = req.body;
     
     // Generate RMA number
     const rmaNumber = `RMA-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     
+    // Get organization context for multi-tenancy
+    const organizationId = req.orgContext?.organizationId;
+    
+    // For now, handle single item returns (simplified implementation)
+    // TODO: Update to handle multiple items with return_items table
+    const firstItem = items[0];
+    
     const result = await pool.query(
-      `INSERT INTO returns (rma_number, order_id, product_id, quantity, reason, notes)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [rmaNumber, orderId, productId, quantity, reason, notes]
+      `INSERT INTO returns (rma_number, order_id, product_id, quantity, reason, notes, requested_by, customer_email, refund_amount, refund_method, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [rmaNumber, order_id, firstItem.product_id, firstItem.quantity, reason, reason_details, requested_by, customer_email, refund_amount, refund_method, organizationId]
     );
     
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -140,7 +167,7 @@ export async function createReturn(req, res) {
 export async function updateReturn(req, res) {
   try {
     const { id } = req.params;
-    const { status, refundAmount, restockFee, returnTrackingNumber, notes } = req.body;
+    const { status, inspection_notes, refund_amount, refund_method } = req.body;
     
     let updateFields = [];
     const params = [id];
@@ -157,24 +184,19 @@ export async function updateReturn(req, res) {
       }
     }
     
-    if (refundAmount !== undefined) {
+    if (refund_amount !== undefined) {
       updateFields.push(`refund_amount = $${paramIndex++}`);
-      params.push(refundAmount);
+      params.push(refund_amount);
     }
     
-    if (restockFee !== undefined) {
-      updateFields.push(`restock_fee = $${paramIndex++}`);
-      params.push(restockFee);
+    if (refund_method) {
+      updateFields.push(`refund_method = $${paramIndex++}`);
+      params.push(refund_method);
     }
     
-    if (returnTrackingNumber) {
-      updateFields.push(`return_tracking_number = $${paramIndex++}`);
-      params.push(returnTrackingNumber);
-    }
-    
-    if (notes) {
+    if (inspection_notes) {
       updateFields.push(`notes = $${paramIndex++}`);
-      params.push(notes);
+      params.push(inspection_notes);
     }
     
     if (updateFields.length === 0) {

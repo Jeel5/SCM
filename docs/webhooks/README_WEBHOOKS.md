@@ -1,84 +1,327 @@
-# 🎯 SCM Webhook Simulation System - Complete Solution
+# Webhook System
+
+> Last updated: 2026-02-22
+
+---
 
 ## Overview
 
-Your SCM project is now equipped with a **complete webhook simulation system** that allows you to test all functionality without real external integrations! 🎉
+The SCM backend accepts webhooks from external platforms (e-commerce, warehouses, carriers) and processes them asynchronously via a background job queue backed by PostgreSQL.
 
-## What You Get
+Every incoming webhook is immediately queued as a `background_jobs` row and acknowledged with `200 OK + job_id`. The actual processing happens in the `JobWorker` which polls the queue every 5 seconds.
 
-### ✅ Mock Data Generators
-Generates realistic webhook data for:
-- **E-commerce Orders** (Amazon, Shopify, eBay)
-- **Carrier Tracking** (FedEx, UPS, DHL, USPS)
-- **Warehouse Inventory** (stock updates, transfers, adjustments)
-- **Customer Returns** (return requests with reasons)
-- **Shipping Rates** (multi-carrier rate quotes)
+---
 
-### ✅ Webhook Receivers
-API endpoints that accept webhooks and queue them as background jobs:
-- `POST /api/webhooks/orders` - Process orders
-- `POST /api/webhooks/tracking` - Update tracking
-- `POST /api/webhooks/inventory` - Sync inventory
-- `POST /api/webhooks/returns` - Handle returns
-- `POST /api/webhooks/rates` - Store rates
+## Webhook Routes
 
-### ✅ Background Job Processing
-Automatic processing of webhook data:
-- 5 concurrent workers
-- Automatic retry on failure (up to 3 times)
-- Dead Letter Queue for failed jobs
-- Graceful shutdown handling
+All webhook routes are prefixed `/api/webhooks`.
 
-### ✅ CLI Tool
-Easy-to-use command-line interface:
-```bash
-npm run simulate:all           # All webhook types
-npm run simulate:continuous    # Continuous every 30s
-npm run simulate:burst         # Burst of 20 webhooks
+### Org-Scoped Routes (recommended)
+
+Each organization has a unique `webhook_token` (64-char hex, stored in `organizations.webhook_token`).  
+Pass the token as the first path segment — the `resolveWebhookOrg` middleware validates it and sets `req.webhookOrganizationId`.
+
+```
+POST /api/webhooks/:orgToken/orders      → handleOrderWebhook
+POST /api/webhooks/:orgToken/inventory   → handleInventoryWebhook
+POST /api/webhooks/:orgToken/returns     → handleReturnWebhook
+POST /api/webhooks/:orgToken/tracking    → handleTrackingWebhook
+POST /api/webhooks/:orgToken/rates       → handleRatesWebhook
 ```
 
-### ✅ Monitoring Dashboard
-Real-time webhook activity monitoring:
-- `GET /api/webhooks/dashboard` - Activity dashboard
-- `GET /api/webhooks/stats` - Database statistics
-- `GET /api/webhooks/status/:jobId` - Individual job status
-- `GET /api/webhooks/sample/:type` - Preview mock data
+### Legacy / No-Token Routes
 
-## Quick Start
+These exist for backward compatibility and the demo portal.  
+`organization_id` is stored as `null` in the database for jobs from these routes.
 
-### 1. First Time Setup
-
-```bash
-# Install dependencies (if not already done)
-cd backend
-npm install
-
-# Create missing database tables
-psql -U postgres -d scm_db -f ../add_new_tables.sql
-
-# Start the server
-npm run dev
+```
+POST /api/webhooks/orders
+POST /api/webhooks/tracking
+POST /api/webhooks/inventory
+POST /api/webhooks/returns
+POST /api/webhooks/rates
+POST /api/webhooks/generic
 ```
 
-### 2. Test Webhook Simulation
+### Management Routes (require JWT `authenticate`)
 
-**Open Terminal 1 - Server:**
-```bash
-cd backend
-npm run dev
+```
+GET /api/webhooks/status/:jobId    → Check job processing status
+GET /api/webhooks/sample/:type     → Generate sample webhook payload for testing
 ```
 
-**Open Terminal 2 - Simulator:**
+---
+
+## Order Webhook
+
+### Envelope format (preferred)
+
+```json
+POST /api/webhooks/<orgToken>/orders
+Content-Type: application/json
+
+{
+  "event_type": "order.created",
+  "source": "croma",
+  "timestamp": "2026-02-22T10:00:00Z",
+  "data": {
+    "external_order_id": "CROMA-ORDER-12345",
+    "customer_name": "Rahul Sharma",
+    "customer_email": "rahul@example.com",
+    "customer_phone": "9876543210",
+    "shipping_address": {
+      "street": "42 MG Road",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400001",
+      "country": "India"
+    },
+    "items": [
+      { "sku": "IPHONE-15-BLK", "name": "iPhone 15 Black", "quantity": 1, "price": 79999 }
+    ],
+    "payment_method": "prepaid",
+    "total_amount": 79999
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Webhook received and queued for processing",
+  "job_id": "90ebc30e-83d2-4650-bc93-e9a69430903a"
+}
+```
+
+### Bare payload format (also accepted)
+
+If the body contains `customer_name`, `items`, or `external_order_id` directly (no wrapper), the controller auto-wraps it:
+
+```json
+POST /api/webhooks/<orgToken>/orders
+Content-Type: application/json
+
+{
+  "external_order_id": "CROMA-123",
+  "customer_name": "Rahul Sharma",
+  "items": [...]
+}
+```
+
+This allows demo integrations and legacy clients to send data without constructing an envelope.
+
+### Source-specific normalization
+
+The controller normalizes order data per platform before queuing:
+
+| `source` value | Processing |
+|---|---|
+| `amazon` | `processAmazonOrder()` — maps Amazon field names |
+| `shopify` | `processShopifyOrder()` — maps Shopify field names |
+| `ebay` | `processEbayOrder()` — maps eBay field names |
+| anything else | Raw `data` passed through (works for `croma`, `demo`, etc.) |
+
+---
+
+## Job Processing Flow
+
+```
+Webhook received
+      │
+      ▼
+webhooksController validates payload
+      │
+      ▼
+jobsService.createJob('process_order', { source, event_type, order, organization_id })
+      │   INSERT INTO background_jobs → status='pending'
+      │
+      ▼
+Respond 200 immediately with { job_id }
+      │
+      ▼ (async — up to 5s later)
+JobWorker.poll() picks up job
+      │   SELECT ... FROM background_jobs WHERE status='pending' LIMIT <slots>
+      │
+      ▼
+jobHandlers.handleProcessOrder(payload)
+      │   1. INSERT INTO orders (with organization_id)
+      │   2. INSERT INTO order_items
+      │   3. carrierAssignmentService.requestCarrierAssignment(orderId, { items: [] })
+      │      ├─ Queries TOP 3 carriers by reliability_score WHERE is_active=true AND availability_status='available'
+      │      └─ INSERT INTO carrier_assignments × 3 (status='pending', expires in 10 min)
+      │
+      ▼
+UPDATE background_jobs SET status='completed'
+```
+
+---
+
+## Job Types
+
+| `job_type` | Handler | What it does |
+|---|---|---|
+| `process_order` | `handleProcessOrder` | Inserts order + items, triggers carrier assignment |
+| `update_tracking` | `handleUpdateTracking` | Updates shipment tracking status from carrier webhook |
+| `sync_inventory` | `handleInventorySync` | Syncs inventory data from warehouse system |
+| `process_return` | `handleProcessReturn` | Processes return request |
+| `sla_monitoring` | `handleSLAMonitoring` | Scans active shipments for SLA violations |
+| `exception_escalation` | `handleExceptionEscalation` | Auto-escalates overdue exceptions |
+| `invoice_generation` | `handleInvoiceGeneration` | Generates carrier invoice for a billing period |
+| `data_cleanup` | `handleDataCleanup` | Purges old logs/notifications/completed jobs |
+| `notification_dispatch` | `handleNotificationDispatch` | Sends batch email/SMS/push notifications |
+| `report_generation` | `handleReportGeneration` | Generates analytics/performance reports |
+| `assignment_retry` | `handleAssignmentRetry` | Retries carrier assignment for stalled orders |
+
+---
+
+## Background Job Worker
+
+**File:** `backend/jobs/jobWorker.js`
+
+- Polls `background_jobs` every **5 seconds** for `status='pending'` rows
+- Runs up to **5 jobs concurrently** (configurable)
+- On completion: sets `status='completed'`, stores `result` JSON
+- On failure: increments `attempts`, sets `status='failed'`, stores `error_message`
+- Graceful shutdown: waits up to 30s for active jobs before stopping
+
+```javascript
+const worker = new JobWorker({
+  pollInterval: 5000,  // ms
+  concurrency: 5       // max parallel jobs
+});
+await worker.start();
+```
+
+---
+
+## Cron Scheduler
+
+**File:** `backend/jobs/cronScheduler.js`
+
+Checks `cron_schedules` table every **60 seconds** for rows whose `next_run` ≤ NOW. For each due schedule it creates a `background_jobs` row via `jobsService.createJob()`, then updates `last_run` and calculates the next run time using `cron-parser`.
+
+Typical scheduled jobs:
+- SLA monitoring (every 15 min)
+- Exception escalation (every 30 min)
+- Data cleanup (daily)
+
+---
+
+## Getting Your Org's Webhook Token
+
+```bash
+# Direct DB query
+PGPASSWORD='<password>' psql -U postgres -d scm_db -c \
+  "SELECT name, webhook_token FROM organizations WHERE is_active = true;"
+
+# Or via application after login:
+GET /api/organizations/:id  # requires superadmin or admin JWT
+```
+
+---
+
+## Testing with curl
+
+```bash
+# Replace <token> with the actual org webhook_token
+TOKEN="7d0aa9fe498ea6bc704bd230ea00bdc57c4c246213d91eba3c1ceaaabab83293"
+
+curl -X POST "http://localhost:3000/api/webhooks/$TOKEN/orders" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_type": "order.created",
+    "source": "croma",
+    "data": {
+      "external_order_id": "TEST-001",
+      "customer_name": "Test User",
+      "customer_email": "test@example.com",
+      "customer_phone": "9999999999",
+      "shipping_address": {
+        "street": "123 Test St",
+        "city": "Mumbai",
+        "state": "Maharashtra",
+        "pincode": "400001",
+        "country": "India"
+      },
+      "items": [{ "sku": "TEST-SKU", "name": "Test Product", "quantity": 1, "price": 999 }],
+      "total_amount": 999
+    }
+  }'
+```
+
+Check job status:
+```bash
+curl "http://localhost:3000/api/webhooks/status/<job_id>" \
+  -H "Authorization: Bearer <jwt>"
+```
+
+---
+
+## Simulation CLI
+
 ```bash
 cd backend
 
-# Test single webhook
+# Simulate a single order webhook
 npm run simulate order
 
-# Watch Terminal 1 for processing logs!
+# All webhook types at once
+npm run simulate:all
+
+# Continuous (every 30s)
+npm run simulate:continuous
+
+# Burst (20 webhooks)
+npm run simulate:burst
 ```
 
-### 3. Check the Results
+**Note:** The simulator sends to the legacy `/api/webhooks/orders` (no org token) — orders land with `organization_id = null`.  
+For testing the full multi-tenant flow, use the Customer Portal demo page or curl with an org token.
+
+---
+
+## Database Tables
+
+### `background_jobs`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `job_type` | varchar | e.g., `process_order` |
+| `status` | varchar | `pending`, `processing`, `completed`, `failed` |
+| `payload` | jsonb | Input data for the handler |
+| `result` | jsonb | Output from the handler on success |
+| `error_message` | text | Error message on failure |
+| `priority` | integer | 1 (highest) – 10 (lowest) |
+| `attempts` | integer | How many times this job ran |
+| `max_retries` | integer | Max allowed attempts |
+| `created_at` | timestamptz | |
+| `started_at` | timestamptz | |
+| `completed_at` | timestamptz | |
+
+### `cron_schedules`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `name` | varchar | Human-readable label |
+| `job_type` | varchar | Matches a key in `jobHandlers` |
+| `cron_expression` | varchar | e.g., `*/15 * * * *` |
+| `payload` | jsonb | Static payload passed to every run |
+| `is_active` | boolean | |
+| `last_run` | timestamptz | |
+| `next_run` | timestamptz | |
+
+---
+
+## Troubleshooting
+
+| Problem | Check |
+|---|---|
+| `{"success":false,"message":"Invalid webhook token"}` | Token in URL doesn't match `organizations.webhook_token` |
+| `{"success":false,"message":"Invalid webhook payload"}` | Body missing `event_type`, `source`, `data` AND missing bare-payload fields |
+| Job stays `pending` forever | Server not running, or job worker failed to start (check startup logs) |
+| Job `failed` with error | `SELECT error_message FROM background_jobs WHERE status='failed' ORDER BY created_at DESC LIMIT 5` |
+| Carrier assignments not created | `handleProcessOrder` error in `assignment trigger` (check server logs for `⚠️ Carrier assignment trigger failed`) |### 3. Check the Results
 
 ```bash
 # View webhook dashboard

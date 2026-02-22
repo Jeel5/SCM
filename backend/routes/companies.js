@@ -14,21 +14,17 @@ import {
 
 const router = express.Router();
 
-// All routes require superadmin authentication
-router.use(authenticate);
-router.use(authorize('companies:read')); // Superadmin only
+// Get global statistics (superadmin only)
+router.get('/super-admin/stats', authenticate, authorize('companies:read'), getGlobalStats);
 
-// Get global statistics
-router.get('/super-admin/stats', getGlobalStats);
+// Company CRUD operations (superadmin only)
+router.get('/companies', authenticate, authorize('companies:read'), getAllCompanies);
+router.get('/companies/:id', authenticate, authorize('companies:read'), getCompanyById);
+router.post('/companies', authenticate, authorize('companies:create'), createCompany);
+router.put('/companies/:id', authenticate, authorize('companies:update'), updateCompany);
+router.delete('/companies/:id', authenticate, authorize('companies:delete'), deleteCompany);
 
-// Company CRUD operations
-router.get('/companies', getAllCompanies);
-router.get('/companies/:id', getCompanyById);
-router.post('/companies', authorize('companies:create'), createCompany);
-router.put('/companies/:id', authorize('companies:update'), updateCompany);
-router.delete('/companies/:id', authorize('companies:delete'), deleteCompany);
-
-// Company users
-router.get('/companies/:id/users', getCompanyUsers);
+// Company users (superadmin only)
+router.get('/companies/:id/users', authenticate, authorize('companies:read'), getCompanyUsers);
 
 export default router;

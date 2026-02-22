@@ -1,4 +1,5 @@
 // Inventory Repository - handles stock levels, reservations, and movements
+// All SQL queries for the inventory and stock_movements tables live here.
 import BaseRepository from './BaseRepository.js';
 
 class InventoryRepository extends BaseRepository {
@@ -6,49 +7,93 @@ class InventoryRepository extends BaseRepository {
     super('inventory');
   }
 
-  // Get inventory with pagination, filtering by warehouse/status/search, optional low stock filter
-  async findInventory({ page = 1, limit = 20, warehouse_id = null, status = null, search = null, low_stock = false }, client = null) {
+  // ─────────────────────────────────────────────────────────────
+  // LIST / FIND
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Get inventory with pagination, filtering, and warehouse/org scoping.
+   * Joins products + warehouses to enrich the response.
+   */
+  async findInventory({
+    page = 1,
+    limit = 20,
+    warehouse_id = null,
+    search = null,
+    low_stock = false,
+    organizationId = undefined
+  }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
     let paramCount = 1;
-    
+
     let query = `
-      SELECT i.*,
-        COUNT(*) OVER() as total_count
+      SELECT
+        i.id,
+        i.organization_id,
+        i.warehouse_id,
+        i.product_id,
+        i.sku,
+        i.product_name,
+        i.quantity,
+        i.available_quantity,
+        i.reserved_quantity,
+        i.damaged_quantity,
+        i.in_transit_quantity,
+        i.bin_location,
+        i.zone,
+        i.reorder_point,
+        i.max_stock_level,
+        i.last_stock_check,
+        i.created_at,
+        i.updated_at,
+        w.name       AS warehouse_name,
+        w.code       AS warehouse_code,
+        p.name       AS product_display_name,
+        p.category   AS product_category,
+        p.unit_price AS unit_price,
+        p.weight     AS product_weight,
+        COUNT(*) OVER() AS total_count
       FROM inventory i
+      JOIN warehouses w ON i.warehouse_id = w.id
+      LEFT JOIN products p ON i.product_id = p.id
       WHERE 1=1
     `;
+
+    // Multi-tenancy filter
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'i');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (warehouse_id) {
       query += ` AND i.warehouse_id = $${paramCount++}`;
       params.push(warehouse_id);
     }
 
-    if (status) {
-      query += ` AND i.status = $${paramCount++}`;
-      params.push(status);
-    }
-
     if (search) {
       query += ` AND (
         i.sku ILIKE $${paramCount} OR
         i.product_name ILIKE $${paramCount} OR
-        i.product_id::text ILIKE $${paramCount}
+        p.name ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
       paramCount++;
     }
 
     if (low_stock) {
-      query += ` AND i.available_quantity <= i.reorder_point`;
+      query += ` AND i.available_quantity <= COALESCE(i.reorder_point, 0)`;
     }
 
-    query += ` ORDER BY i.product_name ASC`;
+    query += ` ORDER BY i.updated_at DESC`;
     query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
-    
+
     return {
       items: result.rows,
       totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
@@ -56,176 +101,136 @@ class InventoryRepository extends BaseRepository {
   }
 
   /**
-   * Find inventory by SKU and warehouse
-  // Find inventory by SKU and warehouse combination
+   * Find a single inventory record by ID (with product + warehouse join)
+   */
+  async findByIdWithDetails(id, organizationId = undefined, client = null) {
+    const params = [id];
+    let paramCount = 2;
+
+    let query = `
+      SELECT
+        i.*,
+        w.name       AS warehouse_name,
+        w.code       AS warehouse_code,
+        p.name       AS product_display_name,
+        p.category   AS product_category,
+        p.unit_price AS unit_price
+      FROM inventory i
+      JOIN warehouses w ON i.warehouse_id = w.id
+      LEFT JOIN products p ON i.product_id = p.id
+      WHERE i.id = $1
+    `;
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'i');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Find inventory by SKU and warehouse (exact match)
+   */
   async findBySKUAndWarehouse(sku, warehouseId, client = null) {
     const query = `
-      SELECT * FROM inventory 
+      SELECT * FROM inventory
       WHERE sku = $1 AND warehouse_id = $2
     `;
     const result = await this.query(query, [sku, warehouseId], client);
     return result.rows[0] || null;
   }
 
-  // Get all inventory records for a product across warehouses
-  async findByProductId(productId, client = null) {
-    const query = `
-      SELECT * FROM inventory 
-      WHERE product_id = $1
-      ORDER BY warehouse_id
-    `;
-    const result = await this.query(query, [productId], client);
+  /**
+   * Get all inventory for a product across all warehouses
+   */
+  async findByProductId(productId, organizationId = undefined, client = null) {
+    let query = `SELECT * FROM inventory WHERE product_id = $1`;
+    const params = [productId];
+    let paramCount = 2;
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY warehouse_id`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
-  // Update inventory quantities (total, reserved, or available)
-  async updateQuantities(inventoryId, quantities, client = null) {
-    const updates = [];
+  /**
+   * Get low stock items (available_quantity <= reorder_point)
+   */
+  async findLowStock(warehouseId = null, organizationId = undefined, client = null) {
+    let query = `
+      SELECT
+        i.*,
+        w.name AS warehouse_name,
+        w.code AS warehouse_code
+      FROM inventory i
+      JOIN warehouses w ON i.warehouse_id = w.id
+      WHERE i.available_quantity <= COALESCE(i.reorder_point, 0)
+    `;
     const params = [];
     let paramCount = 1;
 
-    if (quantities.quantity !== undefined) {
-      updates.push(`quantity = $${paramCount++}`);
-      params.push(quantities.quantity);
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'i');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
     }
-
-    if (quantities.reserved_quantity !== undefined) {
-      updates.push(`reserved_quantity = $${paramCount++}`);
-      params.push(quantities.reserved_quantity);
-    }
-
-    if (quantities.available_quantity !== undefined) {
-      updates.push(`available_quantity = $${paramCount++}`);
-      params.push(quantities.available_quantity);
-    }
-
-    if (updates.length === 0) {
-      throw new Error('No quantities to update');
-    }
-
-    updates.push(`updated_at = NOW()`);
-    params.push(inventoryId);
-
-    const query = `
-      UPDATE inventory
-      SET ${updates.join(', ')}
-      WHERE id = $${paramCount}
-      RETURNING *
-    `;
-
-    const result = await this.query(query, params, client);
-    return result.rows[0];
-  }
-
-  // Reserve stock for order - moves from available to reserved
-  async reserveStock(sku, warehouseId, quantity, client) {
-    const query = `
-      UPDATE inventory
-      SET 
-        reserved_quantity = reserved_quantity + $1,
-        available_quantity = available_quantity - $1,
-        updated_at = NOW()
-      WHERE sku = $2 AND warehouse_id = $3 AND available_quantity >= $1
-      RETURNING *
-    `;
-    
-    const result = await this.query(query, [quantity, sku, warehouseId], client);
-    return result.rows[0];
-  }
-
-  // Release reserved stock back to available (e.g., cancelled order)
-  async releaseStock(sku, warehouseId, quantity, client) {
-    const query = `
-      UPDATE inventory
-      SET 
-        reserved_quantity = reserved_quantity - $1,
-        available_quantity = available_quantity + $1,
-        updated_at = NOW()
-      WHERE sku = $2 AND warehouse_id = $3
-      RETURNING *
-    `;
-    
-    const result = await this.query(query, [quantity, sku, warehouseId], client);
-    return result.rows[0];
-  }
-
-  /**
-   * Deduct inventory (e.g., order shipped)
-   */
-  async deductStock(sku, warehouseId, quantity, client) {
-    const query = `
-      UPDATE inventory
-      SET 
-        quantity = quantity - $1,
-        reserved_quantity = reserved_quantity - $1,
-        updated_at = NOW()
-      WHERE sku = $2 AND warehouse_id = $3
-      RETURNING *
-    `;
-    
-    const result = await this.query(query, [quantity, sku, warehouseId], client);
-    return result.rows[0];
-  }
-
-  /**
-   * Add stock (e.g., restocking)
-   */
-  async addStock(sku, warehouseId, quantity, client) {
-    const query = `
-      UPDATE inventory
-      SET 
-        quantity = quantity + $1,
-        available_quantity = available_quantity + $1,
-        updated_at = NOW()
-      WHERE sku = $2 AND warehouse_id = $3
-      RETURNING *
-    `;
-    
-    const result = await this.query(query, [quantity, sku, warehouseId], client);
-    return result.rows[0];
-  }
-
-  /**
-   * Get low stock items
-   */
-  async findLowStock(warehouseId = null, client = null) {
-    let query = `
-      SELECT * FROM inventory 
-      WHERE available_quantity <= reorder_point
-    `;
-    const params = [];
 
     if (warehouseId) {
-      query += ` AND warehouse_id = $1`;
+      query += ` AND i.warehouse_id = $${paramCount++}`;
       params.push(warehouseId);
     }
 
-    query += ` ORDER BY available_quantity ASC`;
-
+    query += ` ORDER BY i.available_quantity ASC`;
     const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
-   * Get inventory statistics
+   * Aggregate inventory statistics for dashboard / warehouse views
    */
-  async getInventoryStats(warehouseId = null, client = null) {
+  async getInventoryStats(warehouseId = null, organizationId = undefined, client = null) {
     let query = `
-      SELECT 
-        COUNT(*) as total_items,
-        SUM(quantity) as total_quantity,
-        SUM(available_quantity) as total_available,
-        SUM(reserved_quantity) as total_reserved,
-        COUNT(*) FILTER (WHERE available_quantity <= reorder_point) as low_stock_items,
-        COUNT(*) FILTER (WHERE available_quantity = 0) as out_of_stock_items,
-        SUM(quantity * unit_cost) as total_inventory_value
-      FROM inventory
+      SELECT
+        COUNT(*)::int                                              AS total_items,
+        COALESCE(SUM(i.quantity), 0)::int                         AS total_quantity,
+        COALESCE(SUM(i.available_quantity), 0)::int               AS total_available,
+        COALESCE(SUM(i.reserved_quantity), 0)::int                AS total_reserved,
+        COALESCE(SUM(i.damaged_quantity), 0)::int                 AS total_damaged,
+        COUNT(*) FILTER (WHERE i.available_quantity <= COALESCE(i.reorder_point, 0) AND i.available_quantity > 0)::int AS low_stock_items,
+        COUNT(*) FILTER (WHERE i.available_quantity = 0)::int     AS out_of_stock_items,
+        COALESCE(SUM(i.quantity * COALESCE(p.unit_price, 0)), 0)::numeric AS total_inventory_value
+      FROM inventory i
+      LEFT JOIN products p ON i.product_id = p.id
       WHERE 1=1
     `;
     const params = [];
+    let paramCount = 1;
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'i');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (warehouseId) {
-      query += ` AND warehouse_id = $1`;
+      query += ` AND i.warehouse_id = $${paramCount++}`;
       params.push(warehouseId);
     }
 
@@ -233,26 +238,50 @@ class InventoryRepository extends BaseRepository {
     return result.rows[0];
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // CREATE / UPDATE
+  // ─────────────────────────────────────────────────────────────
+
   /**
-   * Record stock movement
+   * Create a new inventory record.
+   * Uses ON CONFLICT (upsert) to handle the unique constraint on (warehouse_id, sku).
    */
-  async recordMovement(movementData, client) {
+  async createInventoryItem(data, client = null) {
+    const available = data.available_quantity !== undefined
+      ? data.available_quantity
+      : (data.quantity || 0) - (data.reserved_quantity || 0);
+
     const query = `
-      INSERT INTO stock_movements 
-      (inventory_id, movement_type, quantity, from_location, to_location, reason, reference_id, performed_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO inventory (
+        organization_id, warehouse_id, product_id, sku, product_name,
+        quantity, available_quantity, reserved_quantity,
+        bin_location, zone, reorder_point, max_stock_level, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      ON CONFLICT (warehouse_id, sku) WHERE sku IS NOT NULL
+      DO UPDATE SET
+        quantity           = EXCLUDED.quantity,
+        available_quantity = EXCLUDED.available_quantity,
+        reserved_quantity  = EXCLUDED.reserved_quantity,
+        bin_location       = COALESCE(EXCLUDED.bin_location, inventory.bin_location),
+        reorder_point      = COALESCE(EXCLUDED.reorder_point, inventory.reorder_point),
+        max_stock_level    = COALESCE(EXCLUDED.max_stock_level, inventory.max_stock_level),
+        updated_at         = NOW()
       RETURNING *
     `;
-    
+
     const params = [
-      movementData.inventory_id,
-      movementData.movement_type,
-      movementData.quantity,
-      movementData.from_location || null,
-      movementData.to_location || null,
-      movementData.reason || null,
-      movementData.reference_id || null,
-      movementData.performed_by || null
+      data.organization_id || null,
+      data.warehouse_id,
+      data.product_id || null,
+      data.sku || null,
+      data.product_name || null,
+      data.quantity || 0,
+      available,
+      data.reserved_quantity || 0,
+      data.bin_location || null,
+      data.zone || null,
+      data.reorder_point || null,
+      data.max_stock_level || null
     ];
 
     const result = await this.query(query, params, client);
@@ -260,16 +289,234 @@ class InventoryRepository extends BaseRepository {
   }
 
   /**
-   * Get stock movements for an inventory item
+   * Update specific fields of an inventory item (dynamic SET clause)
    */
-  async findMovements(inventoryId, limit = 50, client = null) {
+  async updateInventoryItem(id, updates, client = null) {
+    const ALLOWED = [
+      'quantity', 'available_quantity', 'reserved_quantity',
+      'damaged_quantity', 'in_transit_quantity',
+      'bin_location', 'zone',
+      'reorder_point', 'max_stock_level',
+      'last_stock_check'
+    ];
+
+    const setClauses = [];
+    const params = [];
+    let paramCount = 1;
+
+    for (const field of ALLOWED) {
+      if (updates[field] !== undefined) {
+        setClauses.push(`${field} = $${paramCount++}`);
+        params.push(updates[field]);
+      }
+    }
+
+    if (setClauses.length === 0) throw new Error('No valid fields to update');
+    setClauses.push(`updated_at = NOW()`);
+    params.push(id);
+
     const query = `
-      SELECT * FROM stock_movements 
-      WHERE inventory_id = $1 
-      ORDER BY created_at DESC 
-      LIMIT $2
+      UPDATE inventory
+      SET ${setClauses.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING *
     `;
-    const result = await this.query(query, [inventoryId, limit], client);
+    const result = await this.query(query, params, client);
+    return result.rows[0] || null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // STOCK OPERATIONS (transactional — always pass client)
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Reserve stock: moves quantity from available → reserved.
+   * Returns the updated row, or null if insufficient stock.
+   */
+  async reserveStock(sku, warehouseId, quantity, client = null) {
+    const query = `
+      UPDATE inventory
+      SET
+        reserved_quantity  = reserved_quantity + $1,
+        available_quantity = available_quantity - $1,
+        updated_at         = NOW()
+      WHERE sku = $2 AND warehouse_id = $3 AND available_quantity >= $1
+      RETURNING *
+    `;
+    const result = await this.query(query, [quantity, sku, warehouseId], client);
+    return result.rows[0] || null; // null = insufficient stock
+  }
+
+  /**
+   * Release reserved stock back to available (e.g., order cancelled)
+   */
+  async releaseStock(sku, warehouseId, quantity, client = null) {
+    const query = `
+      UPDATE inventory
+      SET
+        reserved_quantity  = GREATEST(reserved_quantity - $1, 0),
+        available_quantity = available_quantity + $1,
+        updated_at         = NOW()
+      WHERE sku = $2 AND warehouse_id = $3
+      RETURNING *
+    `;
+    const result = await this.query(query, [quantity, sku, warehouseId], client);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Deduct reserved stock on dispatch (reserved → gone from total)
+   */
+  async deductStock(sku, warehouseId, quantity, client = null) {
+    const query = `
+      UPDATE inventory
+      SET
+        quantity          = quantity - $1,
+        reserved_quantity = GREATEST(reserved_quantity - $1, 0),
+        updated_at        = NOW()
+      WHERE sku = $2 AND warehouse_id = $3
+      RETURNING *
+    `;
+    const result = await this.query(query, [quantity, sku, warehouseId], client);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Add stock: increases total + available (restocking / inbound)
+   */
+  async addStock(sku, warehouseId, quantity, client = null) {
+    const query = `
+      UPDATE inventory
+      SET
+        quantity           = quantity + $1,
+        available_quantity = available_quantity + $1,
+        updated_at         = NOW()
+      WHERE sku = $2 AND warehouse_id = $3
+      RETURNING *
+    `;
+    const result = await this.query(query, [quantity, sku, warehouseId], client);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Set absolute stock level (manual correction / cycle count)
+   */
+  async setStock(id, newQuantity, reason = 'Manual adjustment', client = null) {
+    const query = `
+      UPDATE inventory
+      SET
+        quantity           = $1,
+        available_quantity = GREATEST($1 - reserved_quantity, 0),
+        last_stock_check   = NOW(),
+        updated_at         = NOW()
+      WHERE id = $2
+      RETURNING *
+    `;
+    const result = await this.query(query, [newQuantity, id], client);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Mark quantity as damaged
+   */
+  async markDamaged(id, quantity, client = null) {
+    const query = `
+      UPDATE inventory
+      SET
+        quantity           = quantity - $1,
+        available_quantity = GREATEST(available_quantity - $1, 0),
+        damaged_quantity   = damaged_quantity + $1,
+        updated_at         = NOW()
+      WHERE id = $2 AND available_quantity >= $1
+      RETURNING *
+    `;
+    const result = await this.query(query, [quantity, id], client);
+    return result.rows[0] || null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // STOCK MOVEMENTS
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Record a stock movement entry (audit trail).
+   * movement_type must match CHECK constraint:
+   *   'inbound' | 'outbound' | 'transfer_in' | 'transfer_out'
+   *   | 'adjustment' | 'return' | 'damaged' | 'expired'
+   */
+  async recordMovement(movementData, client = null) {
+    const query = `
+      INSERT INTO stock_movements (
+        organization_id, warehouse_id, product_id, inventory_id,
+        movement_type, quantity,
+        reference_type, reference_id,
+        notes, batch_number, created_by,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      RETURNING *
+    `;
+
+    const params = [
+      movementData.organization_id || null,
+      movementData.warehouse_id,
+      movementData.product_id     || null,
+      movementData.inventory_id   || null,
+      movementData.movement_type,
+      movementData.quantity,
+      movementData.reference_type || null,
+      movementData.reference_id   || null,
+      movementData.notes          || null,
+      movementData.batch_number   || null,
+      movementData.created_by     || null
+    ];
+
+    const result = await this.query(query, params, client);
+    return result.rows[0];
+  }
+
+  /**
+   * Get stock movement history for a specific inventory item
+   */
+  async findMovements(inventoryId, { page = 1, limit = 50 } = {}, client = null) {
+    const offset = (page - 1) * limit;
+    const query = `
+      SELECT
+        sm.*,
+        u.name AS created_by_name
+      FROM stock_movements sm
+      LEFT JOIN users u ON sm.created_by = u.id
+      WHERE sm.inventory_id = $1
+      ORDER BY sm.created_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const result = await this.query(query, [inventoryId, limit, offset], client);
+    return result.rows;
+  }
+
+  /**
+   * Get warehouse-level stock movements (for warehouse ops view)
+   */
+  async findWarehouseMovements(warehouseId, { page = 1, limit = 50, movement_type = null } = {}, client = null) {
+    const offset = (page - 1) * limit;
+    const params = [warehouseId];
+    let paramCount = 2;
+
+    let query = `
+      SELECT sm.*, u.name AS created_by_name
+      FROM stock_movements sm
+      LEFT JOIN users u ON sm.created_by = u.id
+      WHERE sm.warehouse_id = $1
+    `;
+
+    if (movement_type) {
+      query += ` AND sm.movement_type = $${paramCount++}`;
+      params.push(movement_type);
+    }
+
+    query += ` ORDER BY sm.created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    params.push(limit, offset);
+
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 }

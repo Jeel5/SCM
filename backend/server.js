@@ -31,6 +31,8 @@ import assignmentsRoutes from './routes/assignments.js';
 import shippingRoutes from './routes/shipping.js';
 import carriersRoutes from './routes/carriers.js';
 import companiesRoutes from './routes/companies.js';
+import organizationsRoutes from './routes/organizations.js';
+import demoRoutes from './routes/demo.js';
 
 // Security headers middleware
 app.use(helmet());
@@ -77,6 +79,7 @@ app.get('/health', (req, res) => {
 
 // Register all API routes
 app.use(API_PREFIX, usersRoutes);
+app.use(API_PREFIX, assignmentsRoutes); // Must be before mdmRoutes — /carriers/assignments/pending would otherwise be swallowed by mdm's /carriers/:id
 app.use(API_PREFIX, mdmRoutes);
 app.use(API_PREFIX, ordersRoutes);
 app.use(API_PREFIX, inventoryRoutes);
@@ -85,11 +88,12 @@ app.use(API_PREFIX, slaRoutes);
 app.use(API_PREFIX, returnsRoutes);
 app.use(API_PREFIX, jobsRoutes);
 app.use(API_PREFIX, financeRoutes);
-app.use(API_PREFIX, assignmentsRoutes); // Carrier assignment routes
 app.use(API_PREFIX, shippingRoutes); // Shipping quote routes
 app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
 app.use(API_PREFIX, companiesRoutes); // Superadmin company management
+app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization management (superadmin)
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
+app.use(API_PREFIX, demoRoutes); // Dev-only demo portal endpoints (404 in production)
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);

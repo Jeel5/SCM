@@ -4,11 +4,12 @@ import {
   Truck,
   Package,
   Download,
-  RefreshCw,
   Eye,
   Navigation,
   CheckCircle2,
 } from 'lucide-react';
+import { exportToCSV } from '@/lib/export';
+import { useToast } from '@/components/ui';
 import {
   Card,
   Button,
@@ -26,9 +27,26 @@ export function ShipmentsPage() {
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const { success } = useToast();
 
   const pageSize = 10;
   const { shipments, totalShipments, isLoading } = useShipments(page, pageSize);
+
+  const handleExport = () => {
+    const exportData = filteredShipments.map(shipment => ({
+      tracking_number: shipment.trackingNumber,
+      carrier: shipment.carrierName,
+      status: shipment.status,
+      origin: `${shipment.origin.city}, ${shipment.origin.state}`,
+      destination: `${shipment.destination.city}, ${shipment.destination.state}`,
+      weight: shipment.weight,
+      cost: shipment.cost,
+      estimated_delivery: shipment.estimatedDelivery,
+      created_at: shipment.createdAt,
+    }));
+    exportToCSV(exportData, `shipments_${new Date().toISOString().split('T')[0]}`);
+    success('Shipments exported successfully!');
+  };
 
   // Count shipments per status for tab badges
   const statusCounts = shipments.reduce<Record<string, number>>((acc, shipment) => {
@@ -127,11 +145,8 @@ export function ShipmentsPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Track and manage all shipments in real-time</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />}>
-            Refresh
-          </Button>
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
-            Export
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
+            Export CSV
           </Button>
         </div>
       </motion.div>

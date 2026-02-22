@@ -1,137 +1,39 @@
 // Return validation schemas - defines rules for return requests
 
-export const createReturnSchema = {
-  order_id: {
-    type: 'string',
-    required: true
-  },
-  return_number: {
-    type: 'string',
-    required: false,
-    minLength: 5,
-    maxLength: 50
-  },
-  reason: {
-    type: 'string',
-    required: true,
-    enum: ['damaged', 'defective', 'wrong_item', 'not_as_described', 'unwanted', 'size_issue', 'late_delivery', 'other']
-  },
-  reason_details: {
-    type: 'string',
-    required: false,
-    maxLength: 1000
-  },
-  status: {
-    type: 'string',
-    required: false,
-    enum: ['requested', 'approved', 'rejected', 'received', 'inspecting', 'completed', 'refunded']
-  },
-  requested_by: {
-    type: 'string',
-    required: true,
-    minLength: 2,
-    maxLength: 255
-  },
-  customer_email: {
-    type: 'string',
-    required: true,
-    email: true
-  },
-  refund_amount: {
-    type: 'number',
-    required: false,
-    min: 0
-  },
-  refund_method: {
-    type: 'string',
-    required: false,
-    enum: ['original_payment', 'store_credit', 'bank_transfer', 'check']
-  },
-  items: {
-    type: 'array',
-    required: true,
-    minItems: 1,
-    items: {
-      product_id: {
-        type: 'string',
-        required: true
-      },
-      sku: {
-        type: 'string',
-        required: true
-      },
-      product_name: {
-        type: 'string',
-        required: true
-      },
-      quantity: {
-        type: 'number',
-        required: true,
-        min: 1,
-        integer: true
-      },
-      condition: {
-        type: 'string',
-        required: false,
-        enum: ['new', 'like_new', 'good', 'acceptable', 'poor', 'damaged']
-      }
-    }
-  }
-};
+import Joi from 'joi';
 
-export const updateReturnStatusSchema = {
-  status: {
-    type: 'string',
-    required: true,
-    enum: ['requested', 'approved', 'rejected', 'received', 'inspecting', 'completed', 'refunded']
-  },
-  inspection_notes: {
-    type: 'string',
-    required: false,
-    maxLength: 1000
-  },
-  refund_amount: {
-    type: 'number',
-    required: false,
-    min: 0
-  },
-  refund_method: {
-    type: 'string',
-    required: false,
-    enum: ['original_payment', 'store_credit', 'bank_transfer', 'check']
-  }
-};
+const returnItemSchema = Joi.object({
+  product_id: Joi.string().required(),
+  sku: Joi.string().required(),
+  product_name: Joi.string().required(),
+  quantity: Joi.number().integer().min(1).required(),
+  condition: Joi.string().valid('new', 'like_new', 'good', 'acceptable', 'poor', 'damaged')
+});
 
-export const listReturnsQuerySchema = {
-  page: {
-    type: 'string',
-    required: false,
-    custom: (value) => {
-      const num = parseInt(value);
-      if (isNaN(num) || num < 1) return 'Page must be a positive integer';
-    }
-  },
-  limit: {
-    type: 'string',
-    required: false,
-    custom: (value) => {
-      const num = parseInt(value);
-      if (isNaN(num) || num < 1 || num > 100) return 'Limit must be between 1 and 100';
-    }
-  },
-  status: {
-    type: 'string',
-    required: false,
-    enum: ['requested', 'approved', 'rejected', 'received', 'inspecting', 'completed', 'refunded']
-  },
-  reason: {
-    type: 'string',
-    required: false,
-    enum: ['damaged', 'defective', 'wrong_item', 'not_as_described', 'unwanted', 'size_issue', 'late_delivery', 'other']
-  },
-  search: {
-    type: 'string',
-    required: false,
-    maxLength: 100
-  }
-};
+export const createReturnSchema = Joi.object({
+  order_id: Joi.string().required(),
+  return_number: Joi.string().min(5).max(50),
+  reason: Joi.string().valid('damaged', 'defective', 'wrong_item', 'not_as_described', 'unwanted', 'size_issue', 'late_delivery', 'other').required(),
+  reason_details: Joi.string().max(1000),
+  status: Joi.string().valid('requested', 'approved', 'rejected', 'received', 'inspecting', 'completed', 'refunded'),
+  requested_by: Joi.string().min(2).max(255).required(),
+  customer_email: Joi.string().email().required(),
+  refund_amount: Joi.number().min(0),
+  refund_method: Joi.string().valid('original_payment', 'store_credit', 'bank_transfer', 'check'),
+  items: Joi.array().items(returnItemSchema).min(1).required()
+});
+
+export const updateReturnStatusSchema = Joi.object({
+  status: Joi.string().valid('requested', 'approved', 'rejected', 'received', 'inspecting', 'completed', 'refunded').required(),
+  inspection_notes: Joi.string().max(1000),
+  refund_amount: Joi.number().min(0),
+  refund_method: Joi.string().valid('original_payment', 'store_credit', 'bank_transfer', 'check')
+});
+
+export const listReturnsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  status: Joi.string().valid('requested', 'approved', 'rejected', 'received', 'inspecting', 'completed', 'refunded'),
+  reason: Joi.string().valid('damaged', 'defective', 'wrong_item', 'not_as_described', 'unwanted', 'size_issue', 'late_delivery', 'other'),
+  search: Joi.string().max(100)
+});

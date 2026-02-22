@@ -1,6 +1,33 @@
 // Role-Based Access Control (RBAC) - enforces permissions based on user roles
 import { ForbiddenError } from '../errors/index.js';
 import { logAuth } from '../utils/logger.js';
+import { userHasPermission, getPermissionsForRole } from '../config/permissions.js';
+
+/**
+ * Permission-based middleware (preferred over requireRoles).
+ * Usage: router.get('/orders', authenticate, requirePermission('orders.view'), handler)
+ */
+export function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!req.user) {
+      throw new ForbiddenError('Authentication required');
+    }
+    if (!userHasPermission(req.user, permission)) {
+      logAuth('PermissionDenied', req.user.userId, {
+        permission,
+        role: req.user.role,
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+      });
+      throw new ForbiddenError(`Permission required: ${permission}`);
+    }
+    next();
+  };
+}
+
+// Re-export helpers for use in controllers
+export { userHasPermission, getPermissionsForRole };
 
 // Define all user roles in the system
 export const ROLES = {

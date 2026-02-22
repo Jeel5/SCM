@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Truck, Star, Clock, Package, Plus, Eye } from 'lucide-react';
-import { Card, Button, Badge, Progress, DataTable, Tabs } from '@/components/ui';
+import { Card, Button, Badge, Progress, DataTable, Tabs, PermissionGate } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
 import type { Carrier } from '@/types';
 import { RatingStars } from './components/RatingStars';
@@ -147,9 +147,11 @@ export function CarriersPage() {
               Table
             </button>
           </div>
-          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsAddOpen(true)}>
-            Add Carrier
-          </Button>
+          <PermissionGate permission="settings.organization">
+            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsAddOpen(true)}>
+              Add Carrier
+            </Button>
+          </PermissionGate>
         </div>
       </motion.div>
 

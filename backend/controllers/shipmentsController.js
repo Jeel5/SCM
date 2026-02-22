@@ -5,8 +5,13 @@ import logger from '../utils/logger.js';
 // Get shipments list with filters and pagination
 export async function listShipments(req, res) {
   try {
-    const { status, carrier_id, search, page = 1, limit = 20 } = req.query;
+    // Use validatedQuery for Joi-validated params (with type coercion)
+    const queryParams = req.validatedQuery || req.query;
+    const { status, carrier_id, search, page, limit } = queryParams;
     const offset = (page - 1) * limit;
+    
+    // Get organization context for multi-tenancy
+    const organizationId = req.orgContext?.organizationId;
     
     let query = `
       SELECT s.*, c.name as carrier_name, c.code as carrier_code, o.order_number,
@@ -18,6 +23,12 @@ export async function listShipments(req, res) {
       WHERE 1=1
     `;
     const params = [];
+    
+    // Multi-tenant filter: restrict to user's organization
+    if (organizationId) {
+      params.push(organizationId);
+      query += ` AND s.organization_id = $${params.length}`;
+    }
     
     if (status) {
       params.push(status);
@@ -108,15 +119,23 @@ export async function getShipment(req, res) {
   try {
     const { id } = req.params;
     
-    const result = await pool.query(
-      `SELECT s.*, c.name as carrier_name, o.order_number, w.name as warehouse_name
+    // Get organization context for multi-tenancy
+    const organizationId = req.orgContext?.organizationId;
+    
+    let query = `SELECT s.*, c.name as carrier_name, o.order_number, w.name as warehouse_name
        FROM shipments s
        LEFT JOIN carriers c ON s.carrier_id = c.id
        LEFT JOIN orders o ON s.order_id = o.id
        LEFT JOIN warehouses w ON s.warehouse_id = w.id
-       WHERE s.id = $1`,
-      [id]
-    );
+       WHERE s.id = $1`;
+    const params = [id];
+    
+    if (organizationId) {
+      params.push(organizationId);
+      query += ` AND s.organization_id = $${params.length}`;
+    }
+    
+    const result = await pool.query(query, params);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Shipment not found' });
@@ -200,14 +219,14 @@ export async function createShipment(req, res) {
   try {
     await client.query('BEGIN');
     
-    const { orderId, carrierId, warehouseId } = req.body;
+    const { order_id, carrier_id, carrier_name, origin, destination } = req.body;
     
     // Get order details
     const orderResult = await client.query(
       `SELECT o.*, json_agg(oi.*) as items FROM orders o
        LEFT JOIN order_items oi ON o.id = oi.order_id
        WHERE o.id = $1 GROUP BY o.id`,
-      [orderId]
+      [order_id]
     );
     
     if (orderResult.rows.length === 0) {
@@ -215,21 +234,14 @@ export async function createShipment(req, res) {
     }
     
     const order = orderResult.rows[0];
-    const trackingNumber = `TRK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    
-    // Get warehouse address
-    const warehouseResult = await client.query(
-      'SELECT address FROM warehouses WHERE id = $1',
-      [warehouseId]
-    );
-    const originAddress = warehouseResult.rows[0]?.address || {};
+    const trackingNumber = value.tracking_number || `TRK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     
     const shipmentResult = await client.query(
-      `INSERT INTO shipments (tracking_number, order_id, carrier_id, warehouse_id, 
+      `INSERT INTO shipments (tracking_number, order_id, carrier_id, 
                              origin_address, destination_address, status, pickup_scheduled)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW() + INTERVAL '1 day') RETURNING *`,
-      [trackingNumber, orderId, carrierId, warehouseId, 
-       JSON.stringify(originAddress), JSON.stringify(order.shipping_address)]
+       VALUES ($1, $2, $3, $4, $5, 'pending', NOW() + INTERVAL '1 day') RETURNING *`,
+      [trackingNumber, order_id, carrier_id, 
+       JSON.stringify(origin), JSON.stringify(destination)]
     );
     
     const shipment = shipmentResult.rows[0];
@@ -271,7 +283,7 @@ export async function updateShipmentStatus(req, res) {
     await client.query('BEGIN');
     
     const { id } = req.params;
-    const { status, location, description } = req.body;
+    const { status, location, notes } = req.body;
     
     await client.query(
       `UPDATE shipments SET status = $1, current_location = $2, updated_at = NOW() WHERE id = $3`,
@@ -281,7 +293,7 @@ export async function updateShipmentStatus(req, res) {
     await client.query(
       `INSERT INTO shipment_events (shipment_id, event_type, location, description, event_timestamp)
        VALUES ($1, $2, $3, $4, NOW())`,
-      [id, status, location ? JSON.stringify(location) : null, description]
+      [id, status, location ? JSON.stringify(location) : null, notes]
     );
     
     if (status === 'delivered') {
@@ -289,6 +301,134 @@ export async function updateShipmentStatus(req, res) {
         `UPDATE shipments SET delivery_actual = NOW() WHERE id = $1`,
         [id]
       );
+      
+      // Get order details to check if it's a transfer order
+      const orderResult = await client.query(
+        `SELECT o.*, s.warehouse_id as from_warehouse_id
+         FROM orders o
+         JOIN shipments s ON o.id = s.order_id
+         WHERE s.id = $1`,
+        [id]
+      );
+      
+      const order = orderResult.rows[0];
+      
+      if (order && order.order_type === 'transfer') {
+        // TRANSFER ORDER DELIVERY - Auto-execute inventory transfer
+        logger.info('Transfer order delivered - executing inventory transfer', {
+          orderId: order.id,
+          orderNumber: order.order_number,
+          shipmentId: id
+        });
+        
+        // Get order items
+        const itemsResult = await client.query(
+          `SELECT * FROM order_items WHERE order_id = $1`,
+          [order.id]
+        );
+        
+        // Parse shipping address to get destination warehouse_id
+        // Format in notes: "Transfer: SourceWH → DestWH"
+        // Or we can parse from shipping_address JSON
+        const shippingAddress = typeof order.shipping_address === 'string' 
+          ? JSON.parse(order.shipping_address) 
+          : order.shipping_address;
+        
+        // Find destination warehouse by address match (safer: store in order metadata)
+        // For now, extract from order notes which has format: "TRANSFER ORDER\nReason: ...\n..."
+        // Better approach: Get from shipping_address or add to_warehouse_id to orders table
+        
+        // WORKAROUND: Query destination warehouse from shipping address
+        const destWarehouseResult = await client.query(
+          `SELECT id FROM warehouses WHERE address::text = $1 LIMIT 1`,
+          [JSON.stringify(shippingAddress)]
+        );
+        
+        if (destWarehouseResult.rows.length === 0) {
+          logger.error('Could not find destination warehouse for transfer order', {
+            orderId: order.id,
+            shippingAddress
+          });
+          throw new Error('Destination warehouse not found for transfer order');
+        }
+        
+        const toWarehouseId = destWarehouseResult.rows[0].id;
+        const fromWarehouseId = order.warehouse_id;
+        
+        // Execute inventory transfer for each item
+        for (const item of itemsResult.rows) {
+          // 1. Release reserved stock from source warehouse
+          await client.query(
+            `UPDATE inventory 
+             SET reserved_quantity = reserved_quantity - $1,
+                 updated_at = NOW()
+             WHERE sku = $2 AND warehouse_id = $3`,
+            [item.quantity, item.sku, fromWarehouseId]
+          );
+          
+          // 2. Deduct from source warehouse total
+          await client.query(
+            `UPDATE inventory 
+             SET quantity = quantity - $1,
+                 updated_at = NOW()
+             WHERE sku = $2 AND warehouse_id = $3`,
+            [item.quantity, item.sku, fromWarehouseId]
+          );
+          
+          // 3. Record movement at source (outbound)
+          await client.query(
+            `INSERT INTO stock_movements 
+             (inventory_id, movement_type, quantity, reference_type, reference_id, notes, performed_by)
+             SELECT id, 'transfer_out', $1, 'transfer_order', $2, $3, 'system'
+             FROM inventory 
+             WHERE sku = $4 AND warehouse_id = $5`,
+            [
+              item.quantity,
+              order.id,
+              `Transfer to warehouse ${toWarehouseId} - Shipment ${id}`,
+              item.sku,
+              fromWarehouseId
+            ]
+          );
+          
+          // 4. Add to destination warehouse (upsert)
+          await client.query(
+            `INSERT INTO inventory 
+             (warehouse_id, product_id, sku, product_name, quantity, available_quantity, reserved_quantity)
+             VALUES ($1, $2, $3, $4, $5, $5, 0)
+             ON CONFLICT (warehouse_id, sku) 
+             DO UPDATE SET 
+               quantity = inventory.quantity + $5,
+               available_quantity = inventory.available_quantity + $5,
+               updated_at = NOW()`,
+            [toWarehouseId, item.product_id, item.sku, item.product_name, item.quantity]
+          );
+          
+          // 5. Record movement at destination (inbound)
+          await client.query(
+            `INSERT INTO stock_movements 
+             (inventory_id, movement_type, quantity, reference_type, reference_id, notes, performed_by)
+             SELECT id, 'transfer_in', $1, 'transfer_order', $2, $3, 'system'
+             FROM inventory 
+             WHERE sku = $4 AND warehouse_id = $5`,
+            [
+              item.quantity,
+              order.id,
+              `Transfer from warehouse ${fromWarehouseId} - Shipment ${id}`,
+              item.sku,
+              toWarehouseId
+            ]
+          );
+        }
+        
+        logger.info('Inventory transfer completed', {
+          orderId: order.id,
+          fromWarehouse: fromWarehouseId,
+          toWarehouse: toWarehouseId,
+          itemCount: itemsResult.rows.length
+        });
+      }
+      
       await client.query(
         `UPDATE orders SET status = 'delivered', actual_delivery = NOW() 
          WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
@@ -301,6 +441,7 @@ export async function updateShipmentStatus(req, res) {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Update shipment error:', error);
+    logger.error('Failed to update shipment status', { error: error.message, shipmentId: id });
     res.status(500).json({ error: 'Failed to update shipment' });
   } finally {
     client.release();

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { DollarSign, CreditCard, TrendingUp, AlertTriangle, Download, RefreshCw } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent, Button, DataTable } from '@/components/ui';
+import { Card, CardHeader, CardTitle, CardContent, Button, DataTable, PermissionGate } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
 import { useFinance } from './hooks/useFinance';
 
@@ -122,7 +122,9 @@ export function FinancePage() {
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
             Export
           </Button>
-          <Button variant="primary">Add Record</Button>
+          <PermissionGate permission="settings.organization">
+            <Button variant="primary">Add Record</Button>
+          </PermissionGate>
         </div>
       </motion.div>
 

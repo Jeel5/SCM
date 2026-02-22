@@ -15,3 +15,5 @@ export * from './Tabs';
 export * from './FilterPanel';
 export * from './Loading';
 export * from './ErrorBoundary';
+export * from './LocationPicker';
+export * from './PermissionGate';

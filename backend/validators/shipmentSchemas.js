@@ -1,128 +1,55 @@
 // Shipment validation schemas - defines rules for shipment operations
 
-export const createShipmentSchema = {
-  order_id: {
-    type: 'string',
-    required: true
-  },
-  tracking_number: {
-    type: 'string',
-    required: false,
-    minLength: 5,
-    maxLength: 100
-  },
-  carrier_id: {
-    type: 'string',
-    required: true
-  },
-  carrier_name: {
-    type: 'string',
-    required: true,
-    minLength: 2,
-    maxLength: 255
-  },
-  service_type: {
-    type: 'string',
-    required: false,
-    enum: ['express', 'standard', 'economy', 'overnight', 'two_day']
-  },
-  status: {
-    type: 'string',
-    required: false,
-    enum: ['pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned']
-  },
-  origin: {
-    type: 'object',
-    required: true,
-    custom: (value) => {
-      if (!value.city || !value.country) {
-        return 'Origin must include city and country';
-      }
-    }
-  },
-  destination: {
-    type: 'object',
-    required: true,
-    custom: (value) => {
-      if (!value.city || !value.country) {
-        return 'Destination must include city and country';
-      }
-    }
-  },
-  estimated_delivery: {
-    type: 'string',
-    required: false
-  },
-  actual_delivery: {
-    type: 'string',
-    required: false
-  },
-  weight: {
-    type: 'number',
-    required: false,
-    min: 0
-  },
-  dimensions: {
-    type: 'object',
-    required: false
-  },
-  cost: {
-    type: 'number',
-    required: false,
-    min: 0
-  }
-};
+import Joi from 'joi';
 
-export const updateShipmentStatusSchema = {
-  status: {
-    type: 'string',
-    required: true,
-    enum: ['pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned']
-  },
-  location: {
-    type: 'object',
-    required: false
-  },
-  notes: {
-    type: 'string',
-    required: false,
-    maxLength: 1000
-  },
-  actual_delivery: {
-    type: 'string',
-    required: false
-  }
-};
+const locationSchema = Joi.object({
+  address: Joi.string(),
+  city: Joi.string().required(),
+  state: Joi.string(),
+  postal_code: Joi.string(),
+  country: Joi.string().required()
+});
 
-export const listShipmentsQuerySchema = {
-  page: {
-    type: 'string',
-    required: false,
-    custom: (value) => {
-      const num = parseInt(value);
-      if (isNaN(num) || num < 1) return 'Page must be a positive integer';
-    }
-  },
-  limit: {
-    type: 'string',
-    required: false,
-    custom: (value) => {
-      const num = parseInt(value);
-      if (isNaN(num) || num < 1 || num > 100) return 'Limit must be between 1 and 100';
-    }
-  },
-  status: {
-    type: 'string',
-    required: false,
-    enum: ['pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned']
-  },
-  carrier_id: {
-    type: 'string',
-    required: false
-  },
-  search: {
-    type: 'string',
-    required: false,
-    maxLength: 100
-  }
-};
+export const createShipmentSchema = Joi.object({
+  order_id: Joi.string().required(),
+  tracking_number: Joi.string().min(5).max(100),
+  carrier_id: Joi.string().required(),
+  carrier_name: Joi.string().min(2).max(255).required(),
+  service_type: Joi.string().valid('express', 'standard', 'economy', 'overnight', 'two_day'),
+  status: Joi.string().valid('pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned'),
+  origin: locationSchema.required(),
+  destination: locationSchema.required(),
+  estimated_delivery: Joi.date().iso(),
+  actual_delivery: Joi.date().iso(),
+  weight: Joi.number().min(0),
+  dimensions: Joi.object({
+    length: Joi.number().min(0),
+    width: Joi.number().min(0),
+    height: Joi.number().min(0),
+    unit: Joi.string().valid('cm', 'in')
+  }),
+  cost: Joi.number().min(0)
+});
+
+export const updateShipmentStatusSchema = Joi.object({
+  status: Joi.string().valid('pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned').required(),
+  location: Joi.object({
+    city: Joi.string(),
+    state: Joi.string(),
+    country: Joi.string(),
+    coordinates: Joi.object({
+      latitude: Joi.number(),
+      longitude: Joi.number()
+    })
+  }),
+  notes: Joi.string().max(1000),
+  actual_delivery: Joi.date().iso()
+});
+
+export const listShipmentsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  status: Joi.string().valid('pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned'),
+  carrier_id: Joi.string(),
+  search: Joi.string().max(100)
+});

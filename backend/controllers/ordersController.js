@@ -5,7 +5,12 @@ import { asyncHandler } from '../errors/index.js';
 
 // List orders with filters and pagination
 export const listOrders = asyncHandler(async (req, res) => {
-  const { status, search, page, limit, sortBy, sortOrder } = req.query;
+  // Use validatedQuery for Joi-validated params (with type coercion)
+  const queryParams = req.validatedQuery || req.query;
+  const { status, search, page, limit, sortBy, sortOrder } = queryParams;
+  
+  // Get organization context for multi-tenancy
+  const organizationId = req.orgContext?.organizationId;
   
   const result = await orderService.getOrders({
     status,
@@ -13,7 +18,8 @@ export const listOrders = asyncHandler(async (req, res) => {
     page: parseInt(page) || 1,
     limit: parseInt(limit) || 20,
     sortBy,
-    sortOrder
+    sortOrder,
+    organizationId
   });
   
   // Transform for frontend
@@ -59,7 +65,10 @@ export const listOrders = asyncHandler(async (req, res) => {
 export const getOrder = asyncHandler(async (req, res) => {
   const { id } = req.params;
   
-  const order = await orderService.getOrderById(id);
+  // Get organization context for multi-tenancy
+  const organizationId = req.orgContext?.organizationId;
+  
+  const order = await orderService.getOrderById(id, organizationId);
   
   res.json({
     success: true,
@@ -99,11 +108,47 @@ export const createOrder = asyncHandler(async (req, res) => {
   // requestCarrierAssignment flag can be set to false if caller wants to handle it separately
   const requestCarrierAssignment = req.body.requestCarrierAssignment !== false;
   
-  const order = await orderService.createOrder(req.body, requestCarrierAssignment);
+  // Inject organization context so order is scoped to the right org
+  // For demo/unauthenticated requests this will be null (org-less demo order)
+  const orderData = {
+    ...req.body,
+    organization_id: req.orgContext?.organizationId || null
+  };
+  
+  const order = await orderService.createOrder(orderData, requestCarrierAssignment);
   
   res.status(201).json({ 
     success: true, 
     message: 'Order created successfully', 
+    data: order 
+  });
+});
+
+/**
+ * Create Transfer Order - Creates order for warehouse-to-warehouse inventory transfer
+ * 
+ * ARCHITECTURE DECISION: Reuses existing order/shipment infrastructure
+ * - Creates order with type 'transfer'
+ * - Auto-creates internal shipment for tracking
+ * - On delivery, triggers automatic inventory transfer
+ * 
+ * REAL-WORLD BENEFITS:
+ * - Full audit trail (who requested, approved, shipped)
+ * - In-transit tracking (prevents "lost" inventory)
+ * - ETA predictions (destination warehouse can plan)
+ * - Workflow approvals (manager authorization)
+ * 
+ * EDGE CASES HANDLED:
+ * - Insufficient stock at source → rollback
+ * - Cancelled transfers → inventory released
+ * - Partial delivery → partial transfer
+ */
+export const createTransferOrder = asyncHandler(async (req, res) => {
+  const order = await orderService.createTransferOrder(req.body);
+  
+  res.status(201).json({ 
+    success: true, 
+    message: 'Transfer order created successfully', 
     data: order 
   });
 });

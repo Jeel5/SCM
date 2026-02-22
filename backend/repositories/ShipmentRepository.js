@@ -7,7 +7,7 @@ class ShipmentRepository extends BaseRepository {
   }
 
   // Get shipments with pagination and filters (status, carrier, search)
-  async findShipments({ page = 1, limit = 20, status = null, carrier_id = null, search = null }, client = null) {
+  async findShipments({ page = 1, limit = 20, status = null, carrier_id = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
     let paramCount = 1;
@@ -18,6 +18,15 @@ class ShipmentRepository extends BaseRepository {
       FROM shipments s
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 's');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (status) {
       query += ` AND s.status = $${paramCount++}`;
@@ -54,29 +63,51 @@ class ShipmentRepository extends BaseRepository {
   /**
    * Find shipment by tracking number
    */
-  async findByTrackingNumber(trackingNumber, client = null) {
-    const query = `SELECT * FROM shipments WHERE tracking_number = $1`;
-    const result = await this.query(query, [trackingNumber], client);
+  async findByTrackingNumber(trackingNumber, organizationId = undefined, client = null) {
+    let query = `SELECT * FROM shipments WHERE tracking_number = $1`;
+    const params = [trackingNumber];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
     return result.rows[0] || null;
   }
 
   /**
    * Find shipments by order ID
    */
-  async findByOrderId(orderId, client = null) {
-    const query = `
+  async findByOrderId(orderId, organizationId = undefined, client = null) {
+    let query = `
       SELECT * FROM shipments 
-      WHERE order_id = $1 
-      ORDER BY created_at DESC
+      WHERE order_id = $1
     `;
-    const result = await this.query(query, [orderId], client);
+    const params = [orderId];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY created_at DESC`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Update shipment status
    */
-  async updateStatus(shipmentId, status, location = null, client = null) {
+  async updateStatus(shipmentId, status, organizationId = undefined, location = null, client = null) {
     const params = [status];
     let paramCount = 2;
     
@@ -94,9 +125,19 @@ class ShipmentRepository extends BaseRepository {
       params.push(JSON.stringify(location));
     }
 
-    query += ` WHERE id = $${paramCount} RETURNING *`;
+    query += ` WHERE id = $${paramCount++}`;
     params.push(shipmentId);
 
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` RETURNING *`;
     const result = await this.query(query, params, client);
     return result.rows[0];
   }
@@ -141,35 +182,59 @@ class ShipmentRepository extends BaseRepository {
   /**
    * Get shipments by status
    */
-  async findByStatus(status, limit = 100, client = null) {
-    const query = `
+  async findByStatus(status, organizationId = undefined, limit = 100, client = null) {
+    let query = `
       SELECT * FROM shipments 
-      WHERE status = $1 
-      ORDER BY created_at DESC 
-      LIMIT $2
+      WHERE status = $1
     `;
-    const result = await this.query(query, [status, limit], client);
+    const params = [status];
+    let paramCount = 2;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${paramCount}`;
+    params.push(limit);
+
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Get delayed shipments
    */
-  async findDelayed(client = null) {
-    const query = `
+  async findDelayed(organizationId = undefined, client = null) {
+    let query = `
       SELECT * FROM shipments 
       WHERE status NOT IN ('delivered', 'failed', 'returned')
         AND estimated_delivery < NOW()
-      ORDER BY estimated_delivery ASC
     `;
-    const result = await this.query(query, [], client);
+    const params = [];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$1`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY estimated_delivery ASC`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Get shipment statistics
    */
-  async getShipmentStats(dateFrom = null, dateTo = null, client = null) {
+  async getShipmentStats(dateFrom = null, dateTo = null, organizationId = undefined, client = null) {
     const params = [];
     let paramCount = 1;
     
@@ -185,6 +250,15 @@ class ShipmentRepository extends BaseRepository {
       FROM shipments
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (dateFrom) {
       query += ` AND created_at >= $${paramCount++}`;
@@ -203,7 +277,7 @@ class ShipmentRepository extends BaseRepository {
   /**
    * Get carrier performance
    */
-  async getCarrierPerformance(dateFrom = null, dateTo = null, client = null) {
+  async getCarrierPerformance(dateFrom = null, dateTo = null, organizationId = undefined, client = null) {
     const params = [];
     let paramCount = 1;
     
@@ -220,6 +294,15 @@ class ShipmentRepository extends BaseRepository {
       FROM shipments
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (dateFrom) {
       query += ` AND created_at >= $${paramCount++}`;

@@ -9,6 +9,7 @@ import { MainLayout, AuthLayout } from '@/components/layout';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ToastContainer } from '@/components/ui/ToastContainer';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { PermissionRoute } from '@/components/ui/PermissionGate';
 import { useAuthStore, useUIStore } from '@/stores';
 
 // Lazy load all pages for code splitting
@@ -19,6 +20,7 @@ const CompaniesPage = lazy(() => import('@/pages/super-admin').then(m => ({ defa
 const OrdersPage = lazy(() => import('@/pages/orders').then(m => ({ default: m.OrdersPage })));
 const ShipmentsPage = lazy(() => import('@/pages/shipments').then(m => ({ default: m.ShipmentsPage })));
 const InventoryPage = lazy(() => import('@/pages/inventory').then(m => ({ default: m.InventoryPage })));
+const ProductsPage = lazy(() => import('@/pages/products').then(m => ({ default: m.ProductsPage })));
 const WarehousesPage = lazy(() => import('@/pages/warehouses').then(m => ({ default: m.WarehousesPage })));
 const CarriersPage = lazy(() => import('@/pages/carriers').then(m => ({ default: m.CarriersPage })));
 const ExceptionsPage = lazy(() => import('@/pages/exceptions').then(m => ({ default: m.ExceptionsPage })));
@@ -28,7 +30,7 @@ const SLAManagementPage = lazy(() => import('@/pages/sla').then(m => ({ default:
 const FinancePage = lazy(() => import('@/pages/finance').then(m => ({ default: m.FinancePage })));
 const HelpSupportPage = lazy(() => import('@/pages/help').then(m => ({ default: m.HelpSupportPage })));
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })));
-
+const TeamPage = lazy(() => import('@/pages/team').then(m => ({ default: m.TeamPage })));
 // Query client configuration
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -154,15 +156,14 @@ function App() {
                 }
               />
 
-              {/* Protected Routes */}
+              {/* Protected Routes - requires authentication */}
               <Route
-                path="/"
                 element={
                   <ProtectedRoute>
                     <MainLayout />
                   </ProtectedRoute>
                 }
-              >                <Route index element={<Navigate to="/dashboard" replace />} />
+              >
                 <Route
                   path="dashboard"
                   element={
@@ -175,7 +176,9 @@ function App() {
                   path="super-admin/dashboard"
                   element={
                     <PageLoader>
-                      <SuperAdminDashboard />
+                      <PermissionRoute permission="companies.manage">
+                        <SuperAdminDashboard />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -183,7 +186,9 @@ function App() {
                   path="super-admin/companies"
                   element={
                     <PageLoader>
-                      <CompaniesPage />
+                      <PermissionRoute permission="companies.manage">
+                        <CompaniesPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -191,7 +196,9 @@ function App() {
                   path="orders"
                   element={
                     <PageLoader>
-                      <OrdersPage />
+                      <PermissionRoute permission="orders.view">
+                        <OrdersPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -199,7 +206,9 @@ function App() {
                   path="shipments"
                   element={
                     <PageLoader>
-                      <ShipmentsPage />
+                      <PermissionRoute permission="shipments.view">
+                        <ShipmentsPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -207,7 +216,19 @@ function App() {
                   path="inventory"
                   element={
                     <PageLoader>
-                      <InventoryPage />
+                      <PermissionRoute permission="inventory.view">
+                        <InventoryPage />
+                      </PermissionRoute>
+                    </PageLoader>
+                  }
+                />
+                <Route
+                  path="products"
+                  element={
+                    <PageLoader>
+                      <PermissionRoute permission="inventory.view">
+                        <ProductsPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -215,7 +236,9 @@ function App() {
                   path="warehouses"
                   element={
                     <PageLoader>
-                      <WarehousesPage />
+                      <PermissionRoute permission="warehouses.view">
+                        <WarehousesPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -223,7 +246,9 @@ function App() {
                   path="carriers"
                   element={
                     <PageLoader>
-                      <CarriersPage />
+                      <PermissionRoute permission="carriers.view">
+                        <CarriersPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -231,7 +256,9 @@ function App() {
                   path="exceptions"
                   element={
                     <PageLoader>
-                      <ExceptionsPage />
+                      <PermissionRoute permission="exceptions.view">
+                        <ExceptionsPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -239,7 +266,9 @@ function App() {
                   path="returns"
                   element={
                     <PageLoader>
-                      <ReturnsPage />
+                      <PermissionRoute permission="returns.view">
+                        <ReturnsPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -247,7 +276,9 @@ function App() {
                   path="analytics"
                   element={
                     <PageLoader>
-                      <AnalyticsPage />
+                      <PermissionRoute permission="analytics.view">
+                        <AnalyticsPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -255,7 +286,9 @@ function App() {
                   path="sla"
                   element={
                     <PageLoader>
-                      <SLAManagementPage />
+                      <PermissionRoute permission="sla.view">
+                        <SLAManagementPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -263,7 +296,9 @@ function App() {
                   path="finance"
                   element={
                     <PageLoader>
-                      <FinancePage />
+                      <PermissionRoute permission="finance.view">
+                        <FinancePage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />
@@ -279,7 +314,19 @@ function App() {
                   path="settings"
                   element={
                     <PageLoader>
-                      <SettingsPage />
+                      <PermissionRoute permission="settings.personal">
+                        <SettingsPage />
+                      </PermissionRoute>
+                    </PageLoader>
+                  }
+                />
+                <Route
+                  path="team"
+                  element={
+                    <PageLoader>
+                      <PermissionRoute permission="team.manage">
+                        <TeamPage />
+                      </PermissionRoute>
                     </PageLoader>
                   }
                 />

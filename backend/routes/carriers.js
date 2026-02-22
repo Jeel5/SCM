@@ -10,6 +10,7 @@
 import express from 'express';
 import db from '../configs/db.js';
 import logger from '../utils/logger.js';
+import { authenticate } from '../middlewares/auth.js';
 
 const router = express.Router();
 
@@ -122,7 +123,7 @@ router.post('/carriers/webhook/:carrierId', async (req, res) => {
  * GET /api/carriers/orders/:orderId/quote-status
  * Get current status of quote responses for an order
  */
-router.get('/carriers/orders/:orderId/quote-status', async (req, res) => {
+router.get('/carriers/orders/:orderId/quote-status', authenticate, async (req, res) => {
   try {
     const { orderId } = req.params;
     

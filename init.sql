@@ -1,8 +1,8 @@
 -- ================================================================================
 -- TwinChain SCM Database Initialization Script
 -- ================================================================================
--- Version: 2.0.0
--- Date: 2026-02-16
+-- Version: 2.1.0
+-- Date: 2026-02-22
 -- 
 -- ARCHITECTURE:
 -- - Multi-tenant support via organization_id
@@ -32,6 +32,9 @@
 -- ============================================
 -- HELPER FUNCTIONS
 -- ============================================
+
+-- pgcrypto: required for gen_random_bytes() used in webhook_token defaults
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -68,6 +71,8 @@ CREATE TABLE organizations (
     -- Status
     is_active BOOLEAN DEFAULT true,
     subscription_tier VARCHAR(50) DEFAULT 'standard', -- starter, standard, enterprise
+    -- Webhook integration
+    webhook_token VARCHAR(64) UNIQUE DEFAULT encode(gen_random_bytes(32), 'hex'),
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -271,20 +276,32 @@ CREATE TABLE products (
     description TEXT,
     category VARCHAR(100),
     -- Physical
-    weight DECIMAL(10,3), -- in kg
-    dimensions JSONB,     -- {length, width, height} in cm
+    weight DECIMAL(10,3),                    -- in kg
+    dimensions JSONB DEFAULT '{"length":0,"width":0,"height":0}'::jsonb,
+    volumetric_weight DECIMAL(10,3),         -- auto‑calculated (L×W×H/5000)
     -- Pricing
     unit_price DECIMAL(10,2),
     cost_price DECIMAL(10,2),
     currency VARCHAR(3) DEFAULT 'INR',
-    -- Attributes
-    attributes JSONB,     -- Custom product attributes
-    images JSONB,         -- Array of image URLs
+    -- Handling flags
+    is_fragile BOOLEAN DEFAULT false,
+    is_hazmat BOOLEAN DEFAULT false,
+    is_perishable BOOLEAN DEFAULT false,
+    requires_cold_storage BOOLEAN DEFAULT false,
+    -- Classification & shipping
+    item_type VARCHAR(50) DEFAULT 'general'
+        CHECK (item_type IN ('general','fragile','hazardous','perishable','electronics','documents','valuable')),
+    package_type VARCHAR(50) DEFAULT 'box'
+        CHECK (package_type IN ('envelope','box','tube','pallet','crate','bag','custom')),
+    handling_instructions TEXT,
+    -- Insurance
+    requires_insurance BOOLEAN DEFAULT false,
+    declared_value DECIMAL(10,2),
+    -- Meta
+    attributes JSONB,                        -- Custom product attributes
+    images JSONB,                            -- Array of image URLs
     -- Status
     is_active BOOLEAN DEFAULT true,
-    is_fragile BOOLEAN DEFAULT false,
-    requires_cold_storage BOOLEAN DEFAULT false,
-    is_hazmat BOOLEAN DEFAULT false,
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -323,6 +340,7 @@ CREATE TABLE sla_policies (
 -- Inventory
 CREATE TABLE inventory (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID REFERENCES organizations(id),
     warehouse_id UUID NOT NULL REFERENCES warehouses(id),
     product_id UUID REFERENCES products(id),
     -- Product Info (for webhook inventory without product mapping)
@@ -354,6 +372,7 @@ CREATE UNIQUE INDEX idx_inventory_warehouse_product ON inventory(warehouse_id, p
 -- Stock Movements
 CREATE TABLE stock_movements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID REFERENCES organizations(id),
     warehouse_id UUID NOT NULL REFERENCES warehouses(id),
     product_id UUID REFERENCES products(id),
     inventory_id UUID REFERENCES inventory(id),
@@ -401,6 +420,7 @@ CREATE TABLE orders (
     priority VARCHAR(20) DEFAULT 'standard' CHECK (priority IN ('express', 'standard', 'bulk', 'same_day')),
     order_type VARCHAR(50) DEFAULT 'regular', -- regular, replacement, cod
     is_cod BOOLEAN DEFAULT false,
+    payment_method VARCHAR(50), -- cod, prepaid, upi, card, netbanking
     -- Amounts
     subtotal DECIMAL(10,2),
     tax_amount DECIMAL(10,2) DEFAULT 0,
@@ -1261,6 +1281,7 @@ CREATE INDEX idx_rate_cards_active ON rate_cards(carrier_id, is_active) WHERE is
 CREATE INDEX idx_rate_cards_route ON rate_cards(origin_state, destination_state) WHERE is_active = true;
 
 -- Inventory
+CREATE INDEX idx_inventory_org ON inventory(organization_id);
 CREATE INDEX idx_inventory_warehouse ON inventory(warehouse_id);
 CREATE INDEX idx_inventory_product ON inventory(product_id);
 CREATE INDEX idx_inventory_low_stock ON inventory(warehouse_id) WHERE available_quantity <= COALESCE(reorder_point, 10);
@@ -1351,6 +1372,7 @@ CREATE INDEX idx_order_splits_parent ON order_splits(parent_order_id);
 CREATE INDEX idx_order_splits_child ON order_splits(child_order_id);
 
 -- Stock Movements
+CREATE INDEX idx_stock_movements_org ON stock_movements(organization_id) WHERE organization_id IS NOT NULL;
 CREATE INDEX idx_stock_movements_warehouse ON stock_movements(warehouse_id);
 CREATE INDEX idx_stock_movements_inventory ON stock_movements(inventory_id) WHERE inventory_id IS NOT NULL;
 CREATE INDEX idx_stock_movements_type ON stock_movements(movement_type);
@@ -1547,36 +1569,41 @@ VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- Create users (superadmin + demo users)
+-- NOTE: password_hash below is a PLACEHOLDER (not a real bcrypt hash).
+-- These users cannot log in until you reset their passwords via:
+--   UPDATE users SET password_hash = <bcrypt_hash> WHERE email = '...';
+-- Or use the organization creation API which hashes the password properly.
 INSERT INTO users (email, password_hash, name, role, organization_id, avatar, is_active)
 SELECT * FROM (VALUES
     -- Superadmin (no organization)
-    ('superadmin@twinchain.in', '$2b$10$demoHashedPassword', 'Super Admin', 'superadmin', NULL, 'https://api.dicebear.com/7.x/avataaars/svg?seed=SuperAdmin', true),
+    ('superadmin@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Super Admin', 'superadmin', NULL, 'https://api.dicebear.com/7.x/avataaars/svg?seed=SuperAdmin', true),
     -- Demo Company Users
-    ('admin@twinchain.in', '$2b$10$demoHashedPassword', 'Raj Admin', 'admin', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Raj', true),
-    ('ops@twinchain.in', '$2b$10$demoHashedPassword', 'Priya Operations', 'operations_manager', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', true),
-    ('wh1@twinchain.in', '$2b$10$demoHashedPassword', 'Amit Warehouse', 'warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Amit', true),
-    ('wh2@twinchain.in', '$2b$10$demoHashedPassword', 'Neha Warehouse', 'warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Neha', true),
-    ('carrier@twinchain.in', '$2b$10$demoHashedPassword', 'Delhivery Partner', 'carrier_partner', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Carrier', true),
-    ('finance@twinchain.in', '$2b$10$demoHashedPassword', 'Ananya Finance', 'finance', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', true),
-    ('support@twinchain.in', '$2b$10$demoHashedPassword', 'Rohan Support', 'customer_support', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rohan', true),
+    ('admin@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Raj Admin', 'admin', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Raj', true),
+    ('ops@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Priya Operations', 'operations_manager', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', true),
+    ('wh1@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Amit Warehouse', 'warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Amit', true),
+    ('wh2@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Neha Warehouse', 'warehouse_manager', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Neha', true),
+    ('carrier@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Delhivery Partner', 'carrier_partner', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Carrier', true),
+    ('finance@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Ananya Finance', 'finance', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', true),
+    ('support@twinchain.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Rohan Support', 'customer_support', (SELECT id FROM organizations WHERE code='DEMO001'), 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rohan', true),
     -- Acme Admin
-    ('admin@acme.in', '$2b$10$demoHashedPassword', 'Acme Admin', 'admin', (SELECT id FROM organizations WHERE code='ACME001'), NULL, true)
+    ('admin@acme.in', '$2b$10$placeholder000000000000000000000000000000000000000000000', 'Acme Admin', 'admin', (SELECT id FROM organizations WHERE code='ACME001'), NULL, true)
 ) AS v(email, password_hash, name, role, organization_id, avatar, is_active)
 ON CONFLICT (email) DO NOTHING;
 
 -- Create demo warehouses
-INSERT INTO warehouses (organization_id, code, name, address, is_active)
+INSERT INTO warehouses (organization_id, code, name, address, capacity, is_active)
 SELECT
     (SELECT id FROM organizations WHERE code='DEMO001'),
     warehouse_code,
     warehouse_name,
     warehouse_address::jsonb,
+    warehouse_capacity,
     true
 FROM (VALUES
-    ('WH-MUM', 'Mumbai Central Warehouse', '{"street": "123 Industrial Area", "city": "Mumbai", "state": "Maharashtra", "postal_code": "400001", "country": "India"}'),
-    ('WH-DEL', 'Delhi Distribution Center', '{"street": "456 Logistics Park", "city": "Delhi", "state": "Delhi", "postal_code": "110001", "country": "India"}'),
-    ('WH-BLR', 'Bangalore Fulfillment Hub', '{"street": "789 Tech Park", "city": "Bangalore", "state": "Karnataka", "postal_code": "560001", "country": "India"}')
-) AS t(warehouse_code, warehouse_name, warehouse_address)
+    ('WH-MUM', 'Mumbai Central Warehouse', '{"street": "123 Industrial Area", "city": "Mumbai", "state": "Maharashtra", "postal_code": "400001", "country": "India"}', 50000),
+    ('WH-DEL', 'Delhi Distribution Center', '{"street": "456 Logistics Park", "city": "Delhi", "state": "Delhi", "postal_code": "110001", "country": "India"}', 40000),
+    ('WH-BLR', 'Bangalore Fulfillment Hub', '{"street": "789 Tech Park", "city": "Bangalore", "state": "Karnataka", "postal_code": "560001", "country": "India"}', 35000)
+) AS t(warehouse_code, warehouse_name, warehouse_address, warehouse_capacity)
 ON CONFLICT (organization_id, code) DO NOTHING;
 
 -- Create demo carriers (system-wide)

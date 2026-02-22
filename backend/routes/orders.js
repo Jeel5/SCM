@@ -1,34 +1,25 @@
-// Orders routes - all routes require authentication and permission checks
+// Orders routes
 import express from 'express';
-import { listOrders, getOrder, createOrder, updateOrderStatus } from '../controllers/ordersController.js';
+import { listOrders, getOrder, createOrder, createTransferOrder } from '../controllers/ordersController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
-
-// Optional authentication middleware (skip for demo)
-const optionalAuth = (req, res, next) => {
-  if (req.headers.authorization) {
-    return authenticate(req, res, next);
-  }
-  // Skip auth for demo - set dummy user
-  req.user = { id: 'demo-user', role: 'customer' };
-  next();
-};
+import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import { 
-  createOrderSchema, 
-  updateOrderStatusSchema, 
+  createOrderSchema,
+  createTransferOrderSchema,
   listOrdersQuerySchema 
 } from '../validators/orderSchemas.js';
 
 const router = express.Router();
 
 // GET /api/orders - list orders with filters
-router.get('/orders', authenticate, authorize('orders:read'), validateQuery(listOrdersQuerySchema), listOrders);
+router.get('/orders', authenticate, injectOrgContext, authorize('orders:read'), validateQuery(listOrdersQuerySchema), listOrders);
 // GET /api/orders/:id - get single order
-router.get('/orders/:id', authenticate, authorize('orders:read'), getOrder);
-// POST /api/orders - create new order (optionalAuth for demo)
-router.post('/orders', optionalAuth, validateRequest(createOrderSchema), createOrder);
-// PATCH /api/orders/:id/status - update order status
-router.patch('/orders/:id/status', authenticate, authorize('orders:update'), validateRequest(updateOrderStatusSchema), updateOrderStatus);
+router.get('/orders/:id', authenticate, injectOrgContext, authorize('orders:read'), getOrder);
+// POST /api/orders - create new order (requires authentication so org context is always available)
+router.post('/orders', authenticate, injectOrgContext, authorize('orders:create'), validateRequest(createOrderSchema), createOrder);
+// POST /api/orders/transfer - create transfer order (warehouse-to-warehouse)
+router.post('/orders/transfer', authenticate, injectOrgContext, authorize('orders:create'), validateRequest(createTransferOrderSchema), createTransferOrder);
 
 export default router;

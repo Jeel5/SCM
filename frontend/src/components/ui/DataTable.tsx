@@ -66,17 +66,40 @@ export function DataTable<T extends { id: string | number }>({
   const filteredData = onSearch ? data : data.filter((item) => {
     if (!searchQuery) return true;
     const searchLower = searchQuery.toLowerCase();
-    return Object.values(item).some(value => 
-      String(value).toLowerCase().includes(searchLower)
-    );
+    return Object.values(item).some(value => {
+      if (value === null || value === undefined) return false;
+      if (typeof value === 'object') return JSON.stringify(value).toLowerCase().includes(searchLower);
+      return String(value).toLowerCase().includes(searchLower);
+    });
   });
 
-  // Local sort for client-side tables
-  const sortedData = sortKey && !pagination ? [...filteredData].sort((a, b) => {
+  // Improved sorting that handles nested values and different data types
+  const sortedData = sortKey ? [...filteredData].sort((a, b) => {
     const aVal = (a as Record<string, unknown>)[sortKey];
     const bVal = (b as Record<string, unknown>)[sortKey];
-    if (aVal === bVal) return 0;
-    const comparison = (aVal as any) > (bVal as any) ? 1 : -1;
+    
+    // Handle null/undefined
+    if (aVal === null || aVal === undefined) return 1;
+    if (bVal === null || bVal === undefined) return -1;
+    
+    // Handle numbers
+    if (typeof aVal === 'number' && typeof bVal === 'number') {
+      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+    }
+    
+    // Handle dates
+    const aDate = new Date(aVal as any);
+    const bDate = new Date(bVal as any);
+    if (!isNaN(aDate.getTime()) && !isNaN(bDate.getTime())) {
+      return sortDirection === 'asc' 
+        ? aDate.getTime() - bDate.getTime() 
+        : bDate.getTime() - aDate.getTime();
+    }
+    
+    // Handle strings (default)
+    const aStr = String(aVal).toLowerCase();
+    const bStr = String(bVal).toLowerCase();
+    const comparison = aStr.localeCompare(bStr);
     return sortDirection === 'asc' ? comparison : -comparison;
   }) : filteredData;
 

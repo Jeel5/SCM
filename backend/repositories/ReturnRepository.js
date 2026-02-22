@@ -7,7 +7,7 @@ class ReturnRepository extends BaseRepository {
   }
 
   // Get returns with pagination and filters (status, reason, search)
-  async findReturns({ page = 1, limit = 20, status = null, reason = null, search = null }, client = null) {
+  async findReturns({ page = 1, limit = 20, status = null, reason = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
     let paramCount = 1;
@@ -18,6 +18,15 @@ class ReturnRepository extends BaseRepository {
       FROM returns r
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'r');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (status) {
       query += ` AND r.status = $${paramCount++}`;
@@ -54,8 +63,8 @@ class ReturnRepository extends BaseRepository {
   /**
    * Find return by ID with items
    */
-  async findReturnWithItems(returnId, client = null) {
-    const query = `
+  async findReturnWithItems(returnId, organizationId = undefined, client = null) {
+    let query = `
       SELECT 
         r.*,
         json_agg(
@@ -72,43 +81,76 @@ class ReturnRepository extends BaseRepository {
       FROM returns r
       LEFT JOIN return_items ri ON r.id = ri.return_id
       WHERE r.id = $1
-      GROUP BY r.id
     `;
+    const params = [returnId];
 
-    const result = await this.query(query, [returnId], client);
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'r');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` GROUP BY r.id`;
+
+    const result = await this.query(query, params, client);
     return result.rows[0] || null;
   }
 
   /**
    * Find returns by order ID
    */
-  async findByOrderId(orderId, client = null) {
-    const query = `
+  async findByOrderId(orderId, organizationId = undefined, client = null) {
+    let query = `
       SELECT * FROM returns 
-      WHERE order_id = $1 
-      ORDER BY created_at DESC
+      WHERE order_id = $1
     `;
-    const result = await this.query(query, [orderId], client);
+    const params = [orderId];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY created_at DESC`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Find returns by customer email
    */
-  async findByCustomerEmail(email, client = null) {
-    const query = `
+  async findByCustomerEmail(email, organizationId = undefined, client = null) {
+    let query = `
       SELECT * FROM returns 
-      WHERE customer_email = $1 
-      ORDER BY created_at DESC
+      WHERE customer_email = $1
     `;
-    const result = await this.query(query, [email], client);
+    const params = [email];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY created_at DESC`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Update return status
    */
-  async updateStatus(returnId, status, additionalData = {}, client = null) {
+  async updateStatus(returnId, status, organizationId = undefined, additionalData = {}, client = null) {
     const updates = ['status = $1', 'updated_at = NOW()'];
     const params = [status];
     let paramCount = 2;
@@ -123,7 +165,7 @@ class ReturnRepository extends BaseRepository {
       params.push(additionalData.refund_amount);
     }
 
-    if (additionalData.refund_method) {
+    if (additionalData.refund_method){
       updates.push(`refund_method = $${paramCount++}`);
       params.push(additionalData.refund_method);
     }
@@ -134,12 +176,21 @@ class ReturnRepository extends BaseRepository {
 
     params.push(returnId);
 
-    const query = `
+    let query = `
       UPDATE returns
       SET ${updates.join(', ')}
-      WHERE id = $${paramCount}
-      RETURNING *
-    `;
+      WHERE id = $${paramCount++}`;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` RETURNING *`;
 
     const result = await this.query(query, params, client);
     return result.rows[0];
@@ -194,7 +245,7 @@ class ReturnRepository extends BaseRepository {
   /**
    * Get return statistics
    */
-  async getReturnStats(dateFrom = null, dateTo = null, client = null) {
+  async getReturnStats(dateFrom = null, dateTo = null, organizationId = undefined, client = null) {
     const params = [];
     let paramCount = 1;
     
@@ -211,6 +262,15 @@ class ReturnRepository extends BaseRepository {
       FROM returns
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (dateFrom) {
       query += ` AND created_at >= $${paramCount++}`;
@@ -229,14 +289,27 @@ class ReturnRepository extends BaseRepository {
   /**
    * Get returns by status
    */
-  async findByStatus(status, limit = 100, client = null) {
-    const query = `
+  async findByStatus(status, organizationId = undefined, limit = 100, client = null) {
+    let query = `
       SELECT * FROM returns 
-      WHERE status = $1 
-      ORDER BY created_at DESC 
-      LIMIT $2
+      WHERE status = $1
     `;
-    const result = await this.query(query, [status, limit], client);
+    const params = [status];
+    let paramCount = 2;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${paramCount}`;
+    params.push(limit);
+
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 }

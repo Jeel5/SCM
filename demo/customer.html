@@ -255,6 +255,22 @@
             </p>
         </div>
 
+        <!-- Org Selector -->
+        <div class="card" id="orgSelectorCard">
+            <div class="section-title">🏢 Select Organization</div>
+            <div class="form-group">
+                <label>Organization <span style="color:#718096;font-weight:400;">(Webhook sender)</span></label>
+                <select id="orgSelect" onchange="onOrgSelect()">
+                    <option value="">-- Loading organizations... --</option>
+                </select>
+            </div>
+            <div id="orgInfo" style="display:none; background:#e6fffa; border:2px solid #047857; border-radius:6px; padding:12px; margin-top:10px; font-size:0.9em;">
+                <strong>✅ Organization selected.</strong>
+                Orders will be sent via this org's webhook token.
+                <br><span style="color:#718096;">Token: <span id="orgTokenDisplay" style="font-family:monospace;"></span></span>
+            </div>
+        </div>
+
         <!-- Step 1: Product Selection -->
         <div id="step1" class="card">
             <div class="section-title">📦 Step 1: Select Product</div>
@@ -367,23 +383,23 @@
             <div class="section-title">✅ Step 3: Order Placed Successfully!</div>
             
             <div class="success-message">
-                <h3>Order ID: <span id="orderIdDisplay"></span></h3>
+                <h3>Job ID: <span id="orderIdDisplay"></span></h3>
                 <p style="margin-top: 15px; font-size: 1.1em;">
-                    🚀 Your order has been placed and quote requests have been sent to all carriers!
+                    ✅ Order webhook accepted and queued for processing!
                 </p>
                 <p style="margin-top: 10px;">
-                    Carriers are now reviewing your shipment details. This is <strong>Phase 2</strong> - 
-                    carriers will accept or reject based on their capacity, routes, and policies.
+                    The job worker will create the order in the database and trigger carrier assignment automatically.
+                    Check the <strong>Carrier Portal</strong> once the job runs.
                 </p>
             </div>
 
             <div class="data-section">
-                <h4>📤 Data Sent to Carriers:</h4>
+                <h4>📤 Webhook Payload Sent (data field):</h4>
                 <div class="json-display" id="carrierRequestData"></div>
             </div>
 
             <div class="data-section">
-                <h4>📥 Backend Response:</h4>
+                <h4>📥 Webhook Response:</h4>
                 <div class="json-display" id="orderResponseData"></div>
             </div>
 
@@ -404,6 +420,56 @@
     <script>
         const API_BASE = 'http://localhost:3000/api';
         
+        let selectedOrgToken = null;
+        let selectedOrgId = null;
+        let organizations = [];
+
+        async function loadOrganizations() {
+            try {
+                const res = await fetch(`${API_BASE}/demo/organizations`);
+                const result = await res.json();
+                if (!result.success || !result.data || result.data.length === 0) {
+                    document.getElementById('orgSelect').innerHTML = '<option value="">-- No organizations found --</option>';
+                    return;
+                }
+                organizations = result.data;
+                const select = document.getElementById('orgSelect');
+                select.innerHTML = '<option value="">-- Select an organization --</option>';
+                organizations.forEach(org => {
+                    const opt = document.createElement('option');
+                    opt.value = org.webhook_token;
+                    opt.dataset.id = org.id;
+                    opt.dataset.name = org.name;
+                    opt.dataset.token = org.webhook_token;
+                    opt.textContent = `${org.name} (${org.code})`;
+                    select.appendChild(opt);
+                });
+                // Auto-select if only one org
+                if (organizations.length === 1) {
+                    select.value = organizations[0].webhook_token;
+                    onOrgSelect();
+                }
+            } catch (err) {
+                console.error('Failed to load organizations:', err);
+                document.getElementById('orgSelect').innerHTML = '<option value="">-- Error loading orgs --</option>';
+            }
+        }
+
+        function onOrgSelect() {
+            const select = document.getElementById('orgSelect');
+            const opt = select.options[select.selectedIndex];
+            if (opt && opt.value) {
+                selectedOrgToken = opt.dataset.token;
+                selectedOrgId = opt.dataset.id;
+                document.getElementById('orgTokenDisplay').textContent = selectedOrgToken.substring(0, 16) + '...';
+                document.getElementById('orgInfo').style.display = 'block';
+            } else {
+                selectedOrgToken = null;
+                selectedOrgId = null;
+                document.getElementById('orgInfo').style.display = 'none';
+            }
+        }
+
         const PRODUCTS = {
             laptop: {
                 id: null,  // No real product in DB - demo only
@@ -746,6 +812,10 @@
         });
         
         async function placeOrder() {
+            if (!selectedOrgToken) {
+                alert('Please select an organization first!');
+                return;
+            }
             const btn = document.getElementById('placeOrderBtn');
             btn.disabled = true;
             btn.textContent = '⏳ Placing order...';
@@ -801,109 +871,76 @@
                 special_instructions: product.is_fragile ? 'Handle with care - Fragile electronics' : null
             };
 
-            console.log('=== CREATING ORDER ===');
-            console.log('Order data:', orderData);
+            // Wrap in required webhook envelope format
+            const webhookPayload = {
+                event_type: 'order.created',
+                source: 'croma',
+                timestamp: new Date().toISOString(),
+                data: {
+                    external_order_id: `DEMO-${Date.now()}`,
+                    platform: 'croma',
+                    customer_name: orderData.customer_name,
+                    customer_email: orderData.customer_email,
+                    customer_phone: orderData.customer_phone,
+                    shipping_address: orderData.shipping_address,
+                    total_amount: orderData.total_amount,
+                    tax_amount: orderData.tax_amount,
+                    shipping_amount: orderData.shipping_amount,
+                    priority: orderData.priority,
+                    notes: orderData.notes,
+                    items: orderData.items.map(item => ({
+                        sku: item.sku,
+                        name: item.product_name,   // job handler expects 'name'
+                        quantity: item.quantity,
+                        price: item.unit_price,    // job handler expects 'price'
+                        weight: item.weight,
+                        dimensions: item.dimensions,
+                        is_fragile: item.is_fragile,
+                        declared_value: item.declared_value
+                    }))
+                }
+            };
+
+            console.log('=== CREATING ORDER VIA WEBHOOK ===');
+            console.log('Webhook payload:', webhookPayload);
 
             try {
-                // Create order
-                const orderResponse = await fetch(`${API_BASE}/orders`, {
+                // Send order via org-scoped webhook
+                const orderResponse = await fetch(`${API_BASE}/webhooks/${selectedOrgToken}/orders`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(orderData)
+                    body: JSON.stringify(webhookPayload)
                 });
 
                 if (!orderResponse.ok) {
-                    throw new Error(`Order creation failed: ${orderResponse.status}`);
+                    const errText = await orderResponse.text();
+                    throw new Error(`Order webhook failed (${orderResponse.status}): ${errText}`);
                 }
 
                 const orderResult = await orderResponse.json();
-                const orderId = orderResult.data?.id || orderResult.id;
-                
-                console.log('Order created:', orderResult);
+                // Webhook returns job_id, not orderId directly (async processing)
+                const jobId = orderResult.job_id;
 
-                // Request real quotes from carriers (Phase 2)
-                const fromPin = document.getElementById('fromPincode').value;
-                const toPin = document.getElementById('toPincode').value;
-                
-                // Pincode to coordinates mapping (same as in estimate)
-                const pincodeCoords = {
-                    '110001': { lat: 28.6139, lon: 77.2090, city: 'Delhi' },
-                    '400001': { lat: 19.0760, lon: 72.8777, city: 'Mumbai' },
-                    '560001': { lat: 12.9716, lon: 77.5946, city: 'Bangalore' },
-                    '600001': { lat: 13.0827, lon: 80.2707, city: 'Chennai' },
-                    '700001': { lat: 22.5726, lon: 88.3639, city: 'Kolkata' }
-                };
-                
-                const originCoords = pincodeCoords[fromPin] || { lat: 28.7041, lon: 77.1025, city: 'Delhi' };
-                const destCoords = pincodeCoords[toPin] || { lat: 19.0760, lon: 72.8777, city: 'Mumbai' };
-                
-                const quoteData = {
-                    orderId: orderId,
-                    origin: {
-                        lat: originCoords.lat,
-                        lon: originCoords.lon,
-                        address: `${originCoords.city} Warehouse, PIN: ${fromPin}`,
-                        postalCode: fromPin
-                    },
-                    destination: {
-                        lat: destCoords.lat,
-                        lon: destCoords.lon,
-                        address: `Customer Address, ${destCoords.city}, PIN: ${toPin}`,
-                        postalCode: toPin
-                    },
-                    items: [{
-                        weight: product.weight,
-                        dimensions: product.dimensions,
-                        name: product.name,
-                        is_fragile: product.is_fragile,
-                        requires_cold_storage: product.requires_cold_storage
-                    }],
-                    serviceType: document.getElementById('serviceType').value
-                };
-
-                console.log('=== REQUESTING CARRIER QUOTES ===');
-                console.log('Quote data:', quoteData);
-
-                const quoteResponse = await fetch(`${API_BASE}/shipping/quotes`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(quoteData)
-                });
-
-                const quoteResult = await quoteResponse.json();
-                console.log('Quote requests sent:', quoteResult);
-                
-                // Display carrier quote stats
-                const stats = quoteResult.data?.stats || {};
-                const quoteMessage = quoteResult.message || 'Quote requests sent to carriers';
-                console.log('Carrier quote stats:', stats);
+                // Webhook returns a job_id — order is created asynchronously.
+                // Carrier assignment will be triggered by the jobs worker after the order is inserted.
+                console.log('✅ Webhook accepted, job queued:', orderResult);
 
                 // Store in localStorage for other pages
-                localStorage.setItem('currentOrderId', orderId);
-                localStorage.setItem('orderData', JSON.stringify(orderData));
-                localStorage.setItem('quoteData', JSON.stringify(quoteData));
-                localStorage.setItem('quoteResult', JSON.stringify(quoteResult));
+                localStorage.setItem('currentJobId', jobId);
+                localStorage.setItem('webhookPayload', JSON.stringify(webhookPayload));
+                localStorage.setItem('webhookResponse', JSON.stringify(orderResult));
 
                 // Show success step
-                document.getElementById('orderIdDisplay').textContent = orderId;
-                document.getElementById('carrierRequestData').textContent = JSON.stringify(quoteData, null, 2);
+                document.getElementById('orderIdDisplay').textContent = `Job #${jobId}`;
+                document.getElementById('carrierRequestData').textContent = JSON.stringify(webhookPayload.data, null, 2);
                 document.getElementById('orderResponseData').textContent = JSON.stringify(orderResult, null, 2);
-                
-                // Update success message with carrier status
+
+                // Update success message
                 const successMessageEl = document.querySelector('#step3 .success-message p:nth-child(2)');
                 if (successMessageEl) {
-                    const pendingCount = stats.pendingCount || stats.totalCarriers || 0;
-                    const acceptedCount = stats.acceptedCount || 0;
-                    
-                    if (acceptedCount > 0) {
-                        successMessageEl.innerHTML = `🎉 <strong>${acceptedCount}</strong> carrier(s) accepted immediately! Check carrier portal for details.`;
-                    } else if (pendingCount > 0) {
-                        successMessageEl.innerHTML = `📋 Quote requests sent to <strong>${pendingCount}</strong> carrier(s). They will review and accept via their portal.`;
-                    } else {
-                        successMessageEl.innerHTML = `✅ ${quoteMessage}`;
-                    }
+                    successMessageEl.innerHTML = `📋 Order webhook received and queued as background job <strong>#${jobId}</strong>. The order will be created and carrier assignment will begin automatically.`;
                 }
-                
+
                 document.getElementById('step3').style.display = 'block';
                 
                 console.log('=== ORDER PLACED SUCCESSFULLY ===');
@@ -923,6 +960,7 @@
         // Select first product by default
         window.addEventListener('DOMContentLoaded', function() {
             console.log('Page loaded');
+            loadOrganizations();
             const firstCard = document.querySelector('.product-card[data-product="laptop"]');
             if (firstCard) {
                 firstCard.click();

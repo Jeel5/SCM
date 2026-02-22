@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Download, Eye } from 'lucide-react';
+import { exportToCSV } from '@/lib/export';
+import { useToast } from '@/components/ui';
 import {
   Card,
   Button,
@@ -8,6 +10,7 @@ import {
   StatusBadge,
   PriorityBadge,
   Tabs,
+  PermissionGate,
   Badge,
 } from '@/components/ui';
 import { formatCurrency, formatRelativeTime } from '@/lib/utils';
@@ -21,9 +24,26 @@ export function OrdersPage() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const { success } = useToast();
 
   const pageSize = 10;
   const { orders, totalOrders, isLoading } = useOrders(page, pageSize);
+
+  const handleExport = () => {
+    const exportData = filteredOrders.map(order => ({
+      order_number: order.orderNumber,
+      customer_name: order.customerName,
+      customer_email: order.customerEmail,
+      status: order.status,
+      priority: order.priority,
+      items_count: order.items?.length || 0,
+      total_amount: order.totalAmount,
+      created_at: order.createdAt,
+      estimated_delivery: order.estimatedDelivery || 'N/A',
+    }));
+    exportToCSV(exportData, `orders_${new Date().toISOString().split('T')[0]}`);
+    success('Orders exported successfully!');
+  };
 
   // Count orders per status for tab badges
   const statusCounts = orders.reduce<Record<string, number>>((acc, order) => {
@@ -77,6 +97,7 @@ export function OrdersPage() {
     {
       key: 'items',
       header: 'Items',
+      sortable: true,
       render: (order: Order) => (
         <Badge variant="default" className="whitespace-nowrap">
           {order.items?.length || 0} <span className="hidden sm:inline">item(s)</span><span className="sm:hidden">items</span>
@@ -84,7 +105,7 @@ export function OrdersPage() {
       ),
     },
     {
-      key: 'total',
+      key: 'totalAmount',
       header: 'Total',
       sortable: true,
       render: (order: Order) => (
@@ -128,12 +149,14 @@ export function OrdersPage() {
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage and track all customer orders</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
-          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsCreateOpen(true)}>
-            New Order
-          </Button>
+          <PermissionGate permission="orders.create">
+            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsCreateOpen(true)}>
+              New Order
+            </Button>
+          </PermissionGate>
         </div>
       </motion.div>
 
@@ -171,6 +194,12 @@ export function OrdersPage() {
         onClose={() => {
           setIsDetailsOpen(false);
           setSelectedOrder(null);
+        }}
+        onUpdate={() => {
+          // A simple way to trigger a re-fetch is to quickly toggle the page state, 
+          // or we can reload the window. But the cleaner way is to export a refresh fn from useOrders 
+          // Since useOrders doesn't expose refresh yet, we can do a forced reload or state reset
+          window.location.reload();
         }}
       />
       <CreateOrderModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />

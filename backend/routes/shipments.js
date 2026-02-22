@@ -10,6 +10,7 @@ import {
 } from '../controllers/trackingController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
+import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { verifyWebhookSignature } from '../middlewares/webhookAuth.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import { 
@@ -20,23 +21,30 @@ import {
 
 const router = express.Router();
 
-// Carrier portal - list shipments (public for carriers to view their own)
-router.get('/shipments', listShipments); // Carriers can view their own shipments by carrier_id
+// Carriers use carrier_id param instead of JWT; authenticated users get org-scoped results
+const optionalAuth = (req, res, next) => {
+  if (req.headers.authorization) return authenticate(req, res, next);
+  req.user = null;
+  next();
+};
 
-router.get('/shipments/:id', authenticate, authorize('shipments:read'), getShipment);
-router.get('/shipments/:id/timeline', authenticate, authorize('shipments:read'), getShipmentTimeline);
-router.post('/shipments', authenticate, authorize('shipments:create'), validateRequest(createShipmentSchema), createShipment);
-router.patch('/shipments/:id/status', authenticate, authorize('shipments:update'), validateRequest(updateShipmentStatusSchema), updateShipmentStatus);
+// Carrier portal — carriers filter by carrier_id param; authenticated users see org-scoped results
+router.get('/shipments', optionalAuth, validateQuery(listShipmentsQuerySchema), listShipments);
+
+router.get('/shipments/:id', authenticate, injectOrgContext, authorize('shipments:read'), getShipment);
+router.get('/shipments/:id/timeline', authenticate, injectOrgContext, authorize('shipments:read'), getShipmentTimeline);
+router.post('/shipments', authenticate, injectOrgContext, authorize('shipments:create'), validateRequest(createShipmentSchema), createShipment);
+router.patch('/shipments/:id/status', authenticate, injectOrgContext, authorize('shipments:update'), validateRequest(updateShipmentStatusSchema), updateShipmentStatus);
 
 // Carrier-only endpoint: Confirm pickup (Method A - Carrier Only Control)
 // Protected with HMAC signature verification
 router.post('/shipments/:id/confirm-pickup', verifyWebhookSignature(), confirmPickup);
 
-// Tracking endpoints (public for carrier webhooks, authenticated for others)
-router.get('/shipments/:trackingNumber/details', getShipmentDetails);
-router.get('/shipments/:trackingNumber/timeline', getTrackingTimeline);
-router.post('/shipments/:trackingNumber/update-tracking', updateShipmentTracking);
-router.post('/shipments/:trackingNumber/calculate-route', calculateRoute);
-router.post('/shipments/:trackingNumber/simulate-update', simulateTrackingUpdate); // For testing
+// Tracking endpoints — write endpoints protected with webhook signature, reads require auth
+router.get('/shipments/:trackingNumber/details', authenticate, injectOrgContext, authorize('shipments:read'), getShipmentDetails);
+router.get('/shipments/:trackingNumber/timeline', authenticate, injectOrgContext, authorize('shipments:read'), getTrackingTimeline);
+router.post('/shipments/:trackingNumber/update-tracking', verifyWebhookSignature(), updateShipmentTracking);
+router.post('/shipments/:trackingNumber/calculate-route', authenticate, injectOrgContext, authorize('shipments:update'), calculateRoute);
+router.post('/shipments/:trackingNumber/simulate-update', authenticate, injectOrgContext, authorize('shipments:update'), simulateTrackingUpdate);
 
 export default router;

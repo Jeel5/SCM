@@ -140,12 +140,14 @@ export function ReturnsPage() {
           <Button variant="outline" className="flex sm:hidden p-2">
             <Download className="h-4 w-4" />
           </Button>
-          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsCreateOpen(true)} className="hidden sm:flex">
-            Create Return
-          </Button>
-          <Button variant="primary" onClick={() => setIsCreateOpen(true)} className="flex sm:hidden p-2">
-            <Plus className="h-4 w-4" />
-          </Button>
+          <PermissionGate permission="returns.update">
+            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsCreateOpen(true)} className="hidden sm:flex">
+              Create Return
+            </Button>
+            <Button variant="primary" onClick={() => setIsCreateOpen(true)} className="flex sm:hidden p-2">
+              <Plus className="h-4 w-4" />
+            </Button>
+          </PermissionGate>
         </div>
       </motion.div>
 

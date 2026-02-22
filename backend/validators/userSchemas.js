@@ -1,176 +1,84 @@
 // User validation schemas - defines rules for authentication and registration
 
-export const registerUserSchema = {
-  username: {
-    type: 'string',
-    required: true,
-    minLength: 3,
-    maxLength: 50,
-    pattern: /^[a-zA-Z0-9_]+$/,
-    custom: (value) => {
-      if (!/^[a-zA-Z0-9_]+$/.test(value)) {
-        return 'Username can only contain letters, numbers, and underscores';
-      }
-    }
-  },
-  email: {
-    type: 'string',
-    required: true,
-    email: true
-  },
-  password: {
-    type: 'string',
-    required: true,
-    minLength: 8,
-    custom: (value) => {
-      if (!/(?=.*[a-z])/.test(value)) return 'Password must contain at least one lowercase letter';
-      if (!/(?=.*[A-Z])/.test(value)) return 'Password must contain at least one uppercase letter';
-      if (!/(?=.*\d)/.test(value)) return 'Password must contain at least one number';
-    }
-  },
-  full_name: {
-    type: 'string',
-    required: true,
-    minLength: 2,
-    maxLength: 255
-  },
-  role: {
-    type: 'string',
-    required: false,
-    enum: ['admin', 'manager', 'operator', 'viewer']
-  },
-  department: {
-    type: 'string',
-    required: false,
-    maxLength: 100
-  },
-  phone: {
-    type: 'string',
-    required: false,
-    minLength: 10,
-    maxLength: 20
-  }
-};
+import Joi from 'joi';
 
-export const loginUserSchema = {
-  email: {
-    type: 'string',
-    required: true,
-    email: true
-  },
-  password: {
-    type: 'string',
-    required: true,
-    minLength: 1
-  }
-};
+export const registerUserSchema = Joi.object({
+  username: Joi.string().min(3).max(50).pattern(/^[a-zA-Z0-9_]+$/).required().messages({
+    'string.pattern.base': 'Username can only contain letters, numbers, and underscores'
+  }),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required().messages({
+    'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
+  }),
+  full_name: Joi.string().min(2).max(255).required(),
+  role: Joi.string().valid('admin', 'manager', 'operator', 'viewer'),
+  department: Joi.string().max(100),
+  phone: Joi.string().min(10).max(20)
+});
 
-export const updateUserSchema = {
-  email: {
-    type: 'string',
-    required: false,
-    email: true
-  },
-  full_name: {
-    type: 'string',
-    required: false,
-    minLength: 2,
-    maxLength: 255
-  },
-  role: {
-    type: 'string',
-    required: false,
-    enum: ['admin', 'manager', 'operator', 'viewer']
-  },
-  department: {
-    type: 'string',
-    required: false,
-    maxLength: 100
-  },
-  phone: {
-    type: 'string',
-    required: false,
-    minLength: 10,
-    maxLength: 20
-  },
-  is_active: {
-    type: 'string',
-    required: false,
-    enum: ['true', 'false']
-  }
-};
+export const loginUserSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().required()
+});
 
-export const changePasswordSchema = {
-  current_password: {
-    type: 'string',
-    required: true,
-    minLength: 1
-  },
-  new_password: {
-    type: 'string',
-    required: true,
-    minLength: 8,
-    custom: (value) => {
-      if (!/(?=.*[a-z])/.test(value)) return 'Password must contain at least one lowercase letter';
-      if (!/(?=.*[A-Z])/.test(value)) return 'Password must contain at least one uppercase letter';
-      if (!/(?=.*\d)/.test(value)) return 'Password must contain at least one number';
-    }
-  }
-};
+export const updateUserSchema = Joi.object({
+  email: Joi.string().email(),
+  full_name: Joi.string().min(2).max(255),
+  role: Joi.string().valid('admin', 'manager', 'operator', 'viewer'),
+  department: Joi.string().max(100),
+  phone: Joi.string().min(10).max(20),
+  is_active: Joi.boolean()
+}).min(1);
 
-export const updateProfileSchema = {
-  name: {
-    type: 'string',
-    required: false,
-    minLength: 2,
-    maxLength: 255
-  },
-  email: {
-    type: 'string',
-    required: false,
-    email: true
-  },
-  phone: {
-    type: 'string',
-    required: false,
-    minLength: 10,
-    maxLength: 20
-  },
-  company: {
-    type: 'string',
-    required: false,
-    maxLength: 255
-  },
-  avatar: {
-    type: 'string',
-    required: false,
-    maxLength: 500
-  }
-};
+export const changePasswordSchema = Joi.object({
+  current_password: Joi.string().required(),
+  new_password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required().messages({
+    'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
+  })
+});
 
-export const notificationPreferencesSchema = {
-  email_enabled: {
-    type: 'boolean',
-    required: false
-  },
-  push_enabled: {
-    type: 'boolean',
-    required: false
-  },
-  sms_enabled: {
-    type: 'boolean',
-    required: false
-  },
-  notification_types: {
-    type: 'object',
-    required: false,
-    properties: {
-      orders: { type: 'boolean' },
-      shipments: { type: 'boolean' },
-      sla_alerts: { type: 'boolean' },
-      exceptions: { type: 'boolean' },
-      returns: { type: 'boolean' },
-      system_updates: { type: 'boolean' }
-    }
-  }
-};
+export const updateProfileSchema = Joi.object({
+  name: Joi.string().min(2).max(255),
+  email: Joi.string().email(),
+  phone: Joi.string().min(10).max(20),
+  company: Joi.string().max(255),
+  avatar: Joi.string().uri().max(500)
+}).min(1);
+
+// Org user management schemas (admin creating/editing users within their org)
+const ORG_ROLES = Joi.string().valid(
+  'operations_manager',
+  'warehouse_manager',
+  'carrier_partner',
+  'finance',
+  'customer_support'
+);
+
+export const createOrgUserSchema = Joi.object({
+  name: Joi.string().min(2).max(255).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required().messages({
+    'string.pattern.base': 'Password must contain uppercase, lowercase, and a number'
+  }),
+  role: ORG_ROLES.required()
+});
+
+export const updateOrgUserSchema = Joi.object({
+  name: Joi.string().min(2).max(255),
+  role: ORG_ROLES,
+  is_active: Joi.boolean()
+}).min(1);
+
+export const notificationPreferencesSchema = Joi.object({
+  email_enabled: Joi.boolean(),
+  push_enabled: Joi.boolean(),
+  sms_enabled: Joi.boolean(),
+  notification_types: Joi.object({
+    orders: Joi.boolean(),
+    shipments: Joi.boolean(),
+    sla_alerts: Joi.boolean(),
+    exceptions: Joi.boolean(),
+    returns: Joi.boolean(),
+    system_updates: Joi.boolean()
+  })
+});

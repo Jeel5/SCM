@@ -1,61 +1,302 @@
+import { useState, useEffect, useRef } from 'react';
 import { Modal, Button, Input, Select } from '@/components/ui';
-import type { Warehouse } from '@/types';
+import { inventoryApi, productsApi } from '@/api/services';
+import { formatCurrency } from '@/lib/utils';
+import { Search, Package2, X, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import type { Warehouse, Product } from '@/types';
 
 interface AddItemModalProps {
   isOpen: boolean;
   onClose: () => void;
   warehouses: Warehouse[];
+  onSuccess?: () => void;
 }
 
-export function AddItemModal({ isOpen, onClose, warehouses }: AddItemModalProps) {
+interface InventoryFields {
+  warehouse_id: string;
+  quantity: string;
+  reserved_quantity: string;
+  bin_location: string;
+  zone: string;
+  reorder_point: string;
+  max_stock_level: string;
+}
+
+const INITIAL_FIELDS: InventoryFields = {
+  warehouse_id: '',
+  quantity: '',
+  reserved_quantity: '',
+  bin_location: '',
+  zone: '',
+  reorder_point: '',
+  max_stock_level: '',
+};
+
+export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItemModalProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [fields, setFields] = useState<InventoryFields>(INITIAL_FIELDS);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Product search with debounce
+  useEffect(() => {
+    if (!searchQuery.trim() || selectedProduct) {
+      setSearchResults([]);
+      return;
+    }
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await productsApi.getProducts({ search: searchQuery, is_active: 'true', limit: 10 });
+        setSearchResults(res.data);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+  }, [searchQuery, selectedProduct]);
+
+  function setField(f: keyof InventoryFields) {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setFields(prev => ({ ...prev, [f]: e.target.value }));
+  }
+
+  function selectProduct(p: Product) {
+    setSelectedProduct(p);
+    setSearchQuery('');
+    setSearchResults([]);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!selectedProduct) { setError('Please select a product from the catalog.'); return; }
+    if (!fields.warehouse_id) { setError('Please select a warehouse.'); return; }
+    if (!fields.quantity || Number(fields.quantity) < 0) { setError('Quantity must be 0 or greater.'); return; }
+
+    const payload: Record<string, unknown> = {
+      product_id: selectedProduct.id,
+      warehouse_id: fields.warehouse_id,
+      quantity: Number(fields.quantity),
+    };
+    if (fields.reserved_quantity !== '') payload.reserved_quantity = Number(fields.reserved_quantity);
+    if (fields.bin_location.trim()) payload.bin_location = fields.bin_location.trim();
+    if (fields.zone.trim()) payload.zone = fields.zone.trim();
+    if (fields.reorder_point !== '') payload.reorder_point = Number(fields.reorder_point);
+    if (fields.max_stock_level !== '') payload.max_stock_level = Number(fields.max_stock_level);
+
+    try {
+      setIsSubmitting(true);
+      await inventoryApi.createInventoryItem(payload as any);
+      resetAndClose();
+      onSuccess?.();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setError(e?.response?.data?.message || e?.message || 'Failed to add stock.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function resetAndClose() {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSelectedProduct(null);
+    setFields(INITIAL_FIELDS);
+    setError(null);
+    onClose();
+  }
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add Inventory Item" size="lg">
-      <form className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Input label="Product Name" placeholder="Enter product name" required />
-          <Input label="SKU" placeholder="Enter SKU" required />
+    <Modal isOpen={isOpen} onClose={resetAndClose} title="Add Stock to Inventory" size="2xl">
+      <form onSubmit={handleSubmit} className="space-y-5">
+
+        {/* Step 1: Product selection */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+              1. Select Product
+            </p>
+            <Link
+              to="/products"
+              onClick={resetAndClose}
+              className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" /> Manage Catalog
+            </Link>
+          </div>
+
+          {selectedProduct ? (
+            /* Selected product card */
+            <div className="flex items-center gap-3 p-3 rounded-xl border-2 border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">
+              <div className="h-10 w-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                <Package2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 dark:text-white truncate">{selectedProduct.name}</p>
+                <p className="text-xs text-gray-500 font-mono">{selectedProduct.sku}{selectedProduct.category ? ` · ${selectedProduct.category}` : ''}</p>
+              </div>
+              {selectedProduct.unitPrice != null && (
+                <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 flex-shrink-0">
+                  {formatCurrency(selectedProduct.unitPrice, selectedProduct.currency)}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedProduct(null)}
+                className="p-1 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-800 text-indigo-500 flex-shrink-0"
+                title="Change product"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            /* Product search */
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search by product name or SKU…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                autoFocus
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+              {/* Search dropdown */}
+              {(searchResults.length > 0 || isSearching) && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 overflow-hidden max-h-56 overflow-y-auto">
+                  {isSearching ? (
+                    <div className="px-4 py-3 text-sm text-gray-400">Searching…</div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-gray-400">No products found</div>
+                  ) : (
+                    searchResults.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => selectProduct(p)}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-left transition-colors"
+                      >
+                        <Package2 className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{p.name}</p>
+                          <p className="text-xs text-gray-500 font-mono">{p.sku}{p.category ? ` · ${p.category}` : ''}</p>
+                        </div>
+                        {p.unitPrice != null && (
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-300 flex-shrink-0">
+                            {formatCurrency(p.unitPrice, p.currency)}
+                          </p>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+              {searchQuery && !isSearching && searchResults.length === 0 && (
+                <p className="mt-1.5 text-xs text-gray-400">
+                  Product not found?{' '}
+                  <Link to="/products" onClick={resetAndClose} className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                    Create it in the catalog first
+                  </Link>
+                </p>
+              )}
+            </div>
+          )}
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Select
-            label="Category"
-            options={[
-              { value: 'electronics', label: 'Electronics' },
-              { value: 'clothing', label: 'Clothing' },
-              { value: 'food', label: 'Food & Beverages' },
-              { value: 'furniture', label: 'Furniture' },
-              { value: 'other', label: 'Other' },
-            ]}
-          />
-          <Select
-            label="Warehouse"
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-          />
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <Input label="Quantity" type="number" placeholder="0" required />
-          <Input label="Unit Cost" type="number" placeholder="0.00" required />
-          <Select
-            label="Unit"
-            options={[
-              { value: 'pieces', label: 'Pieces' },
-              { value: 'boxes', label: 'Boxes' },
-              { value: 'pallets', label: 'Pallets' },
-              { value: 'kg', label: 'Kilograms' },
-            ]}
-          />
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <Input label="Min Qty" type="number" placeholder="0" />
-          <Input label="Reorder Point" type="number" placeholder="0" />
-          <Input label="Max Qty" type="number" placeholder="0" />
-        </div>
-        <Input label="Storage Location" placeholder="e.g., Aisle A, Rack 3, Shelf 2" />
-        <div className="flex items-center gap-3 pt-4">
-          <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" className="flex-1">
-            Add Item
+
+        {/* Step 2: Inventory placement (only shown after product selected) */}
+        {selectedProduct && (
+          <>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
+                2. Storage Location
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Select
+                  label="Warehouse *"
+                  value={fields.warehouse_id}
+                  onChange={setField('warehouse_id')}
+                  options={[
+                    { value: '', label: 'Select warehouse…' },
+                    ...warehouses.map(w => ({ value: w.id, label: w.name })),
+                  ]}
+                />
+                <Input
+                  label="Zone"
+                  placeholder="e.g. A"
+                  value={fields.zone}
+                  onChange={setField('zone')}
+                />
+                <Input
+                  label="Bin Location"
+                  placeholder="e.g. A-03-02"
+                  value={fields.bin_location}
+                  onChange={setField('bin_location')}
+                />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
+                3. Stock Levels
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <Input
+                  label="Quantity *"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={fields.quantity}
+                  onChange={setField('quantity')}
+                  required
+                />
+                <Input
+                  label="Reserved"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={fields.reserved_quantity}
+                  onChange={setField('reserved_quantity')}
+                />
+                <Input
+                  label="Reorder Point"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={fields.reorder_point}
+                  onChange={setField('reorder_point')}
+                />
+                <Input
+                  label="Max Stock Level"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={fields.max_stock_level}
+                  onChange={setField('max_stock_level')}
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        <div className="flex justify-end gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+          <Button type="button" variant="outline" onClick={resetAndClose}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={isSubmitting || !selectedProduct}>
+            {isSubmitting ? 'Adding…' : 'Add to Inventory'}
           </Button>
         </div>
       </form>

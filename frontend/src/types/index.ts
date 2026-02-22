@@ -1,11 +1,11 @@
 // User & Auth Types
-export type UserRole = 
+export type UserRole =
   | 'superadmin'
-  | 'admin' 
-  | 'operations_manager' 
-  | 'warehouse_manager' 
-  | 'carrier_partner' 
-  | 'finance' 
+  | 'admin'
+  | 'operations_manager'
+  | 'warehouse_manager'
+  | 'carrier_partner'
+  | 'finance'
   | 'customer_support';
 
 export interface User {
@@ -15,7 +15,6 @@ export interface User {
   avatar?: string;
   role: UserRole;
   organizationId: string | null; // null for superadmin
-  permissions: string[];
   createdAt: string;
   lastLogin: string;
 }
@@ -28,17 +27,20 @@ export interface AuthState {
 }
 
 // Order Types
-export type OrderStatus = 
-  | 'created' 
-  | 'confirmed' 
-  | 'allocated' 
+export type OrderStatus =
+  | 'created'
+  | 'confirmed'
+  | 'allocated'
+  | 'pending_carrier_assignment'
   | 'processing'
-  | 'shipped' 
+  | 'ready_to_ship'
+  | 'shipped'
   | 'in_transit'
   | 'out_for_delivery'
-  | 'delivered' 
+  | 'delivered'
   | 'returned'
-  | 'cancelled';
+  | 'cancelled'
+  | 'on_hold';
 
 export type OrderPriority = 'express' | 'standard' | 'bulk';
 
@@ -89,12 +91,12 @@ export interface Address {
 }
 
 // Shipment Types
-export type ShipmentStatus = 
+export type ShipmentStatus =
   | 'pending'
-  | 'picked_up' 
-  | 'in_transit' 
+  | 'picked_up'
+  | 'in_transit'
   | 'at_hub'
-  | 'out_for_delivery' 
+  | 'out_for_delivery'
   | 'delivered'
   | 'failed_delivery'
   | 'returned';
@@ -172,24 +174,72 @@ export interface Warehouse {
 // Inventory Types
 export interface InventoryItem {
   id: string;
-  productId: string;
-  productName: string;
-  name: string;
-  sku: string;
+  productId: string | null;
+  productName: string | null;
+  sku: string | null;
   warehouseId: string;
-  warehouseName: string;
+  warehouseName: string | null;
+  warehouseCode: string | null;
   quantity: number;
-  reservedQuantity: number;
   availableQuantity: number;
-  minQuantity: number;
-  maxQuantity: number;
-  reorderPoint: number;
-  reorderQuantity: number;
-  unitCost: number;
-  category: string;
-  unit: string;
-  location: string;
-  lastRestocked: string;
+  reservedQuantity: number;
+  damagedQuantity: number;
+  inTransitQuantity: number;
+  productCategory: string | null;
+  unitPrice: number | null;
+  binLocation: string | null;
+  zone: string | null;
+  reorderPoint: number | null;
+  maxStockLevel: number | null;
+  isLowStock: boolean;
+  isOutOfStock: boolean;
+  lastStockCheck: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Product Catalog Types
+export interface ProductDimensions {
+  length?: number;
+  width?: number;
+  height?: number;
+  unit?: string;
+}
+
+export type ProductItemType = 'general' | 'fragile' | 'hazardous' | 'perishable' | 'electronics' | 'documents' | 'valuable';
+export type ProductPackageType = 'envelope' | 'box' | 'tube' | 'pallet' | 'crate' | 'bag' | 'custom';
+
+export interface Product {
+  id: string;
+  organizationId: string | null;
+  sku: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  weight: number | null;
+  dimensions: ProductDimensions | null;
+  unitPrice: number | null;
+  costPrice: number | null;
+  currency: string;
+  // Handling flags
+  isFragile: boolean;
+  requiresColdStorage: boolean;
+  isHazmat: boolean;
+  isPerishable: boolean;
+  // Classification & shipping
+  itemType: ProductItemType | null;
+  packageType: ProductPackageType | null;
+  handlingInstructions: string | null;
+  // Insurance
+  requiresInsurance: boolean;
+  declaredValue: number | null;
+  // Computed
+  volumetricWeight: number | null;
+  // Status
+  isActive: boolean;
+  attributes: Record<string, unknown> | null;
+  images: string[] | null;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -213,6 +263,9 @@ export interface Carrier {
   rateCard: RateCard[];
   contactEmail: string;
   contactPhone: string;
+  website?: string;
+  servicesOffered?: any;
+  serviceType?: string;
   apiEndpoint?: string;
   createdAt: string;
 }
@@ -277,7 +330,7 @@ export interface SLADashboardData {
 }
 
 // Return Types
-export type ReturnStatus = 
+export type ReturnStatus =
   | 'pending'
   | 'requested'
   | 'approved'
@@ -293,7 +346,7 @@ export type ReturnStatus =
   | 'replaced'
   | 'closed';
 
-export type ReturnReason = 
+export type ReturnReason =
   | 'damaged'
   | 'wrong_item'
   | 'not_as_described'
@@ -340,7 +393,7 @@ export interface ReturnItem {
 }
 
 // Exception Types
-export type ExceptionType = 
+export type ExceptionType =
   | 'delay'
   | 'damage'
   | 'lost'
@@ -352,7 +405,7 @@ export type ExceptionType =
 
 export type ExceptionSeverity = 'low' | 'medium' | 'high' | 'critical';
 
-export type ExceptionStatus = 
+export type ExceptionStatus =
   | 'open'
   | 'investigating'
   | 'pending_resolution'
@@ -431,7 +484,7 @@ export interface WarehouseUtilization {
 }
 
 // Notification Types
-export type NotificationType = 
+export type NotificationType =
   | 'order'
   | 'shipment'
   | 'sla'

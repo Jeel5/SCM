@@ -7,7 +7,7 @@ class OrderRepository extends BaseRepository {
   }
 
   // Get orders with pagination, filters (status, search), and sorting
-  async findOrders({ page = 1, limit = 20, status = null, search = null, sortBy = 'created_at', sortOrder = 'DESC' }, client = null) {
+  async findOrders({ page = 1, limit = 20, status = null, search = null, sortBy = 'created_at', sortOrder = 'DESC', organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
     let paramCount = 1;
@@ -35,6 +35,15 @@ class OrderRepository extends BaseRepository {
       LEFT JOIN order_items oi ON o.id = oi.order_id
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'o');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     // Status filter
     if (status) {
@@ -78,8 +87,8 @@ class OrderRepository extends BaseRepository {
    * Find order by ID with all items
    */
   // Get order with all its items using JSON aggregation
-  async findOrderWithItems(orderId, client = null) {
-    const query = `
+  async findOrderWithItems(orderId, organizationId = undefined, client = null) {
+    let query = `
       SELECT 
         o.*,
         json_agg(
@@ -97,10 +106,21 @@ class OrderRepository extends BaseRepository {
       FROM orders o
       LEFT JOIN order_items oi ON o.id = oi.order_id
       WHERE o.id = $1
-      GROUP BY o.id
     `;
+    const params = [orderId];
 
-    const result = await this.query(query, [orderId], client);
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'o');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` GROUP BY o.id`;
+
+    const result = await this.query(query, params, client);
     return result.rows[0] || null;
   }
 
@@ -151,15 +171,25 @@ class OrderRepository extends BaseRepository {
   }
 
   // Update order status and timestamp
-  async updateStatus(orderId, status, client = null) {
-    const query = `
+  async updateStatus(orderId, status, organizationId = undefined, client = null) {
+    let query = `
       UPDATE orders
       SET status = $1, updated_at = NOW()
       WHERE id = $2
-      RETURNING *
     `;
-    
-    const result = await this.query(query, [status, orderId], client);
+    const params = [status, orderId];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$3`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` RETURNING *`;
+    const result = await this.query(query, params, client);
     return result.rows[0];
   }
 
@@ -175,34 +205,58 @@ class OrderRepository extends BaseRepository {
   /**
    * Get orders by status
    */
-  async findByStatus(status, limit = 100, client = null) {
-    const query = `
+  async findByStatus(status, organizationId = undefined, limit = 100, client = null) {
+    let query = `
       SELECT * FROM orders 
-      WHERE status = $1 
-      ORDER BY created_at DESC 
-      LIMIT $2
+      WHERE status = $1
     `;
-    const result = await this.query(query, [status, limit], client);
+    const params = [status];
+    let paramCount = 2;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${paramCount}`;
+    params.push(limit);
+
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Get orders by customer email
    */
-  async findByCustomerEmail(email, client = null) {
-    const query = `
+  async findByCustomerEmail(email, organizationId = undefined, client = null) {
+    let query = `
       SELECT * FROM orders 
-      WHERE customer_email = $1 
-      ORDER BY created_at DESC
+      WHERE customer_email = $1
     `;
-    const result = await this.query(query, [email], client);
+    const params = [email];
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    query += ` ORDER BY created_at DESC`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 
   /**
    * Get order statistics
    */
-  async getOrderStats(dateFrom = null, dateTo = null, client = null) {
+  async getOrderStats(dateFrom = null, dateTo = null, organizationId = undefined, client = null) {
     const params = [];
     let paramCount = 1;
     
@@ -216,6 +270,15 @@ class OrderRepository extends BaseRepository {
       FROM orders
       WHERE 1=1
     `;
+
+    // Add organization filter for multi-tenancy
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId);
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
 
     if (dateFrom) {
       query += ` AND created_at >= $${paramCount++}`;

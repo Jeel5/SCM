@@ -318,12 +318,8 @@
             <p>Review incoming quote requests and respond with accept/reject</p>
         </div>
         
-        <div class="carrier-selector">
-            <button class="carrier-btn" onclick="selectCarrier(event, 'UPS')">📦 UPS</button>
-            <button class="carrier-btn" onclick="selectCarrier(event, 'DTDC')">🚚 DTDC</button>
-            <button class="carrier-btn active" onclick="selectCarrier(event, 'DELHIVERY')">🟩 Delhivery</button>
-            <button class="carrier-btn" onclick="selectCarrier(event, 'DHL')">🟦 DHL Express</button>
-            <button class="carrier-btn" onclick="selectCarrier(event, 'ECOM')">📮 Ecom Express</button>
+        <div class="carrier-selector" id="carrierSelectorDiv">
+            <div style="color:#6c757d; font-size:0.9em; padding:10px;">Loading carriers...</div>
         </div>
         
         <div class="content">
@@ -351,17 +347,57 @@
                     <p>Accept a quote request to see shipments here.</p>
                 </div>
             </div>
+
+            <div class="section-title" style="margin-top: 40px;">
+                📡 Update Shipment Status
+            </div>
+
+            <div style="background:white; padding:25px; border-radius:12px; margin-bottom:20px; border:2px solid #e9ecef;">
+                <p style="color:#6c757d; margin-bottom:20px; font-size:0.95em;">Directly update the status of any tracked shipment (simulates carrier status webhook).</p>
+                <div class="data-grid">
+                    <div class="input-group">
+                        <label>Tracking Number</label>
+                        <input type="text" id="updateTrackingNumber" placeholder="e.g., DELHIVERY-TRACK-12345">
+                    </div>
+                    <div class="input-group">
+                        <label>New Status</label>
+                        <select id="updateStatus">
+                            <option value="picked_up">Picked Up</option>
+                            <option value="in_transit">In Transit</option>
+                            <option value="at_hub">At Hub</option>
+                            <option value="out_for_delivery">Out for Delivery</option>
+                            <option value="delivered">Delivered</option>
+                            <option value="failed_delivery">Failed Delivery</option>
+                            <option value="rto_initiated">RTO Initiated</option>
+                            <option value="returned">Returned</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>City</label>
+                        <input type="text" id="updateCity" placeholder="e.g., Mumbai">
+                    </div>
+                    <div class="input-group">
+                        <label>Description / Notes</label>
+                        <input type="text" id="updateDescription" placeholder="e.g., Package arrived at Mumbai hub">
+                    </div>
+                </div>
+                <button class="btn btn-accept" style="max-width:280px; margin-top:10px;" onclick="updateShipmentStatus()">
+                    📡 Update Status
+                </button>
+                <div id="statusUpdateResult" style="display:none; margin-top:15px; padding:15px; border-radius:8px;"></div>
+            </div>
         </div>
     </div>
 
     <script>
         const API_BASE = 'http://localhost:3000/api';
-        let currentCarrier = 'DELHIVERY';
+        let currentCarrier = null;
         let currentCarrierId = null; // Store current carrier ID
         let currentWebhookSecret = null; // Store webhook secret for HMAC signing
         let pollingInterval = null;
+        let carrierNames = {}; // code -> display name
         
-        // Map carrier button names to database codes
+        // Map carrier button names to database codes (fallback for hardcoded names)
         const CARRIER_CODE_MAP = {
             'DHL': 'DHL-001',
             'FEDEX': 'FEDEX-001',
@@ -372,6 +408,83 @@
             'ECOM': 'ECOM-001',
             'XPRESSBEES': 'XPRESSBEES-001'
         };
+
+        async function loadCarriers() {
+            try {
+                const res = await fetch(`${API_BASE}/demo/carriers`);
+                const result = await res.json();
+                const div = document.getElementById('carrierSelectorDiv');
+
+                if (!result.success || !result.data || result.data.length === 0) {
+                    div.innerHTML = '<div style="color:#6c757d; padding:10px;">No active carriers found.</div>';
+                    return;
+                }
+
+                const carriers = result.data;
+                div.innerHTML = '';
+                carriers.forEach((c, i) => {
+                    carrierNames[c.code] = c.name;
+                    const btn = document.createElement('button');
+                    btn.className = 'carrier-btn' + (i === 0 ? ' active' : '');
+                    btn.textContent = c.name;
+                    btn.onclick = (evt) => selectCarrier(evt, c.code);
+                    div.appendChild(btn);
+                });
+
+                // Select first carrier by default
+                if (carriers.length > 0) {
+                    await selectCarrier(null, carriers[0].code);
+                }
+            } catch (err) {
+                console.error('Error loading carriers:', err);
+                document.getElementById('carrierSelectorDiv').innerHTML =
+                    '<div style="color:red; padding:10px;">Failed to load carriers. Is the backend running?</div>';
+            }
+        }
+
+        async function updateShipmentStatus() {
+            const tracking = document.getElementById('updateTrackingNumber').value.trim();
+            const status = document.getElementById('updateStatus').value;
+            const city = document.getElementById('updateCity').value.trim();
+            const description = document.getElementById('updateDescription').value.trim();
+            const resultDiv = document.getElementById('statusUpdateResult');
+
+            if (!tracking) {
+                alert('Please enter a tracking number.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/demo/carrier/update-status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tracking_number: tracking, status, city: city || undefined, description: description || undefined })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.style.background = '#d4edda';
+                    resultDiv.style.border = '2px solid #28a745';
+                    resultDiv.style.color = '#155724';
+                    resultDiv.innerHTML = `<strong>✅ Status updated!</strong><br>
+                        Tracking: <code>${tracking}</code><br>
+                        New Status: <strong>${status}</strong><br>
+                        <small style="color:#6c757d; margin-top:8px; display:block;">Response: <pre style="margin:5px 0;">${JSON.stringify(result.data || result, null, 2)}</pre></small>`;
+                    // Refresh shipment list
+                    await loadMyShipments();
+                } else {
+                    throw new Error(result.message || result.error || 'Update failed');
+                }
+            } catch (err) {
+                console.error('Error updating status:', err);
+                resultDiv.style.display = 'block';
+                resultDiv.style.background = '#f8d7da';
+                resultDiv.style.border = '2px solid #dc3545';
+                resultDiv.style.color = '#721c24';
+                resultDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+            }
+        }
 
         /**
          * HMAC-SHA256 Signature Generation (Industry Standard)
@@ -468,16 +581,7 @@
                 evt.currentTarget.classList.add('active');
             }
             
-            document.getElementById('currentCarrierName').textContent = 
-                carrier === 'DHL' ? 'DHL Express' :
-                carrier === 'FEDEX' ? 'FedEx' :
-                carrier === 'BLUEDART' ? 'Blue Dart' :
-                carrier === 'DELHIVERY' ? 'Delhivery' :
-                carrier === 'UPS' ? 'UPS Supply Chain' :
-                carrier === 'DTDC' ? 'DTDC Courier' :
-                carrier === 'ECOM' ? 'Ecom Express' :
-                carrier === 'XPRESSBEES' ? 'XpressBees' :
-                carrier;
+            document.getElementById('currentCarrierName').textContent = carrierNames[carrier] || carrier;
             
             // Load assignments first (sets currentCarrierId), then load shipments
             await loadPendingRequests();
@@ -486,8 +590,8 @@
         
         async function loadPendingRequests() {
             try {
-                // Map carrier name to database code
-                const carrierCode = CARRIER_CODE_MAP[currentCarrier] || currentCarrier;
+                // Use DB code directly — loaded from /api/demo/carriers
+                const carrierCode = currentCarrier;
                 
                 // Fetch actual pending assignments from backend API
                 const response = await fetch(`${API_BASE}/carriers/assignments/pending?carrierId=${carrierCode}`);
@@ -891,25 +995,22 @@
          */
         async function loadMyShipments() {
             try {
-                const carrierCode = CARRIER_CODE_MAP[currentCarrier] || currentCarrier;
-                
                 console.log('📦 Loading shipments for:', {
                     carrier: currentCarrier,
-                    carrierCode: carrierCode,
                     existingCarrierId: currentCarrierId
                 });
                 
-                // If currentCarrierId is already set (from loadPendingRequests), use it
-                // Otherwise, fetch carrier by code
+                // If currentCarrierId is already set (from loadPendingRequests), reuse it
+                // Otherwise fetch carrier by code directly from DB
                 if (!currentCarrierId) {
-                    const carrierResponse = await fetch(`${API_BASE}/carriers?code=${carrierCode}`);
+                    const carrierResponse = await fetch(`${API_BASE}/carriers?code=${currentCarrier}`);
                     const carrierData = await carrierResponse.json();
                     
                     if (!carrierData.success || !carrierData.data || carrierData.data.length === 0) {
                         document.getElementById('shipmentsContainer').innerHTML = `
                             <div class="empty-state">
                                 <h3>❌ Carrier Not Found</h3>
-                                <p>Could not find carrier with code: ${carrierCode}</p>
+                                <p>Could not find carrier with code: ${currentCarrier}</p>
                             </div>
                         `;
                         return;
@@ -1046,10 +1147,10 @@
         
         // Load requests on page load
         window.onload = async () => {
-            await loadPendingRequests();
-            await loadMyShipments();
+            await loadCarriers();
             // Refresh every 5 seconds to check for new orders and shipments
             setInterval(async () => {
+                if (!currentCarrier) return;
                 await loadPendingRequests();
                 await loadMyShipments();
             }, 5000);

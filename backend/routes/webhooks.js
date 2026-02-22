@@ -1,37 +1,48 @@
 import express from 'express';
 import * as webhooksController from '../controllers/webhooksController.js';
+import { authenticate } from '../middlewares/auth.js';
+import { resolveWebhookOrg } from '../middlewares/webhookOrgContext.js';
 
 const router = express.Router();
 
 /**
  * Webhook Routes
- * Public endpoints for receiving webhooks from external systems
- * Note: These endpoints typically don't require authentication
- * but should validate webhook signatures in production
+ * 
+ * Multi-tenant webhooks: Org is identified by a secret token in the URL.
+ * Each organization gets a unique webhook_token (see organizations.webhook_token).
+ *
+ *   POST /api/webhooks/:orgToken/orders     → order from Croma, Amazon etc.
+ *   POST /api/webhooks/:orgToken/inventory  → warehouse sync for that org
+ *   POST /api/webhooks/:orgToken/returns    → return requests for that org
+ *
+ * Legacy/demo routes (no token → organization_id = null, for testing only):
+ *   POST /api/webhooks/orders
+ *   POST /api/webhooks/generic
  */
 
-// Order webhooks from e-commerce platforms
+// ── Org-scoped webhook routes ─────────────────────────────────────────────────
+// resolveWebhookOrg looks up :orgToken against organizations.webhook_token
+// and sets req.webhookOrganizationId. Returns 401 if token is invalid.
+
+router.post('/:orgToken/orders', resolveWebhookOrg, webhooksController.handleOrderWebhook);
+router.post('/:orgToken/inventory', resolveWebhookOrg, webhooksController.handleInventoryWebhook);
+router.post('/:orgToken/returns', resolveWebhookOrg, webhooksController.handleReturnWebhook);
+router.post('/:orgToken/tracking', resolveWebhookOrg, webhooksController.handleTrackingWebhook);
+router.post('/:orgToken/rates', resolveWebhookOrg, webhooksController.handleRatesWebhook);
+
+// ── Legacy / demo routes (organization_id = null) ─────────────────────────────
+// These remain for the demo site and backward compatibility.
+// In production, clients MUST use the org-scoped token URLs above.
 router.post('/orders', webhooksController.handleOrderWebhook);
-
-// Carrier tracking updates
 router.post('/tracking', webhooksController.handleTrackingWebhook);
-
-// Warehouse inventory updates
 router.post('/inventory', webhooksController.handleInventoryWebhook);
-
-// Return requests
 router.post('/returns', webhooksController.handleReturnWebhook);
-
-// Carrier rate responses
 router.post('/rates', webhooksController.handleRatesWebhook);
-
-// Generic webhook endpoint (for testing)
 router.post('/generic', webhooksController.handleGenericWebhook);
 
-// Check webhook processing status
-router.get('/status/:jobId', webhooksController.getWebhookStatus);
+// ── Management endpoints (require auth) ───────────────────────────────────────
 
-// Generate sample webhook data (for testing)
-router.get('/sample/:type', webhooksController.generateSampleWebhook);
+// Check webhook processing status
+router.get('/status/:jobId', authenticate, webhooksController.getWebhookStatus);
 
 export default router;

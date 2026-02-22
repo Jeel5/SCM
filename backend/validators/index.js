@@ -9,8 +9,85 @@ class ValidationError extends Error {
   }
 }
 
-// Validate data against schema definition, returns array of errors if any
-function validate(schema, data) {
+/**
+ * Validation middleware factory for Joi schemas (request body)
+ */
+function validateRequest(schema) {
+  return (req, res, next) => {
+    // Check if schema has Joi validate method
+    if (schema && typeof schema.validate === 'function') {
+      const { error, value } = schema.validate(req.body);
+      
+      if (error) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          message: error.details[0].message,
+          details: error.details
+        });
+      }
+      
+      // Replace req.body with validated and sanitized value
+      req.body = value;
+      return next();
+    }
+    
+    // Fallback to old custom validation for backward compatibility
+    const errors = validateCustom(schema, req.body);
+    
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        errors
+      });
+    }
+    
+    next();
+  };
+}
+
+/**
+ * Query validation middleware factory for Joi schemas
+ */
+function validateQuery(schema) {
+  return (req, res, next) => {
+    // Check if schema has Joi validate method
+    if (schema && typeof schema.validate === 'function') {
+      const { error, value } = schema.validate(req.query);
+      
+      if (error) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          message: error.details[0].message,
+          details: error.details
+        });
+      }
+      
+      // Store validated values in a new property (req.query is read-only)
+      // Controllers can access validated/coerced values via req.validatedQuery if needed
+      req.validatedQuery = value;
+      return next();
+    }
+    
+    // Fallback to old custom validation for backward compatibility
+    const errors = validateCustom(schema, req.query);
+    
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        errors
+      });
+    }
+    
+    next();
+  };
+}
+
+// Old custom validation function (kept for backward compatibility)
+function validateCustom(schema, data) {
   const errors = [];
 
   for (const [field, rules] of Object.entries(schema)) {
@@ -75,7 +152,7 @@ function validate(schema, data) {
       }
       if (rules.items) {
         value.forEach((item, index) => {
-          const itemErrors = validate(rules.items, item);
+          const itemErrors = validateCustom(rules.items, item);
           if (itemErrors.length > 0) {
             itemErrors.forEach(err => {
               errors.push({ field: `${field}[${index}].${err.field}`, message: err.message });
@@ -110,42 +187,4 @@ function isValidEmail(email) {
   return emailRegex.test(email);
 }
 
-/**
- * Validation middleware factory
- */
-function validateRequest(schema) {
-  return (req, res, next) => {
-    const errors = validate(schema, req.body);
-    
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        errors
-      });
-    }
-    
-    next();
-  };
-}
-
-/**
- * Query validation middleware factory
- */
-function validateQuery(schema) {
-  return (req, res, next) => {
-    const errors = validate(schema, req.query);
-    
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        errors
-      });
-    }
-    
-    next();
-  };
-}
-
-export { validate, validateRequest, validateQuery, ValidationError };
+export { validateCustom, validateRequest, validateQuery, ValidationError };

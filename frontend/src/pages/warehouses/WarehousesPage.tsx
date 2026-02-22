@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Package, Plus, Clock, LayoutGrid, Map as MapIcon, Eye, Table as TableIcon } from 'lucide-react';
+import { Building2, Package, Plus, Clock, ArrowRightLeft, Eye, MapPin } from 'lucide-react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Card, Button, Badge, DataTable, Tabs } from '@/components/ui';
+import { Card, Button, Badge, DataTable, Tabs, PermissionGate } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
 import type { Warehouse } from '@/types';
 import { WarehouseCard } from './components/WarehouseCard';
 import { WarehouseDetailsModal } from './components/WarehouseDetailsModal';
 import { AddWarehouseModal } from './components/AddWarehouseModal';
+import { TransferOrderModal } from './components/TransferOrderModal';
 import { useWarehouses } from './hooks/useWarehouses';
 
 const MAP_STYLE = {
@@ -38,12 +39,36 @@ const MAP_STYLE = {
 
 // Main Warehouses Page
 export function WarehousesPage() {
-  const { warehouses, isLoading } = useWarehouses();
+  const { warehouses, isLoading, refetch } = useWarehouses();
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'map'>('grid');
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this warehouse?')) return;
+
+    setIsDeleting(true);
+    try {
+      const { warehousesApi } = await import('@/api/services');
+      await warehousesApi.deleteWarehouse(id);
+      setIsDetailsOpen(false);
+      setSelectedWarehouse(null);
+      refetch();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete warehouse');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Filter warehouses based on tab
+  const filteredWarehouses = warehouses.filter((w) =>
+    activeTab === 'all' || w.status === activeTab
+  );
 
   const tabs = [
     { id: 'all', label: 'All Warehouses', count: warehouses.length },
@@ -60,12 +85,13 @@ export function WarehousesPage() {
   const activeWarehouses = warehouses.filter((w) => w.status === 'active').length;
 
   // Calculate map center based on warehouse locations
-  const mapCenter = warehouses.length > 0
+  const warehousesWithCoords = warehouses.filter((w) => w.location?.lng && w.location?.lat);
+  const mapCenter = warehousesWithCoords.length > 0
     ? {
-        longitude: warehouses.reduce((sum, w) => sum + w.location.lng, 0) / warehouses.length,
-        latitude: warehouses.reduce((sum, w) => sum + w.location.lat, 0) / warehouses.length,
-        zoom: warehouses.length === 1 ? 10 : 4,
-      }
+      longitude: warehousesWithCoords.reduce((sum, w) => sum + w.location.lng, 0) / warehousesWithCoords.length,
+      latitude: warehousesWithCoords.reduce((sum, w) => sum + w.location.lat, 0) / warehousesWithCoords.length,
+      zoom: warehousesWithCoords.length === 1 ? 10 : 4,
+    }
     : { longitude: 78.9629, latitude: 20.5937, zoom: 4 }; // Default to India if no warehouses
 
   const columns = [
@@ -112,7 +138,7 @@ export function WarehousesPage() {
               className={cn(
                 'h-full rounded-full transition-all',
                 warehouse.utilizationPercentage >= 90 ? 'bg-red-500' :
-                warehouse.utilizationPercentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'
+                  warehouse.utilizationPercentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'
               )}
               style={{ width: `${warehouse.utilizationPercentage}%` }}
             />
@@ -171,48 +197,26 @@ export function WarehousesPage() {
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage warehouse locations and inventory</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="flex items-center rounded-lg border border-gray-200 dark:border-gray-700 p-1">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={cn(
-                'px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors',
-                viewMode === 'grid'
-                  ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-              )}
-            >
-              Grid
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={cn(
-                'px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors',
-                viewMode === 'table'
-                  ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-              )}
-            >
-              Table
-            </button>
-            <button
-              onClick={() => setViewMode('map')}
-              className={cn(
-                'px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors',
-                viewMode === 'map'
-                  ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-              )}
-            >
-              Map
-            </button>
-          </div>
-          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsAddOpen(true)}>
-            Add Warehouse
+          <Button
+            variant={showMap ? 'outline' : 'secondary'}
+            onClick={() => setShowMap(!showMap)}
+          >
+            {showMap ? 'Hide Map' : 'Show Map'}
           </Button>
+          <PermissionGate permission="warehouses.update">
+            <Button variant="secondary" leftIcon={<ArrowRightLeft className="h-4 w-4" />} onClick={() => setIsTransferOpen(true)}>
+              Transfer
+            </Button>
+          </PermissionGate>
+          <PermissionGate permission="warehouses.update">
+            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsAddOpen(true)}>
+              Add Warehouse
+            </Button>
+          </PermissionGate>
         </div>
       </motion.div>
 
-      {/* Stats Cards */}
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           {
@@ -258,54 +262,8 @@ export function WarehousesPage() {
         ))}
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-64 bg-gray-100 dark:bg-gray-800 rounded-2xl animate-pulse" />
-          ))}
-        </div>
-      ) : viewMode === 'grid' ? (
-        <>
-          <div className="border-b border-gray-200 dark:border-gray-700">
-            <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {warehouses
-              .filter((w) => activeTab === 'all' || w.status === activeTab)
-              .map((warehouse, index) => (
-                <WarehouseCard
-                  key={warehouse.id}
-                  warehouse={warehouse}
-                  index={index}
-                  totalInRow={3}
-                  onViewDetails={() => {
-                    setSelectedWarehouse(warehouse);
-                    setIsDetailsOpen(true);
-                  }}
-                />
-              ))}
-          </div>
-        </>
-      ) : viewMode === 'table' ? (
-        <Card padding="none">
-          <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
-            <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
-          </div>
-          <DataTable
-            columns={columns}
-            data={warehouses.filter((w) => activeTab === 'all' || w.status === activeTab)}
-            isLoading={isLoading}
-            searchPlaceholder="Search warehouses..."
-            onRowClick={(warehouse) => {
-              setSelectedWarehouse(warehouse);
-              setIsDetailsOpen(true);
-            }}
-            emptyMessage="No warehouses found"
-            className="border-0 rounded-none"
-          />
-        </Card>
-      ) : (
+      {/* Map View */}
+      {showMap && (
         <Card>
           <div className="h-125 rounded-xl overflow-hidden">
             <Map
@@ -314,7 +272,7 @@ export function WarehousesPage() {
               mapStyle={MAP_STYLE}
             >
               <NavigationControl position="bottom-right" />
-              {warehouses.map((warehouse) => (
+              {warehousesWithCoords.map((warehouse) => (
                 <Marker
                   key={warehouse.id}
                   longitude={warehouse.location.lng}
@@ -326,11 +284,11 @@ export function WarehousesPage() {
                     setIsDetailsOpen(true);
                   }}
                 >
-                  <div 
+                  <div
                     className={cn(
                       'h-8 w-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center cursor-pointer hover:scale-110 transition-transform',
-                      warehouse.status === 'active' ? 'bg-green-500' : 
-                      warehouse.status === 'maintenance' ? 'bg-yellow-500' : 'bg-gray-500'
+                      warehouse.status === 'active' ? 'bg-green-500' :
+                        warehouse.status === 'maintenance' ? 'bg-yellow-500' : 'bg-gray-500'
                     )}
                   >
                     <Building2 className="h-4 w-4 text-white" />
@@ -342,6 +300,25 @@ export function WarehousesPage() {
         </Card>
       )}
 
+      {/* Data Table */}
+      <Card padding="none">
+        <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
+          <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+        </div>
+        <DataTable
+          columns={columns}
+          data={filteredWarehouses}
+          isLoading={isLoading}
+          searchPlaceholder="Search warehouses by name, code, or location..."
+          onRowClick={(warehouse) => {
+            setSelectedWarehouse(warehouse);
+            setIsDetailsOpen(true);
+          }}
+          emptyMessage="No warehouses found"
+          className="border-0 rounded-none"
+        />
+      </Card>
+
       {/* Modals */}
       <WarehouseDetailsModal
         warehouse={selectedWarehouse}
@@ -350,9 +327,40 @@ export function WarehousesPage() {
           setIsDetailsOpen(false);
           setSelectedWarehouse(null);
         }}
+        onEdit={() => {
+          setIsDetailsOpen(false);
+          setIsAddOpen(true);
+        }}
+        onDelete={() => selectedWarehouse && handleDelete(selectedWarehouse.id)}
       />
 
-      <AddWarehouseModal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} />
+      <AddWarehouseModal
+        isOpen={isAddOpen}
+        onClose={() => {
+          setIsAddOpen(false);
+          if (selectedWarehouse) {
+            // If we were editing, optionally clear selected warehouse, or keep it to show details updated
+            // We'll clear it for simplicity on close if not successful
+          }
+        }}
+        onSuccess={() => {
+          refetch();
+          if (selectedWarehouse) {
+            // Re-open details if we were editing?
+            setSelectedWarehouse(null);
+          }
+        }}
+        initialData={selectedWarehouse}
+      />
+
+      <TransferOrderModal
+        isOpen={isTransferOpen}
+        onClose={() => setIsTransferOpen(false)}
+        onSuccess={() => {
+          refetch();
+          setIsTransferOpen(false);
+        }}
+      />
     </div>
   );
 }

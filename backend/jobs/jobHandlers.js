@@ -4,6 +4,8 @@ import exceptionService from '../services/exceptionService.js';
 import invoiceService from '../services/invoiceService.js';
 import returnsService from '../services/returnsService.js';
 import assignmentRetryService from '../services/assignmentRetryService.js';
+import carrierAssignmentService from '../services/carrierAssignmentService.js';
+import orderService from '../services/orderService.js';
 import logger from '../utils/logger.js';
 import pool from '../configs/db.js';
 
@@ -331,56 +333,51 @@ async function generateInventorySnapshotReport(parameters) {
  */
 async function handleProcessOrder(payload) {
   const startTime = Date.now();
-  
+
   try {
-    const { source, order } = payload;
-    
-    logger.info(`Processing order from ${source}: ${order.external_order_id}`);
-    
-    // Insert order into database
-    const result = await pool.query(
-      `INSERT INTO orders (
-        external_order_id, platform, customer_name, customer_email, 
-        customer_phone, shipping_address, total_amount, tax_amount, 
-        shipping_amount, status, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING id`,
-      [
-        order.external_order_id,
-        order.platform,
-        order.customer_name,
-        order.customer_email,
-        order.customer_phone,
-        JSON.stringify(order.shipping_address),
-        order.total_amount,
-        order.tax_amount || 0,
-        order.shipping_amount || 0,
-        'pending',
-        new Date()
-      ]
-    );
-    
-    const orderId = result.rows[0].id;
-    
-    // Insert order items
-    if (order.items && order.items.length > 0) {
-      const itemValues = order.items.map(item => 
-        `('${orderId}', '${item.sku}', '${item.name.replace(/'/g, "''")}', ${item.quantity}, ${item.price})`
-      ).join(',');
-      
-      await pool.query(`
-        INSERT INTO order_items (order_id, sku, product_name, quantity, unit_price)
-        VALUES ${itemValues}
-      `);
-    }
-    
-    logger.info(`✅ Order ${order.external_order_id} processed as ID ${orderId}`);
-    
+    const { source, order, organization_id } = payload;
+
+    logger.info(`Processing order from ${source}` +
+      (organization_id ? ` (org: ${organization_id})` : ' (no org)'));
+
+    // Normalize webhook payload fields to match orderService.createOrder expectations.
+    // Webhook senders use different field names (name/price vs product_name/unit_price).
+    const orderData = {
+      organization_id:   organization_id || null,
+      external_order_id: order.external_order_id || `${source || 'webhook'}-${Date.now()}`,
+      platform:          order.platform || source || 'webhook',
+      customer_name:     order.customer_name,
+      customer_email:    order.customer_email || null,
+      customer_phone:    order.customer_phone || null,
+      priority:          order.priority || 'standard',
+      total_amount:      order.total_amount || 0,
+      tax_amount:        order.tax_amount   || 0,
+      shipping_amount:   order.shipping_amount || 0,
+      currency:          order.currency || 'INR',
+      shipping_address:  order.shipping_address || {},
+      notes:             order.notes || null,
+      items: (order.items || []).map(item => ({
+        product_name: item.product_name || item.name || 'Unknown',
+        sku:          item.sku          || `WEBHOOK-SKU-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        quantity:     parseInt(item.quantity)  || 1,
+        unit_price:   parseFloat(item.unit_price ?? item.price ?? 0),
+        weight:       parseFloat(item.weight   ?? item.unit_weight ?? 0.5),
+      })),
+    };
+
+    // Delegate to the shared service — same path as manual API creation.
+    // The service handles order insert, item insert, inventory reservation, and carrier assignment.
+    const createdOrder = await orderService.createOrder(orderData, true);
+
+    logger.info(`✅ Webhook order processed: ${createdOrder.order_number} (id: ${createdOrder.id})`);
+
     return {
-      success: true,
-      orderId,
-      itemsCount: order.items?.length || 0,
-      duration: `${Date.now() - startTime}ms`
+      success:        true,
+      orderId:        createdOrder.id,
+      orderNumber:    createdOrder.order_number,
+      externalOrderId: orderData.external_order_id,
+      itemsCount:     (createdOrder.items || []).length,
+      duration:       `${Date.now() - startTime}ms`,
     };
   } catch (error) {
     logger.error('Process order job failed:', error);
@@ -536,20 +533,23 @@ async function handleProcessReturn(payload) {
   const startTime = Date.now();
   
   try {
-    const { return_id, original_order_id, customer, items, refund_amount } = payload;
+    const { return_id, original_order_id, customer, items, refund_amount, organization_id } = payload;
     
     logger.info(`Processing return ${return_id} for order ${original_order_id}`);
     
     // Insert return into database
+    // Carry organization_id from the webhook payload for correct tenant isolation
     const result = await pool.query(
       `INSERT INTO returns (
+        organization_id,
         external_return_id, order_id, customer_name, customer_email,
         items, refund_amount, status, created_at
-      ) VALUES ($1, 
-        (SELECT id FROM orders WHERE external_order_id = $2 LIMIT 1),
-        $3, $4, $5, $6, 'pending', NOW())
+      ) VALUES ($1, $2,
+        (SELECT id FROM orders WHERE external_order_id = $3 LIMIT 1),
+        $4, $5, $6, $7, 'pending', NOW())
       RETURNING id`,
       [
+        organization_id || null,
         return_id,
         original_order_id,
         customer.name,

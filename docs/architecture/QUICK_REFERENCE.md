@@ -36,7 +36,13 @@ This is a quick lookup guide for absolute beginners. Every file explained in ONE
 | `controllers/jobsController.js` | Background jobs, job status |
 | `controllers/dashboardController.js` | Dashboard statistics |
 | `controllers/analyticsController.js` | Analytics queries and reports |
-| `controllers/mdmController.js` | Carriers, warehouses (master data) |
+| `controllers/mdmController.js` | Carriers, warehouses, products (master data) |
+| `controllers/assignmentController.js` | Carrier assignment: request, accept, reject, busy |
+| `controllers/webhooksController.js` | Incoming webhooks from e-commerce platforms |
+| `controllers/financeController.js` | Invoices, billing, cost tracking |
+| `controllers/trackingController.js` | Shipment tracking events (from carrier) |
+| `controllers/organizationController.js` | Organization management (superadmin) |
+| `controllers/companiesController.js` | Company management (superadmin) |
 
 ---
 
@@ -48,7 +54,24 @@ This is a quick lookup guide for absolute beginners. Every file explained in ONE
 |------|-------------|
 | `services/orderService.js` | Order processing logic, inventory reservation, transactions |
 
-**Note**: More services will be added as system grows (inventoryService, shipmentService, etc.)
+| `services/carrierAssignmentService.js` | **Core**: find carriers, create assignment rows, accept/reject/busy/retry |
+| `services/assignmentRetryService.js` | Handles expired/rejected batches — triggers next batch of 3 carriers |
+| `services/orderService.js` | Order creation with inventory reservation and transaction management |
+| `services/jobsService.js` | CRUD for background_jobs and cron_schedules tables |
+| `services/slaService.js` | SLA violation detection and monitoring |
+| `services/exceptionService.js` | Exception lifecycle: create, escalate, resolve |
+| `services/returnsService.js` | Return request processing and refund logic |
+| `services/invoiceService.js` | Carrier invoice generation |
+| `services/notificationService.js` | Email/SMS/push notification dispatch |
+| `services/shipmentTrackingService.js` | Tracking event ingestion and shipment status sync |
+| `services/carrierPayloadBuilder.js` | Builds the JSON payload sent to carrier systems |
+| `services/deliveryChargeService.js` | Zone-based delivery charge calculation |
+| `services/carrierRateService.js` | Carrier rate fetching and caching |
+| `services/osrmService.js` | OSRM routing service for distance-based estimates |
+| `services/settingsService.js` | User and org settings read/write |
+| `services/alertService.js` | Rule-based alert evaluation and dispatch |
+| `services/allocationService.js` | Inventory allocation to orders |
+| `services/webhookSimulator.js` | CLI tool for generating mock webhook traffic |
 
 ---
 
@@ -74,9 +97,12 @@ This is a quick lookup guide for absolute beginners. Every file explained in ONE
 
 | File | What It Does |
 |------|-------------|
-| `middlewares/auth.js` | **authenticate()** - Checks if user is logged in (has valid JWT token) |
-| `middlewares/rbac.js` | **authorize()** - Checks if user has required permission based on their role |
-| `middlewares/requestLogger.js` | Logs all HTTP requests with timing and assigns unique IDs |
+| `middlewares/auth.js` | `authenticate()` — checks JWT; `authorize()` — role check; `optionalAuth()` — optional |
+| `middlewares/rbac.js` | `requirePermission()` — permission-string guard; `ROLES` constants; full permission matrix |
+| `middlewares/requestLogger.js` | `requestId()` — UUID per request; `requestLogger()` — structured log; `slowRequestLogger()` |
+| `middlewares/multiTenant.js` | `injectOrgContext()` — sets `req.organizationId` from JWT for multi-tenant queries |
+| `middlewares/webhookOrgContext.js` | `resolveWebhookOrg()` — validates `:orgToken` URL param, sets `req.webhookOrganizationId` |
+| `middlewares/webhookAuth.js` | `verifyWebhookSignature()` — HMAC-SHA256 verification for carrier endpoints |
 
 **Order matters!** Middleware runs in the order you add it in `server.js`
 
@@ -88,15 +114,22 @@ This is a quick lookup guide for absolute beginners. Every file explained in ONE
 
 | File | URLs It Handles |
 |------|----------------|
-| `routes/users.js` | `/api/auth/login`, `/api/auth/profile`, `/api/users` |
-| `routes/orders.js` | `/api/orders` (GET list, POST create, PATCH update) |
-| `routes/inventory.js` | `/api/inventory`, `/api/inventory/:id/adjust` |
-| `routes/shipments.js` | `/api/shipments`, `/api/shipments/:id/timeline` |
-| `routes/returns.js` | `/api/returns` |
-| `routes/sla.js` | `/api/sla/policies`, `/api/exceptions` |
-| `routes/jobs.js` | `/api/jobs`, `/api/dashboard/stats`, `/api/analytics` |
-| `routes/mdm.js` | `/api/carriers`, `/api/warehouses` |
-| `routes/finance.js` | `/api/finance/*` (invoices, costs) |
+| `routes/users.js` | `/api/auth/login`, `/api/auth/logout`, `/api/auth/refresh`, `/api/users` |
+| `routes/orders.js` | `/api/orders`, `/api/orders/:id`, `/api/orders/:id/status`, `/api/orders/transfer` |
+| `routes/assignments.js` | `/api/orders/:id/request-carriers`, `/api/carriers/assignments/pending`, `/api/assignments/:id/accept|reject|busy` |
+| `routes/inventory.js` | `/api/inventory`, `/api/inventory/adjust`, `/api/inventory/:id/history` |
+| `routes/shipments.js` | `/api/shipments`, `/api/shipments/:id`, `/api/shipments/:id/tracking-event` |
+| `routes/returns.js` | `/api/returns`, `/api/returns/:id`, `/api/returns/:id/status` |
+| `routes/sla.js` | `/api/sla/violations`, `/api/sla/metrics`, `/api/sla/exceptions` |
+| `routes/jobs.js` | `/api/jobs`, `/api/jobs/:id`, `/api/jobs/cron` |
+| `routes/mdm.js` | `/api/warehouses`, `/api/carriers`, `/api/products`, `/api/sla-policies` |
+| `routes/finance.js` | `/api/finance/summary`, `/api/finance/invoices` |
+| `routes/webhooks.js` | `/api/webhooks/:orgToken/orders|inventory|returns|tracking`, and legacy no-token variants |
+| `routes/carriers.js` | `/api/carriers/:code/tracking`, `/api/carriers/:code/availability` (HMAC) |
+| `routes/shipping.js` | `/api/shipping/quote/estimate`, `/api/shipping/quote/real` |
+| `routes/organizations.js` | `/api/organizations/:id` (superadmin) |
+| `routes/companies.js` | `/api/companies` (superadmin) |
+| `routes/demo.js` | `/api/demo/organizations|carriers|carrier-shipments|carrier-secret` (dev only) |
 
 ---
 
@@ -136,8 +169,9 @@ This is a quick lookup guide for absolute beginners. Every file explained in ONE
 
 | File | What It Does |
 |------|-------------|
-| `utils/logger.js` | Winston logging setup - writes events to log files |
-| `utils/jwt.js` | Create and verify JWT tokens for authentication |
+| `utils/logger.js` | Pino + Winston logging — `logger.info/warn/error()`, `logAuth()` helper |
+| `utils/jwt.js` | `generateAccessToken()`, `generateRefreshToken()`, `verifyAccessToken()` |
+| `utils/dbTransaction.js` | `withTransaction(async fn)` — PostgreSQL transaction helper |
 
 ---
 

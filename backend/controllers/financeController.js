@@ -9,6 +9,7 @@ export const getInvoices = async (req, res) => {
     const offset = (page - 1) * limit;
     const status = req.query.status;
     const carrierId = req.query.carrier_id;
+    const organizationId = req.orgContext?.organizationId;
 
     let query = `
       SELECT 
@@ -21,6 +22,13 @@ export const getInvoices = async (req, res) => {
     `;
     const params = [];
     let paramCount = 1;
+
+    // Multi-tenant filter: org users only see their org's invoices
+    if (organizationId) {
+      query += ` AND i.organization_id = $${paramCount}`;
+      params.push(organizationId);
+      paramCount++;
+    }
 
     if (status) {
       query += ` AND i.status = $${paramCount}`;
@@ -43,6 +51,12 @@ export const getInvoices = async (req, res) => {
     let countQuery = 'SELECT COUNT(*) FROM invoices i WHERE 1=1';
     const countParams = [];
     let countParamNum = 1;
+
+    if (organizationId) {
+      countQuery += ` AND i.organization_id = $${countParamNum}`;
+      countParams.push(organizationId);
+      countParamNum++;
+    }
 
     if (status) {
       countQuery += ` AND i.status = $${countParamNum}`;
@@ -133,6 +147,7 @@ export const getInvoiceById = async (req, res) => {
 // POST /api/finance/invoices - Create new invoice
 export const createInvoice = async (req, res) => {
   try {
+    const organizationId = req.orgContext?.organizationId;
     const {
       invoice_number,
       carrier_id,
@@ -149,13 +164,15 @@ export const createInvoice = async (req, res) => {
     const result = await db.query(
       `
       INSERT INTO invoices (
+        organization_id,
         invoice_number, carrier_id, billing_period_start, billing_period_end,
         total_shipments, base_amount, penalties, adjustments, final_amount, status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
       `,
       [
+        organizationId || null,
         invoice_number,
         carrier_id,
         billing_period_start,
@@ -235,6 +252,7 @@ export const getRefunds = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const offset = (page - 1) * limit;
     const status = req.query.status;
+    const organizationId = req.orgContext?.organizationId;
 
     let query = `
       SELECT 
@@ -248,6 +266,12 @@ export const getRefunds = async (req, res) => {
     `;
     const params = [];
     let paramCount = 1;
+
+    if (organizationId) {
+      query += ` AND r.organization_id = $${paramCount}`;
+      params.push(organizationId);
+      paramCount++;
+    }
 
     if (status) {
       query += ` AND r.status = $${paramCount}`;
@@ -267,6 +291,12 @@ export const getRefunds = async (req, res) => {
     `;
     const countParams = [];
     let countParamNum = 1;
+
+    if (organizationId) {
+      countQuery += ` AND r.organization_id = $${countParamNum}`;
+      countParams.push(organizationId);
+      countParamNum++;
+    }
 
     if (status) {
       countQuery += ` AND r.status = $${countParamNum}`;
@@ -329,6 +359,7 @@ export const getDisputes = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const offset = (page - 1) * limit;
     const status = req.query.status;
+    const organizationId = req.orgContext?.organizationId;
 
     let query = `
       SELECT 
@@ -341,6 +372,12 @@ export const getDisputes = async (req, res) => {
     `;
     const params = [];
     let paramCount = 1;
+
+    if (organizationId) {
+      query += ` AND i.organization_id = $${paramCount}`;
+      params.push(organizationId);
+      paramCount++;
+    }
 
     query += ` ORDER BY i.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
     params.push(limit, offset);
@@ -401,11 +438,15 @@ export const resolveDispute = async (req, res) => {
 export const getFinancialSummary = async (req, res) => {
   try {
     const timeRange = req.query.range || 'month'; // day, week, month, year
+    const organizationId = req.orgContext?.organizationId;
     
     let dateFilter = "NOW() - INTERVAL '30 days'";
     if (timeRange === 'day') dateFilter = "NOW() - INTERVAL '1 day'";
     if (timeRange === 'week') dateFilter = "NOW() - INTERVAL '7 days'";
     if (timeRange === 'year') dateFilter = "NOW() - INTERVAL '1 year'";
+
+    // Build org filter clause (only applied when user is not superadmin)
+    const orgFilter = organizationId ? ` AND organization_id = '${organizationId}'` : '';
 
     const [invoicesResult, refundsResult, disputesResult] = await Promise.all([
       db.query(
@@ -417,7 +458,7 @@ export const getFinancialSummary = async (req, res) => {
           COALESCE(SUM(CASE WHEN status = 'paid' THEN final_amount ELSE 0 END), 0) as paid_amount,
           COALESCE(SUM(penalties), 0) as total_penalties
         FROM invoices
-        WHERE created_at >= ${dateFilter}
+        WHERE created_at >= ${dateFilter}${orgFilter}
         `
       ),
       db.query(
@@ -427,14 +468,14 @@ export const getFinancialSummary = async (req, res) => {
           COALESCE(SUM(refund_amount), 0) as total_refund_amount,
           COALESCE(SUM(restocking_fee), 0) as total_restocking_fees
         FROM returns
-        WHERE status = 'refunded' AND resolved_at >= ${dateFilter}
+        WHERE status = 'refunded' AND resolved_at >= ${dateFilter}${orgFilter}
         `
       ),
       db.query(
         `
         SELECT COUNT(*) as total_disputes
         FROM invoices
-        WHERE status = 'disputed' AND created_at >= ${dateFilter}
+        WHERE status = 'disputed' AND created_at >= ${dateFilter}${orgFilter}
         `
       ),
     ]);

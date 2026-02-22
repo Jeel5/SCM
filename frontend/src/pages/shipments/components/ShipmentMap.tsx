@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Wifi, WifiOff, MapPin, Truck } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Wifi, WifiOff, MapPin, Truck, RefreshCw } from 'lucide-react';
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl/maplibre';
 import type { Feature, LineString } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { getRoute, formatDistance, formatDuration, type RouteInfo } from '@/lib/routing';
 import { useShipmentTracking } from '@/hooks/useSocket';
 import type { Shipment } from '@/types';
+import { shipmentsApi } from '@/api/services';
 
 // OpenStreetMap style - free, no token required, optimized for India
 const MAP_STYLE = {
@@ -34,20 +35,76 @@ const MAP_STYLE = {
   ],
 };
 
-export function ShipmentMap({ shipment }: { shipment: Shipment }) {
+export function ShipmentMap({ shipment: initialShipment }: { shipment: Shipment }) {
   const [popupInfo, setPopupInfo] = useState<{ type: string; lat: number; lng: number } | null>(null);
   const [routeData, setRouteData] = useState<RouteInfo | null>(null);
   const [completedRoute, setCompletedRoute] = useState<RouteInfo | null>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(true);
+  const [shipment, setShipment] = useState<Shipment>(initialShipment);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Live tracking via Socket.io
   const { isConnected, currentLocation } = useShipmentTracking(shipment.id);
   
-  const origin = shipment.origin.coordinates || { lat: 28.6139, lng: 77.2090 }; // Default: Delhi
-  const destination = shipment.destination.coordinates || { lat: 19.0760, lng: 72.8777 }; // Default: Mumbai
-  const current = currentLocation 
+  // Polling interval: 5 minutes (300000 ms)
+  const POLLING_INTERVAL = 5 * 60 * 1000;
+
+  // Fetch latest shipment data
+  const refreshShipmentData = useCallback(async () => {
+    if (shipment.status === 'delivered' || shipment.status === 'cancelled') {
+      return; // Don't poll for completed shipments
+    }
+
+    try {
+      setIsRefreshing(true);
+      const response = await shipmentsApi.getShipment(shipment.id);
+      setShipment(response.data);
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Failed to refresh shipment data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [shipment.id, shipment.status]);
+
+  // Set up auto-refresh polling
+  useEffect(() => {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    // Only poll for active shipments
+    if (shipment.status !== 'delivered' && shipment.status !== 'cancelled') {
+      intervalRef.current = setInterval(refreshShipmentData, POLLING_INTERVAL);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [refreshShipmentData, shipment.status]);
+  
+  // Guard against null/NaN coordinates (DB may have partial or missing coordinate data)
+  const toCoord = (
+    c: { lat?: number | null; lng?: number | null } | null | undefined,
+    fallback: { lat: number; lng: number }
+  ) => {
+    if (c && !isNaN(Number(c.lat)) && !isNaN(Number(c.lng)) && c.lat !== null && c.lng !== null)
+      return { lat: Number(c.lat), lng: Number(c.lng) };
+    return fallback;
+  };
+
+  const origin      = toCoord(shipment.origin?.coordinates,      { lat: 28.6139, lng: 77.2090 }); // Default: Delhi
+  const destination = toCoord(shipment.destination?.coordinates, { lat: 19.0760, lng: 72.8777 }); // Default: Mumbai
+  const rawCurrent  = currentLocation
     ? { lat: currentLocation.lat, lng: currentLocation.lng }
-    : shipment.currentLocation || origin;
+    : (shipment.currentLocation as { lat?: number; lng?: number } | null) ?? null;
+  const current = toCoord(rawCurrent, origin);
 
   const centerLat = (origin.lat + destination.lat) / 2;
   const centerLng = (origin.lng + destination.lng) / 2;
@@ -97,7 +154,7 @@ export function ShipmentMap({ shipment }: { shipment: Shipment }) {
   };
 
   return (
-    <div className="h-64 rounded-xl overflow-hidden border border-gray-200 relative">
+    <div className="h-full rounded-xl overflow-hidden border border-gray-200 relative">
       {/* Connection Status Indicator */}
       <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium">
         {isConnected ? (
@@ -111,6 +168,24 @@ export function ShipmentMap({ shipment }: { shipment: Shipment }) {
             <span className="text-gray-500">Offline</span>
           </>
         )}
+      </div>
+
+      {/* Last Update & Manual Refresh */}
+      <div className="absolute top-2 left-1/2 transform -translate-x-1/2 z-10 flex items-center gap-2 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
+        <span className="text-gray-600">
+          Updated: {lastUpdate.toLocaleTimeString()}
+        </span>
+        <button
+          onClick={refreshShipmentData}
+          disabled={isRefreshing}
+          className={cn(
+            "p-1 rounded-full hover:bg-gray-200 transition-colors",
+            isRefreshing && "animate-spin"
+          )}
+          title="Refresh location"
+        >
+          <RefreshCw className="h-3 w-3 text-gray-600" />
+        </button>
       </div>
 
       {/* Route Info */}

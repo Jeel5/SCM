@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Timer, AlertTriangle, CheckCircle, Clock, Download, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent, Button, Tabs, DataTable, StatusBadge } from '@/components/ui';
+import { Card, CardHeader, CardTitle, CardContent, Button, Tabs, DataTable, StatusBadge, PermissionGate } from '@/components/ui';
 import { formatDate, formatPercentage } from '@/lib/utils';
 import type { SLAPolicy, SLAViolation } from '@/types';
 import { useSLA } from './hooks/useSLA';
@@ -117,7 +117,9 @@ export function SLAManagementPage() {
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
             Export
           </Button>
-          <Button variant="primary">Create Policy</Button>
+          <PermissionGate permission="settings.organization">
+            <Button variant="primary">Create Policy</Button>
+          </PermissionGate>
         </div>
       </motion.div>
 

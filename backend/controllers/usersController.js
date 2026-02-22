@@ -13,13 +13,10 @@ export async function login(req, res) {
     }
     
     const result = await pool.query(
-      `SELECT u.*, o.name as organization_name, 
-              COALESCE(array_agg(up.permission) FILTER (WHERE up.permission IS NOT NULL), '{}') as permissions
+      `SELECT u.*, o.name as organization_name
        FROM users u 
        LEFT JOIN organizations o ON u.organization_id = o.id
-       LEFT JOIN user_permissions up ON u.id = up.user_id 
-       WHERE u.email = $1 AND u.is_active = true
-       GROUP BY u.id, o.name`,
+       WHERE u.email = $1 AND u.is_active = true`,
       [email]
     );
     
@@ -53,7 +50,6 @@ export async function login(req, res) {
           role: user.role,
           organizationId: user.organization_id,
           avatar: user.avatar,
-          permissions: user.permissions,
           lastLogin: user.last_login,
           createdAt: user.created_at
         },
@@ -105,13 +101,10 @@ export async function refreshToken(req, res) {
 export async function getProfile(req, res) {
   try {
     const result = await pool.query(
-      `SELECT u.*, o.name as organization_name,
-              COALESCE(array_agg(up.permission) FILTER (WHERE up.permission IS NOT NULL), '{}') as permissions
+      `SELECT u.*, o.name as organization_name
        FROM users u 
        LEFT JOIN organizations o ON u.organization_id = o.id
-       LEFT JOIN user_permissions up ON u.id = up.user_id 
-       WHERE u.id = $1
-       GROUP BY u.id, o.name`,
+       WHERE u.id = $1`,
       [req.user.userId]
     );
     
@@ -129,7 +122,6 @@ export async function getProfile(req, res) {
         role: user.role,
         organizationId: user.organization_id,
         avatar: user.avatar,
-        permissions: user.permissions,
         lastLogin: user.last_login,
         createdAt: user.created_at
       }
@@ -146,6 +138,9 @@ export async function listUsers(req, res) {
     const { role, is_active, search, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
     
+    // Get organization context for multi-tenancy
+    const organizationId = req.orgContext?.organizationId;
+    
     let query = `
       SELECT u.id, u.email, u.name, u.role, u.avatar, u.is_active, 
              u.last_login, u.created_at, u.organization_id,
@@ -155,6 +150,12 @@ export async function listUsers(req, res) {
       WHERE 1=1
     `;
     const params = [];
+    
+    // Multi-tenant filter: regular users only see their org's users
+    if (organizationId) {
+      params.push(organizationId);
+      query += ` AND u.organization_id = $${params.length}`;
+    }
     
     if (role) {
       params.push(role);
@@ -259,13 +260,13 @@ export async function updateProfile(req, res) {
 export async function changePassword(req, res) {
   try {
     const userId = req.user.userId;
-    const { currentPassword, newPassword } = req.body;
+    const { current_password, new_password } = req.body;
     
-    if (!currentPassword || !newPassword) {
+    if (!current_password || !new_password) {
       return res.status(400).json({ error: 'Current and new passwords are required' });
     }
     
-    await settingsService.changePassword(userId, currentPassword, newPassword);
+    await settingsService.changePassword(userId, current_password, new_password);
     
     res.json({
       success: true,
@@ -363,6 +364,190 @@ export async function revokeSession(req, res) {
     }
     
     res.status(500).json({ error: 'Failed to revoke session' });
+  }
+}
+
+// ── Org User Management (admin-only, org-scoped) ──────────────────────────────
+
+const ORG_ASSIGNABLE_ROLES = [
+  'operations_manager',
+  'warehouse_manager',
+  'carrier_partner',
+  'finance',
+  'customer_support',
+];
+
+// Create a new user within the admin's organization
+export async function createOrgUser(req, res) {
+  try {
+    const organizationId = req.orgContext?.organizationId;
+    if (!organizationId) {
+      return res.status(403).json({ error: 'Organization context required' });
+    }
+
+    const { name, email, password, role } = req.body;
+
+    if (!ORG_ASSIGNABLE_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: `Invalid role. Allowed roles: ${ORG_ASSIGNABLE_ROLES.join(', ')}`
+      });
+    }
+
+    // Check for duplicate email
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'Email already in use' });
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+
+    const result = await pool.query(
+      `INSERT INTO users (name, email, password_hash, role, organization_id, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, true, NOW(), NOW())
+       RETURNING id, name, email, role, organization_id, is_active, created_at`,
+      [name, email, password_hash, role, organizationId]
+    );
+
+    const user = result.rows[0];
+
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, created_at)
+       VALUES ($1, 'create_user', 'user', $2, NOW())`,
+      [req.user.userId, user.id]
+    );
+
+    res.status(201).json({ success: true, data: user });
+  } catch (error) {
+    console.error('Create org user error:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+}
+
+// Get a single user (must belong to same org)
+export async function getOrgUser(req, res) {
+  try {
+    const organizationId = req.orgContext?.organizationId;
+    const { id } = req.params;
+
+    let query = `
+      SELECT u.id, u.name, u.email, u.role, u.avatar, u.is_active,
+             u.last_login, u.created_at, u.organization_id,
+             o.name as organization_name
+      FROM users u
+      LEFT JOIN organizations o ON u.organization_id = o.id
+      WHERE u.id = $1
+    `;
+    const params = [id];
+
+    if (organizationId) {
+      params.push(organizationId);
+      query += ` AND u.organization_id = $2`;
+    }
+
+    const result = await pool.query(query, params);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Get org user error:', error);
+    res.status(500).json({ error: 'Failed to get user' });
+  }
+}
+
+// Update a user's role / active status / name
+export async function updateOrgUser(req, res) {
+  try {
+    const organizationId = req.orgContext?.organizationId;
+    if (!organizationId) {
+      return res.status(403).json({ error: 'Organization context required' });
+    }
+
+    const { id } = req.params;
+    const { name, role, is_active } = req.body;
+
+    if (role && !ORG_ASSIGNABLE_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: `Invalid role. Allowed roles: ${ORG_ASSIGNABLE_ROLES.join(', ')}`
+      });
+    }
+
+    // Verify user belongs to this org
+    const existing = await pool.query(
+      'SELECT id FROM users WHERE id = $1 AND organization_id = $2',
+      [id, organizationId]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const setClauses = [];
+    const params = [];
+
+    if (name !== undefined) {
+      params.push(name);
+      setClauses.push(`name = $${params.length}`);
+    }
+    if (role !== undefined) {
+      params.push(role);
+      setClauses.push(`role = $${params.length}`);
+    }
+    if (is_active !== undefined) {
+      params.push(is_active);
+      setClauses.push(`is_active = $${params.length}`);
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    setClauses.push(`updated_at = NOW()`);
+    params.push(id);
+    const result = await pool.query(
+      `UPDATE users SET ${setClauses.join(', ')}
+       WHERE id = $${params.length}
+       RETURNING id, name, email, role, is_active, organization_id, created_at`,
+      params
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Update org user error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+}
+
+// Soft-delete (deactivate) a user within the org
+export async function deactivateOrgUser(req, res) {
+  try {
+    const organizationId = req.orgContext?.organizationId;
+    if (!organizationId) {
+      return res.status(403).json({ error: 'Organization context required' });
+    }
+
+    const { id } = req.params;
+
+    // Cannot deactivate yourself
+    if (id === req.user.userId) {
+      return res.status(400).json({ error: 'Cannot deactivate your own account' });
+    }
+
+    const result = await pool.query(
+      `UPDATE users SET is_active = false, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2
+       RETURNING id, name, email, is_active`,
+      [id, organizationId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Deactivate org user error:', error);
+    res.status(500).json({ error: 'Failed to deactivate user' });
   }
 }
 

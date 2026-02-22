@@ -523,6 +523,15 @@ class CarrierAssignmentService {
 
         const shipment = shipmentResult.rows[0];
 
+        // Insert initial tracking event
+        await tx.query(
+          `INSERT INTO shipment_events
+             (shipment_id, event_type, event_code, status, description, source, event_timestamp)
+           VALUES ($1, 'shipment_created', 'CREATED', 'pending',
+             'Shipment confirmed and awaiting carrier pickup', 'system', NOW())`,
+          [shipment.id]
+        );
+
         // Update order status to 'ready_to_ship' (not 'shipped' until carrier actually ships)
         await tx.query(
           `UPDATE orders 

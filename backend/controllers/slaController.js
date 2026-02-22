@@ -184,6 +184,7 @@ export async function listExceptions(req, res) {
     const pageNumber = parseInt(page) || 1;
     const limitNumber = parseInt(limit) || 20;
     const offset = (pageNumber - 1) * limitNumber;
+    const organizationId = req.orgContext?.organizationId;
     
     let query = `
       SELECT e.*, s.tracking_number, o.order_number
@@ -194,6 +195,13 @@ export async function listExceptions(req, res) {
     `;
     let countQuery = 'SELECT COUNT(*) FROM exceptions e WHERE 1=1';
     const params = [];
+    
+    // Multi-tenant filter: org users only see their org's exceptions
+    if (organizationId) {
+      params.push(organizationId);
+      query      += ` AND e.organization_id = $${params.length}`;
+      countQuery += ` AND e.organization_id = $${params.length}`;
+    }
     
     if (severity) {
       params.push(severity);
@@ -243,11 +251,12 @@ export async function listExceptions(req, res) {
 export async function createException(req, res) {
   try {
     const { shipmentId, exceptionType, severity, description } = req.body;
+    const organizationId = req.orgContext?.organizationId;
     
     const result = await pool.query(
-      `INSERT INTO exceptions (shipment_id, exception_type, severity, description)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [shipmentId, exceptionType, severity, description]
+      `INSERT INTO exceptions (organization_id, shipment_id, exception_type, severity, description)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [organizationId || null, shipmentId, exceptionType, severity, description]
     );
     
     res.status(201).json({ success: true, data: result.rows[0] });

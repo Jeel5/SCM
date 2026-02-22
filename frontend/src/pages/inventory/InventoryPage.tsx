@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Package, Download, Plus, Eye } from 'lucide-react';
-import { Card, Button, DataTable, Badge, Tabs } from '@/components/ui';
+import { Card, Button, DataTable, Badge, Tabs, PermissionGate } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import type { InventoryItem } from '@/types';
 import {
   StockLevelIndicator,
   InventoryDetailsModal,
   AddItemModal,
+  EditItemModal,
   InventoryStats,
+  LowStockAlerts,
+  AdjustStockModal,
 } from './components';
 import { useInventory } from './hooks';
 
@@ -17,23 +20,25 @@ export function InventoryPage() {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isAdjustOpen, setIsAdjustOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
 
   const pageSize = 10;
-  const { inventory, warehouses, totalItems, isLoading } = useInventory(page, pageSize);
+  const { inventory, warehouses, totalItems, stats, isLoading } = useInventory(page, pageSize);
 
-  // Tab badge counts
-  const lowStockItems = inventory.filter((i) => i.quantity <= i.reorderPoint).length;
-  const outOfStockItems = inventory.filter((i) => i.quantity === 0).length;
-  const overstockedItems = inventory.filter((i) => i.quantity > i.reorderPoint * 2).length;
-  const totalValue = inventory.reduce((sum, i) => sum + i.quantity * i.unitCost, 0);
+  // Tab badge counts and stats from backend
+  const lowStockItems = stats?.lowStockItems || 0;
+  const outOfStockItems = stats?.outOfStockItems || 0;
+  const totalValue = stats?.totalValue || stats?.totalInventoryValue || 0; // Depends on exact response
+  const overstockedItems = 0; // Not returned directly by API stats without custom query
 
   // Filter list by active tab
   const filteredInventory = inventory.filter((item) => {
     if (activeTab === 'all') return true;
-    if (activeTab === 'low_stock') return item.quantity <= item.reorderPoint;
-    if (activeTab === 'out_of_stock') return item.quantity === 0;
-    if (activeTab === 'overstocked') return item.quantity > item.reorderPoint * 2;
+    if (activeTab === 'low_stock') return item.isLowStock;
+    if (activeTab === 'out_of_stock') return item.isOutOfStock;
+    if (activeTab === 'overstocked') return item.maxStockLevel != null && item.quantity > item.maxStockLevel * 0.9;
     return true;
   });
 
@@ -55,8 +60,8 @@ export function InventoryPage() {
             <Package className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
           </div>
           <div>
-            <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.sku}</p>
+            <p className="font-medium text-gray-900 dark:text-white">{item.productName || '—'}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.sku || 'N/A'}</p>
           </div>
         </div>
       ),
@@ -66,7 +71,7 @@ export function InventoryPage() {
       header: 'Category',
       render: (item: InventoryItem) => (
         <Badge variant="outline" className="capitalize">
-          {item.category}
+          {item.productCategory || '—'}
         </Badge>
       ),
     },
@@ -77,7 +82,7 @@ export function InventoryPage() {
       render: (item: InventoryItem) => (
         <div>
           <p className="font-medium text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{item.unit}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{item.availableQuantity} available</p>
         </div>
       ),
     },
@@ -100,7 +105,7 @@ export function InventoryPage() {
       sortable: true,
       render: (item: InventoryItem) => (
         <span className="font-medium text-gray-900 dark:text-white">
-          {formatCurrency(item.quantity * item.unitCost)}
+          {formatCurrency(item.unitPrice != null ? item.quantity * item.unitPrice : 0)}
         </span>
       ),
     },
@@ -139,9 +144,11 @@ export function InventoryPage() {
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
             Export
           </Button>
-          <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsAddOpen(true)}>
-            Add Item
-          </Button>
+          <PermissionGate permission="inventory.update">
+            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsAddOpen(true)}>
+              Add Item
+            </Button>
+          </PermissionGate>
         </div>
       </motion.div>
 
@@ -152,6 +159,13 @@ export function InventoryPage() {
         lowStockItems={lowStockItems}
         warehouses={warehouses}
       />
+
+      {/* Low Stock Alerts */}
+      {lowStockItems > 0 && (
+        <LowStockAlerts
+          onViewAll={() => setActiveTab('low_stock')}
+        />
+      )}
 
       {/* Data Table */}
       <Card padding="none">
@@ -187,12 +201,45 @@ export function InventoryPage() {
           setIsDetailsOpen(false);
           setSelectedItem(null);
         }}
+        onAdjustStock={() => {
+          setIsDetailsOpen(false);
+          setIsAdjustOpen(true);
+        }}
+        onEdit={() => {
+          setIsDetailsOpen(false);
+          setIsEditOpen(true);
+        }}
+      />
+
+      <AdjustStockModal
+        item={selectedItem}
+        isOpen={isAdjustOpen}
+        onClose={() => {
+          setIsAdjustOpen(false);
+          setSelectedItem(null);
+        }}
+        onSuccess={() => {
+          // Re-fetch or refresh current page if needed
+          // Using window.location.reload() or triggering a fetch
+          window.location.reload();
+        }}
+      />
+
+      <EditItemModal
+        item={selectedItem}
+        isOpen={isEditOpen}
+        onClose={() => {
+          setIsEditOpen(false);
+          setSelectedItem(null);
+        }}
+        onSuccess={() => window.location.reload()}
       />
 
       <AddItemModal
         isOpen={isAddOpen}
         onClose={() => setIsAddOpen(false)}
         warehouses={warehouses}
+        onSuccess={() => window.location.reload()}
       />
     </div>
   );
