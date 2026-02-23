@@ -9,3 +9,19 @@ SET capacity = CASE code
     ELSE 10000  -- default for any other existing warehouses
 END
 WHERE capacity IS NULL OR capacity = 0;
+
+-- Backfill current_utilization for all warehouses based on live inventory data.
+-- This ensures the stored column is consistent even before the new trigger logic
+-- in inventoryController.js takes effect.
+UPDATE warehouses w
+SET current_utilization = LEAST(
+  ROUND(
+    COALESCE(
+      (SELECT SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity)
+       FROM inventory
+       WHERE warehouse_id = w.id),
+      0
+    ) * 100.0 / NULLIF(w.capacity, 0),
+    100
+  ), 2
+);

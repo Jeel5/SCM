@@ -52,7 +52,7 @@ export const listWarehouses = asyncHandler(async (req, res) => {
   const transformedWarehouses = warehouses.map(w => {
     const capacity = w.capacity || 0;
     const totalQty = warehouseQtys[w.id] || 0;
-    const utilization = capacity > 0 ? Math.min(Math.round((totalQty / capacity) * 100), 100) : 0;
+    const utilization = capacity > 0 ? Math.min(parseFloat(((totalQty / capacity) * 100).toFixed(1)), 100) : 0;
 
     return {
       id: w.id,
@@ -114,7 +114,7 @@ export const getWarehouse = asyncHandler(async (req, res) => {
   const inventoryCount = parseInt(inventoryStatsResult.rows[0]?.inventory_count) || 0;
   const totalQty = parseInt(inventoryStatsResult.rows[0]?.total_qty) || 0;
   const capacity = warehouse.capacity || 0;
-  const utilizationPercentage = capacity > 0 ? Math.min(Math.round((totalQty / capacity) * 100), 100) : 0;
+  const utilizationPercentage = capacity > 0 ? Math.min(parseFloat(((totalQty / capacity) * 100).toFixed(1)), 100) : 0;
 
   const transformed = {
     id: warehouse.id,

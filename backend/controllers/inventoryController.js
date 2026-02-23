@@ -89,6 +89,43 @@ function formatInventoryItem(row) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// WAREHOUSE UTILIZATION SYNC
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Recompute and persist current_utilization for a warehouse.
+ * Called after any inventory mutation (create / adjust / transfer).
+ * @param {string} warehouseId
+ * @param {object} [client] - optional transaction client
+ */
+async function refreshWarehouseUtilization(warehouseId, client = null) {
+  if (!warehouseId) return;
+  const db = client || pool;
+  try {
+    await db.query(
+      `UPDATE warehouses
+       SET current_utilization = LEAST(
+         ROUND(
+           COALESCE(
+             (SELECT SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity)
+              FROM inventory
+              WHERE warehouse_id = $1),
+             0
+           ) * 100.0 / NULLIF(capacity, 0),
+           100
+         ), 2
+       ),
+       updated_at = NOW()
+       WHERE id = $1`,
+      [warehouseId]
+    );
+  } catch (err) {
+    // Non-fatal — log but don't break the request
+    logger.warn('Failed to refresh warehouse utilization', { warehouseId, error: err.message });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // LIST
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -257,6 +294,9 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
 
   const item = await InventoryRepository.createInventoryItem(data);
 
+  // Keep warehouse utilization in sync
+  await refreshWarehouseUtilization(item.warehouse_id);
+
   logger.info('Inventory item created', {
     inventoryId: item.id,
     warehouseId: item.warehouse_id,
@@ -387,6 +427,9 @@ export const adjustStock = asyncHandler(async (req, res) => {
       userId
     });
 
+    // Keep warehouse utilization in sync (runs inside transaction)
+    await refreshWarehouseUtilization(item.warehouse_id, tx);
+
     res.json({
       success: true,
       message: `Stock ${adjustment_type} successful`,
@@ -497,6 +540,10 @@ export const transferInventory = asyncHandler(async (req, res) => {
     logger.info('Inventory transfer completed', {
       sku, quantity, fromWarehouse: from_warehouse_id, toWarehouse: to_warehouse_id, userId
     });
+
+    // Keep both warehouses' utilization in sync
+    await refreshWarehouseUtilization(from_warehouse_id, tx);
+    await refreshWarehouseUtilization(to_warehouse_id, tx);
 
     res.json({
       success: true,
