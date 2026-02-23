@@ -63,7 +63,7 @@ export const useUIStore = create<UIStore>()(
     (set) => ({
       sidebarCollapsed: true,
       sidebarMobileOpen: false,
-      theme: 'light',
+      theme: 'dark',
       toggleSidebar: () =>
         set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),

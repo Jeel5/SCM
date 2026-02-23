@@ -317,7 +317,7 @@ const mockWarehouses: Warehouse[] = [
     zones: 3,
     location: { lat: 25.7617, lng: -80.1918 },
     status: 'active',
-    contactEmail: 'mia-warehouse@logitower.com',
+    contactEmail: 'mia-warehouse@twinchain.com',
     contactPhone: '+1-555-0104',
     operatingHours: { open: '00:00', close: '23:59', timezone: 'America/New_York' },
     createdAt: '2023-05-10T00:00:00Z',

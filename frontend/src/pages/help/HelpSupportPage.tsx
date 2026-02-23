@@ -154,10 +154,10 @@ export function HelpSupportPage() {
                 Get help via email within 24 hours
               </p>
               <a
-                href="mailto:support@logitower.com"
+                href="mailto:support@twinchain.com"
                 className="text-blue-600 hover:text-blue-700 text-sm font-medium"
               >
-                support@logitower.com
+                support@twinchain.com
               </a>
             </CardContent>
           </Card>
