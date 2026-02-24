@@ -1,0 +1,1246 @@
+JOB HANDLERS — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This file = **Background Execution Layer**.
+
+Scheduler → creates jobs  
+Worker → pulls jobs  
+Handlers → execute domain workflows
+
+These handlers are effectively your:
+✔ automation engine
+✔ integration processor
+✔ async orchestration system
+
+You are building something close to Shopify Fulfillment / Shippo backend.
+
+--------------------------------------------------
+
+[GOOD ARCHITECTURE SIGNS]
+
+✓ Job-type registry (excellent pattern)
+✓ Domain services used (mostly)
+✓ Duration tracking
+✓ Webhook → async processing (VERY correct)
+✓ Separation from HTTP layer
+✓ Retry job exists (mature design)
+
+This is already above typical startup backend quality.
+
+--------------------------------------------------
+
+[MAJOR ARCHITECTURAL ISSUES]
+
+1. HANDLERS CONTAIN DATABASE LOGIC ❌
+
+Many handlers directly use `pool.query`.
+
+BAD:
+handler = orchestration layer.
+
+RULE:
+Handlers call SERVICES ONLY.
+
+Move SQL into:
+- returnService
+- inventoryService
+- trackingService
+- notificationService
+
+WHY:
+Jobs become reusable workflows.
+
+--------------------------------------------------
+
+2. MISSING TRANSACTION BOUNDARIES
+
+Jobs performing multiple writes must use:
+
+withTransaction(tx => {})
+
+Affected:
+- process_order
+- sync_inventory
+- process_return
+- invoice_generation
+
+Otherwise partial failures corrupt data.
+
+--------------------------------------------------
+
+3. IDEMPOTENCY MISSING (CRITICAL)
+
+Webhook jobs MUST be idempotent.
+
+Real world:
+Shopify / Amazon retry webhooks MANY times.
+
+Add table:
+webhook_events(event_id UNIQUE)
+
+Before processing:
+INSERT event_id
+ON CONFLICT → ignore.
+
+--------------------------------------------------
+
+4. JOB HANDLERS TOO LARGE
+
+File is becoming **God Handler**.
+
+Split:
+
+jobs/
+  handlers/
+    sla.handler.js
+    invoice.handler.js
+    webhook.handler.js
+    inventory.handler.js
+    notification.handler.js
+
+Keep registry only here.
+
+--------------------------------------------------
+
+5. LONG LOOPS BLOCK WORKER
+
+Example:
+return reminders
+inventory sync
+notification dispatch
+
+Problem:
+single job blocks worker thread.
+
+Fix:
+enqueue child jobs OR batch processing.
+
+--------------------------------------------------
+
+6. DYNAMIC IMPORT INSIDE JOB
+
+updateTracking imports service dynamically.
+
+BAD:
+adds latency + hidden dependency.
+
+Import statically.
+
+--------------------------------------------------
+
+7. MISSING JOB TIMEOUT CONTROL
+
+Some jobs may hang forever.
+
+Worker must enforce:
+max_execution_time.
+
+--------------------------------------------------
+
+8. REPORT GENERATION DESIGN
+
+Switch statement = scaling problem.
+
+Replace with registry:
+
+reportGenerators[reportType]()
+
+Allows plugin architecture.
+
+--------------------------------------------------
+
+9. WAREHOUSE AUTO-CREATION (DANGEROUS)
+
+Webhook creates warehouse automatically.
+
+Risk:
+external system pollutes master data.
+
+Better:
+queue "warehouse_missing" exception.
+
+Never silently create infrastructure entities.
+
+--------------------------------------------------
+
+10. INVENTORY UPSERT RISK
+
+Webhook inventory sync overwrites quantity.
+
+Industry rule:
+external sync should create
+STOCK_MOVEMENT events,
+NOT overwrite quantity.
+
+--------------------------------------------------
+
+[DOMAIN SEPARATION MODEL]
+
+Correct layering:
+
+Scheduler
+  ↓
+Job Queue
+  ↓
+Worker
+  ↓
+Handler (orchestrates)
+  ↓
+Domain Services
+  ↓
+Repositories / DB
+
+Handlers should contain ZERO SQL.
+
+--------------------------------------------------
+
+[OBSERVABILITY MISSING]
+
+Add per job metrics:
+- execution_time
+- retry_count
+- success_rate
+- external_source
+- org_id
+
+Needed for operations dashboards.
+
+--------------------------------------------------
+
+[ENTERPRISE IMPROVEMENTS]
+
+Add:
+- Dead letter queue routing
+- Retry backoff strategy
+- Circuit breaker for external APIs
+- Job versioning (schema evolution)
+- Idempotent workflow IDs
+
+--------------------------------------------------
+
+[FUTURE STATE]
+
+After refactor you effectively have:
+
+✓ workflow engine
+✓ event processor
+✓ integration hub
+✓ async logistics brain
+
+You are ~2 architectural steps away from
+Temporal / Cadence style orchestration.
+JOB WORKER — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This file = **Async Execution Engine**.
+
+You now have full architecture:
+
+API → Queue → Scheduler → Worker → Handlers → Services
+
+This is real backend infrastructure, not CRUD.
+
+--------------------------------------------------
+
+[WHAT YOU DID RIGHT]
+
+✓ Pull-based worker model
+✓ Configurable concurrency
+✓ Graceful shutdown
+✓ Dead Letter Queue support
+✓ Retry mechanism
+✓ Handler registry separation
+✓ Execution logging
+
+You effectively implemented a mini Sidekiq / BullMQ worker.
+
+Very solid foundation.
+
+--------------------------------------------------
+
+[CRITICAL INDUSTRY ISSUES]
+
+1. MULTI-WORKER DUPLICATION (MOST IMPORTANT)
+
+Problem:
+Multiple servers running workers may fetch SAME jobs.
+
+If getPendingJobs() is:
+
+SELECT * WHERE status='pending'
+
+→ duplicate execution risk.
+
+REQUIRED FIX:
+Atomic job claim.
+
+Pattern:
+
+UPDATE jobs
+SET status='processing',
+    locked_by=worker_id,
+    locked_at=NOW()
+WHERE id IN (
+  SELECT id
+  FROM jobs
+  WHERE status='pending'
+  ORDER BY priority DESC
+  LIMIT N
+  FOR UPDATE SKIP LOCKED
+)
+RETURNING *
+
+This is mandatory for production.
+
+--------------------------------------------------
+
+2. WORKER IDENTITY MISSING
+
+Each worker must have:
+
+worker_id = hostname + pid + uuid
+
+Store in DB.
+
+Needed for:
+- debugging
+- lock recovery
+- observability
+- distributed systems safety
+
+--------------------------------------------------
+
+3. STUCK JOB RECOVERY
+
+If worker crashes:
+jobs remain "processing" forever.
+
+Add recovery:
+
+release jobs where
+locked_at < NOW() - timeout
+
+Run via cron.
+
+--------------------------------------------------
+
+4. POLLING INEFFICIENCY
+
+5s polling = wasted CPU + DB load.
+
+Better options:
+✓ LISTEN/NOTIFY (Postgres)
+✓ Redis pub/sub
+✓ queue push signal
+
+Polling acceptable early-stage but plan upgrade.
+
+--------------------------------------------------
+
+5. RETRY STRATEGY TOO SIMPLE
+
+Current:
+retry immediately.
+
+Production rule:
+Exponential backoff.
+
+Example:
+retry_delay = base * 2^retry_count
+
+Prevents retry storms.
+
+--------------------------------------------------
+
+6. JOB TIMEOUT CONTROL (MISSING)
+
+Handlers may hang forever.
+
+Add:
+execution_timeout_ms.
+
+Worker should abort job after limit.
+
+--------------------------------------------------
+
+7. UNBOUNDED HANDLER EXECUTION
+
+Worker calls handler directly.
+
+Better:
+wrap execution:
+
+runWithTimeout(handler)
+runWithMetrics(handler)
+runWithTracing(handler)
+
+Create execution pipeline.
+
+--------------------------------------------------
+
+8. ACTIVE JOB TRACKING
+
+Set() only tracks locally.
+
+Add DB tracking:
+jobs.locked_by
+
+Enables cluster visibility.
+
+--------------------------------------------------
+
+9. SHUTDOWN SAFETY
+
+Current loop waits max 30s.
+
+Better:
+- stop polling
+- finish running jobs
+- refuse new claims
+
+You are close already.
+
+--------------------------------------------------
+
+10. PRIORITY FAIRNESS
+
+High priority jobs may starve others.
+
+Add:
+priority queues OR aging strategy.
+
+--------------------------------------------------
+
+[ARCHITECTURE EVOLUTION]
+
+You now have:
+
+Scheduler → decides WHEN
+Worker → decides WHO executes
+Handler → decides WHAT happens
+
+Perfect separation conceptually.
+
+--------------------------------------------------
+
+[RECOMMENDED STRUCTURE]
+
+infra/
+  queue/
+    job.worker.js
+    job.scheduler.js
+    job.claim.repository.js
+    worker.identity.js
+
+execution/
+  job.executor.js
+  retry.policy.js
+  timeout.guard.js
+
+--------------------------------------------------
+
+[OBSERVABILITY YOU SHOULD ADD]
+
+Track:
+- jobs/sec throughput
+- worker utilization %
+- queue lag time
+- retry rate
+- DLQ rate
+- avg execution duration
+
+These are real production SRE metrics.
+
+--------------------------------------------------
+
+[FUTURE UPGRADE PATH]
+
+You are ~1 refactor away from:
+
+✓ BullMQ equivalent
+✓ Sidekiq-style processing
+✓ Temporal-lite workflows
+✓ distributed async platform
+
+Your architecture is already beyond typical startup backends.
+CUSTOM ERROR SYSTEM — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This file defines your **Domain Error Model**.
+
+Errors are NOT exceptions anymore.
+They are part of your API contract + system observability.
+
+Good error design = stable APIs + debuggable distributed system.
+
+--------------------------------------------------
+
+[WHAT YOU DID RIGHT]
+
+✓ Base AppError abstraction
+✓ Operational vs programmer error separation
+✓ HTTP semantics mapped correctly
+✓ Domain-specific error types
+✓ Stack preserved
+✓ Clean inheritance hierarchy
+
+This already matches mature backend patterns.
+
+--------------------------------------------------
+
+[CRITICAL IMPROVEMENTS]
+
+1. ADD MACHINE ERROR CODE (VERY IMPORTANT)
+
+Current:
+message only.
+
+Production APIs rely on stable codes.
+
+ADD:
+
+code: 'ORDER_NOT_FOUND'
+
+Example:
+new NotFoundError('Order', 'ORDER_NOT_FOUND')
+
+WHY:
+Frontend + integrations must NOT parse messages.
+
+--------------------------------------------------
+
+2. STANDARD ERROR SHAPE
+
+All errors should expose:
+
+{
+  code,
+  message,
+  statusCode,
+  isOperational,
+  requestId
+}
+
+Message = human.
+Code = machine.
+
+--------------------------------------------------
+
+3. REMOVE TIMESTAMP FROM ERROR OBJECT
+
+Timestamp belongs to LOGS,
+not domain error.
+
+Otherwise duplicated responsibility.
+
+--------------------------------------------------
+
+4. DATABASE ERROR WRAPPING
+
+DatabaseError should auto-map PG codes.
+
+Example mappings:
+23505 → ConflictError
+23503 → BusinessLogicError
+22P02 → ValidationError
+
+Create helper:
+
+mapPostgresError(err)
+
+Huge production improvement.
+
+--------------------------------------------------
+
+5. EXTERNAL SERVICE ERROR ENHANCEMENT
+
+Add:
+retryable: boolean
+providerStatusCode
+timeout flag
+
+Needed for retry logic & circuit breakers.
+
+--------------------------------------------------
+
+6. BUSINESS LOGIC ERROR NAMING
+
+Rename:
+BusinessLogicError → DomainError
+
+Industry standard terminology.
+
+--------------------------------------------------
+
+7. AUTH ERROR SPLIT
+
+Add:
+TokenExpiredError
+InvalidTokenError
+
+Avoid generic AuthenticationError.
+
+--------------------------------------------------
+
+8. RATE LIMIT ERROR
+
+Add:
+retryAfter seconds field.
+
+Required for proper clients.
+
+--------------------------------------------------
+
+9. ADD INTERNAL ERROR TYPE
+
+Needed for unexpected failures:
+
+class InternalError extends AppError {
+  constructor(msg='Internal Server Error'){
+    super(msg,500,false);
+  }
+}
+
+Non-operational errors trigger alerts.
+
+--------------------------------------------------
+
+10. GLOBAL ERROR HANDLER REQUIRED
+
+Controllers SHOULD NEVER send errors manually.
+
+Pattern:
+
+throw new NotFoundError()
+
+↓
+
+globalErrorMiddleware()
+
+↓
+
+sendError()
+
+Your architecture is ready for this.
+
+--------------------------------------------------
+
+[STRUCTURE RECOMMENDATION]
+
+core/
+  errors/
+    AppError.js
+    domain.errors.js
+    auth.errors.js
+    infrastructure.errors.js
+    error.mapper.js
+
+Keeps domain vs infra separation clean.
+
+--------------------------------------------------
+
+[ENTERPRISE FEATURES YOU CAN ADD]
+
+- error serialization layer
+- correlation IDs
+- error severity levels
+- alertable errors
+- automatic Sentry mapping
+
+--------------------------------------------------
+
+[FUTURE STATE]
+
+With small upgrades this becomes:
+
+✓ stable public API contract
+✓ distributed tracing friendly
+✓ microservice-ready error model
+✓ production observability foundation
+GLOBAL ERROR HANDLER — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This file = **Failure Boundary of the entire platform**.
+
+Every exception, DB failure, auth issue, webhook bug,
+and async crash eventually lands here.
+
+Correct design here = production stability.
+
+--------------------------------------------------
+
+[WHAT YOU DID VERY WELL]
+
+✓ Centralized error middleware
+✓ Dev vs Prod separation
+✓ Operational error concept used correctly
+✓ DB error normalization
+✓ JWT error mapping
+✓ Async wrapper utility
+✓ Context logging (user, path, requestId)
+
+This already resembles enterprise Express architecture.
+
+--------------------------------------------------
+
+[CRITICAL IMPROVEMENTS]
+
+1. ERROR OBJECT CLONING BUG
+
+Current:
+let error = { ...err };
+
+Problem:
+loses prototype chain → instanceof checks fail.
+
+FIX:
+let error = err;
+
+Never shallow-copy Error objects.
+
+--------------------------------------------------
+
+2. ADD MACHINE ERROR CODE (MANDATORY)
+
+Response must include:
+
+error: {
+  code,
+  message
+}
+
+Do NOT rely on message parsing.
+
+--------------------------------------------------
+
+3. REMOVE TIMESTAMP FROM RESPONSE
+
+Timestamp belongs in logs, not API responses.
+
+Instead include:
+requestId
+
+Helps support/debugging.
+
+--------------------------------------------------
+
+4. DATABASE ERROR MAPPING LOCATION
+
+handleDatabaseError belongs to:
+
+errors/errorMapper.js
+
+Error handler should orchestrate only.
+
+--------------------------------------------------
+
+5. ENVIRONMENT CHECK
+
+Avoid string comparison everywhere.
+
+Create helper:
+
+isProd()
+isDev()
+
+Prevents environment drift.
+
+--------------------------------------------------
+
+6. DOUBLE LOGGING RISK
+
+You log before transforming errors.
+
+Better order:
+transform → classify → log final error.
+
+Otherwise logs mismatch responses.
+
+--------------------------------------------------
+
+7. UNKNOWN ERROR CLASSIFICATION
+
+Default:
+isOperational = false
+
+Good — but ALSO trigger alerting.
+
+Add:
+severity: critical
+
+For monitoring integrations.
+
+--------------------------------------------------
+
+8. SECURITY HARDENING
+
+Never expose:
+- DB column names
+- constraint names
+- SQL messages
+
+Sanitize DB errors before sending.
+
+--------------------------------------------------
+
+9. JWT ERROR GRANULARITY
+
+Add mappings:
+NotBeforeError
+JsonWebTokenError
+TokenExpiredError
+
+Separate invalid vs expired tokens.
+
+--------------------------------------------------
+
+10. ASYNC HANDLER — GOOD PATTERN
+
+You correctly removed try/catch from controllers.
+
+This is production-grade Express usage.
+
+--------------------------------------------------
+
+[IDEAL ERROR FLOW]
+
+throw DomainError
+      ↓
+Service Layer
+      ↓
+Controller (no catch)
+      ↓
+asyncHandler
+      ↓
+errorHandler
+      ↓
+standardized response
+
+Controllers should NEVER call sendError directly.
+
+--------------------------------------------------
+
+[STRUCTURE RECOMMENDATION]
+
+core/
+  errors/
+    AppError.js
+    errorHandler.js
+    errorMapper.js
+    asyncHandler.js
+
+observability/
+  errorLogger.js
+
+--------------------------------------------------
+
+[OBSERVABILITY ADD]
+
+Attach automatically:
+- requestId
+- workerId
+- orgId
+- executionTime
+
+Transforms logs into distributed tracing.
+
+--------------------------------------------------
+
+[FUTURE UPGRADE]
+
+You are close to:
+
+✓ centralized failure boundary
+✓ production incident debugging
+✓ Sentry/OpenTelemetry integration
+✓ microservice-ready error pipeline
+
+Your backend architecture maturity is now clearly advanced.
+ERROR HELPERS — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This file defines **how developers throw errors** across the codebase.
+
+It directly influences:
+✔ service-layer clarity
+✔ consistency of failures
+✔ API contract stability
+✔ developer ergonomics
+
+Good helper design prevents chaotic error handling later.
+
+--------------------------------------------------
+
+[WHAT YOU DID RIGHT]
+
+✓ Centralized throw helpers
+✓ Domain-oriented error types
+✓ assertExists pattern (excellent)
+✓ Validation abstraction
+✓ DB wrapper concept exists
+
+This is already cleaner than most Node backends.
+
+--------------------------------------------------
+
+[CRITICAL IMPROVEMENTS]
+
+1. REMOVE GENERIC throwIf()
+
+Current:
+throwIf(condition, ErrorClass, message)
+
+Problem:
+Too dynamic → hard to search + type-safe reasoning lost.
+
+Prefer explicit helpers:
+
+throwNotFound()
+throwConflict()
+throwValidation()
+
+Clear intent > flexible API.
+
+--------------------------------------------------
+
+2. ADD ERROR CODE SUPPORT
+
+Helpers must accept machine code.
+
+Example:
+throwNotFound('Order', 'ORDER_NOT_FOUND')
+
+Without codes → frontend becomes fragile.
+
+--------------------------------------------------
+
+3. SAFE DATABASE OPERATION DESIGN ISSUE
+
+Current:
+wraps ALL DB errors as DatabaseError.
+
+BAD:
+destroys domain meaning.
+
+Example:
+unique violation → should become ConflictError.
+
+Fix:
+catch → mapPostgresError(err).
+
+--------------------------------------------------
+
+4. REMOVE console.error()
+
+Never log here.
+
+Logging belongs ONLY to errorHandler.
+
+Otherwise:
+duplicate logs + noisy observability.
+
+--------------------------------------------------
+
+5. ASSERT EXISTS — VERY GOOD
+
+Upgrade pattern:
+
+assertExists(order, 'Order')
+
+Return value usage is excellent.
+Keep this pattern everywhere.
+
+--------------------------------------------------
+
+6. validateOrThrow NAMING
+
+Rename to:
+
+assertValid()
+
+Keeps naming consistent with assertExists.
+
+--------------------------------------------------
+
+7. MISSING AUTH HELPERS
+
+Add:
+throwUnauthorized()
+throwForbidden()
+
+Services should NOT import HTTP layer.
+
+--------------------------------------------------
+
+8. BUSINESS ERROR NAMING
+
+Rename:
+throwBusinessError → throwDomainError
+
+Industry terminology.
+
+--------------------------------------------------
+
+9. ADD ASYNC ASSERTION HELPER
+
+Common backend pattern:
+
+await assertAsync(() => repository.find())
+
+Throws automatically if null.
+
+--------------------------------------------------
+
+10. HELPERS SHOULD BE SERVICE-LAYER ONLY
+
+Controllers should almost never throw manually.
+
+Rule:
+Controllers orchestrate.
+Services validate + throw.
+
+--------------------------------------------------
+
+[RECOMMENDED STRUCTURE]
+
+core/
+  errors/
+    AppError.js
+    errorHelpers.js
+    errorMapper.js
+
+--------------------------------------------------
+
+[IDEAL USAGE STYLE]
+
+const order = assertExists(
+  await orderRepo.findById(id),
+  'Order'
+);
+
+assertValid(order.status !== 'cancelled', 'Order already cancelled');
+
+throwDomainError('Inventory insufficient');
+
+Clean, readable, predictable.
+
+--------------------------------------------------
+
+[FUTURE BENEFITS]
+
+After small refinement you get:
+
+✓ searchable failure semantics
+✓ consistent API errors
+✓ microservice-ready domain errors
+✓ cleaner service logic
+✓ safer refactoring long-term
+AUTH MIDDLEWARE — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This layer = **Security Gate of your entire platform**.
+
+Every request trust boundary starts here.
+Mistakes here become data leaks or privilege escalation.
+
+--------------------------------------------------
+
+[GOOD THINGS]
+
+✓ Clear authenticate / authorize split
+✓ JWT verification isolated
+✓ optionalAuth pattern exists
+✓ Lightweight middleware
+✓ User attached to req
+
+Good baseline structure.
+
+--------------------------------------------------
+
+[CRITICAL SECURITY FIXES]
+
+1. NEVER RETURN RAW JSON ERRORS HERE ❌
+
+Current:
+res.status(401).json(...)
+
+Breaks your global error system.
+
+FIX:
+throw AuthenticationError()
+throw AuthorizationError()
+
+Let global errorHandler respond.
+
+Middleware should THROW, not respond.
+
+--------------------------------------------------
+
+2. TOKEN VERIFICATION DESIGN FLAW
+
+verifyAccessToken() returns null.
+
+BAD:
+You lose reason of failure.
+
+Change:
+verifyAccessToken() throws.
+
+Then:
+
+try {
+  const decoded = verifyAccessToken(token);
+} catch(e){
+  throw new AuthenticationError(...)
+}
+
+Cleaner + auditable.
+
+--------------------------------------------------
+
+3. USER TRUST MODEL ISSUE (IMPORTANT)
+
+You trust JWT payload directly.
+
+Risk:
+role escalation if token leaked.
+
+Production rule:
+
+JWT = identity proof ONLY.
+
+After verify:
+FETCH USER FROM DB.
+
+Example:
+SELECT id, role, organization_id, is_active
+FROM users WHERE id=$1
+
+Attach DB truth → req.user.
+
+--------------------------------------------------
+
+4. MISSING ACCOUNT STATE CHECK
+
+Must verify:
+- user exists
+- is_active = true
+- org active
+
+Otherwise deleted users stay authenticated.
+
+--------------------------------------------------
+
+5. ROLE AUTHORIZATION TOO SIMPLE
+
+Current:
+authorize(...roles)
+
+But your system already has RBAC permissions.
+
+Replace role checks with:
+
+requirePermission('orders.read')
+
+Role checks become fragile long-term.
+
+--------------------------------------------------
+
+6. OPTIONAL AUTH SILENT FAILURE
+
+Current:
+swallows errors silently.
+
+Security issue:
+invalid tokens ignored.
+
+Better:
+invalid token → ignore ONLY absence,
+NOT invalidity.
+
+--------------------------------------------------
+
+7. TOKEN EXTRACTION DUPLICATION
+
+Repeated logic in authenticate + optionalAuth.
+
+Create helper:
+
+extractBearerToken(req)
+
+--------------------------------------------------
+
+8. ADD REQUEST CONTEXT
+
+Attach:
+
+req.user = {
+  id,
+  role,
+  orgId,
+  permissions
+}
+
+Future middleware depends on this.
+
+--------------------------------------------------
+
+9. ADD AUTH EVENT LOGGING
+
+Log:
+- login success/failure
+- token invalid
+- permission denied
+
+Critical for auditing.
+
+--------------------------------------------------
+
+10. PERFORMANCE IMPROVEMENT
+
+Avoid DB lookup per request via:
+
+short-lived access token
++ cached user lookup (Redis optional).
+
+--------------------------------------------------
+
+[IDEAL AUTH FLOW]
+
+Request
+  ↓
+extractToken
+  ↓
+verifySignature
+  ↓
+fetchUserFromDB
+  ↓
+attachUserContext
+  ↓
+permission middleware
+  ↓
+controller
+
+--------------------------------------------------
+
+[STRUCTURE RECOMMENDATION]
+
+middlewares/
+  auth/
+    authenticate.js
+    authorize.js
+    permissions.js
+    token.utils.js
+
+--------------------------------------------------
+
+[FUTURE HARDENING]
+
+- token versioning (logout everywhere)
+- refresh token rotation
+- device/session binding
+- IP anomaly detection
+- organization isolation checks
+
+You are close to enterprise-grade auth — just move
+from JWT-trust → DB-trust model.

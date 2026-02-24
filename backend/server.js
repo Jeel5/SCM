@@ -32,34 +32,32 @@ import shippingRoutes from './routes/shipping.js';
 import carriersRoutes from './routes/carriers.js';
 import companiesRoutes from './routes/companies.js';
 import organizationsRoutes from './routes/organizations.js';
-import demoRoutes from './routes/demo.js';
 
 // Security headers middleware
 app.use(helmet());
 
-// CORS configuration - allows frontend to communicate with backend
+const isDev = process.env.NODE_ENV !== "production";
+
+const allowedOrigins =
+	process.env.ALLOWED_ORIGINS
+		?.split(",")
+		.map(o => o.trim()) || [];
+
 app.use(
 	cors({
-		origin: function (origin, callback) {
-			// Allow requests with no origin (like mobile apps, curl, Postman, or file://)
+		origin: (origin, callback) => {
+			if (isDev) return callback(null, true);
+
 			if (!origin) return callback(null, true);
-			
-			const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
-				'http://localhost:5173',
-				'http://localhost:5500',
-				'http://127.0.0.1:5500',
-				'http://localhost:3000',
-			];
-			
-			// Allow if origin is in the list OR if it's null (file:// protocol)
-			if (allowedOrigins.includes(origin) || origin === 'null') {
-				callback(null, true);
-			} else {
-				callback(null, true); // Allow all origins in development mode
+
+			if (allowedOrigins.includes(origin)) {
+				return callback(null, true);
 			}
+
+			return callback(new Error("Not allowed by CORS"));
 		},
-		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 		credentials: true,
+		methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 	})
 );
 
@@ -93,7 +91,6 @@ app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
 app.use(API_PREFIX, companiesRoutes); // Superadmin company management
 app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization management (superadmin)
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
-app.use(API_PREFIX, demoRoutes); // Dev-only demo portal endpoints (404 in production)
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);
@@ -105,7 +102,7 @@ app.use(errorHandler);
 const server = app.listen(PORT, async () => {
 	logger.info(`🚀 Server running on http://localhost:${PORT}`);
 	logger.info(`📚 API available at http://localhost:${PORT}${API_PREFIX}`);
-	logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+	logger.info(`🌍 Environment: ${process.env.NODE_ENV}`);
 	
 	// Start background job worker
 	try {
