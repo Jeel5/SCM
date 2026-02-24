@@ -1,1246 +1,1021 @@
-JOB HANDLERS — COMPRESSED ARCH REVIEW
+BASE REPOSITORY — COMPRESSED ARCH REVIEW
 
 [CONTEXT]
-This file = **Background Execution Layer**.
+This file becomes the DATA ACCESS FOUNDATION of the entire system.
 
-Scheduler → creates jobs  
-Worker → pulls jobs  
-Handlers → execute domain workflows
+Every repository inherits from this.
+Every query safety decision here propagates system-wide.
 
-These handlers are effectively your:
-✔ automation engine
-✔ integration processor
-✔ async orchestration system
+If wrong →
+❌ tenant data leaks
+❌ SQL injection surfaces
+❌ performance collapse
+❌ inconsistent transactions
 
-You are building something close to Shopify Fulfillment / Shippo backend.
-
---------------------------------------------------
-
-[GOOD ARCHITECTURE SIGNS]
-
-✓ Job-type registry (excellent pattern)
-✓ Domain services used (mostly)
-✓ Duration tracking
-✓ Webhook → async processing (VERY correct)
-✓ Separation from HTTP layer
-✓ Retry job exists (mature design)
-
-This is already above typical startup backend quality.
+This layer = your ORM replacement + safety boundary.
 
 --------------------------------------------------
 
-[MAJOR ARCHITECTURAL ISSUES]
+[GOOD DESIGN]
 
-1. HANDLERS CONTAIN DATABASE LOGIC ❌
+✓ Repository abstraction (clean architecture)
+✓ Transaction compatibility
+✓ Central query execution
+✓ Shared CRUD logic
+✓ Organization scoping awareness
+✓ Pagination + ordering support
+✓ Minimal framework coupling
 
-Many handlers directly use `pool.query`.
+Correct direction for scalable backend.
 
-BAD:
-handler = orchestration layer.
+--------------------------------------------------
+
+[CRITICAL ISSUES]
+
+1. MULTI-TENANT SECURITY GAP ❌
+
+Current model:
+organizationId passed manually.
+
+Risk:
+developer forgets → global data exposure.
 
 RULE:
-Handlers call SERVICES ONLY.
-
-Move SQL into:
-- returnService
-- inventoryService
-- trackingService
-- notificationService
-
-WHY:
-Jobs become reusable workflows.
-
---------------------------------------------------
-
-2. MISSING TRANSACTION BOUNDARIES
-
-Jobs performing multiple writes must use:
-
-withTransaction(tx => {})
-
-Affected:
-- process_order
-- sync_inventory
-- process_return
-- invoice_generation
-
-Otherwise partial failures corrupt data.
-
---------------------------------------------------
-
-3. IDEMPOTENCY MISSING (CRITICAL)
-
-Webhook jobs MUST be idempotent.
-
-Real world:
-Shopify / Amazon retry webhooks MANY times.
-
-Add table:
-webhook_events(event_id UNIQUE)
-
-Before processing:
-INSERT event_id
-ON CONFLICT → ignore.
-
---------------------------------------------------
-
-4. JOB HANDLERS TOO LARGE
-
-File is becoming **God Handler**.
-
-Split:
-
-jobs/
-  handlers/
-    sla.handler.js
-    invoice.handler.js
-    webhook.handler.js
-    inventory.handler.js
-    notification.handler.js
-
-Keep registry only here.
-
---------------------------------------------------
-
-5. LONG LOOPS BLOCK WORKER
-
-Example:
-return reminders
-inventory sync
-notification dispatch
-
-Problem:
-single job blocks worker thread.
+Tenant filtering must be AUTOMATIC.
 
 Fix:
-enqueue child jobs OR batch processing.
+
+Repository receives context once:
+
+constructor(context)
+
+this.organizationId = context.organizationId
+
+Never pass orgId manually per query.
 
 --------------------------------------------------
 
-6. DYNAMIC IMPORT INSIDE JOB
-
-updateTracking imports service dynamically.
-
-BAD:
-adds latency + hidden dependency.
-
-Import statically.
-
---------------------------------------------------
-
-7. MISSING JOB TIMEOUT CONTROL
-
-Some jobs may hang forever.
-
-Worker must enforce:
-max_execution_time.
-
---------------------------------------------------
-
-8. REPORT GENERATION DESIGN
-
-Switch statement = scaling problem.
-
-Replace with registry:
-
-reportGenerators[reportType]()
-
-Allows plugin architecture.
-
---------------------------------------------------
-
-9. WAREHOUSE AUTO-CREATION (DANGEROUS)
-
-Webhook creates warehouse automatically.
-
-Risk:
-external system pollutes master data.
-
-Better:
-queue "warehouse_missing" exception.
-
-Never silently create infrastructure entities.
-
---------------------------------------------------
-
-10. INVENTORY UPSERT RISK
-
-Webhook inventory sync overwrites quantity.
-
-Industry rule:
-external sync should create
-STOCK_MOVEMENT events,
-NOT overwrite quantity.
-
---------------------------------------------------
-
-[DOMAIN SEPARATION MODEL]
-
-Correct layering:
-
-Scheduler
-  ↓
-Job Queue
-  ↓
-Worker
-  ↓
-Handler (orchestrates)
-  ↓
-Domain Services
-  ↓
-Repositories / DB
-
-Handlers should contain ZERO SQL.
-
---------------------------------------------------
-
-[OBSERVABILITY MISSING]
-
-Add per job metrics:
-- execution_time
-- retry_count
-- success_rate
-- external_source
-- org_id
-
-Needed for operations dashboards.
-
---------------------------------------------------
-
-[ENTERPRISE IMPROVEMENTS]
-
-Add:
-- Dead letter queue routing
-- Retry backoff strategy
-- Circuit breaker for external APIs
-- Job versioning (schema evolution)
-- Idempotent workflow IDs
-
---------------------------------------------------
-
-[FUTURE STATE]
-
-After refactor you effectively have:
-
-✓ workflow engine
-✓ event processor
-✓ integration hub
-✓ async logistics brain
-
-You are ~2 architectural steps away from
-Temporal / Cadence style orchestration.
-JOB WORKER — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This file = **Async Execution Engine**.
-
-You now have full architecture:
-
-API → Queue → Scheduler → Worker → Handlers → Services
-
-This is real backend infrastructure, not CRUD.
-
---------------------------------------------------
-
-[WHAT YOU DID RIGHT]
-
-✓ Pull-based worker model
-✓ Configurable concurrency
-✓ Graceful shutdown
-✓ Dead Letter Queue support
-✓ Retry mechanism
-✓ Handler registry separation
-✓ Execution logging
-
-You effectively implemented a mini Sidekiq / BullMQ worker.
-
-Very solid foundation.
-
---------------------------------------------------
-
-[CRITICAL INDUSTRY ISSUES]
-
-1. MULTI-WORKER DUPLICATION (MOST IMPORTANT)
-
-Problem:
-Multiple servers running workers may fetch SAME jobs.
-
-If getPendingJobs() is:
-
-SELECT * WHERE status='pending'
-
-→ duplicate execution risk.
-
-REQUIRED FIX:
-Atomic job claim.
-
-Pattern:
-
-UPDATE jobs
-SET status='processing',
-    locked_by=worker_id,
-    locked_at=NOW()
-WHERE id IN (
-  SELECT id
-  FROM jobs
-  WHERE status='pending'
-  ORDER BY priority DESC
-  LIMIT N
-  FOR UPDATE SKIP LOCKED
-)
-RETURNING *
-
-This is mandatory for production.
-
---------------------------------------------------
-
-2. WORKER IDENTITY MISSING
-
-Each worker must have:
-
-worker_id = hostname + pid + uuid
-
-Store in DB.
-
-Needed for:
-- debugging
-- lock recovery
-- observability
-- distributed systems safety
-
---------------------------------------------------
-
-3. STUCK JOB RECOVERY
-
-If worker crashes:
-jobs remain "processing" forever.
-
-Add recovery:
-
-release jobs where
-locked_at < NOW() - timeout
-
-Run via cron.
-
---------------------------------------------------
-
-4. POLLING INEFFICIENCY
-
-5s polling = wasted CPU + DB load.
-
-Better options:
-✓ LISTEN/NOTIFY (Postgres)
-✓ Redis pub/sub
-✓ queue push signal
-
-Polling acceptable early-stage but plan upgrade.
-
---------------------------------------------------
-
-5. RETRY STRATEGY TOO SIMPLE
+2. buildOrgFilter BUG (SERIOUS)
 
 Current:
-retry immediately.
+`${columnName} = `
 
-Production rule:
-Exponential backoff.
+Relies on external `$index`.
 
-Example:
-retry_delay = base * 2^retry_count
+Very fragile.
 
-Prevents retry storms.
+Return FULL clause:
 
---------------------------------------------------
+`${columnName} = $1`
 
-6. JOB TIMEOUT CONTROL (MISSING)
+or accept paramIndex.
 
-Handlers may hang forever.
-
-Add:
-execution_timeout_ms.
-
-Worker should abort job after limit.
+Broken filters = silent data leaks.
 
 --------------------------------------------------
 
-7. UNBOUNDED HANDLER EXECUTION
+3. TABLE NAME INJECTION RISK ⚠️
 
-Worker calls handler directly.
+this.tableName interpolated directly.
 
-Better:
-wrap execution:
-
-runWithTimeout(handler)
-runWithMetrics(handler)
-runWithTracing(handler)
-
-Create execution pipeline.
-
---------------------------------------------------
-
-8. ACTIVE JOB TRACKING
-
-Set() only tracks locally.
-
-Add DB tracking:
-jobs.locked_by
-
-Enables cluster visibility.
-
---------------------------------------------------
-
-9. SHUTDOWN SAFETY
-
-Current loop waits max 30s.
-
-Better:
-- stop polling
-- finish running jobs
-- refuse new claims
-
-You are close already.
-
---------------------------------------------------
-
-10. PRIORITY FAIRNESS
-
-High priority jobs may starve others.
-
-Add:
-priority queues OR aging strategy.
-
---------------------------------------------------
-
-[ARCHITECTURE EVOLUTION]
-
-You now have:
-
-Scheduler → decides WHEN
-Worker → decides WHO executes
-Handler → decides WHAT happens
-
-Perfect separation conceptually.
-
---------------------------------------------------
-
-[RECOMMENDED STRUCTURE]
-
-infra/
-  queue/
-    job.worker.js
-    job.scheduler.js
-    job.claim.repository.js
-    worker.identity.js
-
-execution/
-  job.executor.js
-  retry.policy.js
-  timeout.guard.js
-
---------------------------------------------------
-
-[OBSERVABILITY YOU SHOULD ADD]
-
-Track:
-- jobs/sec throughput
-- worker utilization %
-- queue lag time
-- retry rate
-- DLQ rate
-- avg execution duration
-
-These are real production SRE metrics.
-
---------------------------------------------------
-
-[FUTURE UPGRADE PATH]
-
-You are ~1 refactor away from:
-
-✓ BullMQ equivalent
-✓ Sidekiq-style processing
-✓ Temporal-lite workflows
-✓ distributed async platform
-
-Your architecture is already beyond typical startup backends.
-CUSTOM ERROR SYSTEM — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This file defines your **Domain Error Model**.
-
-Errors are NOT exceptions anymore.
-They are part of your API contract + system observability.
-
-Good error design = stable APIs + debuggable distributed system.
-
---------------------------------------------------
-
-[WHAT YOU DID RIGHT]
-
-✓ Base AppError abstraction
-✓ Operational vs programmer error separation
-✓ HTTP semantics mapped correctly
-✓ Domain-specific error types
-✓ Stack preserved
-✓ Clean inheritance hierarchy
-
-This already matches mature backend patterns.
-
---------------------------------------------------
-
-[CRITICAL IMPROVEMENTS]
-
-1. ADD MACHINE ERROR CODE (VERY IMPORTANT)
-
-Current:
-message only.
-
-Production APIs rely on stable codes.
-
-ADD:
-
-code: 'ORDER_NOT_FOUND'
-
-Example:
-new NotFoundError('Order', 'ORDER_NOT_FOUND')
-
-WHY:
-Frontend + integrations must NOT parse messages.
-
---------------------------------------------------
-
-2. STANDARD ERROR SHAPE
-
-All errors should expose:
-
-{
-  code,
-  message,
-  statusCode,
-  isOperational,
-  requestId
-}
-
-Message = human.
-Code = machine.
-
---------------------------------------------------
-
-3. REMOVE TIMESTAMP FROM ERROR OBJECT
-
-Timestamp belongs to LOGS,
-not domain error.
-
-Otherwise duplicated responsibility.
-
---------------------------------------------------
-
-4. DATABASE ERROR WRAPPING
-
-DatabaseError should auto-map PG codes.
-
-Example mappings:
-23505 → ConflictError
-23503 → BusinessLogicError
-22P02 → ValidationError
-
-Create helper:
-
-mapPostgresError(err)
-
-Huge production improvement.
-
---------------------------------------------------
-
-5. EXTERNAL SERVICE ERROR ENHANCEMENT
-
-Add:
-retryable: boolean
-providerStatusCode
-timeout flag
-
-Needed for retry logic & circuit breakers.
-
---------------------------------------------------
-
-6. BUSINESS LOGIC ERROR NAMING
-
-Rename:
-BusinessLogicError → DomainError
-
-Industry standard terminology.
-
---------------------------------------------------
-
-7. AUTH ERROR SPLIT
-
-Add:
-TokenExpiredError
-InvalidTokenError
-
-Avoid generic AuthenticationError.
-
---------------------------------------------------
-
-8. RATE LIMIT ERROR
-
-Add:
-retryAfter seconds field.
-
-Required for proper clients.
-
---------------------------------------------------
-
-9. ADD INTERNAL ERROR TYPE
-
-Needed for unexpected failures:
-
-class InternalError extends AppError {
-  constructor(msg='Internal Server Error'){
-    super(msg,500,false);
-  }
-}
-
-Non-operational errors trigger alerts.
-
---------------------------------------------------
-
-10. GLOBAL ERROR HANDLER REQUIRED
-
-Controllers SHOULD NEVER send errors manually.
-
-Pattern:
-
-throw new NotFoundError()
-
-↓
-
-globalErrorMiddleware()
-
-↓
-
-sendError()
-
-Your architecture is ready for this.
-
---------------------------------------------------
-
-[STRUCTURE RECOMMENDATION]
-
-core/
-  errors/
-    AppError.js
-    domain.errors.js
-    auth.errors.js
-    infrastructure.errors.js
-    error.mapper.js
-
-Keeps domain vs infra separation clean.
-
---------------------------------------------------
-
-[ENTERPRISE FEATURES YOU CAN ADD]
-
-- error serialization layer
-- correlation IDs
-- error severity levels
-- alertable errors
-- automatic Sentry mapping
-
---------------------------------------------------
-
-[FUTURE STATE]
-
-With small upgrades this becomes:
-
-✓ stable public API contract
-✓ distributed tracing friendly
-✓ microservice-ready error model
-✓ production observability foundation
-GLOBAL ERROR HANDLER — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This file = **Failure Boundary of the entire platform**.
-
-Every exception, DB failure, auth issue, webhook bug,
-and async crash eventually lands here.
-
-Correct design here = production stability.
-
---------------------------------------------------
-
-[WHAT YOU DID VERY WELL]
-
-✓ Centralized error middleware
-✓ Dev vs Prod separation
-✓ Operational error concept used correctly
-✓ DB error normalization
-✓ JWT error mapping
-✓ Async wrapper utility
-✓ Context logging (user, path, requestId)
-
-This already resembles enterprise Express architecture.
-
---------------------------------------------------
-
-[CRITICAL IMPROVEMENTS]
-
-1. ERROR OBJECT CLONING BUG
-
-Current:
-let error = { ...err };
-
-Problem:
-loses prototype chain → instanceof checks fail.
-
-FIX:
-let error = err;
-
-Never shallow-copy Error objects.
-
---------------------------------------------------
-
-2. ADD MACHINE ERROR CODE (MANDATORY)
-
-Response must include:
-
-error: {
-  code,
-  message
-}
-
-Do NOT rely on message parsing.
-
---------------------------------------------------
-
-3. REMOVE TIMESTAMP FROM RESPONSE
-
-Timestamp belongs in logs, not API responses.
-
-Instead include:
-requestId
-
-Helps support/debugging.
-
---------------------------------------------------
-
-4. DATABASE ERROR MAPPING LOCATION
-
-handleDatabaseError belongs to:
-
-errors/errorMapper.js
-
-Error handler should orchestrate only.
-
---------------------------------------------------
-
-5. ENVIRONMENT CHECK
-
-Avoid string comparison everywhere.
-
-Create helper:
-
-isProd()
-isDev()
-
-Prevents environment drift.
-
---------------------------------------------------
-
-6. DOUBLE LOGGING RISK
-
-You log before transforming errors.
-
-Better order:
-transform → classify → log final error.
-
-Otherwise logs mismatch responses.
-
---------------------------------------------------
-
-7. UNKNOWN ERROR CLASSIFICATION
-
-Default:
-isOperational = false
-
-Good — but ALSO trigger alerting.
-
-Add:
-severity: critical
-
-For monitoring integrations.
-
---------------------------------------------------
-
-8. SECURITY HARDENING
-
-Never expose:
-- DB column names
-- constraint names
-- SQL messages
-
-Sanitize DB errors before sending.
-
---------------------------------------------------
-
-9. JWT ERROR GRANULARITY
-
-Add mappings:
-NotBeforeError
-JsonWebTokenError
-TokenExpiredError
-
-Separate invalid vs expired tokens.
-
---------------------------------------------------
-
-10. ASYNC HANDLER — GOOD PATTERN
-
-You correctly removed try/catch from controllers.
-
-This is production-grade Express usage.
-
---------------------------------------------------
-
-[IDEAL ERROR FLOW]
-
-throw DomainError
-      ↓
-Service Layer
-      ↓
-Controller (no catch)
-      ↓
-asyncHandler
-      ↓
-errorHandler
-      ↓
-standardized response
-
-Controllers should NEVER call sendError directly.
-
---------------------------------------------------
-
-[STRUCTURE RECOMMENDATION]
-
-core/
-  errors/
-    AppError.js
-    errorHandler.js
-    errorMapper.js
-    asyncHandler.js
-
-observability/
-  errorLogger.js
-
---------------------------------------------------
-
-[OBSERVABILITY ADD]
-
-Attach automatically:
-- requestId
-- workerId
-- orgId
-- executionTime
-
-Transforms logs into distributed tracing.
-
---------------------------------------------------
-
-[FUTURE UPGRADE]
-
-You are close to:
-
-✓ centralized failure boundary
-✓ production incident debugging
-✓ Sentry/OpenTelemetry integration
-✓ microservice-ready error pipeline
-
-Your backend architecture maturity is now clearly advanced.
-ERROR HELPERS — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This file defines **how developers throw errors** across the codebase.
-
-It directly influences:
-✔ service-layer clarity
-✔ consistency of failures
-✔ API contract stability
-✔ developer ergonomics
-
-Good helper design prevents chaotic error handling later.
-
---------------------------------------------------
-
-[WHAT YOU DID RIGHT]
-
-✓ Centralized throw helpers
-✓ Domain-oriented error types
-✓ assertExists pattern (excellent)
-✓ Validation abstraction
-✓ DB wrapper concept exists
-
-This is already cleaner than most Node backends.
-
---------------------------------------------------
-
-[CRITICAL IMPROVEMENTS]
-
-1. REMOVE GENERIC throwIf()
-
-Current:
-throwIf(condition, ErrorClass, message)
-
-Problem:
-Too dynamic → hard to search + type-safe reasoning lost.
-
-Prefer explicit helpers:
-
-throwNotFound()
-throwConflict()
-throwValidation()
-
-Clear intent > flexible API.
-
---------------------------------------------------
-
-2. ADD ERROR CODE SUPPORT
-
-Helpers must accept machine code.
-
-Example:
-throwNotFound('Order', 'ORDER_NOT_FOUND')
-
-Without codes → frontend becomes fragile.
-
---------------------------------------------------
-
-3. SAFE DATABASE OPERATION DESIGN ISSUE
-
-Current:
-wraps ALL DB errors as DatabaseError.
-
-BAD:
-destroys domain meaning.
-
-Example:
-unique violation → should become ConflictError.
-
-Fix:
-catch → mapPostgresError(err).
-
---------------------------------------------------
-
-4. REMOVE console.error()
-
-Never log here.
-
-Logging belongs ONLY to errorHandler.
-
-Otherwise:
-duplicate logs + noisy observability.
-
---------------------------------------------------
-
-5. ASSERT EXISTS — VERY GOOD
-
-Upgrade pattern:
-
-assertExists(order, 'Order')
-
-Return value usage is excellent.
-Keep this pattern everywhere.
-
---------------------------------------------------
-
-6. validateOrThrow NAMING
-
-Rename to:
-
-assertValid()
-
-Keeps naming consistent with assertExists.
-
---------------------------------------------------
-
-7. MISSING AUTH HELPERS
-
-Add:
-throwUnauthorized()
-throwForbidden()
-
-Services should NOT import HTTP layer.
-
---------------------------------------------------
-
-8. BUSINESS ERROR NAMING
-
-Rename:
-throwBusinessError → throwDomainError
-
-Industry terminology.
-
---------------------------------------------------
-
-9. ADD ASYNC ASSERTION HELPER
-
-Common backend pattern:
-
-await assertAsync(() => repository.find())
-
-Throws automatically if null.
-
---------------------------------------------------
-
-10. HELPERS SHOULD BE SERVICE-LAYER ONLY
-
-Controllers should almost never throw manually.
+Safe only if static.
 
 Rule:
-Controllers orchestrate.
-Services validate + throw.
+Never allow dynamic table names.
+
+Freeze repository tables at construction.
 
 --------------------------------------------------
 
-[RECOMMENDED STRUCTURE]
+4. ORDER BY INJECTION RISK ❌
 
-core/
-  errors/
-    AppError.js
-    errorHelpers.js
-    errorMapper.js
+orderBy + order inserted raw.
 
---------------------------------------------------
+Attacker could inject SQL via query params.
 
-[IDEAL USAGE STYLE]
+Fix:
 
-const order = assertExists(
-  await orderRepo.findById(id),
-  'Order'
-);
-
-assertValid(order.status !== 'cancelled', 'Order already cancelled');
-
-throwDomainError('Inventory insufficient');
-
-Clean, readable, predictable.
-
---------------------------------------------------
-
-[FUTURE BENEFITS]
-
-After small refinement you get:
-
-✓ searchable failure semantics
-✓ consistent API errors
-✓ microservice-ready domain errors
-✓ cleaner service logic
-✓ safer refactoring long-term
-AUTH MIDDLEWARE — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This layer = **Security Gate of your entire platform**.
-
-Every request trust boundary starts here.
-Mistakes here become data leaks or privilege escalation.
-
---------------------------------------------------
-
-[GOOD THINGS]
-
-✓ Clear authenticate / authorize split
-✓ JWT verification isolated
-✓ optionalAuth pattern exists
-✓ Lightweight middleware
-✓ User attached to req
-
-Good baseline structure.
-
---------------------------------------------------
-
-[CRITICAL SECURITY FIXES]
-
-1. NEVER RETURN RAW JSON ERRORS HERE ❌
-
-Current:
-res.status(401).json(...)
-
-Breaks your global error system.
-
-FIX:
-throw AuthenticationError()
-throw AuthorizationError()
-
-Let global errorHandler respond.
-
-Middleware should THROW, not respond.
-
---------------------------------------------------
-
-2. TOKEN VERIFICATION DESIGN FLAW
-
-verifyAccessToken() returns null.
-
-BAD:
-You lose reason of failure.
-
-Change:
-verifyAccessToken() throws.
-
-Then:
-
-try {
-  const decoded = verifyAccessToken(token);
-} catch(e){
-  throw new AuthenticationError(...)
-}
-
-Cleaner + auditable.
-
---------------------------------------------------
-
-3. USER TRUST MODEL ISSUE (IMPORTANT)
-
-You trust JWT payload directly.
-
-Risk:
-role escalation if token leaked.
-
-Production rule:
-
-JWT = identity proof ONLY.
-
-After verify:
-FETCH USER FROM DB.
+Whitelist sortable fields.
 
 Example:
-SELECT id, role, organization_id, is_active
-FROM users WHERE id=$1
+allowedSortFields.includes(orderBy)
 
-Attach DB truth → req.user.
-
---------------------------------------------------
-
-4. MISSING ACCOUNT STATE CHECK
-
-Must verify:
-- user exists
-- is_active = true
-- org active
-
-Otherwise deleted users stay authenticated.
+Never trust client sorting fields.
 
 --------------------------------------------------
 
-5. ROLE AUTHORIZATION TOO SIMPLE
+5. SUPERADMIN ACCESS MODEL UNCLEAR
 
-Current:
-authorize(...roles)
+organizationId = null → global access.
 
-But your system already has RBAC permissions.
+Danger:
+accidental unrestricted queries.
 
-Replace role checks with:
+Safer model:
 
-requirePermission('orders.read')
+explicit option:
+allowGlobalAccess: true
 
-Role checks become fragile long-term.
-
---------------------------------------------------
-
-6. OPTIONAL AUTH SILENT FAILURE
-
-Current:
-swallows errors silently.
-
-Security issue:
-invalid tokens ignored.
-
-Better:
-invalid token → ignore ONLY absence,
-NOT invalidity.
+Never infer global access implicitly.
 
 --------------------------------------------------
 
-7. TOKEN EXTRACTION DUPLICATION
+6. TRANSACTION DESIGN DUPLICATION
 
-Repeated logic in authenticate + optionalAuth.
+You already built Transaction utility.
 
-Create helper:
+But repository also manages BEGIN/COMMIT.
 
-extractBearerToken(req)
+Pick ONE model.
 
---------------------------------------------------
+Recommended:
+Only use withTransaction() helper.
 
-8. ADD REQUEST CONTEXT
-
-Attach:
-
-req.user = {
-  id,
-  role,
-  orgId,
-  permissions
-}
-
-Future middleware depends on this.
+Avoid dual transaction systems.
 
 --------------------------------------------------
 
-9. ADD AUTH EVENT LOGGING
+7. EXISTS() BUG
 
-Log:
-- login success/failure
-- token invalid
-- permission denied
+exists() calls:
 
-Critical for auditing.
+count(conditions, client)
 
---------------------------------------------------
+But count signature:
+count(conditions, organizationId, client)
 
-10. PERFORMANCE IMPROVEMENT
+Organization filtering silently broken.
 
-Avoid DB lookup per request via:
-
-short-lived access token
-+ cached user lookup (Redis optional).
+High-risk bug.
 
 --------------------------------------------------
 
-[IDEAL AUTH FLOW]
+8. SELECT * PERFORMANCE ISSUE
+
+findAll uses SELECT *.
+
+Large tables →
+wasted bandwidth + slower queries.
+
+Prefer:
+
+selectColumns option.
+
+Enterprise rule:
+never default to *.
+
+--------------------------------------------------
+
+9. MISSING SOFT DELETE SUPPORT
+
+delete() performs hard delete.
+
+SaaS systems usually require:
+
+deleted_at column.
+
+Soft deletes prevent data loss and audit issues.
+
+--------------------------------------------------
+
+10. NO QUERY OBSERVABILITY
+
+Central query layer should log:
+
+query time
+table
+operation
+slow queries
+
+This is ideal place for performance instrumentation.
+
+--------------------------------------------------
+
+[IDEAL REPOSITORY FLOW]
 
 Request
-  ↓
-extractToken
-  ↓
-verifySignature
-  ↓
-fetchUserFromDB
-  ↓
-attachUserContext
-  ↓
-permission middleware
-  ↓
-controller
+↓
+Context injected (orgId already known)
+↓
+Repository auto-scopes queries
+↓
+DB session org_id set (RLS)
+↓
+Query executes safely
+
+Developers cannot accidentally leak data.
 
 --------------------------------------------------
 
 [STRUCTURE RECOMMENDATION]
 
-middlewares/
-  auth/
-    authenticate.js
-    authorize.js
-    permissions.js
-    token.utils.js
+repositories/
+  BaseRepository.js
+  tenant/
+    TenantRepository.js
+
+infra/
+  database/
+    rlsContext.js
+
+Repositories should NOT build SQL security manually long-term.
+Database should enforce isolation.
 
 --------------------------------------------------
 
-[FUTURE HARDENING]
+[FUTURE ENTERPRISE UPGRADE]
 
-- token versioning (logout everywhere)
-- refresh token rotation
-- device/session binding
-- IP anomaly detection
-- organization isolation checks
+Next maturity step:
 
-You are close to enterprise-grade auth — just move
-from JWT-trust → DB-trust model.
+✓ Repository + RLS hybrid model
+✓ Query builder abstraction
+✓ Read/Write separation
+✓ Connection context propagation
+
+After RLS adoption →
+repository no longer responsible for security.
+
+--------------------------------------------------
+
+[SYSTEM MATURITY]
+
+Current:
+Well-structured custom data layer.
+
+After fixes:
+Enterprise-grade repository foundation suitable for large SaaS scale.
+CARRIER ASSIGNMENT REPOSITORY — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This repository controls the MOST CRITICAL LOGISTICS DECISION:
+
+order → carrier ownership.
+
+Mistakes here cause:
+❌ double carrier assignment
+❌ race conditions
+❌ billing errors
+❌ shipment loss
+❌ SLA violations
+
+This is a concurrency-sensitive domain layer.
+
+--------------------------------------------------
+
+[GOOD DESIGN]
+
+✓ Extends BaseRepository (consistent data layer)
+✓ Focused domain responsibility
+✓ Clear query intent
+✓ Joins enrich operational context
+✓ Dedicated state transition method (markAsBusy)
+✓ Read models separated from mutations
+
+Correct service-oriented repository design.
+
+--------------------------------------------------
+
+[CRITICAL ISSUES]
+
+1. MULTI-TENANT ISOLATION MISSING ❌
+
+NONE of these queries filter organization_id.
+
+If order IDs collide or internal misuse happens →
+cross-tenant data exposure.
+
+Required:
+
+JOIN orders o
+AND enforce:
+o.organization_id = $X
+
+Tenant safety must NEVER depend on controller.
+
+--------------------------------------------------
+
+2. CONCURRENCY RACE CONDITION (VERY IMPORTANT)
+
+Scenario:
+Two workers assign same order simultaneously.
+
+findActiveByOrderId()
+is NOT atomic.
+
+Fix options:
+
+A) DB constraint:
+UNIQUE(order_id) WHERE status='accepted'
+
+B) Transaction + FOR UPDATE locking:
+
+SELECT ... FOR UPDATE
+
+Carrier assignment MUST be transactional.
+
+--------------------------------------------------
+
+3. STATUS ENUM SAFETY
+
+Statuses used as raw strings:
+'rejected', 'cancelled', 'busy'.
+
+Risk:
+typos create silent states.
+
+Define central enum:
+
+ASSIGNMENT_STATUS = {...}
+
+Never hardcode status literals.
+
+--------------------------------------------------
+
+4. markAsBusy QUERY RISK ⚠️
+
+carrierId accepts BOTH code and UUID.
+
+Problems:
+• ambiguous lookup
+• hidden performance cost
+• index misuse
+
+Better rule:
+
+Repository receives normalized carrier_id ONLY.
+
+Normalization belongs in service layer.
+
+--------------------------------------------------
+
+5. NO STATE MACHINE ENFORCEMENT ❌
+
+Current:
+status updated freely.
+
+Missing business rule:
+
+allowed transitions:
+pending → accepted
+pending → rejected
+accepted → completed
+etc.
+
+Repository should enforce valid transitions.
+
+Otherwise invalid logistics states appear.
+
+--------------------------------------------------
+
+6. AGGREGATION LOGIC SMELL
+
+COUNT(CASE WHEN status='accepted')
+
+per assignment row is unnecessary.
+
+This belongs in analytics/service layer.
+
+Repositories should return DATA, not derived metrics.
+
+--------------------------------------------------
+
+7. MISSING INDEX EXPECTATIONS
+
+These queries REQUIRE indexes:
+
+carrier_assignments(order_id)
+carrier_assignments(status)
+carrier_assignments(carrier_id)
+carrier_assignments(expires_at)
+
+Without them → severe scaling issues.
+
+--------------------------------------------------
+
+8. N+1 FUTURE RISK
+
+findDetailsById joins large objects.
+
+If used in lists → heavy queries.
+
+Consider:
+detail query vs list query separation.
+
+--------------------------------------------------
+
+9. DOMAIN EVENT MISSING
+
+Assignment state change should emit event:
+
+CarrierMarkedBusy
+CarrierAccepted
+AssignmentExpired
+
+Needed for async systems + jobs.
+
+--------------------------------------------------
+
+10. SINGLETON EXPORT TRADEOFF
+
+export default new Repository()
+
+Easy now,
+Hard later for:
+testing
+multi-tenant contexts
+dependency injection.
+
+Prefer factory export long term.
+
+--------------------------------------------------
+
+[IDEAL ASSIGNMENT FLOW]
+
+lock order row
+↓
+check existing active assignment
+↓
+create/update assignment
+↓
+commit transaction
+↓
+emit domain event
+
+Atomic decision guaranteed.
+
+--------------------------------------------------
+
+[STRUCTURE RECOMMENDATION]
+
+repositories/
+  logistics/
+    CarrierAssignmentRepository.js
+
+domain/
+  carrierAssignment/
+    assignmentStateMachine.js
+
+services/
+  carrierAssignmentService.js
+
+Keep repository dumb.
+Put business rules above it.
+
+--------------------------------------------------
+
+[SYSTEM MATURITY]
+
+Current:
+Good domain separation.
+
+After fixes:
+Production-grade logistics orchestration layer suitable for enterprise SCM systems.
+CARRIER REPOSITORY — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This repository is the **SUPPLY SIDE CONTROL PLANE** of your SCM.
+
+It governs:
+• carrier discovery
+• assignment eligibility
+• performance ranking
+• rate card retrieval
+• operational availability
+
+If incorrect → logistics routing collapses.
+
+This sits directly on the revenue path.
+
+--------------------------------------------------
+
+[GOOD DESIGN]
+
+✓ Clear domain boundary (Carriers + Rate Cards)
+✓ Pagination + filtering implemented correctly
+✓ Organization + global carrier model supported
+✓ Dynamic update whitelist (VERY GOOD)
+✓ Soft-delete strategy instead of hard delete
+✓ Operational queries separated from mutations
+✓ Performance-aware ordering (reliability_score)
+✓ Read models enriched with aggregates
+
+This is **strong repository architecture**.
+
+--------------------------------------------------
+
+[CRITICAL ISSUES]
+
+1. MULTI-TENANT SAFETY PARTIAL ⚠️
+
+You correctly allow:
+organization carriers + system carriers.
+
+BUT:
+
+Child queries DO NOT enforce org isolation.
+
+Examples:
+hasActiveShipments()
+rate_cards
+shipment aggregates
+
+A malicious or buggy service could query carriers
+outside tenant scope.
+
+RULE:
+Every repository method must accept organizationId
+and enforce scope consistently.
+
+Tenant isolation must be impossible to forget.
+
+--------------------------------------------------
+
+2. AGGREGATE SUBQUERY PERFORMANCE RISK ❌
+
+Patterns like:
+
+(SELECT COUNT(*) FROM shipments WHERE carrier_id = c.id)
+
+run per-row.
+
+At scale:
+100 carriers = 200+ subqueries.
+
+This WILL degrade badly.
+
+Better:
+
+LEFT JOIN shipments s
+GROUP BY c.id
+
+or precompute metrics table:
+carrier_performance_metrics
+
+Repositories should avoid correlated subqueries.
+
+--------------------------------------------------
+
+3. DOMAIN LEAK: BUSINESS LOGIC IN REPOSITORY
+
+Examples:
+• reliability ranking
+• availability eligibility
+• service_type fallback ('all')
+
+These are SERVICE LAYER decisions.
+
+Repository should return data.
+Service decides eligibility.
+
+Otherwise business rules become untestable.
+
+--------------------------------------------------
+
+4. findAvailableCarriers LIMIT HARD-CODE ❌
+
+LIMIT 10 inside repository removes flexibility.
+
+Repository should not decide selection strategy.
+
+Move limit into service layer.
+
+--------------------------------------------------
+
+5. ORGANIZATION FALLBACK RULE NEEDS POLICY
+
+Current rule:
+
+(org_id = X OR org_id IS NULL)
+
+Meaning:
+global carriers always visible.
+
+Risk:
+future enterprise clients may require
+STRICT private carriers.
+
+Introduce policy flag:
+
+visibility_mode:
+  SHARED
+  PRIVATE
+  ENTERPRISE_ISOLATED
+
+Repositories must support evolution.
+
+--------------------------------------------------
+
+6. CODE NORMALIZATION LOCATION
+
+Uppercasing carrier code here works,
+but normalization belongs in:
+
+Domain validation layer.
+
+Repository should trust validated data.
+
+--------------------------------------------------
+
+7. UPDATE SAFETY IMPROVEMENT
+
+updateCarrier allows partial updates safely ✔
+
+But missing:
+optimistic locking.
+
+Add:
+version column or updated_at check.
+
+Prevents overwriting concurrent edits.
+
+--------------------------------------------------
+
+8. AVAILABILITY STATUS SHOULD BE ENUM
+
+Strings like:
+'available'
+'busy'
+'offline'
+'maintenance'
+
+must be centralized enum.
+
+Otherwise analytics corruption appears later.
+
+--------------------------------------------------
+
+9. RATE CARD TENANCY GAP ⚠️
+
+findRateCards joins carriers but does not enforce
+organization ownership.
+
+If rate_cards ever become tenant-specific,
+data leak risk appears.
+
+Always scope via carrier.organization_id.
+
+--------------------------------------------------
+
+10. MISSING READ MODEL STRATEGY
+
+You compute:
+total_shipments
+active_shipments
+on_time_rate
+
+These are analytics metrics.
+
+Enterprise systems move this into:
+
+carrier_performance_metrics table
+updated asynchronously.
+
+Repositories should not compute analytics live.
+
+--------------------------------------------------
+
+[IDEAL CARRIER SELECTION FLOW]
+
+Repository → raw carrier data
+↓
+Service → eligibility filtering
+↓
+Strategy → ranking algorithm
+↓
+Assignment Engine
+
+Keep repository passive.
+
+--------------------------------------------------
+
+[STRUCTURE RECOMMENDATION]
+
+repositories/
+  logistics/
+    CarrierRepository.js
+    RateCardRepository.js
+
+services/
+  carrier/
+    carrierDiscoveryService.js
+    carrierEligibilityService.js
+
+domain/
+  carrier/
+    availabilityPolicy.js
+    rankingStrategy.js
+
+--------------------------------------------------
+
+[SYSTEM MATURITY]
+
+Current level:
+Advanced startup / early SaaS logistics backend.
+
+After fixes:
+Enterprise-grade carrier orchestration platform.
+INVENTORY REPOSITORY — COMPRESSED ARCH REVIEW
+
+[CONTEXT]
+This repository is the **PHYSICAL TRUTH LAYER** of your SCM.
+
+Inventory is the hardest domain in logistics because it must guarantee:
+
+• stock correctness  
+• reservation consistency  
+• financial accuracy  
+• warehouse synchronization  
+• order fulfillment integrity  
+
+If this layer fails →
+
+❌ overselling  
+❌ negative stock  
+❌ shipment failures  
+❌ accounting mismatch  
+❌ operational chaos
+
+This is a **Tier-1 critical system**.
+
+--------------------------------------------------
+
+[GOOD DESIGN]
+
+✓ Clear domain separation (inventory vs movements)
+✓ Transaction-friendly API (client passed explicitly)
+✓ Atomic stock updates using SQL conditions
+✓ Reservation model implemented correctly
+✓ Audit trail via stock_movements ✔
+✓ Pagination + filtering cleanly designed
+✓ Organization scoping supported
+✓ Upsert pattern for warehouse/SKU uniqueness
+✓ Derived quantities handled server-side
+✓ Dashboard aggregation queries included
+
+This is **very strong inventory architecture**.
+
+You are already thinking like an SCM backend engineer.
+
+--------------------------------------------------
+
+[CRITICAL ISSUES]
+
+1. MULTI-TENANT SAFETY GAP ⚠️
+
+Some write operations DO NOT enforce organization ownership:
+
+reserveStock
+releaseStock
+deductStock
+addStock
+markDamaged
+
+They filter only by:
+sku + warehouse_id
+
+If warehouse IDs are guessed or leaked → cross-tenant mutation possible.
+
+RULE:
+
+Every mutation must include:
+
+AND organization_id = $X
+
+Never trust SKU + warehouse alone.
+
+Inventory writes must ALWAYS be tenant-scoped.
+
+--------------------------------------------------
+
+2. INVENTORY CONSISTENCY RISK (VERY IMPORTANT)
+
+You maintain:
+
+quantity
+available_quantity
+reserved_quantity
+
+This is correct — BUT dangerous.
+
+You are storing **derived state**.
+
+Invariant must ALWAYS hold:
+
+quantity =
+  available_quantity +
+  reserved_quantity +
+  damaged_quantity +
+  in_transit_quantity
+
+Currently NOT enforced.
+
+Add:
+
+CHECK constraint OR trigger validation.
+
+Otherwise silent drift happens.
+
+Enterprise systems fail here.
+
+--------------------------------------------------
+
+3. MISSING SERIALIZABLE SAFETY MODEL
+
+Concurrent orders can cause:
+
+Order A reserves stock
+Order B reserves stock
+Both succeed near boundary
+
+Your condition:
+
+available_quantity >= X
+
+is GOOD ✔
+but still vulnerable under heavy concurrency without:
+
+SELECT ... FOR UPDATE
+or SERIALIZABLE isolation.
+
+Recommendation:
+
+Inventory operations must run inside explicit transaction
+with row lock.
+
+Inventory = locking domain.
+
+--------------------------------------------------
+
+4. STOCK MOVEMENT SHOULD BE MANDATORY
+
+Currently:
+
+reserveStock()
+deductStock()
+addStock()
+
+do NOT automatically record movement.
+
+This allows invisible mutations.
+
+Enterprise rule:
+
+NO inventory change without movement log.
+
+Movement creation should be internal,
+not optional.
+
+Repository should enforce audit trail.
+
+--------------------------------------------------
+
+5. UPSERT DESIGN EDGE CASE
+
+ON CONFLICT (warehouse_id, sku)
+
+Problem:
+
+sku IS NULL allowed.
+
+Multiple NULL rows possible.
+
+Either:
+
+• make SKU NOT NULL
+OR
+• enforce alternative unique key.
+
+NULL SKU inventory becomes unmanageable later.
+
+--------------------------------------------------
+
+6. FIND INVENTORY QUERY SCALE RISK
+
+JOIN products + warehouses + window COUNT
+
+Fine now.
+
+At scale (100k SKUs):
+
+COUNT(*) OVER() becomes expensive.
+
+Better:
+
+Separate count query
+or materialized pagination count.
+
+Window counts are hidden performance killers.
+
+--------------------------------------------------
+
+7. DASHBOARD STATS SHOULD NOT BE LIVE
+
+getInventoryStats calculates financial totals live.
+
+Eventually:
+
+dashboard queries will dominate DB CPU.
+
+Move toward:
+
+inventory_metrics table
+updated asynchronously.
+
+Operational DB ≠ analytics engine.
+
+--------------------------------------------------
+
+8. DOMAIN LEAK IN REPOSITORY
+
+Repository currently decides:
+
+low_stock logic
+available calculation
+reorder behavior
+
+These belong in:
+
+InventoryDomainService.
+
+Repository should not embed business semantics.
+
+--------------------------------------------------
+
+9. MISSING WAREHOUSE OWNERSHIP VALIDATION
+
+Inventory references warehouse_id.
+
+But repository never validates:
+
+warehouse.organization_id matches inventory.organization_id.
+
+Potential integrity corruption.
+
+Add FK or validation layer.
+
+--------------------------------------------------
+
+10. NO SOFT DELETE / ARCHIVAL STRATEGY
+
+Inventory rows live forever.
+
+Future problem:
+
+discontinued SKUs
+closed warehouses
+historical bloat
+
+Add:
+
+is_active
+or archival partitioning.
+
+--------------------------------------------------
+
+[IDEAL INVENTORY FLOW]
+
+Order Created
+   ↓
+Reserve Stock (row lock)
+   ↓
+Movement Logged
+   ↓
+Shipment Created
+   ↓
+Deduct Reserved Stock
+   ↓
+Movement Logged
+   ↓
+Async Metrics Updated
+
+Inventory must behave like a bank ledger.
+
+--------------------------------------------------
+
+[STRUCTURE RECOMMENDATION]
+
+repositories/
+  inventory/
+    InventoryRepository.js
+    StockMovementRepository.js
+
+domain/
+  inventory/
+    inventoryInvariant.js
+    reservationPolicy.js
+
+services/
+  inventory/
+    inventoryService.js
+
+--------------------------------------------------
+
+[SYSTEM MATURITY]
+
+Current level:
+✔ Advanced startup SCM backend
+
+After fixes:
+✔ Enterprise WMS-grade inventory engine
+✔ Shopify / Amazon-style reservation safety
+✔ Audit-ready stock ledger system

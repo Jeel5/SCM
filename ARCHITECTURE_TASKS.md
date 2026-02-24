@@ -1179,4 +1179,236 @@ Potential future improvements only:
 
 ---
 
+# Round 5 — Middleware Audit
+
+**Files Reviewed:** `middlewares/webhookAuth.js`, `middlewares/multiTenant.js`, `middlewares/rbac.js`, `middlewares/requestLogger.js`, `utils/jwt.js` (re-verification)
+
+**Methodology:** All ChatGPT findings verified against actual source code before inclusion. Claims that did not match the codebase are documented under Omissions with reasons.
+
+---
+
+## 🔴 TASK-R5-001 — Webhook HMAC Signs Parsed Body, Not Raw Bytes
+
+**File:** `backend/middlewares/webhookAuth.js`, line ~184  
+**Severity:** Critical Bug  
+**ChatGPT Claim:** Verified ✅ — code signs `JSON.stringify(req.body)`, not the original raw bytes.
+
+**Problem:**  
+Express's `json()` middleware parses the body before `webhookAuth` runs. `JSON.stringify(req.body)` produces a re-serialized string that may differ from the original payload in:
+- Key ordering (no guarantee)
+- Unicode escaping
+- Whitespace normalization
+- Number precision edge cases
+
+This causes valid webhooks to fail signature verification intermittently, and allows invalid webhooks to bypass verification if they can predict how Express will re-serialize.
+
+**Confirmed Code (line ~184):**
+```js
+const hmac = crypto.createHmac('sha256', secret);
+hmac.update(JSON.stringify(req.body)); // ← BUG: re-serialized, not raw
+```
+
+**Fix:**  
+Capture raw bytes in Express's `verify` callback before the body is parsed:
+```js
+// In server.js or app setup:
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf; // Buffer of original bytes
+  }
+}));
+
+// In webhookAuth.js:
+hmac.update(req.rawBody); // ← sign raw bytes, not re-serialized JSON
+```
+
+**Context:** This is the standard pattern used by Stripe, GitHub, and every major webhook provider. It is the only way to guarantee byte-identical HMAC verification.
+
+---
+
+## 🔴 TASK-R5-002 — `timingSafeEqual` Called Without Buffer Length Guard
+
+**File:** `backend/middlewares/webhookAuth.js`, line ~195  
+**Severity:** High — Crash vector  
+**ChatGPT Claim:** Verified ✅
+
+**Problem:**  
+`crypto.timingSafeEqual(a, b)` throws a `TypeError` if the two buffers have different lengths. An attacker or misconfigured client sending a truncated/padded `X-Webhook-Signature` header will crash the middleware, causing a 500 and potentially leaking stack information or disrupting other requests.
+
+**Confirmed Code (line ~195):**
+```js
+// No length check before this:
+if (!crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
+  // ...
+}
+```
+
+**Fix:**
+```js
+if (
+  expectedBuf.length !== receivedBuf.length ||
+  !crypto.timingSafeEqual(expectedBuf, receivedBuf)
+) {
+  return res.status(401).json({ error: 'Invalid signature' });
+}
+```
+
+**Note:** The length check must come first (short-circuit). Comparing lengths before buffers does not introduce a timing oracle because the lengths of HMAC output are deterministic (always 64 hex chars for SHA-256).
+
+---
+
+## 🔴 TASK-R5-003 — `req.user.id` Used in `companiesController.js` Inconsistently
+
+**File:** `backend/controllers/companiesController.js`, lines 42, 167, 220, 264  
+**Severity:** Medium — Silent wrong-field logging  
+**ChatGPT Claim:** Verified ✅
+
+**Problem:**  
+The JWT decode sets `req.user.userId` (not `req.user.id`). Every other controller and middleware (`rbac.js`, `multiTenant.js`, `usersController.js`, etc.) consistently accesses `req.user.userId`. `companiesController.js` uses `req.user.id` in its audit log calls, silently emitting `undefined` for the performer field.
+
+**Impact:**
+- Audit logs for all superadmin company operations have `undefined` as the acting user
+- Any future security review of company-level actions will show no attributable actor
+- No runtime crash or observable error, making this easy to miss in tests
+
+**Fix:** Replace all occurrences in `companiesController.js`:
+```js
+// Before:
+req.user.id
+// After:
+req.user.userId
+```
+
+Search scope: `grep -n 'req\.user\.id[^e]' backend/controllers/companiesController.js` to find all instances.
+
+---
+
+## 🟡 TASK-R5-004 — `multiTenant.js` Issues DB Query on Every Authenticated Request
+
+**File:** `backend/middlewares/multiTenant.js`  
+**Severity:** Medium — Performance / scalability  
+**ChatGPT Claim:** Verified ✅
+
+**Problem:**  
+On every authenticated request, `multiTenant.js` runs:
+```sql
+SELECT organization_id FROM users WHERE id = $1
+```
+to determine the user's org context. At low volume this is invisible. At moderate scale (e.g. 50 concurrent users polling dashboards every 30s) this is ~100 additional DB queries/minute that return the same data until the user is reassigned.
+
+**The org assignment for a user changes extremely rarely** (org migration, superadmin reassignment) — making per-request DB lookup wasteful.
+
+**Fix — Embed `organization_id` in JWT at login:**
+```js
+// In authService / login handler:
+const token = jwt.sign({
+  userId: user.id,
+  organizationId: user.organization_id, // ← add this
+  role: user.role,
+}, process.env.JWT_SECRET, { expiresIn: '24h' });
+```
+
+```js
+// In multiTenant.js:
+// Instead of DB query:
+req.organizationId = req.user.organizationId; // from JWT payload
+```
+
+**Trade-off:** If a user's org is changed, old tokens remain valid until expiry (max 24h). For a supply chain platform where org reassignment is an admin-only exceptional operation, this is an acceptable trade-off. Add org change to the token revocation/invalidation mechanism if you have one.
+
+---
+
+## 🟡 TASK-R5-005 — `requestLogger.js` Uses Weak Request ID Generation
+
+**File:** `backend/middlewares/requestLogger.js`  
+**Severity:** Low — Correctness / observability  
+**ChatGPT Claim:** Verified ✅
+
+**Problem:**  
+Request IDs are generated as:
+```js
+const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+```
+
+This is not a UUID and not guaranteed unique under load:
+- `Date.now()` has millisecond resolution — multiple requests in the same ms share the same prefix
+- `Math.random()` with 9 base-36 chars gives ~10⁻⁷ collision probability per ms — acceptable in dev, not in prod under load
+- The format is non-standard and won't be parsed by log aggregators expecting UUID v4
+
+**Fix:**
+```js
+const { randomUUID } = require('crypto');
+const requestId = req.headers['x-request-id'] || randomUUID();
+```
+
+Honouring an incoming `x-request-id` header also enables trace propagation from frontend → backend → logs without extra tooling.
+
+---
+
+## 🟡 TASK-R5-006 — `requestLogger.js` Does Not Log Aborted / Dropped Connections
+
+**File:** `backend/middlewares/requestLogger.js`  
+**Severity:** Low — Observability gap  
+**ChatGPT Claim:** Partially correct — missing `close` listener is real, though the claim overstated severity
+
+**Problem:**  
+Only `res.on('finish', ...)` is attached. The `finish` event does not fire for:
+- Requests where the client disconnects before a response is sent
+- Requests killed by a reverse proxy timeout (nginx/ALB)
+- Requests that error before the response stream closes
+
+These are often the most interesting cases for debugging production issues (client impatience, slow queries, network resets).
+
+**Fix — Add `close` listener alongside `finish`:**
+```js
+let logged = false;
+const logOnce = (event) => {
+  if (logged) return;
+  logged = true;
+  const duration = Date.now() - start;
+  logger.info({
+    requestId,
+    method: req.method,
+    url: req.originalUrl,
+    status: res.statusCode,
+    duration,
+    event, // 'finish' or 'close'
+    userId: req.user?.userId,
+  });
+};
+
+res.on('finish', () => logOnce('finish'));
+res.on('close', () => logOnce('close'));
+```
+
+---
+
+## ❌ Omitted from ChatGPT Round 5 (with Reasons)
+
+| Claim | Verdict | Why Omitted |
+|-------|---------|-------------|
+| "ADMIN role has `*:*` global access across all operations" | ❌ WRONG | `ADMIN → ['*']` expands to `ALL_PERMISSIONS` only. `SUPERADMIN_PERMISSIONS` are explicitly separate and excluded. System is correctly scoped. |
+| "Two RBAC systems exist in parallel" | ❌ WRONG | One authoritative system: `requirePermission()` importing from `config/permissions.js`. An older inline `PERMISSIONS` map exists inside `rbac.js` as legacy duplication, but there is no competing second enforcement system. |
+| "`buildOrgFilter` has a `$1` placeholder formatting bug" | ❌ NOT FOUND | This function does not exist in the current codebase. Likely hallucinated based on general pattern matching. |
+| "Add Postgres RLS as second enforcement layer" | Skipped | Valid in theory, but enforcing multi-tenancy at the DB layer adds significant ops complexity (per-user roles, session variables) that is not appropriate for current architecture and team size. Application-layer enforcement is sufficient when the middleware chain is trusted. |
+| "Embed full permission snapshot in JWT to avoid DB lookups" | Skipped | Over-engineering. JWT bloat for potentially 50+ permissions per role. Permission changes require either token revocation infrastructure or accepting stale permissions until expiry. DB lookup on permission check (not per request) is the right trade-off here. |
+| "Implement full idempotency middleware for all state-changing endpoints" | Deferred | Carrier assignments already have `idempotency_key`. Global idempotency middleware is a valid future investment but is a product decision (what to do on duplicate: return cached response? return 409?). Not a bug — defer to a dedicated spike. |
+| "Add log sampling (1–5% of normal traffic)" | Skipped | Dev phase — full logging is appropriate. Sampling is a cost optimization for high-volume production. Revisit when log storage costs become a concern. |
+| "Implement OpenTelemetry / distributed trace propagation" | Deferred | `x-request-id` header forwarding (TASK-R5-005) is the pragmatic first step. Full OTEL is a future enterprise concern and requires infrastructure changes beyond the backend codebase. |
+
+---
+
+## 📊 Actionable Summary — Round 5
+
+| Task | File | Severity | Action |
+|------|------|----------|--------|
+| TASK-R5-001 | `webhookAuth.js` | 🔴 CRITICAL | Capture rawBody in express.json verify callback; sign raw bytes |
+| TASK-R5-002 | `webhookAuth.js` | 🔴 HIGH | Add buffer length check before `timingSafeEqual` |
+| TASK-R5-003 | `companiesController.js` | 🔴 MEDIUM | Replace `req.user.id` → `req.user.userId` (4 spots) |
+| TASK-R5-004 | `multiTenant.js` | 🟡 MEDIUM | Embed `organizationId` in JWT; remove per-request DB lookup |
+| TASK-R5-005 | `requestLogger.js` | 🟡 LOW | Replace `Date.now()+random` with `crypto.randomUUID()` |
+| TASK-R5-006 | `requestLogger.js` | 🟡 LOW | Add `res.on('close')` with dedup flag alongside `finish` |
+
+---
+
 
