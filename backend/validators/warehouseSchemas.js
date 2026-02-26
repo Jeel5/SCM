@@ -20,13 +20,13 @@ export const createWarehouseSchema = Joi.object({
     lng: Joi.number().min(-180).max(180).required()
   }).optional().allow(null),
   capacity: Joi.number().integer().min(0).default(10000),
-  current_utilization: Joi.number().min(0).max(100).default(0),
-  manager_id: Joi.number().integer().min(1).optional().allow(null),
+  // current_utilization is system-computed — clients must not set it directly
+  manager_id: Joi.string().uuid().optional().allow(null),
   contact_email: Joi.string().email().required(),
   contact_phone: Joi.string().pattern(/^\+?[\d\s\-()]+$/).optional().allow(null, '').messages({
     'string.pattern.base': 'Invalid phone number format'
-  }),
-  is_active: Joi.boolean().default(true)
+  })
+  // is_active defaults to true server-side on creation
   // organization_id is set from authenticated user, not from request
 });
 
@@ -46,8 +46,8 @@ export const updateWarehouseSchema = Joi.object({
     lng: Joi.number().min(-180).max(180).optional()
   }).optional().allow(null),
   capacity: Joi.number().integer().min(0).optional(),
-  current_utilization: Joi.number().min(0).max(100).optional(),
-  manager_id: Joi.number().integer().min(1).optional().allow(null),
+  // current_utilization is system-computed — remove from client updates
+  manager_id: Joi.string().uuid().optional().allow(null),
   contact_email: Joi.string().email().optional(),
   contact_phone: Joi.string().pattern(/^\+?[\d\s\-()]+$/).optional().allow(null, ''),
   is_active: Joi.boolean().optional()

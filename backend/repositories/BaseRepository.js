@@ -1,5 +1,5 @@
 // Base Repository - provides common CRUD operations inherited by all repositories
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import { Transaction } from '../utils/dbTransaction.js';
 
 class BaseRepository {
@@ -83,7 +83,11 @@ class BaseRepository {
     }
 
     // Add ORDER BY
-    query += ` ORDER BY ${orderBy} ${order}`;
+    // Whitelist orderBy to prevent SQL injection — only allow column names matching
+    // word characters (letters, digits, underscore), optionally table-prefixed.
+    const safeOrderBy = /^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(orderBy) ? orderBy : 'created_at';
+    const safeOrder = order?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    query += ` ORDER BY ${safeOrderBy} ${safeOrder}`;
 
     // Add LIMIT and OFFSET
     query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
@@ -196,30 +200,19 @@ class BaseRepository {
     return parseInt(result.rows[0].count);
   }
 
-  // Check if any record exists matching conditions
-  async exists(conditions, client = null) {
-    const count = await this.count(conditions, client);
+  /**
+   * Check if any record matching conditions exists.
+   * Optionally scoped to an organization.
+   * TASK-R6-001: organizationId param added so superadmin bypass is blocked.
+   */
+  async exists(conditions, organizationId = undefined, client = null) {
+    const count = await this.count(conditions, organizationId, client);
     return count > 0;
   }
 
-  // Start database transaction - must call commitTransaction or rollbackTransaction
-  async beginTransaction() {
-    const client = await this.pool.connect();
-    await client.query('BEGIN');
-    return client;
-  }
-
-  // Commit transaction and release connection
-  async commitTransaction(client) {
-    await client.query('COMMIT');
-    client.release();
-  }
-
-  // Rollback transaction on error and release connection
-  async rollbackTransaction(client) {
-    await client.query('ROLLBACK');
-    client.release();
-  }
+  // ─── Legacy transaction helpers removed ─────────────────────────────────────
+  // Use withTransaction() from ../utils/dbTransaction.js instead.
+  // beginTransaction / commitTransaction / rollbackTransaction are gone (TASK-R6-004).
 }
 
 export default BaseRepository;

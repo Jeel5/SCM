@@ -6,22 +6,17 @@ class OrganizationRepository extends BaseRepository {
     super('organizations');
   }
 
-  // Generate unique organization code
+  // Generate unique organization code using an atomic DB sequence
   async generateOrganizationCode(client = null) {
     const prefix = 'ORG';
     const year = new Date().getFullYear().toString().slice(-2);
-    
-    // Get the count of organizations created this year
-    const countQuery = `
-      SELECT COUNT(*) as count 
-      FROM organizations 
-      WHERE code LIKE $1
-    `;
-    const result = await this.query(countQuery, [`${prefix}-${year}%`], client);
-    const count = parseInt(result.rows[0].count) + 1;
-    
-    // Generate code like ORG-26-001, ORG-26-002, etc.
-    const sequence = count.toString().padStart(3, '0');
+    // NEXTVAL is atomic — two concurrent calls always get different values.
+    const result = await this.query(
+      `SELECT nextval('org_code_seq') AS seq`,
+      [],
+      client
+    );
+    const sequence = result.rows[0].seq.toString().padStart(3, '0');
     return `${prefix}-${year}-${sequence}`;
   }
 

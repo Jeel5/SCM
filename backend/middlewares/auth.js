@@ -1,5 +1,5 @@
 import { verifyAccessToken } from '../utils/jwt.js';
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 
 // Middleware to verify JWT token and attach user info to request
 export async function authenticate(req, res, next) {
@@ -16,12 +16,26 @@ export async function authenticate(req, res, next) {
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
+
+    // Check token blocklist (revoked sessions / password changes)
+    if (decoded.jti) {
+      const revoked = await pool.query(
+        'SELECT 1 FROM revoked_tokens WHERE jti = $1 AND expires_at > NOW() LIMIT 1',
+        [decoded.jti]
+      );
+      if (revoked.rows.length > 0) {
+        return res.status(401).json({ error: 'Token has been revoked' });
+      }
+    }
     
     // Attach user info to request
     req.user = {
       userId: decoded.userId,
       role: decoded.role,
-      email: decoded.email
+      email: decoded.email,
+      organizationId: decoded.organizationId,
+      jti: decoded.jti || null,
+      exp: decoded.exp || null
     };
     
     next();
@@ -59,7 +73,8 @@ export function optionalAuth(req, res, next) {
         req.user = {
           userId: decoded.userId,
           role: decoded.role,
-          email: decoded.email
+          email: decoded.email,
+          organizationId: decoded.organizationId
         };
       }
     }

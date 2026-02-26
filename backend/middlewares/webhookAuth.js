@@ -4,7 +4,7 @@
  * Same pattern used by: Stripe, Shopify, GitHub, Twilio
  */
 import crypto from 'crypto';
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -180,8 +180,10 @@ export function verifyWebhookSignature(options = {}) {
         });
       }
 
-      // Recreate the signed payload (timestamp.body)
-      const payload = JSON.stringify(req.body);
+      // Recreate the signed payload (timestamp.rawBody).
+      // Use req.rawBody (captured before JSON parsing) to match the bytes the carrier
+      // signed — re-serialising req.body would change key order and break verification.
+      const payload = req.rawBody || JSON.stringify(req.body);
       const signedPayload = `${timestamp}.${payload}`;
 
       // Calculate expected signature using HMAC-SHA256
@@ -192,10 +194,13 @@ export function verifyWebhookSignature(options = {}) {
 
       // Compare signatures using timing-safe comparison
       const providedSignature = signature.replace('sha256=', '');
-      const isValid = crypto.timingSafeEqual(
-        Buffer.from(expectedSignature),
-        Buffer.from(providedSignature)
-      );
+
+      // timingSafeEqual requires both buffers to have the same byte length;
+      // different lengths always mean a mismatch — return false without leaking timing info.
+      const expectedBuf = Buffer.from(expectedSignature);
+      const providedBuf = Buffer.from(providedSignature);
+      const isValid = expectedBuf.length === providedBuf.length &&
+        crypto.timingSafeEqual(expectedBuf, providedBuf);
 
       if (!isValid) {
         logger.warn('Webhook authentication failed: Invalid signature', {

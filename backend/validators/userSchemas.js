@@ -11,7 +11,7 @@ export const registerUserSchema = Joi.object({
     'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
   }),
   full_name: Joi.string().min(2).max(255).required(),
-  role: Joi.string().valid('admin', 'manager', 'operator', 'viewer'),
+  // role is intentionally excluded — server always assigns 'user' on self-registration
   department: Joi.string().max(100),
   phone: Joi.string().min(10).max(20)
 });

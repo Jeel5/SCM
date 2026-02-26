@@ -1,5 +1,5 @@
 // Warehouse Operations Service - Pick, Pack, Ship workflows
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';

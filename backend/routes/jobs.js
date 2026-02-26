@@ -16,7 +16,7 @@ import {
   purgeDeadLetterQueue
 } from '../controllers/jobsController.js';
 import { getDashboardStats } from '../controllers/dashboardController.js';
-import { getAnalytics } from '../controllers/analyticsController.js';
+import { getAnalytics, getAnalyticsExport } from '../controllers/analyticsController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
 
@@ -44,5 +44,6 @@ router.delete('/dead-letter-queue/purge', authenticate, authorize('jobs:delete')
 // Dashboard & Analytics
 router.get('/dashboard/stats', authenticate, authorize('dashboard:read'), getDashboardStats);
 router.get('/analytics', authenticate, authorize('analytics:read'), getAnalytics);
+router.get('/analytics/export', authenticate, authorize('analytics:read'), getAnalyticsExport);
 
 export default router;

@@ -6,7 +6,7 @@
  */
 
 import deliveryChargeService from './deliveryChargeService.js';
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 
 class CarrierPayloadBuilder {

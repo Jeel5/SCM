@@ -2,7 +2,7 @@ import carrierRateService from '../services/carrierRateService.js';
 import * as estimateService from '../services/shipping/estimateService.js';
 import { AppError } from '../errors/index.js';
 import logger from '../utils/logger.js';
-import db from '../configs/db.js';
+import db from '../config/db.js';
 
 /**
  * Get quick shipping estimate for e-commerce checkout
@@ -442,8 +442,20 @@ export const selectQuote = async (req, res, next) => {
 export const getQuotesForOrder = async (req, res, next) => {
   try {
     const { orderId } = req.params;
+    const organizationId = req.orgContext?.organizationId;
 
     logger.info(`Getting quotes for order ${orderId}`);
+
+    // Verify order belongs to caller's org
+    if (organizationId) {
+      const orderCheck = await db.query(
+        'SELECT id FROM orders WHERE id = $1 AND organization_id = $2',
+        [orderId, organizationId]
+      );
+      if (orderCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+    }
 
     const { rows } = await db.query(
       `SELECT cq.*, c.name as carrier_name, c.code as carrier_code

@@ -1,5 +1,5 @@
 // Multi-tenant middleware - ensures data isolation per organization
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import { BusinessLogicError } from '../errors/index.js';
 
 /**
@@ -55,7 +55,7 @@ export function requireOrgContext(req, res, next) {
     throw new BusinessLogicError('Organization context required');
   }
 
-  if (!req.orgContext.isSuperadmin && !req.orgContext.organizationId) {
+      if (!req.orgContext.isSuperadmin && !req.orgContext.organizationId) {
     throw new BusinessLogicError('User must belong to an organization');
   }
 

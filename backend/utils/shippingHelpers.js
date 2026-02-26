@@ -9,7 +9,7 @@
  * - Response time tracking
  */
 
-import db from '../configs/db.js';
+import db from '../config/db.js';
 import logger from '../utils/logger.js';
 import crypto from 'crypto';
 
@@ -378,7 +378,7 @@ export class ConfidenceCalculator {
  */
 export class ResponseTimeTracker {
   constructor() {
-this.startTime = Date.now();
+    this.startTime = Date.now();
   }
 
   /**

@@ -1,17 +1,22 @@
 // Background jobs controller - manages job creation, monitoring, and scheduling
 import { jobsService } from '../services/jobsService.js';
+import pool from '../config/db.js';
+import logger from '../utils/logger.js';
 
 // Get all jobs with filtering
 export async function listJobs(req, res) {
   try {
     const { status, job_type, priority, page = 1, limit = 20 } = req.query;
+    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+    // Cap limit to prevent runaway queries
+    const cappedLimit = Math.min(parseInt(limit) || 20, 100);
     
     const filters = {};
     if (status) filters.status = status;
     if (job_type) filters.job_type = job_type;
     if (priority) filters.priority = parseInt(priority);
 
-    const result = await jobsService.getJobs(filters, parseInt(page), parseInt(limit));
+    const result = await jobsService.getJobs(filters, parseInt(page), cappedLimit, organizationId);
     
     res.json({
       success: true,
@@ -19,7 +24,7 @@ export async function listJobs(req, res) {
       pagination: result.pagination
     });
   } catch (error) {
-    console.error('List jobs error:', error);
+    logger.error('List jobs error', { error });
     res.status(500).json({ error: 'Failed to fetch jobs' });
   }
 }
@@ -28,7 +33,8 @@ export async function listJobs(req, res) {
 export async function getJobDetails(req, res) {
   try {
     const { id } = req.params;
-    const job = await jobsService.getJobById(id);
+    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+    const job = await jobsService.getJobById(id, organizationId);
     const logs = await jobsService.getJobLogs(id);
     
     res.json({
@@ -39,7 +45,7 @@ export async function getJobDetails(req, res) {
       }
     });
   } catch (error) {
-    console.error('Get job details error:', error);
+    logger.error('Get job details error', { error, jobId: req.params.id });
     
     if (error.message === 'Job not found') {
       return res.status(404).json({ error: error.message });
@@ -72,7 +78,7 @@ export async function createJob(req, res) {
       data: job
     });
   } catch (error) {
-    console.error('Create job error:', error);
+    logger.error('Create job error', { error });
     res.status(500).json({ error: 'Failed to create job' });
   }
 }
@@ -81,7 +87,18 @@ export async function createJob(req, res) {
 export async function retryJob(req, res) {
   try {
     const { id } = req.params;
-    const job = await jobsService.retryJob(id);
+    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+
+    // Pre-validate: only failed/dead_letter jobs can be retried
+    const jobCheck = await jobsService.getJobById(id, organizationId);
+    const retryableStatuses = ['failed', 'dead_letter'];
+    if (!retryableStatuses.includes(jobCheck.status)) {
+      return res.status(409).json({
+        error: `Job cannot be retried in status '${jobCheck.status}'. Only failed or dead_letter jobs can be retried.`
+      });
+    }
+
+    const job = await jobsService.retryJob(id, organizationId);
     
     res.json({
       success: true,
@@ -89,7 +106,8 @@ export async function retryJob(req, res) {
       message: 'Job queued for retry'
     });
   } catch (error) {
-    console.error('Retry job error:', error);
+    logger.error('Retry job error', { error, jobId: req.params.id });
+    if (error.message === 'Job not found or access denied') return res.status(404).json({ error: error.message });
     res.status(500).json({ error: 'Failed to retry job' });
   }
 }
@@ -98,7 +116,18 @@ export async function retryJob(req, res) {
 export async function cancelJob(req, res) {
   try {
     const { id } = req.params;
-    const job = await jobsService.cancelJob(id);
+    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+
+    // Pre-validate: only pending/retrying jobs can be cancelled
+    const jobCheck = await jobsService.getJobById(id, organizationId);
+    const cancellableStatuses = ['pending', 'retrying'];
+    if (!cancellableStatuses.includes(jobCheck.status)) {
+      return res.status(409).json({
+        error: `Job cannot be cancelled in status '${jobCheck.status}'. Only pending or retrying jobs can be cancelled.`
+      });
+    }
+
+    const job = await jobsService.cancelJob(id, organizationId);
     
     res.json({
       success: true,
@@ -106,7 +135,7 @@ export async function cancelJob(req, res) {
       message: 'Job cancelled'
     });
   } catch (error) {
-    console.error('Cancel job error:', error);
+    logger.error('Cancel job error', { error, jobId: req.params.id });
     res.status(500).json({ error: 'Failed to cancel job' });
   }
 }
@@ -128,7 +157,6 @@ export async function getJobStats(req, res) {
       GROUP BY status
     `;
     
-    const pool = (await import('../configs/db.js')).default;
     const result = await pool.query(statsQuery);
     
     const stats = {
@@ -148,7 +176,7 @@ export async function getJobStats(req, res) {
       data: stats
     });
   } catch (error) {
-    console.error('Get job stats error:', error);
+    logger.error('Get job stats error', { error });
     res.status(500).json({ error: 'Failed to fetch job statistics' });
   }
 }
@@ -163,7 +191,7 @@ export async function listCronSchedules(req, res) {
       data: schedules
     });
   } catch (error) {
-    console.error('List cron schedules error:', error);
+    logger.error('List cron schedules error', { error });
     res.status(500).json({ error: 'Failed to fetch cron schedules' });
   }
 }
@@ -190,7 +218,7 @@ export async function createCronSchedule(req, res) {
       data: schedule
     });
   } catch (error) {
-    console.error('Create cron schedule error:', error);
+    logger.error('Create cron schedule error', { error });
     
     if (error.message.includes('Invalid cron expression')) {
       return res.status(400).json({ error: error.message });
@@ -212,7 +240,7 @@ export async function updateCronSchedule(req, res) {
       data: schedule
     });
   } catch (error) {
-    console.error('Update cron schedule error:', error);
+    logger.error('Update cron schedule error', { error, scheduleId: req.params.id });
     
     if (error.message === 'Schedule not found') {
       return res.status(404).json({ error: error.message });
@@ -236,7 +264,7 @@ export async function deleteCronSchedule(req, res) {
       message: 'Cron schedule deleted'
     });
   } catch (error) {
-    console.error('Delete cron schedule error:', error);
+    logger.error('Delete cron schedule error', { error, scheduleId: req.params.id });
     res.status(500).json({ error: 'Failed to delete cron schedule' });
   }
 }
@@ -245,8 +273,9 @@ export async function deleteCronSchedule(req, res) {
 export async function getDeadLetterQueue(req, res) {
   try {
     const { page = 1, limit = 20 } = req.query;
+    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
     
-    const result = await jobsService.getDeadLetterQueue(parseInt(page), parseInt(limit));
+    const result = await jobsService.getDeadLetterQueue(parseInt(page), parseInt(limit), organizationId);
     
     res.json({
       success: true,
@@ -254,7 +283,7 @@ export async function getDeadLetterQueue(req, res) {
       pagination: result.pagination
     });
   } catch (error) {
-    console.error('Get dead letter queue error:', error);
+    logger.error('Get dead letter queue error', { error });
     res.status(500).json({ error: 'Failed to fetch dead letter queue' });
   }
 }
@@ -271,7 +300,7 @@ export async function retryFromDeadLetterQueue(req, res) {
       message: 'Job moved back to queue for retry'
     });
   } catch (error) {
-    console.error('Retry from DLQ error:', error);
+    logger.error('Retry from DLQ error', { error, jobId: req.params.id });
     
     if (error.message === 'Dead letter job not found') {
       return res.status(404).json({ error: error.message });
@@ -292,7 +321,7 @@ export async function purgeDeadLetterQueue(req, res) {
       message: `Purged ${deletedCount} jobs from dead letter queue`
     });
   } catch (error) {
-    console.error('Purge dead letter queue error:', error);
+    logger.error('Purge dead letter queue error', { error });
     res.status(500).json({ error: 'Failed to purge dead letter queue' });
   }
 }

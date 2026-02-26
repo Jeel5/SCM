@@ -1,21 +1,34 @@
 // Background jobs service - handles job creation, execution, and scheduling
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import parser from 'cron-parser';
 
 export const jobsService = {
-  // Create a new background job
-  async createJob(jobType, payload, priority = 5, scheduledFor = null, createdBy = null) {
+  // Create a new background job; idempotencyKey prevents duplicate processing of the same event.
+  async createJob(jobType, payload, priority = 5, scheduledFor = null, createdBy = null, idempotencyKey = null) {
+    // Use a CTE so we always get the row back — either the newly inserted one or the
+    // existing one (idempotent re-delivery). is_new=false signals a duplicate to callers.
     const result = await pool.query(
-      `INSERT INTO background_jobs 
-       (job_type, payload, priority, scheduled_for, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
+      `WITH ins AS (
+        INSERT INTO background_jobs
+          (job_type, payload, priority, scheduled_for, created_by, idempotency_key)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+        RETURNING *, TRUE AS is_new
+      )
+      SELECT * FROM ins
+      UNION ALL
+      SELECT *, FALSE AS is_new
+        FROM background_jobs
+       WHERE idempotency_key = $6
+         AND idempotency_key IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM ins)`,
       [
         jobType,
         JSON.stringify(payload),
         priority,
         scheduledFor || new Date(),
-        createdBy
+        createdBy,
+        idempotencyKey || null
       ]
     );
 
@@ -23,24 +36,30 @@ export const jobsService = {
   },
 
   // Get jobs with filtering and pagination
-  async getJobs(filters = {}, page = 1, limit = 20) {
+  async getJobs(filters = {}, page = 1, limit = 20, organizationId = undefined) {
     const offset = (page - 1) * limit;
     const conditions = [];
     const params = [];
     let paramCount = 1;
 
+    // Org filter — applied first so superadmin sees all, org users see their own
+    if (organizationId) {
+      conditions.push(`j.organization_id = $${paramCount++}`);
+      params.push(organizationId);
+    }
+
     if (filters.status) {
-      conditions.push(`status = $${paramCount++}`);
+      conditions.push(`j.status = $${paramCount++}`);
       params.push(filters.status);
     }
 
     if (filters.job_type) {
-      conditions.push(`job_type = $${paramCount++}`);
+      conditions.push(`j.job_type = $${paramCount++}`);
       params.push(filters.job_type);
     }
 
     if (filters.priority) {
-      conditions.push(`priority = $${paramCount++}`);
+      conditions.push(`j.priority = $${paramCount++}`);
       params.push(filters.priority);
     }
 
@@ -76,16 +95,18 @@ export const jobsService = {
     };
   },
 
-  // Get job by ID
-  async getJobById(jobId) {
+  // Get job by ID (with optional org scope)
+  async getJobById(jobId, organizationId = undefined) {
+    const orgClause = organizationId ? ' AND j.organization_id = $2' : '';
+    const params = organizationId ? [jobId, organizationId] : [jobId];
     const result = await pool.query(
       `SELECT 
         j.*,
         u.name as created_by_name
        FROM background_jobs j
        LEFT JOIN users u ON j.created_by = u.id
-       WHERE j.id = $1`,
-      [jobId]
+       WHERE j.id = $1${orgClause}`,
+      params
     );
 
     if (result.rows.length === 0) {
@@ -114,13 +135,22 @@ export const jobsService = {
     try {
       await client.query('BEGIN');
 
-      // Update job status to running
-      await client.query(
+      // Conditional UPDATE: only transitions jobs that are still pending/retrying.
+      // If two workers race on the same jobId, only one gets rowCount > 0; the other
+      // receives null and must skip execution to prevent double-processing.
+      const claimResult = await client.query(
         `UPDATE background_jobs 
          SET status = 'running', started_at = NOW(), updated_at = NOW()
-         WHERE id = $1`,
+         WHERE id = $1 AND status IN ('pending', 'retrying')
+         RETURNING id`,
         [jobId]
       );
+
+      if (claimResult.rowCount === 0) {
+        // Another worker already claimed this job — abort cleanly.
+        await client.query('ROLLBACK');
+        return null;
+      }
 
       // Log execution start
       const logResult = await client.query(
@@ -241,43 +271,52 @@ export const jobsService = {
     }
   },
 
-  // Retry a failed job
-  async retryJob(jobId) {
-    await pool.query(
+  // Retry a failed job (scoped to org when organizationId provided)
+  async retryJob(jobId, organizationId = undefined) {
+    const orgClause = organizationId ? ' AND organization_id = $2' : '';
+    const params = organizationId ? [jobId, organizationId] : [jobId];
+    const result = await pool.query(
       `UPDATE background_jobs 
        SET status = 'pending',
            error_message = NULL,
            scheduled_for = NOW(),
            updated_at = NOW()
-       WHERE id = $1`,
-      [jobId]
+       WHERE id = $1${orgClause}
+       RETURNING id`,
+      params
     );
-
+    if (result.rows.length === 0) throw new Error('Job not found or access denied');
     return await this.getJobById(jobId);
   },
 
-  // Cancel a job
-  async cancelJob(jobId) {
+  // Cancel a job (scoped to org when organizationId provided)
+  async cancelJob(jobId, organizationId = undefined) {
+    const orgClause = organizationId ? ' AND organization_id = $2' : ' ';
+    const baseParams = organizationId ? [jobId, organizationId] : [jobId];
     await pool.query(
       `UPDATE background_jobs 
        SET status = 'cancelled',
            completed_at = NOW(),
            updated_at = NOW()
-       WHERE id = $1 AND status IN ('pending', 'retrying')`,
-      [jobId]
+       WHERE id = $1 AND status IN ('pending', 'retrying')${orgClause}`,
+      baseParams
     );
-
     return await this.getJobById(jobId);
   },
 
   // Get pending jobs for execution
   async getPendingJobs(limit = 10) {
+    // FOR UPDATE SKIP LOCKED lets concurrent workers each claim distinct jobs.
+    // The lock is advisory in a single-statement auto-commit, so startJobExecution
+    // performs a conditional UPDATE (WHERE status IN ('pending','retrying')) as the
+    // final race-proof claim gate.
     const result = await pool.query(
       `SELECT * FROM background_jobs
        WHERE status IN ('pending', 'retrying')
          AND scheduled_for <= NOW()
        ORDER BY priority ASC, scheduled_for ASC
-       LIMIT $1`,
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED`,
       [limit]
     );
 
@@ -460,17 +499,29 @@ export const jobsService = {
     }
   },
 
-  async getDeadLetterQueue(page = 1, limit = 20) {
+  async getDeadLetterQueue(page = 1, limit = 20, organizationId = undefined) {
     const offset = (page - 1) * limit;
+    const orgJoin = organizationId
+      ? `JOIN background_jobs bj ON bj.id = dlq.original_job_id AND bj.organization_id = $3`
+      : '';
+    const params = organizationId ? [limit, offset, organizationId] : [limit, offset];
     
     const result = await pool.query(
-      `SELECT * FROM dead_letter_queue
-       ORDER BY created_at DESC
+      `SELECT dlq.* FROM dead_letter_queue dlq
+       ${orgJoin}
+       ORDER BY dlq.created_at DESC
        LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      params
     );
     
-    const countResult = await pool.query('SELECT COUNT(*) FROM dead_letter_queue');
+    const countParams = organizationId ? [organizationId] : [];
+    const countWhere = organizationId
+      ? `JOIN background_jobs bj ON bj.id = dlq.original_job_id AND bj.organization_id = $1`
+      : '';
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM dead_letter_queue dlq ${countWhere}`,
+      countParams
+    );
     const totalCount = parseInt(countResult.rows[0].count);
     
     return {

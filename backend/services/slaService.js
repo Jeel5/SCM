@@ -1,5 +1,5 @@
 // SLA Monitoring Service - Automated breach detection and penalty calculation
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import { logEvent } from '../utils/logger.js';
 
 class SLAService {

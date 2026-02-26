@@ -2,7 +2,7 @@
 import express from 'express';
 import { 
   login, refreshToken, getProfile, listUsers, listRoles, logout,
-  updateProfile, changePassword, 
+  updateProfile, changePassword, verifyEmailChange,
   getNotificationPreferences, updateNotificationPreferences,
   getActiveSessions, revokeSession,
   createOrgUser, getOrgUser, updateOrgUser, deactivateOrgUser
@@ -33,6 +33,8 @@ router.post('/auth/logout', authenticate, logout);
 // Settings routes - user profile management
 router.patch('/settings/profile', authenticate, injectOrgContext, validateRequest(updateProfileSchema), updateProfile);
 router.post('/settings/password', authenticate, validateRequest(changePasswordSchema), changePassword);
+// Email change verification — public route so the link in the email works without a session
+router.get('/settings/verify-email', verifyEmailChange);
 router.get('/settings/notifications', authenticate, getNotificationPreferences);
 router.patch('/settings/notifications', authenticate, validateRequest(notificationPreferencesSchema), updateNotificationPreferences);
 router.get('/settings/sessions', authenticate, getActiveSessions);

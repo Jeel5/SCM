@@ -16,7 +16,7 @@ function validateRequest(schema) {
   return (req, res, next) => {
     // Check if schema has Joi validate method
     if (schema && typeof schema.validate === 'function') {
-      const { error, value } = schema.validate(req.body);
+      const { error, value } = schema.validate(req.body, { stripUnknown: true });
       
       if (error) {
         return res.status(400).json({
@@ -54,7 +54,7 @@ function validateQuery(schema) {
   return (req, res, next) => {
     // Check if schema has Joi validate method
     if (schema && typeof schema.validate === 'function') {
-      const { error, value } = schema.validate(req.query);
+      const { error, value } = schema.validate(req.query, { stripUnknown: true });
       
       if (error) {
         return res.status(400).json({

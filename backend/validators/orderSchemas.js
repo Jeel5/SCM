@@ -56,19 +56,15 @@ export const createOrderSchema = Joi.object({
   customer_name: Joi.string().min(2).max(255).required(),
   customer_email: Joi.string().email().required(),
   customer_phone: Joi.string().min(7).max(20).optional().allow(''),
-  status: Joi.string().valid(
-    'created', 'confirmed', 'allocated', 'processing', 'ready_to_ship',
-    'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned',
-    'cancelled', 'on_hold', 'pending_carrier_assignment'
-  ).optional().default('created'),
+  // status intentionally excluded — server always creates orders with status 'created'
   priority: Joi.string().valid('express', 'standard', 'bulk', 'same_day').optional().default('standard'),
   is_cod: Joi.boolean().optional().default(false),
-  // Financial breakdown (total_amount is required; subtotals are optional but validated if present)
+  // Financial breakdown (all totals computed server-side from items; client values ignored)
   subtotal: Joi.number().min(0).optional(),
   tax_amount: Joi.number().min(0).optional().default(0),
   shipping_amount: Joi.number().min(0).optional().default(0),
   discount_amount: Joi.number().min(0).optional().default(0),
-  total_amount: Joi.number().min(0).required(),
+  total_amount: Joi.number().min(0).optional(), // ignored — server recalculates from items
   currency: Joi.string().valid('USD', 'EUR', 'GBP', 'INR').optional().default('INR'),
   // Addresses
   shipping_address: addressSchema.required(),

@@ -15,10 +15,10 @@ export const createReturnSchema = Joi.object({
   return_number: Joi.string().min(5).max(50),
   reason: Joi.string().valid('damaged', 'defective', 'wrong_item', 'not_as_described', 'unwanted', 'size_issue', 'late_delivery', 'other').required(),
   reason_details: Joi.string().max(1000),
-  status: Joi.string().valid('requested', 'approved', 'rejected', 'received', 'inspecting', 'completed', 'refunded'),
+  // status is intentionally excluded — server always starts returns at 'requested'
   requested_by: Joi.string().min(2).max(255).required(),
   customer_email: Joi.string().email().required(),
-  refund_amount: Joi.number().min(0),
+  // refund_amount is intentionally excluded — system calculates from original order
   refund_method: Joi.string().valid('original_payment', 'store_credit', 'bank_transfer', 'check'),
   items: Joi.array().items(returnItemSchema).min(1).required()
 });

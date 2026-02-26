@@ -15,8 +15,14 @@ export const requestCarrierAssignment = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
   const { force } = req.query;
 
-  // Get order details with items
-  const order = await OrderRepository.findOrderWithItems(orderId);
+  // force=true bypasses the duplicate-assignment check — gate behind operations/admin role
+  if (force) {
+    const allowedRoles = ['admin', 'operations_manager', 'superadmin'];
+    if (!allowedRoles.includes(req.user?.role)) {
+      return res.status(403).json({ error: 'force flag requires operations_manager or admin role' });
+    }
+  }
+  const order = await OrderRepository.findOrderWithItems(orderId, req.orgContext?.organizationId);
 
   if (!order) {
     return res.status(404).json({ error: 'Order not found' });
@@ -24,7 +30,7 @@ export const requestCarrierAssignment = asyncHandler(async (req, res) => {
 
   // Check if assignment already exists (unless force flag)
   if (!force) {
-    const existingAssignments = await CarrierAssignmentRepository.findActiveByOrderId(orderId);
+    const existingAssignments = await CarrierAssignmentRepository.findActiveByOrderId(orderId, req.orgContext?.organizationId);
 
     if (existingAssignments.length > 0) {
       return res.json({
@@ -86,7 +92,7 @@ export const getPendingAssignments = asyncHandler(async (req, res) => {
 export const getAssignmentDetails = asyncHandler(async (req, res) => {
   const { assignmentId } = req.params;
 
-  const assignment = await CarrierAssignmentRepository.findDetailsById(assignmentId);
+  const assignment = await CarrierAssignmentRepository.findDetailsById(assignmentId, req.orgContext?.organizationId);
 
   if (!assignment) {
     return res.status(404).json({ error: 'Assignment not found' });
@@ -118,19 +124,18 @@ export const getAssignmentDetails = asyncHandler(async (req, res) => {
  */
 export const acceptAssignment = asyncHandler(async (req, res) => {
   const { assignmentId } = req.params;
-  // Get carrierId from webhook authentication or query param (backward compatibility)
-  const carrierId = req.authenticatedCarrier?.id || req.query.carrierId || req.body.carrierId;
+  // Carrier identity MUST come from HMAC webhook authentication — never trust client-supplied carrierId
+  const carrierId = req.authenticatedCarrier?.id;
   const acceptanceData = req.body;
 
   logger.debug('Accept assignment request', {
     assignmentId,
     carrierId,
-    fromWebhook: !!req.authenticatedCarrier,
     authenticatedCarrier: req.authenticatedCarrier
   });
 
   if (!carrierId) {
-    return res.status(400).json({ error: 'carrierId required (provide via webhook auth or query param)' });
+    return res.status(401).json({ error: 'Carrier authentication required' });
   }
 
   const result = await carrierAssignmentService.acceptAssignment(
@@ -148,12 +153,12 @@ export const acceptAssignment = asyncHandler(async (req, res) => {
  */
 export const rejectAssignment = asyncHandler(async (req, res) => {
   const { assignmentId } = req.params;
-  // Get carrierId from webhook authentication or query param (backward compatibility)
-  const carrierId = req.authenticatedCarrier?.id || req.query.carrierId || req.body.carrierId;
+  // Carrier identity MUST come from HMAC webhook authentication — never trust client-supplied carrierId
+  const carrierId = req.authenticatedCarrier?.id;
   const { reason } = req.body;
 
   if (!carrierId) {
-    return res.status(400).json({ error: 'carrierId required (provide via webhook auth or query param)' });
+    return res.status(401).json({ error: 'Carrier authentication required' });
   }
 
   const result = await carrierAssignmentService.rejectAssignment(
@@ -172,7 +177,7 @@ export const rejectAssignment = asyncHandler(async (req, res) => {
 export const getOrderAssignments = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
 
-  const assignments = await CarrierAssignmentRepository.findByOrderId(orderId);
+  const assignments = await CarrierAssignmentRepository.findByOrderId(orderId, req.orgContext?.organizationId);
 
   // Formatting variables if needed
   const formattedAssignments = assignments.map(row => ({
@@ -197,11 +202,12 @@ export const getOrderAssignments = asyncHandler(async (req, res) => {
  */
 export const markAsBusy = asyncHandler(async (req, res) => {
   const { assignmentId } = req.params;
-  const { carrierId } = req.query;
   const { reason } = req.body;
 
+  // TASK-R6-007: carrier identity comes from HMAC-authenticated webhook token, not a query param
+  const carrierId = req.authenticatedCarrier?.id;
   if (!carrierId) {
-    return res.status(400).json({ error: 'Carrier ID required' });
+    return res.status(401).json({ error: 'Carrier authentication required' });
   }
 
   const assignment = await CarrierAssignmentRepository.markAsBusy(assignmentId, carrierId, reason);
@@ -226,6 +232,20 @@ export const markAsBusy = asyncHandler(async (req, res) => {
 export const updateCarrierAvailability = asyncHandler(async (req, res) => {
   const { code } = req.params;
   const { status } = req.body; // 'available', 'busy', 'offline'
+
+  // Require carrier identity via HMAC-authenticated webhook token OR admin role.
+  // Any unauthenticated caller knowing a carrier code must NOT be able to toggle it.
+  const isAuthenticatedCarrier = !!req.authenticatedCarrier;
+  const isAdmin = ['admin', 'operations_manager', 'superadmin'].includes(req.user?.role);
+
+  if (!isAuthenticatedCarrier && !isAdmin) {
+    return res.status(403).json({ error: 'Carrier identity verification required to update availability' });
+  }
+
+  // If a carrier webhook is calling, ensure the code in the URL matches their identity
+  if (isAuthenticatedCarrier && req.authenticatedCarrier.code && req.authenticatedCarrier.code !== code) {
+    return res.status(403).json({ error: 'Carrier can only update their own availability' });
+  }
 
   if (!code) {
     return res.status(400).json({ error: 'Carrier code required' });

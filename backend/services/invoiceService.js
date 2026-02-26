@@ -1,5 +1,5 @@
 // Invoice Service - Automated invoice generation and billing
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import { NotFoundError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
 
@@ -191,14 +191,21 @@ class InvoiceService {
    * Generate invoices for all active carriers
    * Typically run monthly as a background job
    */
-  async generateMonthlyInvoices(month, year) {
+  async generateMonthlyInvoices(month, year, organizationId = undefined) {
     // Calculate billing period
     const periodStart = new Date(year, month - 1, 1);
     const periodEnd = new Date(year, month, 1);
 
-    // Get all active carriers
+    // When organizationId is provided, only process carriers for that org
+    // (org-owned carriers + system-wide carriers that processed their shipments)
     const carriersResult = await pool.query(
-      'SELECT id FROM carriers WHERE is_active = true'
+      organizationId
+        ? `SELECT DISTINCT c.id FROM carriers c
+           JOIN shipments s ON s.carrier_id = c.id
+           WHERE c.is_active = true AND s.organization_id = $1
+             AND s.created_at >= $2 AND s.created_at < $3`
+        : 'SELECT id FROM carriers WHERE is_active = true',
+      organizationId ? [organizationId, periodStart.toISOString(), periodEnd.toISOString()] : []
     );
 
     const invoices = [];
@@ -275,15 +282,15 @@ class InvoiceService {
   /**
    * Approve invoice
    */
-  async approveInvoice(invoiceId, approvedBy) {
+  async approveInvoice(invoiceId, approvedBy, organizationId = undefined) {
     const result = await pool.query(
       `UPDATE invoices
        SET status = 'approved',
            approved_at = NOW(),
            approved_by = $1
-       WHERE id = $2 AND status = 'pending'
+       WHERE id = $2 AND status = 'pending'${organizationId ? ' AND organization_id = $3' : ''}
        RETURNING *`,
-      [approvedBy, invoiceId]
+      organizationId ? [approvedBy, invoiceId, organizationId] : [approvedBy, invoiceId]
     );
 
     if (result.rows.length === 0) {
@@ -302,15 +309,15 @@ class InvoiceService {
   /**
    * Mark invoice as paid
    */
-  async markInvoicePaid(invoiceId, paymentMethod, paymentDate) {
+  async markInvoicePaid(invoiceId, paymentMethod, paymentDate, organizationId = undefined) {
     const result = await pool.query(
       `UPDATE invoices
        SET status = 'paid',
            payment_method = $1,
            payment_received_date = $2
-       WHERE id = $3 AND status = 'approved'
+       WHERE id = $3 AND status = 'approved'${organizationId ? ' AND organization_id = $4' : ''}
        RETURNING *`,
-      [paymentMethod, paymentDate, invoiceId]
+      organizationId ? [paymentMethod, paymentDate, invoiceId, organizationId] : [paymentMethod, paymentDate, invoiceId]
     );
 
     if (result.rows.length === 0) {
@@ -330,13 +337,13 @@ class InvoiceService {
   /**
    * Dispute invoice
    */
-  async disputeInvoice(invoiceId, reason, disputedBy) {
+  async disputeInvoice(invoiceId, reason, disputedBy, organizationId = undefined) {
     const result = await pool.query(
       `UPDATE invoices
        SET status = 'disputed'
-       WHERE id = $1
+       WHERE id = $1${organizationId ? ' AND organization_id = $2' : ''}
        RETURNING *`,
-      [invoiceId]
+      organizationId ? [invoiceId, organizationId] : [invoiceId]
     );
 
     if (result.rows.length === 0) {
@@ -356,7 +363,8 @@ class InvoiceService {
   /**
    * Get invoicing summary for a period
    */
-  async getInvoicingSummary(startDate, endDate) {
+  async getInvoicingSummary(startDate, endDate, organizationId = undefined) {
+    const orgFilter = organizationId ? ' AND organization_id = $3' : '';
     const result = await pool.query(
       `SELECT 
         COUNT(*) as total_invoices,
@@ -370,8 +378,8 @@ class InvoiceService {
         COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid,
         COUNT(CASE WHEN status = 'disputed' THEN 1 END) as disputed
        FROM invoices
-       WHERE created_at >= $1 AND created_at < $2`,
-      [startDate, endDate]
+       WHERE created_at >= $1 AND created_at < $2${orgFilter}`,
+      organizationId ? [startDate, endDate, organizationId] : [startDate, endDate]
     );
 
     return result.rows[0];

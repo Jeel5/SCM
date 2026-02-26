@@ -1,5 +1,5 @@
 // Shipments Controller - handles HTTP requests for shipment tracking
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 
 // Get shipments list with filters and pagination
@@ -186,13 +186,14 @@ export async function getShipmentTimeline(req, res) {
   try {
     const { id } = req.params;
     
+    const organizationId = req.user?.organizationId;
     const result = await pool.query(
       `SELECT se.*, s.tracking_number
        FROM shipment_events se
        JOIN shipments s ON se.shipment_id = s.id
-       WHERE se.shipment_id = $1
+       WHERE se.shipment_id = $1${organizationId ? ' AND s.organization_id = $2' : ''}
        ORDER BY se.event_timestamp ASC`,
-      [id]
+      organizationId ? [id, organizationId] : [id]
     );
     
     res.json({
@@ -234,7 +235,7 @@ export async function createShipment(req, res) {
     }
     
     const order = orderResult.rows[0];
-    const trackingNumber = value.tracking_number || `TRK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const trackingNumber = req.body.tracking_number || `TRK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     
     const shipmentResult = await client.query(
       `INSERT INTO shipments (tracking_number, order_id, carrier_id, 
@@ -256,7 +257,7 @@ export async function createShipment(req, res) {
     // Update order status
     await client.query(
       `UPDATE orders SET status = 'shipped', updated_at = NOW() WHERE id = $1`,
-      [orderId]
+      [order_id]
     );
     
     await client.query('COMMIT');

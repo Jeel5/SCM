@@ -159,10 +159,14 @@ class ShipmentRepository extends BaseRepository {
    * Add tracking event
    */
   async addTrackingEvent(eventData, client = null) {
+    // ON CONFLICT ensures carrier webhook retries don't duplicate an event that has
+    // already been recorded (idempotent inserts require a UNIQUE constraint on
+    // shipment_tracking(shipment_id, carrier_status, event_time)).
     const query = `
       INSERT INTO shipment_tracking 
       (shipment_id, status, location, event_time, description, carrier_status)
       VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (shipment_id, carrier_status, event_time) DO NOTHING
       RETURNING *
     `;
     
@@ -213,7 +217,7 @@ class ShipmentRepository extends BaseRepository {
     let query = `
       SELECT * FROM shipments 
       WHERE status NOT IN ('delivered', 'failed', 'returned')
-        AND estimated_delivery < NOW()
+        AND estimated_delivery + INTERVAL '2 hours' < NOW()
     `;
     const params = [];
 

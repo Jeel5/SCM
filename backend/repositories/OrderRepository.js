@@ -108,12 +108,13 @@ class OrderRepository extends BaseRepository {
       WHERE o.id = $1
     `;
     const params = [orderId];
+    let paramCount = 2;
 
     // Add organization filter for multi-tenancy
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'o');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$2`;
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
         params.push(...orgFilter.params);
       }
     }
@@ -126,6 +127,11 @@ class OrderRepository extends BaseRepository {
 
   // Create order with items in single transaction
   async createOrderWithItems(orderData, items, client) {
+    // Fail fast if the caller forgot to pass a transaction client — two separate pool
+    // queries without a transaction would leave an orphan order if items insert fails.
+    if (!client) {
+      throw new Error('createOrderWithItems requires a transaction client (tx). Wrap the call in withTransaction().');
+    }
     // Insert order first
     const orderKeys = Object.keys(orderData);
     const orderValues = Object.values(orderData);
@@ -178,12 +184,13 @@ class OrderRepository extends BaseRepository {
       WHERE id = $2
     `;
     const params = [status, orderId];
+    let paramCount = 3;
 
     // Add organization filter for multi-tenancy
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$3`;
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
         params.push(...orgFilter.params);
       }
     }

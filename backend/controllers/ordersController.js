@@ -1,7 +1,14 @@
 import orderService from '../services/orderService.js';
-import { asyncHandler } from '../errors/index.js';
+import { asyncHandler, AppError } from '../errors/index.js';
 
 // Orders Controller - handles HTTP requests and delegates to service layer
+
+// Whitelist of valid order status values (TASK-R10-003)
+const VALID_ORDER_STATUSES = [
+  'created', 'confirmed', 'allocated', 'processing',
+  'shipped', 'in_transit', 'out_for_delivery', 'delivered',
+  'cancelled', 'returned', 'on_hold', 'failed',
+];
 
 // List orders with filters and pagination
 export const listOrders = asyncHandler(async (req, res) => {
@@ -16,7 +23,7 @@ export const listOrders = asyncHandler(async (req, res) => {
     status,
     search,
     page: parseInt(page) || 1,
-    limit: parseInt(limit) || 20,
+    limit: Math.min(parseInt(limit) || 20, 100),
     sortBy,
     sortOrder,
     organizationId
@@ -112,7 +119,7 @@ export const createOrder = asyncHandler(async (req, res) => {
   // For demo/unauthenticated requests this will be null (org-less demo order)
   const orderData = {
     ...req.body,
-    organization_id: req.orgContext?.organizationId || null
+    organization_id: req.user?.organizationId || req.orgContext?.organizationId || null
   };
   
   const order = await orderService.createOrder(orderData, requestCarrierAssignment);
@@ -144,7 +151,8 @@ export const createOrder = asyncHandler(async (req, res) => {
  * - Partial delivery → partial transfer
  */
 export const createTransferOrder = asyncHandler(async (req, res) => {
-  const order = await orderService.createTransferOrder(req.body);
+  const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+  const order = await orderService.createTransferOrder(req.body, organizationId);
   
   res.status(201).json({ 
     success: true, 
@@ -157,8 +165,17 @@ export const createTransferOrder = asyncHandler(async (req, res) => {
 export const updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  
-  const order = await orderService.updateOrderStatus(id, status);
+  const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+
+  // Validate status against whitelist before delegating to service (TASK-R10-003)
+  if (!status || !VALID_ORDER_STATUSES.includes(status)) {
+    throw new AppError(
+      `Invalid status '${status}'. Valid values: ${VALID_ORDER_STATUSES.join(', ')}`,
+      400
+    );
+  }
+
+  const order = await orderService.updateOrderStatus(id, status, organizationId);
   
   res.json({ 
     success: true, 

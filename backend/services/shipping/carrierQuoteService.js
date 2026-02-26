@@ -11,11 +11,15 @@
  */
 
 import axios from 'axios';
-import db from '../../configs/db.js';
+import db from '../../config/db.js';
 import logger from '../../utils/logger.js';
 import { calculateDistance, addDays, addHours } from './shippingUtils.js';
 import { checkCarrierRejectionReasons } from './carrierValidationService.js';
 import { storeQuotes, storeRejections } from './quoteDataService.js';
+import { decryptField } from '../../utils/cryptoUtils.js';
+
+// Default timeout for outbound carrier API calls (10 seconds)
+const CARRIER_API_TIMEOUT_MS = parseInt(process.env.CARRIER_API_TIMEOUT_MS || '10000', 10);
 
 /**
  * Get shipping quotes from all active carriers after order is placed
@@ -368,6 +372,7 @@ async function getDHLQuote(carrier, shipmentDetails) {
     // For now, simulate API call with realistic data
     // In production, uncomment and use actual API call:
     /*
+    const apiKey = decryptField(carrier.api_key_encrypted); // TASK-R12-014: decrypt before use
     const response = await axios.post(apiUrl, {
       customerDetails: {
         shipperDetails: {
@@ -391,9 +396,10 @@ async function getDHLQuote(carrier, shipmentDetails) {
       }))
     }, {
       headers: {
-        'Authorization': `Bearer ${carrier.api_key_encrypted}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      timeout: CARRIER_API_TIMEOUT_MS
     });
     */
 

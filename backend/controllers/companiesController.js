@@ -1,7 +1,8 @@
 // Companies Controller - handles company management for superadmin
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import { AppError } from '../errors/index.js';
 import { logInfo } from '../utils/logger.js';
+import { withTransaction } from '../utils/dbTransaction.js';
 
 // Get all companies (superadmin only)
 export async function getAllCompanies(req, res, next) {
@@ -33,13 +34,14 @@ export async function getAllCompanies(req, res, next) {
       FROM organizations o
       LEFT JOIN users u ON u.organization_id = o.id AND u.is_active = true
       LEFT JOIN orders ord ON ord.organization_id = o.id
+      WHERE o.is_deleted IS NOT TRUE
       GROUP BY o.id
       ORDER BY o.created_at DESC
     `;
 
     const { rows } = await pool.query(query);
 
-    logInfo('Companies retrieved', { count: rows.length, user: req.user.id });
+    logInfo('Companies retrieved', { count: rows.length, user: req.user.userId });
 
     res.json({
       success: true,
@@ -86,7 +88,7 @@ export async function getCompanyById(req, res, next) {
       FROM organizations o
       LEFT JOIN users u ON u.organization_id = o.id AND u.is_active = true
       LEFT JOIN orders ord ON ord.organization_id = o.id
-      WHERE o.id = $1
+      WHERE o.id = $1 AND o.is_deleted IS NOT TRUE
       GROUP BY o.id
     `;
 
@@ -132,39 +134,43 @@ export async function createCompany(req, res, next) {
   try {
     const { name, code, email, phone, website, address } = req.body;
 
-    // Check if company code already exists
-    const checkQuery = 'SELECT id FROM organizations WHERE code = $1';
-    const { rows: existing } = await pool.query(checkQuery, [code]);
+    const { rows } = await withTransaction(async (tx) => {
+      // Uniqueness check and INSERT inside the same transaction to prevent concurrent duplicates
+      const { rows: existing } = await tx.query(
+        'SELECT id FROM organizations WHERE code = $1',
+        [code]
+      );
 
-    if (existing.length > 0) {
-      throw new AppError('Company code already exists', 400);
-    }
+      if (existing.length > 0) {
+        throw new AppError('Company code already exists', 400);
+      }
 
-    const insertQuery = `
-      INSERT INTO organizations (
-        name, code, email, phone, website, 
-        address, city, state, country, postal_code
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *
-    `;
+      const insertQuery = `
+        INSERT INTO organizations (
+          name, code, email, phone, website, 
+          address, city, state, country, postal_code
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+      `;
 
-    const values = [
-      name,
-      code,
-      email,
-      phone,
-      website || null,
-      address.street,
-      address.city,
-      address.state,
-      address.country || 'India',
-      address.postalCode,
-    ];
+      const values = [
+        name,
+        code,
+        email,
+        phone,
+        website || null,
+        address.street,
+        address.city,
+        address.state,
+        address.country || 'India',
+        address.postalCode,
+      ];
 
-    const { rows } = await pool.query(insertQuery, values);
+      return tx.query(insertQuery, values);
+    });
 
-    logInfo('Company created', { companyId: rows[0].id, code, createdBy: req.user.id });
+    logInfo('Company created', { companyId: rows[0].id, code, createdBy: req.user.userId });
 
     res.status(201).json({
       success: true,
@@ -217,7 +223,7 @@ export async function updateCompany(req, res, next) {
       throw new AppError('Company not found', 404);
     }
 
-    logInfo('Company updated', { companyId: id, updatedBy: req.user.id });
+    logInfo('Company updated', { companyId: id, updatedBy: req.user.userId });
 
     res.json({
       success: true,
@@ -228,14 +234,16 @@ export async function updateCompany(req, res, next) {
   }
 }
 
-// Delete company (soft delete or restrict if has data)
+// Delete company (soft-delete with audit trail — hard delete blocked if data exists)
 export async function deleteCompany(req, res, next) {
   try {
     const { id } = req.params;
 
-    // Check if company has users or orders
+    // Check if company exists and is not already deleted
     const checkQuery = `
       SELECT 
+        org.id,
+        org.is_deleted,
         COUNT(DISTINCT u.id) as user_count,
         COUNT(DISTINCT o.id) as order_count
       FROM organizations org
@@ -247,21 +255,39 @@ export async function deleteCompany(req, res, next) {
 
     const { rows: checks } = await pool.query(checkQuery, [id]);
 
-    if (checks.length > 0 && (checks[0].user_count > 0 || checks[0].order_count > 0)) {
-      throw new AppError(
-        'Cannot delete company with existing users or orders. Please archive instead.',
-        400
-      );
-    }
-
-    const deleteQuery = 'DELETE FROM organizations WHERE id = $1 RETURNING *';
-    const { rows } = await pool.query(deleteQuery, [id]);
-
-    if (rows.length === 0) {
+    if (checks.length === 0) {
       throw new AppError('Company not found', 404);
     }
 
-    logInfo('Company deleted', { companyId: id, deletedBy: req.user.id });
+    if (checks[0].is_deleted) {
+      throw new AppError('Company is already deleted', 400);
+    }
+
+    // Soft-delete: set is_deleted flag, deleted_at timestamp, and record who deleted it
+    const deleteQuery = `
+      UPDATE organizations
+      SET 
+        is_deleted = TRUE,
+        deleted_at = NOW(),
+        deleted_by = $2,
+        updated_at = NOW()
+      WHERE id = $1 AND is_deleted = FALSE
+      RETURNING id, name, code
+    `;
+
+    const { rows } = await pool.query(deleteQuery, [id, req.user.userId]);
+
+    if (rows.length === 0) {
+      throw new AppError('Company not found or already deleted', 404);
+    }
+
+    logInfo('Company soft-deleted', {
+      companyId: id,
+      companyName: rows[0].name,
+      deletedBy: req.user.userId,
+      hadUsers: parseInt(checks[0].user_count) > 0,
+      hadOrders: parseInt(checks[0].order_count) > 0
+    });
 
     res.json({
       success: true,

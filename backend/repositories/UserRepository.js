@@ -14,9 +14,14 @@ class UserRepository extends BaseRepository {
   }
 
   // Find user by email address
-  async findByEmail(email, client = null) {
-    const query = `SELECT * FROM users WHERE email = $1`;
-    const result = await this.query(query, [email], client);
+  async findByEmail(email, organizationId = undefined, client = null) {
+    let query = `SELECT * FROM users WHERE email = $1`;
+    const params = [email];
+    if (organizationId !== undefined) {
+      query += ` AND organization_id = $2`;
+      params.push(organizationId);
+    }
+    const result = await this.query(query, params, client);
     return result.rows[0] || null;
   }
 

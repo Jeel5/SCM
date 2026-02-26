@@ -1,5 +1,5 @@
 // Organization Controller - handles multi-tenant organization management
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import bcrypt from 'bcrypt';
 import OrganizationRepository from '../repositories/OrganizationRepository.js';
 import { asyncHandler } from '../errors/errorHandler.js';

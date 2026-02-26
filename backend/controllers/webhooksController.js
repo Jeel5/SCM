@@ -11,7 +11,7 @@ import { jobsService } from '../services/jobsService.js';
  */
 export const handleOrderWebhook = async (req, res, next) => {
   try {
-    let { event_type, source, data, timestamp } = req.body;
+    let { event_type, source, data, timestamp, event_id } = req.body;
 
     // Support bare-payload format (no envelope) — demo portal and direct integrations
     // If the body itself looks like an order (has customer_name or items), wrap it
@@ -23,6 +23,7 @@ export const handleOrderWebhook = async (req, res, next) => {
         source = body.source || body.platform || 'demo';
         data = body;
         timestamp = body.timestamp || new Date().toISOString();
+        event_id = body.event_id || null;
       }
     }
 
@@ -53,6 +54,11 @@ export const handleOrderWebhook = async (req, res, next) => {
         processedOrder = data; // Generic / croma / demo handler
     }
 
+    // Derive idempotency key: prefer explicit event_id, fall back to composite key
+    const idempotencyKey = event_id
+      ? `order-${event_id}`
+      : (data.external_order_id ? `order-${source}-${data.external_order_id}` : null);
+
     // Create background job to process order
     // req.webhookOrganizationId is set by resolveWebhookOrg middleware (org-scoped URL)
     const job = await jobsService.createJob(
@@ -64,10 +70,13 @@ export const handleOrderWebhook = async (req, res, next) => {
         organization_id: req.webhookOrganizationId || null,
         received_at: timestamp || new Date().toISOString()
       },
-      data.priority === 'high' ? 1 : 5
+      data.priority === 'high' ? 1 : 5,
+      null,
+      null,
+      idempotencyKey
     );
 
-    logger.info(`✅ Order webhook queued as job ${job.id}`);
+    logger.info(`✅ Order webhook queued as job ${job.id}${job.is_new === false ? ' (duplicate — already queued)' : ''}`);
 
     // Respond immediately (webhook pattern - don't make sender wait)
     res.status(200).json({
@@ -87,7 +96,7 @@ export const handleOrderWebhook = async (req, res, next) => {
  */
 export const handleTrackingWebhook = async (req, res, next) => {
   try {
-    const { event_type, source, data, timestamp } = req.body;
+    const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`🚚 Received tracking webhook: ${event_type} from ${source}`);
 
@@ -97,6 +106,11 @@ export const handleTrackingWebhook = async (req, res, next) => {
         message: 'Invalid tracking webhook payload'
       });
     }
+
+    // Idempotency: use event_id or (tracking_number + carrier_status)
+    const idempotencyKey = event_id
+      ? `tracking-${event_id}`
+      : `tracking-${data.tracking_number}-${data.status}`;
 
     // Create job to update shipment tracking
     const job = await jobsService.createJob(
@@ -112,10 +126,13 @@ export const handleTrackingWebhook = async (req, res, next) => {
         events: data.events,
         received_at: timestamp || new Date().toISOString()
       },
-      data.status === 'delivered' ? 2 : 5
+      data.status === 'delivered' ? 2 : 5,
+      null,
+      null,
+      idempotencyKey
     );
 
-    logger.info(`✅ Tracking webhook queued as job ${job.id}`);
+    logger.info(`✅ Tracking webhook queued as job ${job.id}${job.is_new === false ? ' (duplicate)' : ''}`);
 
     res.status(200).json({
       success: true,
@@ -134,7 +151,7 @@ export const handleTrackingWebhook = async (req, res, next) => {
  */
 export const handleInventoryWebhook = async (req, res, next) => {
   try {
-    const { event_type, source, data, timestamp } = req.body;
+    const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`📊 Received inventory webhook: ${event_type} from ${source}`);
 
@@ -144,6 +161,8 @@ export const handleInventoryWebhook = async (req, res, next) => {
         message: 'Invalid inventory webhook payload'
       });
     }
+
+    const idempotencyKey = event_id ? `inventory-${event_id}` : null;
 
     // Create job to sync inventory
     const job = await jobsService.createJob(
@@ -158,10 +177,13 @@ export const handleInventoryWebhook = async (req, res, next) => {
         organization_id: req.webhookOrganizationId || null,
         received_at: timestamp || new Date().toISOString()
       },
-      data.update_type === 'critical' ? 1 : 5
+      data.update_type === 'critical' ? 1 : 5,
+      null,
+      null,
+      idempotencyKey
     );
 
-    logger.info(`✅ Inventory webhook queued as job ${job.id}`);
+    logger.info(`✅ Inventory webhook queued as job ${job.id}${job.is_new === false ? ' (duplicate)' : ''}`);
 
     res.status(200).json({
       success: true,
@@ -181,7 +203,7 @@ export const handleInventoryWebhook = async (req, res, next) => {
  */
 export const handleReturnWebhook = async (req, res, next) => {
   try {
-    const { event_type, source, data, timestamp } = req.body;
+    const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`↩️  Received return webhook: ${event_type} from ${source}`);
 
@@ -191,6 +213,10 @@ export const handleReturnWebhook = async (req, res, next) => {
         message: 'Invalid return webhook payload'
       });
     }
+
+    const idempotencyKey = event_id
+      ? `return-${event_id}`
+      : `return-${data.return_id}`;
 
     // Create job to process return
     const job = await jobsService.createJob(
@@ -206,10 +232,13 @@ export const handleReturnWebhook = async (req, res, next) => {
         organization_id: req.webhookOrganizationId || null,
         received_at: timestamp || new Date().toISOString()
       },
-      3
+      3,
+      null,
+      null,
+      idempotencyKey
     );
 
-    logger.info(`✅ Return webhook queued as job ${job.id}`);
+    logger.info(`✅ Return webhook queued as job ${job.id}${job.is_new === false ? ' (duplicate)' : ''}`);
 
     res.status(200).json({
       success: true,
@@ -229,7 +258,7 @@ export const handleReturnWebhook = async (req, res, next) => {
  */
 export const handleRatesWebhook = async (req, res, next) => {
   try {
-    const { event_type, source, data, timestamp } = req.body;
+    const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`💰 Received rates webhook: ${event_type} from ${source}`);
 
@@ -239,6 +268,10 @@ export const handleRatesWebhook = async (req, res, next) => {
         message: 'Invalid rates webhook payload'
       });
     }
+
+    const idempotencyKey = event_id
+      ? `rates-${event_id}`
+      : `rates-${data.request_id}`;
 
     // Create job to process and store rates
     const job = await jobsService.createJob(
@@ -251,10 +284,13 @@ export const handleRatesWebhook = async (req, res, next) => {
         weight_lb: data.weight_lb,
         received_at: timestamp || new Date().toISOString()
       },
-      4
+      4,
+      null,
+      null,
+      idempotencyKey
     );
 
-    logger.info(`✅ Rates webhook queued as job ${job.id}`);
+    logger.info(`✅ Rates webhook queued as job ${job.id}${job.is_new === false ? ' (duplicate)' : ''}`);
 
     res.status(200).json({
       success: true,

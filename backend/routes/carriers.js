@@ -8,7 +8,7 @@
  */
 
 import express from 'express';
-import db from '../configs/db.js';
+import db from '../config/db.js';
 import logger from '../utils/logger.js';
 import { authenticate } from '../middlewares/auth.js';
 

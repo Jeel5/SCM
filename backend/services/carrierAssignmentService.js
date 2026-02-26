@@ -1,4 +1,4 @@
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 import axios from 'axios';
 import { withTransaction } from '../utils/dbTransaction.js';

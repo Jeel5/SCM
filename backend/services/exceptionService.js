@@ -1,5 +1,5 @@
 // Exception Management Service - Priority handling and escalation
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import { NotFoundError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
 
@@ -267,7 +267,9 @@ class ExceptionService {
   /**
    * Get exception statistics by type and severity
    */
-  async getExceptionStatistics(startDate, endDate) {
+  async getExceptionStatistics(startDate, endDate, organizationId = undefined) {
+    const orgFilter = organizationId ? ' AND organization_id = $3' : '';
+    const extraArgs = organizationId ? [organizationId] : [];
     // Overall statistics
     const overallResult = await pool.query(
       `SELECT 
@@ -278,15 +280,15 @@ class ExceptionService {
         COUNT(CASE WHEN status = 'escalated' THEN 1 END) as escalated,
         AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_resolution_hours
        FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2`,
-      [startDate, endDate]
+       WHERE created_at >= $1 AND created_at < $2${orgFilter}`,
+      [startDate, endDate, ...extraArgs]
     );
 
     // By severity
     const severityResult = await pool.query(
       `SELECT severity, COUNT(*) as count
        FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2
+       WHERE created_at >= $1 AND created_at < $2${orgFilter}
        GROUP BY severity
        ORDER BY 
          CASE severity 
@@ -295,7 +297,7 @@ class ExceptionService {
            WHEN 'medium' THEN 3 
            WHEN 'low' THEN 4 
          END`,
-      [startDate, endDate]
+      [startDate, endDate, ...extraArgs]
     );
 
     // By type
@@ -303,22 +305,22 @@ class ExceptionService {
       `SELECT exception_type, COUNT(*) as count,
               AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_resolution_hours
        FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2
+       WHERE created_at >= $1 AND created_at < $2${orgFilter}
        GROUP BY exception_type
        ORDER BY count DESC`,
-      [startDate, endDate]
+      [startDate, endDate, ...extraArgs]
     );
 
     // By root cause
     const rootCauseResult = await pool.query(
       `SELECT root_cause, COUNT(*) as count
        FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2
+       WHERE created_at >= $1 AND created_at < $2${orgFilter}
        AND root_cause IS NOT NULL
        GROUP BY root_cause
        ORDER BY count DESC
        LIMIT 10`,
-      [startDate, endDate]
+      [startDate, endDate, ...extraArgs]
     );
 
     return {
@@ -332,7 +334,7 @@ class ExceptionService {
   /**
    * Get high priority exceptions requiring immediate attention
    */
-  async getHighPriorityExceptions() {
+  async getHighPriorityExceptions(organizationId = undefined) {
     const result = await pool.query(
       `SELECT e.*, 
               s.tracking_number,
@@ -344,8 +346,10 @@ class ExceptionService {
        LEFT JOIN users u ON u.id = e.assigned_to
        WHERE e.status IN ('open', 'investigating')
        AND (e.priority <= 3 OR e.severity = 'critical')
+       ${organizationId ? 'AND e.organization_id = $1' : ''}
        ORDER BY e.priority ASC, e.created_at ASC
-       LIMIT 20`
+       LIMIT 20`,
+      organizationId ? [organizationId] : []
     );
 
     return result.rows;

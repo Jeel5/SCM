@@ -14,12 +14,14 @@ export const createInventorySchema = Joi.object({
   unit_price: Joi.number().min(0).optional().allow(null),
   // Inventory-specific fields
   quantity: Joi.number().integer().min(0).required(),
-  reserved_quantity: Joi.number().integer().min(0).optional().default(0),
+  // reserved_quantity is system-controlled only — clients must not set it directly
   bin_location: Joi.string().max(50).optional().allow('', null),
   zone: Joi.string().max(50).optional().allow('', null),
   reorder_point: Joi.number().integer().min(0).optional().allow(null),
   max_stock_level: Joi.number().integer().min(0).optional().allow(null)
 }); // SKU is auto-generated on backend if not supplied
+// XOR: exactly one of product_id or product_name must be supplied
+// (enforced at the service layer since Joi alone cannot do clean XOR on optional fields)
 
 /**
  * Schema: PUT /inventory/:id

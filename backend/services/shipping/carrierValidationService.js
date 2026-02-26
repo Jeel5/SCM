@@ -24,8 +24,6 @@ import { calculateDistance } from './shippingUtils.js';
 export function checkCarrierRejectionReasons(carrier, shipmentDetails) {
   const { totalWeight, hasFragileItems, requiresColdStorage, origin, destination } = shipmentDetails;
 
-  // Simulate realistic rejection scenarios
-  
   // 1. Weight limits
   if (carrier.code === 'DELHIVERY' && totalWeight > 20) {
     return {
@@ -42,20 +40,20 @@ export function checkCarrierRejectionReasons(carrier, shipmentDetails) {
     };
   }
 
-  // 3. Route not serviceable (simulate with random for demo)
+  // 3. Route serviceability check — use deterministic distance threshold, not random
   const distance = calculateDistance(origin, destination);
-  if (distance > 2000 && carrier.code === 'BLUEDART' && Math.random() > 0.7) {
+  if (distance > 3000 && carrier.code === 'BLUEDART') {
     return {
       reason: 'route_not_serviceable',
       message: 'Long distance route not currently serviceable'
     };
   }
 
-  // 4. At capacity (simulate with random for demo - 15% rejection rate)
-  if (Math.random() > 0.85) {
+  // 4. Capacity check — use carrier.availability_status from database, not random
+  if (carrier.availability_status && carrier.availability_status !== 'available') {
     return {
       reason: 'at_capacity',
-      message: 'Currently at maximum capacity, cannot accept new shipments'
+      message: `Carrier currently ${carrier.availability_status}. Cannot accept new shipments.`
     };
   }
 

@@ -1,4 +1,4 @@
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import axios from 'axios';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
@@ -139,21 +139,18 @@ class ShipmentTrackingService {
           );
         }
 
-        return { shipmentId, newStatus, eventType: trackingEvent.eventType };
+        return updateResult.rows[0];
       });
 
-      logger.info('Shipment tracking updated', result);
+      logger.info('Shipment tracking updated', { shipmentId, status: result.status });
 
-      return updateResult.rows[0];
+      return result;
     } catch (error) {
-      await client.query('ROLLBACK');
       logger.error('Failed to update shipment tracking', {
         shipmentId,
         error: error.message
       });
       throw error;
-    } finally {
-      client.release();
     }
   }
 

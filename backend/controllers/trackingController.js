@@ -1,4 +1,4 @@
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import shipmentTrackingService from '../services/shipmentTrackingService.js';
 import logger from '../utils/logger.js';
 
@@ -11,11 +11,12 @@ import logger from '../utils/logger.js';
 export async function getShipmentDetails(req, res) {
   try {
     const { trackingNumber } = req.params;
+    const organizationId = req.orgContext?.organizationId;
 
     // Find shipment by tracking number
     const result = await pool.query(
-      'SELECT id FROM shipments WHERE tracking_number = $1',
-      [trackingNumber]
+      `SELECT id FROM shipments WHERE tracking_number = $1${organizationId ? ' AND organization_id = $2' : ''}`,
+      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
     );
 
     if (result.rows.length === 0) {
@@ -48,12 +49,23 @@ export async function updateShipmentTracking(req, res) {
 
     // Find shipment by tracking number
     const result = await pool.query(
-      'SELECT id FROM shipments WHERE tracking_number = $1',
+      'SELECT id, carrier_id FROM shipments WHERE tracking_number = $1',
       [trackingNumber]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Shipment not found' });
+    }
+
+    // Verify the authenticated carrier owns this shipment (prevent fake delivery injection)
+    const authenticatedCarrierId = req.authenticatedCarrier?.id;
+    if (authenticatedCarrierId && result.rows[0].carrier_id !== authenticatedCarrierId) {
+      logger.warn('Carrier identity mismatch on tracking update', {
+        trackingNumber,
+        shipmentCarrierId: result.rows[0].carrier_id,
+        authenticatedCarrierId
+      });
+      return res.status(403).json({ error: 'Carrier not authorized to update this shipment' });
     }
 
     const shipmentId = result.rows[0].id;
@@ -91,12 +103,13 @@ export async function updateShipmentTracking(req, res) {
 export async function calculateRoute(req, res) {
   try {
     const { trackingNumber } = req.params;
+    const organizationId = req.orgContext?.organizationId;
 
     // Get shipment
     const result = await pool.query(
       `SELECT id, origin_address, destination_address FROM shipments 
-       WHERE tracking_number = $1`,
-      [trackingNumber]
+       WHERE tracking_number = $1${organizationId ? ' AND organization_id = $2' : ''}`,
+      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
     );
 
     if (result.rows.length === 0) {
@@ -117,9 +130,9 @@ export async function calculateRoute(req, res) {
     const updateResult = await pool.query(
       `UPDATE shipments 
        SET route_geometry = $1, updated_at = NOW()
-       WHERE tracking_number = $2
+       WHERE tracking_number = $2${organizationId ? ' AND organization_id = $3' : ''}
        RETURNING *`,
-      [JSON.stringify(route.geometry), trackingNumber]
+      organizationId ? [JSON.stringify(route.geometry), trackingNumber, organizationId] : [JSON.stringify(route.geometry), trackingNumber]
     );
 
     res.json({
@@ -148,11 +161,12 @@ export async function simulateTrackingUpdate(req, res) {
   try {
     const { trackingNumber } = req.params;
     const { status, location, description } = req.body;
+    const organizationId = req.orgContext?.organizationId;
 
     // Find shipment
     const result = await pool.query(
-      'SELECT id FROM shipments WHERE tracking_number = $1',
-      [trackingNumber]
+      `SELECT id FROM shipments WHERE tracking_number = $1${organizationId ? ' AND organization_id = $2' : ''}`,
+      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
     );
 
     if (result.rows.length === 0) {
@@ -188,15 +202,16 @@ export async function simulateTrackingUpdate(req, res) {
 export async function getTrackingTimeline(req, res) {
   try {
     const { trackingNumber } = req.params;
+    const organizationId = req.orgContext?.organizationId;
 
     const result = await pool.query(
       `SELECT se.id, se.event_type, se.location, se.description, se.event_timestamp,
               s.tracking_number, s.status
        FROM shipment_events se
        JOIN shipments s ON se.shipment_id = s.id
-       WHERE s.tracking_number = $1
+       WHERE s.tracking_number = $1${organizationId ? ' AND s.organization_id = $2' : ''}
        ORDER BY se.event_timestamp ASC`,
-      [trackingNumber]
+      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
     );
 
     const events = result.rows.map(row => ({

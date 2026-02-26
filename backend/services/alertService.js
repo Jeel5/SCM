@@ -1,5 +1,5 @@
 // Alert Service - Manages alert rules, triggers, and escalations
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import notificationService from './notificationService.js';
 import { jobsService } from './jobsService.js';
 import logger from '../utils/logger.js';
@@ -81,12 +81,40 @@ export const alertService = {
 
   /**
    * Trigger an alert and create notifications
+   * Includes cooldown deduplication: if the same rule fired within the cooldown window,
+   * the existing alert is returned and no new notifications are sent.
    */
   async triggerAlert(rule) {
     const client = await pool.connect();
-    
+    let alert = null;
+
+    // ── Transactional section: dedup check + alert INSERT ────────────────────
     try {
       await client.query('BEGIN');
+
+      // Dedup / cooldown check — skip if the same rule already fired recently.
+      // Parameterize the interval multiplier to avoid INTERVAL interpolation.
+      const cooldownMinutes = rule.cooldown_minutes || 60;
+      const recentAlert = await client.query(
+        `SELECT id FROM alerts
+         WHERE rule_id = $1
+           AND triggered_at > NOW() - ($2 * INTERVAL '1 minute')
+         ORDER BY triggered_at DESC
+         LIMIT 1`,
+        [rule.id, cooldownMinutes]
+      );
+
+      if (recentAlert.rows.length > 0) {
+        await client.query('ROLLBACK');
+        client.release();
+        logger.debug('Alert suppressed by cooldown', {
+          ruleId: rule.id,
+          ruleName: rule.name,
+          cooldownMinutes,
+          existingAlertId: recentAlert.rows[0].id
+        });
+        return recentAlert.rows[0]; // return existing alert without re-notifying
+      }
 
       // Create alert record
       const alertResult = await client.query(
@@ -100,17 +128,39 @@ export const alertService = {
           rule.rule_type,
           rule.severity,
           rule.message_template,
-          JSON.stringify({}), // Additional data can be passed
+          JSON.stringify({}),
         ]
       );
 
-      const alert = alertResult.rows[0];
+      alert = alertResult.rows[0];
 
-      // Get recipients based on rule
-      const recipients = await this.getAlertRecipients(rule);
+      // Commit BEFORE side-effects so the alert INSERT is durable even if
+      // notification/job creation subsequently fails (TASK-R13-004).
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      client.release();
+      logger.error('Failed to trigger alert:', error);
+      throw error;
+    }
 
-      // Create notifications for recipients
-      for (const userId of recipients) {
+    // Transaction committed — release the pooled client before side-effects.
+    client.release();
+
+    logger.info('Alert triggered', {
+      alertId: alert.id,
+      ruleId: rule.id,
+      ruleName: rule.name,
+      severity: rule.severity,
+    });
+
+    // ── Post-commit side-effects (notifications + escalation job) ─────────────
+    // Running outside the transaction means a notification/job failure cannot
+    // roll back the already-committed alert record (TASK-R13-004).
+    const recipients = await this.getAlertRecipients(rule);
+
+    for (const userId of recipients) {
+      try {
         await notificationService.createNotification(
           userId,
           'alert',
@@ -119,10 +169,17 @@ export const alertService = {
           null,
           { alertId: alert.id, ruleId: rule.id, severity: rule.severity }
         );
+      } catch (notifyErr) {
+        logger.error('Failed to create alert notification', {
+          userId,
+          alertId: alert.id,
+          error: notifyErr.message,
+        });
       }
+    }
 
-      // If critical, create escalation job
-      if (rule.severity === 'critical' && rule.escalation_enabled) {
+    if (rule.severity === 'critical' && rule.escalation_enabled) {
+      try {
         await jobsService.createJob(
           'alert_escalation',
           {
@@ -133,26 +190,21 @@ export const alertService = {
           1, // High priority
           new Date(Date.now() + (rule.escalation_delay_minutes || 15) * 60000)
         );
+      } catch (jobErr) {
+        logger.error('Failed to create alert escalation job', {
+          alertId: alert.id,
+          error: jobErr.message,
+        });
       }
-
-      await client.query('COMMIT');
-
-      logger.info('Alert triggered', {
-        alertId: alert.id,
-        ruleId: rule.id,
-        ruleName: rule.name,
-        severity: rule.severity,
-        recipients: recipients.length
-      });
-
-      return alert;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      logger.error('Failed to trigger alert:', error);
-      throw error;
-    } finally {
-      client.release();
     }
+
+    logger.info('Alert dispatched', {
+      alertId: alert.id,
+      ruleId: rule.id,
+      recipients: recipients.length,
+    });
+
+    return alert;
   },
 
   /**
@@ -175,10 +227,11 @@ export const alertService = {
       return result.rows.map(r => r.id);
     }
 
-    // Default to all admins
+    // Default to admins scoped to the same organization
     const result = await pool.query(
       `SELECT id FROM users 
-       WHERE role = 'admin' AND is_active = true`
+       WHERE role = 'admin' AND is_active = true${rule.organization_id ? ' AND organization_id = $1' : ''}`,
+      rule.organization_id ? [rule.organization_id] : []
     );
     
     return result.rows.map(r => r.id);
@@ -249,13 +302,19 @@ export const alertService = {
    * Check for stuck shipments
    */
   async checkStuckShipments(threshold, conditions) {
+    // Aggregate MAX(event_time) per shipment before LEFT JOIN to prevent duplicate
+    // COUNT rows when a shipment has multiple tracking events (TASK-R13-005).
     const result = await pool.query(
-      `SELECT COUNT(*) 
+      `SELECT COUNT(*)
        FROM shipments s
-       LEFT JOIN shipment_events se ON s.id = se.shipment_id
+       LEFT JOIN (
+         SELECT shipment_id, MAX(event_time) AS last_event_time
+         FROM shipment_events
+         GROUP BY shipment_id
+       ) se ON s.id = se.shipment_id
        WHERE s.status NOT IN ('delivered', 'returned', 'cancelled')
-       AND s.created_at < NOW() - INTERVAL '24 hours'
-       AND (se.id IS NULL OR se.event_time < NOW() - INTERVAL '48 hours')`
+         AND s.created_at < NOW() - INTERVAL '24 hours'
+         AND (se.shipment_id IS NULL OR se.last_event_time < NOW() - INTERVAL '48 hours')`
     );
 
     const count = parseInt(result.rows[0].count);
@@ -288,15 +347,15 @@ export const alertService = {
   /**
    * Acknowledge an alert
    */
-  async acknowledgeAlert(alertId, userId) {
+  async acknowledgeAlert(alertId, userId, organizationId = undefined) {
     const result = await pool.query(
       `UPDATE alerts 
        SET status = 'acknowledged', 
            acknowledged_by = $2, 
            acknowledged_at = NOW()
-       WHERE id = $1
+       WHERE id = $1${organizationId ? ' AND organization_id = $3' : ''}
        RETURNING *`,
-      [alertId, userId]
+      organizationId ? [alertId, userId, organizationId] : [alertId, userId]
     );
 
     if (result.rows.length === 0) {
@@ -309,16 +368,16 @@ export const alertService = {
   /**
    * Resolve an alert
    */
-  async resolveAlert(alertId, userId, resolution) {
+  async resolveAlert(alertId, userId, resolution, organizationId = undefined) {
     const result = await pool.query(
       `UPDATE alerts 
        SET status = 'resolved', 
            resolved_by = $2, 
            resolved_at = NOW(),
            resolution = $3
-       WHERE id = $1
+       WHERE id = $1${organizationId ? ' AND organization_id = $4' : ''}
        RETURNING *`,
-      [alertId, userId, resolution]
+      organizationId ? [alertId, userId, resolution, organizationId] : [alertId, userId, resolution]
     );
 
     if (result.rows.length === 0) {
@@ -336,6 +395,11 @@ export const alertService = {
     const conditions = [];
     const params = [];
     let paramCount = 1;
+
+    if (filters.organizationId) {
+      conditions.push(`organization_id = $${paramCount++}`);
+      params.push(filters.organizationId);
+    }
 
     if (filters.status) {
       conditions.push(`status = $${paramCount++}`);

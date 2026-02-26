@@ -1,5 +1,6 @@
 // Allocation Service - Intelligent inventory allocation across warehouses
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
+import { withTransaction } from '../utils/dbTransaction.js';
 import { BusinessLogicError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
 
@@ -9,52 +10,57 @@ class AllocationService {
    * Uses allocation rules to determine optimal warehouse selection
    */
   async allocateOrderItems(orderId, items, shippingAddress) {
-    const allocations = [];
-    
-    // Get active allocation rules sorted by priority
-    const rulesResult = await pool.query(
-      'SELECT * FROM allocation_rules WHERE is_active = true ORDER BY priority ASC'
-    );
-    const rules = rulesResult.rows;
+    return withTransaction(async (tx) => {
+      const allocations = [];
 
-    for (const item of items) {
-      const allocation = await this.allocateItem(item, shippingAddress, rules);
-      allocations.push(allocation);
-      
-      // Record allocation history
-      await pool.query(
-        `INSERT INTO allocation_history 
-        (order_id, order_item_id, warehouse_id, allocation_strategy, allocation_score, allocated_quantity, reason)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          orderId,
-          item.id,
-          allocation.warehouseId,
-          allocation.strategy,
-          allocation.score,
-          item.quantity,
-          allocation.reason
-        ]
+      // Get active allocation rules sorted by priority
+      const rulesResult = await tx.query(
+        'SELECT * FROM allocation_rules WHERE is_active = true ORDER BY priority ASC'
       );
-    }
+      const rules = rulesResult.rows;
 
-    logEvent('InventoryAllocated', { orderId, allocationsCount: allocations.length });
-    return allocations;
+      for (const item of items) {
+        const allocation = await this.allocateItem(item, shippingAddress, rules, tx);
+        allocations.push(allocation);
+
+        // Record allocation history inside the same transaction
+        await tx.query(
+          `INSERT INTO allocation_history
+          (order_id, order_item_id, warehouse_id, allocation_strategy, allocation_score, allocated_quantity, reason)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            orderId,
+            item.id,
+            allocation.warehouseId,
+            allocation.strategy,
+            allocation.score,
+            item.quantity,
+            allocation.reason
+          ]
+        );
+      }
+
+      logEvent('InventoryAllocated', { orderId, allocationsCount: allocations.length });
+      return allocations;
+    });
   }
 
   /**
    * Allocate a single item to the best warehouse
    */
-  async allocateItem(item, shippingAddress, rules) {
-    // Get warehouses with available stock for this SKU
-    const warehousesResult = await pool.query(
+  async allocateItem(item, shippingAddress, rules, tx = null) {
+    const db = tx || pool;
+    // FOR UPDATE locks matching inventory rows for the duration of the transaction,
+    // preventing two concurrent allocations from selecting the same warehouse stock.
+    const warehousesResult = await db.query(
       `SELECT w.*, i.available_quantity, i.reserved_quantity,
               w.address->>'city' as city,
               w.address->>'state' as state
        FROM warehouses w
        JOIN inventory i ON i.warehouse_id = w.id
        JOIN products p ON p.id = i.product_id
-       WHERE p.sku = $1 AND i.available_quantity >= $2 AND w.is_active = true`,
+       WHERE p.sku = $1 AND i.available_quantity >= $2 AND w.is_active = true
+       FOR UPDATE OF i SKIP LOCKED`,
       [item.sku, item.quantity]
     );
 
@@ -73,6 +79,26 @@ class AllocationService {
     const bestWarehouse = scoredWarehouses.reduce((best, current) => 
       current.score > best.score ? current : best
     );
+
+    // Reserve inventory in the chosen warehouse (decrement available, increment reserved)
+    const reserveResult = await db.query(
+      `UPDATE inventory
+       SET
+         available_quantity = available_quantity - $1,
+         reserved_quantity  = reserved_quantity  + $1,
+         updated_at         = NOW()
+       WHERE warehouse_id = $2
+         AND product_id = (SELECT id FROM products WHERE sku = $3 LIMIT 1)
+         AND available_quantity >= $1
+       RETURNING id`,
+      [item.quantity, bestWarehouse.id, item.sku]
+    );
+
+    if (reserveResult.rows.length === 0) {
+      throw new BusinessLogicError(
+        `Failed to reserve inventory for SKU ${item.sku} at warehouse ${bestWarehouse.name} — stock may have changed`
+      );
+    }
 
     return {
       warehouseId: bestWarehouse.id,

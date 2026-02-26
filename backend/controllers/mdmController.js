@@ -1,6 +1,6 @@
 // Master Data Management (MDM) Controller
 // Handles warehouses, carriers, products, SLA policies, and rate cards.
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import WarehouseRepository from '../repositories/WarehouseRepository.js';
 import CarrierRepository from '../repositories/CarrierRepository.js';
 import { asyncHandler } from '../errors/errorHandler.js';

@@ -1,0 +1,224 @@
+BELOW ARE MNY DOUBTS ASSUME I MAY NOT KNOW WHAT I AM TALKING ABOUT AND DO NOT KNOW
+THE PROPER WAY
+
+swallowing of api --server.js
+why logic of query in routes it should inconsistency is it supposed to be like that --carrier.js
+why use carrier id for carrier name --carrier.js
+why do some route files have validate layer and some do not -> inconsistency
+why no orgcontext for sla and some dont have validation --mdm.js
+so in short check routes folder for inconsistencies like this
+if its supposed to be like this then add comments if there inconsistency and why so i can understand better
+check each file
+const optionalAuth = (req, res, next) => {
+  if (req.headers.authorization) return authenticate(req, res, next);
+  req.user = null;
+  next();
+};
+explanation/importance/why/when/how of this
+
+in index.js
+class ValidationError extends Error {
+  constructor(errors) {
+    super('Validation failed');
+    this.name = 'ValidationError';
+    this.errors = errors;
+    this.statusCode = 400;
+  }
+}
+in this what is error class and why use it and how it helps using custom error
+// Fallback to old custom validation for backward compatibility
+    const errors = validateCustom(schema, req.body);
+    
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        errors
+      });
+    }
+is this needed why keep old code compatibility
+
+function validateCustom(schema, data) {
+why old custom validation kept we dont need backward compatibity this will
+just make sire question us unecessary
+
+function isValidEmail(email) {
+why keep this if we have joi i dont need thinsg which will make sir question us
+
+in crypto utils if key is not configured is not a major problem why return null
+its a preoblem if data is unencrypted and why base64 is not weak?
+
+tag_bytes is unused why then how are you going to detect tampering
+// If the stored value doesn't look encrypted (no colons), treat as plaintext
+  const parts = encrypted.split(':');
+  if (parts.length !== 3) {
+    return encrypted; // legacy plaintext value — use as-is
+  }
+whats this?
+what does .final() do in encryot or decrypt
+try {
+    const [ivB64, tagB64, cipherB64] = parts;
+    const iv         = Buffer.from(ivB64,    'base64');
+    const authTag    = Buffer.from(tagB64,   'base64');
+    const ciphertext = Buffer.from(cipherB64,'base64');
+
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return plaintext.toString('utf8');
+  } catch (err) {
+    logger.error('decryptField: decryption failed — returning raw value', { error: err.message });
+    // Return raw value rather than crashing — caller should handle invalid keys gracefully
+    return encrypted;
+  }
+explain please it same reverse for encyption so dont need to explain that
+
+in transaction why use async
+why check if transaction is active or not
+the await begin or commit waits for what? is it waiting that any query has begin
+or commit?
+why release connection leak?
+why not use pool.query inside transaction?
+what does await callback reference to?
+what is difference between all code before getclient including it and after it
+is it not same commit rollback thing
+what is unit of work patterns
+error.code === '40P01'
+error.code === '40001'
+whuch error are these are there more which i shoul know
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+whats these why __
+
+one thing i had always doubt with why set || default fallback in env if anything 
+breaks and it fallbacks it becomes a nightmare to find what fallback i had this
+problem and it was hell
+
+what is 🌊 Morgan Stream Integration are we using it and if not should we use it
+
+also one big question why make or use classes in repo error transaction Shipping
+helper.js anywhere why
+in shippinghelper why use sha for key we can use uuid?
+also why methods static? to maintain one object copy?
+why does cache failure not throw error?
+static async acquireLock(orderId, workerId = 'default') { what does defaul mean
+here worker id is default is not uuid or something?
+
+static async releaseStaleLocks(olderThanMinutes = 30) {
+why release stale locks if somehow the worker is working on it for 30
+mins and then the lock is released and there is race condition then?
+
+and there is carrier capacity manager why we need that if we send 500 carrier 
+request and they are under load or busy we already check for busy status right
+then why is it needed why we limit from our side and same for release capacity
+log capacity
+
+and the phase1 estimate do we verify the webhook that it come from our legit
+ecom and then send it right?
+
+and also you are calculating based on zone but we are never storing zone there is
+some logic gap here we have to discuss this
+
+static createTimeout(ms, carrierId) {
+    return new Promise((resolve) =>
+      setTimeout(() => resolve({
+        timeout: true,
+        carrierId,
+        responseTime: ms
+      }), ms)
+    );
+explain please
+
+same for race wit timeout why how etc
+
+const cheapest = allQuotes.reduce((min, q) => 
+      q.quotedPrice < min.quotedPrice ? q : min
+    );
+
+.reducr explain
+
+    return 'best_balance';
+what does this mean best balance as in all factors are simialr?
+
+and again i though routes authentication aythorization validation controller repository
+and service all have seprate tasks but i see some file who have business logic
+sometimes query is there no unified format or is this intentional
+i have seen many files like this so
+
+differenece between files in error folder and repsonse helper in util folder
+  constructor(message, statusCode = 500, isOperational = true) {
+what is operational true means unless specified we roll with error?
+
+the postgres error codes in error handler explain all and othere which i shouls know
+export function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+??
+
+why make error helper file i dont see much difference between the 3 files in
+error folder and response helper and index.js in util i cant understand the flow how each is
+executed when something happens
+
+also we have crypto encrypt derypt file its used where and for what
+
+export function optionalAuth(req, res, next) {
+why need of this
+also we already have error and response helper and handlers so why send
+response manually this is also seen many places in many files we have things not
+this specifically but its not applied everywhere idempotency transaction Error
+handler response helper middlewares this patters is everythwere many and much
+inconsistencies
+
+why is idempotency things called cache responses cached at etc
+
+why req.headers['idempotency-key'] || 
+                           req.headers['x-idempotency-key'];
+here both frontend and backend is done by me so i dont think there should be
+inconsistencies in naming but if its done by other services then keep it which
+i would not touch
+
+why not add request logger functions in util logger file they are same right
+means similar in functionality 
+
+abd again i see code littered everythwere if we have global functionality
+why not use it instead of making your own there making the coed less clean
+
+  const column = tableAlias ? `${tableAlias}.organization_id` : 'organization_id';
+  return {
+    clause: `${column} = $`,
+    params: [orgId],
+    paramValue: orgId
+  };
+explain this code
+
+we have clear boundry right service = business logic repository = query helpers
+reponse loggers erros middlewares = middleware things why is some file containing
+things belonging to another folder this breaks clean code scheme and the global
+things and logic sepration become useless
+
+const PERMISSIONS = {
+  [ROLES.SUPERADMIN]: [
+    '*:*',             // Full access to everything
+    'companies:*',     // Company management
+    'admins:*',        // Admin management across companies
+    'system:*'         // System-level operations
+  ],
+  
+  [ROLES.ADMIN]: [
+    '*:*' // Full access to everything
+  ],
+
+in this the admin has full access to everythig for his organization onyl right
+
+same for all files in controllers they have their own status and error
+and all instead of using whats exists query in it logic in it why? i have not
+reviwed any controller file but as what we ahve discussed until now you
+understand what i am asking
+
+i am talking about query optimization a review of service folder files that it has
+no stale code or file or things which are no needed and the functionality should
+be robust secure and as per industry standard and match irl scenrios

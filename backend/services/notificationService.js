@@ -1,5 +1,5 @@
 // Notification Service - Handles in-app, email, and SMS notifications
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 
 export const notificationService = {

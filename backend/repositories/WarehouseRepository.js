@@ -90,29 +90,28 @@ class WarehouseRepository extends BaseRepository {
   }
 
   // Find warehouse by code
-  async findByCode(code, client = null) {
-    const query = `SELECT * FROM warehouses WHERE code = $1`;
-    const result = await this.query(query, [code], client);
+  async findByCode(code, organizationId = undefined, client = null) {
+    let query = `SELECT * FROM warehouses WHERE code = $1`;
+    const params = [code];
+    if (organizationId !== undefined) {
+      query += ` AND organization_id = $2`;
+      params.push(organizationId);
+    }
+    const result = await this.query(query, params, client);
     return result.rows[0] || null;
   }
 
-  // Create warehouse
-  // Generate unique warehouse code
+  // Generate unique warehouse code using an atomic DB sequence
   async generateWarehouseCode(client = null) {
     const prefix = 'WH';
     const year = new Date().getFullYear().toString().slice(-2);
-    
-    // Get the count of warehouses created this year
-    const countQuery = `
-      SELECT COUNT(*) as count 
-      FROM warehouses 
-      WHERE code LIKE $1
-    `;
-    const result = await this.query(countQuery, [`${prefix}-${year}%`], client);
-    const count = parseInt(result.rows[0].count) + 1;
-    
-    // Generate code like WH-26-001, WH-26-002, etc.
-    const sequence = count.toString().padStart(3, '0');
+    // NEXTVAL is atomic — two concurrent calls always get different values.
+    const result = await this.query(
+      `SELECT nextval('wh_code_seq') AS seq`,
+      [],
+      client
+    );
+    const sequence = result.rows[0].seq.toString().padStart(3, '0');
     return `${prefix}-${year}-${sequence}`;
   }
 
@@ -226,6 +225,14 @@ class WarehouseRepository extends BaseRepository {
 
   // Soft delete warehouse (deactivate)
   async deactivateWarehouse(id, client = null) {
+    // Pre-check: refuse to deactivate a warehouse that still holds live inventory
+    const hasLiveStock = await this.hasInventory(id, client);
+    if (hasLiveStock) {
+      const err = new Error('Cannot deactivate warehouse with live inventory. Transfer or deplete stock first.');
+      err.statusCode = 409;
+      throw err;
+    }
+
     const query = `
       UPDATE warehouses 
       SET is_active = false, updated_at = NOW()
@@ -326,14 +333,19 @@ class WarehouseRepository extends BaseRepository {
   }
 
   // Get all active warehouses (for dropdowns)
-  async getActiveWarehouses(client = null) {
-    const query = `
+  async getActiveWarehouses(organizationId = undefined, client = null) {
+    let query = `
       SELECT id, code, name, warehouse_type, address, coordinates
       FROM warehouses 
       WHERE is_active = true
-      ORDER BY name ASC
     `;
-    const result = await this.query(query, [], client);
+    const params = [];
+    if (organizationId !== undefined) {
+      query += ` AND organization_id = $1`;
+      params.push(organizationId);
+    }
+    query += ` ORDER BY name ASC`;
+    const result = await this.query(query, params, client);
     return result.rows;
   }
 }

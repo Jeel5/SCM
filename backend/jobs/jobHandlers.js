@@ -7,7 +7,7 @@ import assignmentRetryService from '../services/assignmentRetryService.js';
 import carrierAssignmentService from '../services/carrierAssignmentService.js';
 import orderService from '../services/orderService.js';
 import logger from '../utils/logger.js';
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 
 /**
  * SLA Monitoring Job

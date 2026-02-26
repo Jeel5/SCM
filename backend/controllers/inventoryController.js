@@ -5,7 +5,7 @@ import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SKU GENERATION
@@ -360,7 +360,8 @@ export const adjustStock = asyncHandler(async (req, res) => {
   const item = await InventoryRepository.findByIdWithDetails(id, organizationId);
   if (!item) throw new NotFoundError('Inventory item');
 
-  await withTransaction(async (tx) => {
+  // TASK-R9-025: return data from transaction callback; send res.json AFTER commit
+  const txResult = await withTransaction(async (tx) => {
     let updated;
     let movementType;
 
@@ -430,12 +431,12 @@ export const adjustStock = asyncHandler(async (req, res) => {
     // Keep warehouse utilization in sync (runs inside transaction)
     await refreshWarehouseUtilization(item.warehouse_id, tx);
 
-    res.json({
-      success: true,
-      message: `Stock ${adjustment_type} successful`,
-      data: formatInventoryItem(updated)
-    });
+    // Return payload — do NOT call res.json here (transaction not yet committed)
+    return { message: `Stock ${adjustment_type} successful`, data: formatInventoryItem(updated) };
   });
+
+  // Transaction committed — now safe to send the HTTP response
+  res.json({ success: true, ...txResult });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -477,9 +478,16 @@ export const transferInventory = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
   const userId = req.user?.userId;
 
-  await withTransaction(async (tx) => {
-    // Check source stock
-    const source = await InventoryRepository.findBySKUAndWarehouse(sku, from_warehouse_id, tx);
+  // TASK-R9-025: return data from transaction callback; send res.json AFTER commit
+  const txResult = await withTransaction(async (tx) => {
+    // Lock source inventory row to prevent concurrent transfers causing oversell
+    const lockResult = await tx.query(
+      `SELECT * FROM inventory
+       WHERE sku = $1 AND warehouse_id = $2
+       FOR UPDATE`,
+      [sku, from_warehouse_id]
+    );
+    const source = lockResult.rows[0];
     if (!source) throw new NotFoundError(`SKU ${sku} in source warehouse`);
 
     if (source.available_quantity < quantity) {
@@ -545,9 +553,10 @@ export const transferInventory = asyncHandler(async (req, res) => {
     await refreshWarehouseUtilization(from_warehouse_id, tx);
     await refreshWarehouseUtilization(to_warehouse_id, tx);
 
-    res.json({
-      success: true,
-      message: `${quantity} units of ${sku} transferred successfully`
-    });
+    // Return payload — do NOT call res.json here (transaction not yet committed)
+    return { message: `${quantity} units of ${sku} transferred successfully` };
   });
+
+  // Transaction committed — now safe to send the HTTP response
+  res.json({ success: true, ...txResult });
 });

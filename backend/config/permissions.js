@@ -20,7 +20,10 @@ export const ALL_PERMISSIONS = [
   'inventory.update',
   'warehouses.view',
   'warehouses.update',
+  'warehouses.manage',   // create + delete warehouses
   'carriers.view',
+  'carriers.manage',     // create + update + delete carriers
+  'inventory.manage',    // create warehouse inventory entries
   'exceptions.view',
   'exceptions.update',
   'returns.view',
@@ -50,9 +53,9 @@ export const ROLE_PERMISSIONS = {
     'dashboard.view',
     'orders.view', 'orders.create', 'orders.update',
     'shipments.view', 'shipments.update',
-    'inventory.view', 'inventory.update',
-    'warehouses.view',
-    'carriers.view',
+    'inventory.view', 'inventory.update', 'inventory.manage',
+    'warehouses.view', 'warehouses.manage',
+    'carriers.view', 'carriers.manage',
     'exceptions.view', 'exceptions.update',
     'returns.view', 'returns.update',
     'sla.view',

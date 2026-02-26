@@ -1,5 +1,5 @@
 // Database transaction utility - ensures atomic operations with automatic rollback on failure
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from './logger.js';
 
 /**

@@ -4,8 +4,27 @@ import WarehouseRepository from '../repositories/WarehouseRepository.js';
 import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index.js';
 import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
+
+// ─── Order State Machine ────────────────────────────────────────────────────
+// Defines which status transitions are legal.  An order can only move forward
+// through the pipeline (or be cancelled/held from most states).
+const ORDER_VALID_TRANSITIONS = {
+  created:                    ['confirmed', 'cancelled', 'on_hold'],
+  confirmed:                  ['allocated', 'cancelled', 'on_hold'],
+  allocated:                  ['processing', 'cancelled', 'on_hold'],
+  processing:                 ['ready_to_ship', 'cancelled', 'on_hold'],
+  ready_to_ship:              ['shipped', 'cancelled', 'on_hold'],
+  pending_carrier_assignment: ['confirmed', 'allocated', 'cancelled', 'on_hold'],
+  shipped:                    ['in_transit', 'returned', 'cancelled'],
+  in_transit:                 ['out_for_delivery', 'returned', 'cancelled'],
+  out_for_delivery:           ['delivered', 'returned'],
+  delivered:                  [], // terminal — no forward transitions
+  returned:                   [], // terminal
+  cancelled:                  [], // terminal
+  on_hold:                    ['created', 'confirmed', 'allocated', 'cancelled'],
+};
 
 // Order Service - contains business logic and orchestrates order operations
 class OrderService {
@@ -52,28 +71,34 @@ class OrderService {
       const result = await withTransaction(async (tx) => {
         // Prepare order data
         // Build order record with all fields from request
-        // Generate human-readable order number if not supplied
-        const now = new Date();
-        const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-        const randPart = Math.floor(10000 + Math.random() * 90000);
+        // Generate human-readable order number if not supplied — sequence-based to avoid races
+        let generatedOrderNumber = orderData.order_number;
+        if (!generatedOrderNumber) {
+          const now = new Date();
+          const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
+          const seqResult = await tx.query("SELECT nextval('order_number_seq') AS seq");
+          const seqPart = seqResult.rows[0].seq;
+          generatedOrderNumber = `ORD-${datePart}-${seqPart}`;
+        }
 
         const orderRecord = {
-          order_number: orderData.order_number || `ORD-${datePart}-${randPart}`,
+          order_number: generatedOrderNumber,
           external_order_id: orderData.external_order_id || null,
           platform: orderData.platform || 'api',
           customer_name: orderData.customer_name,
           customer_email: orderData.customer_email,
           customer_phone: orderData.customer_phone || null,
-          status: orderData.status || 'created',
+          status: 'created', // always starts as 'created' — not settable by client
           priority: orderData.priority || 'standard',
           order_type: orderData.order_type || 'regular',
           organization_id: orderData.organization_id || null,
           is_cod: orderData.is_cod || false,
-          subtotal: orderData.subtotal || null,
-          tax_amount: orderData.tax_amount || 0,
+          // Totals are populated after server-side calculation below
+          subtotal: null,
+          tax_amount: 0,
           shipping_amount: orderData.shipping_amount || 0,
           discount_amount: orderData.discount_amount || 0,
-          total_amount: orderData.total_amount,
+          total_amount: 0,
           currency: orderData.currency || 'INR',
           shipping_address: JSON.stringify(orderData.shipping_address),
           billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
@@ -106,6 +131,23 @@ class OrderService {
           declared_value: item.declared_value || null,
           warehouse_id: item.warehouse_id || null
         }));
+
+        // SERVER-SIDE recalculation of financial totals — never trust client-supplied values
+        const serverSubtotal = items.reduce((sum, item) => {
+          const lineTotal = (item.unit_price * item.quantity) - (item.discount || 0);
+          return sum + lineTotal;
+        }, 0);
+        const serverTaxAmount = items.reduce((sum, item) => sum + (item.tax || 0), 0);
+        const shippingAmount = orderData.shipping_amount || 0;
+        const discountAmount = orderData.discount_amount || 0;
+        const serverTotal = serverSubtotal + serverTaxAmount + shippingAmount - discountAmount;
+
+        // Override any client-supplied totals with server-calculated values
+        orderRecord.subtotal = serverSubtotal;
+        orderRecord.tax_amount = serverTaxAmount;
+        orderRecord.shipping_amount = shippingAmount;
+        orderRecord.discount_amount = discountAmount;
+        orderRecord.total_amount = serverTotal;
 
         // Create order with items in transaction
         const order = await OrderRepository.createOrderWithItems(orderRecord, items, tx);
@@ -258,22 +300,54 @@ class OrderService {
     }
   }
 
-  // Update order status with logging
-  async updateOrderStatus(id, status) {
-    const order = await OrderRepository.findById(id);
-    assertExists(order, 'Order');
-    
-    const oldStatus = order.status;
-    const updatedOrder = await OrderRepository.updateStatus(id, status);
-    
-    logEvent('OrderStatusUpdated', {
-      orderId: updatedOrder.id,
-      orderNumber: updatedOrder.order_number,
-      oldStatus: oldStatus,
-      newStatus: status,
+  // Update order status with state-machine validation + inventory lifecycle
+  async updateOrderStatus(id, status, organizationId = undefined) {
+    return withTransaction(async (tx) => {
+      // Lock the order row inside the transaction to prevent concurrent status races
+      const order = await OrderRepository.findById(id, undefined, tx);
+      assertExists(order, 'Order');
+
+      const oldStatus = order.status;
+
+      // Enforce valid transitions
+      const allowed = ORDER_VALID_TRANSITIONS[oldStatus];
+      if (allowed === undefined) {
+        throw new BusinessLogicError(`Unknown current order status: '${oldStatus}'`);
+      }
+      if (!allowed.includes(status)) {
+        throw new BusinessLogicError(
+          `Invalid status transition for order ${id}: '${oldStatus}' → '${status}'. ` +
+          `Allowed: ${allowed.length ? allowed.join(', ') : '(none — terminal state)'}`
+        );
+      }
+
+      // ── Inventory Lifecycle ─────────────────────────────────────────────────────
+      // cancelled → release all reserved stock back to available
+      // shipped   → commit reservations: deduct from total quantity (stock leaves warehouse)
+      if (status === 'cancelled' || status === 'shipped') {
+        const items = await OrderRepository.findOrderItems(id, tx);
+        for (const item of items) {
+          if (!item.warehouse_id || !item.sku) continue;
+          if (status === 'cancelled') {
+            await InventoryRepository.releaseStock(item.sku, item.warehouse_id, item.quantity, tx);
+          } else {
+            // shipped: convert reservation to an actual deduction — stock permanently leaves
+            await InventoryRepository.deductStock(item.sku, item.warehouse_id, item.quantity, tx);
+          }
+        }
+      }
+
+      const updatedOrder = await OrderRepository.updateStatus(id, status, organizationId, tx);
+
+      logEvent('OrderStatusUpdated', {
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.order_number,
+        oldStatus,
+        newStatus: status,
+      });
+
+      return updatedOrder;
     });
-    
-    return updatedOrder;
   }
 
   // Update order details (addresses, notes, delivery dates)
@@ -334,7 +408,7 @@ class OrderService {
    * 
    * @returns {Object} Created transfer order with shipment details
    */
-  async createTransferOrder(transferData) {
+  async createTransferOrder(transferData, organizationId = undefined) {
     const startTime = Date.now();
 
     try {
@@ -384,8 +458,11 @@ class OrderService {
           0
         );
 
+        const trnSeqResult = await tx.query("SELECT nextval('transfer_order_number_seq') AS seq");
+        const trnSeq = trnSeqResult.rows[0].seq;
+
         const orderData = {
-          order_number: `TRF-${Date.now()}`,
+          order_number: `TRF-${trnSeq}`,
           order_type: 'transfer',
           customer_name: `Transfer: ${fromWarehouse.warehouse_name} → ${toWarehouse.warehouse_name}`,
           customer_email: toWarehouse.contact_email || 'transfers@system.local',
@@ -423,6 +500,7 @@ class OrderService {
             status: orderData.status,
             priority: orderData.priority,
             order_type: orderData.order_type,
+            organization_id: organizationId || null,
             is_cod: false,
             subtotal: totalAmount,
             tax_amount: 0,
@@ -480,7 +558,7 @@ class OrderService {
                    $4, $5, $6, $7, $8, $9, NOW(), NOW())
            RETURNING id, shipment_number, status, estimated_delivery_date`,
           [
-            `SHP-TRF-${Date.now()}`,
+            `SHP-TRF-${(await tx.query("SELECT nextval('transfer_shipment_number_seq') AS seq")).rows[0].seq}`,
             order.id,
             transferData.from_warehouse_id,
             'pending',
@@ -541,12 +619,10 @@ class OrderService {
   /**
    * Cancel order and release inventory
    */
-  async cancelOrder(id) {
-    const client = await OrderRepository.beginTransaction();
-    
-    try {
+  async cancelOrder(id, organizationId = undefined) {
+    return withTransaction(async (tx) => {
       // Get order items
-      const items = await OrderRepository.findOrderItems(id, client);
+      const items = await OrderRepository.findOrderItems(id, tx);
 
       // Release inventory for each item
       for (const item of items) {
@@ -555,16 +631,14 @@ class OrderService {
             item.sku,
             item.warehouse_id,
             item.quantity,
-            client
+            tx
           );
         }
       }
 
-      // Update order status
-      const order = await OrderRepository.updateStatus(id, 'cancelled', client);
+      // Update order status — pass undefined as organizationId then tx as client
+      const order = await OrderRepository.updateStatus(id, 'cancelled', organizationId, tx);
 
-      await OrderRepository.commitTransaction(client);
-      
       logEvent('OrderCancelled', {
         orderId: order.id,
         orderNumber: order.order_number,
@@ -572,11 +646,7 @@ class OrderService {
       });
       
       return order;
-      
-    } catch (error) {
-      await OrderRepository.rollbackTransaction(client);
-      throw error;
-    }
+    });
   }
 }
 

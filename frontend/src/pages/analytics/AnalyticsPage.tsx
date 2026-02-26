@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Package, Truck, DollarSign, Clock, Download, BarChart3 } from 'lucide-react';
+import { useAuthStore } from '@/stores';
 import {
   AreaChart,
   Area,
@@ -52,7 +53,44 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps<any, any>) => {
 export function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [timeRange, setTimeRange] = useState('30d');
+  const [isExporting, setIsExporting] = useState(false);
   const { orderTrendData, carrierData, warehouseData, deliveryPerformance, kpiData, isLoading } = useAnalytics(timeRange);
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  // Map frontend time-range codes to backend range param
+  const rangeMap: Record<string, string> = { '7d': 'week', '30d': 'month', '90d': 'month', '1y': 'year' };
+  // Map the active tab to an export type understood by the backend
+  const typeMap: Record<string, string> = { orders: 'orders', shipments: 'shipments', carriers: 'shipments', warehouses: 'orders', overview: 'orders' };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const exportType = typeMap[activeTab] ?? 'orders';
+      const exportRange = rangeMap[timeRange] ?? 'month';
+      const url = `${apiBase}/analytics/export?type=${exportType}&range=${exportRange}`;
+
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!resp.ok) throw new Error(`Export failed: ${resp.status}`);
+
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `${exportType}-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('Export failed', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -86,9 +124,9 @@ export function AnalyticsPage() {
             ]}
             className="w-36 sm:w-40"
           />
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} className="whitespace-nowrap">
-            <span className="hidden sm:inline">Export Report</span>
-            <span className="sm:hidden">Export</span>
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} className="whitespace-nowrap" onClick={handleExport} disabled={isExporting}>
+            <span className="hidden sm:inline">{isExporting ? 'Exporting…' : 'Export Report'}</span>
+            <span className="sm:hidden">{isExporting ? '…' : 'Export'}</span>
           </Button>
         </div>
       </motion.div>

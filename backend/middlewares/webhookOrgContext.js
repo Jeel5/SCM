@@ -16,7 +16,7 @@
  * and prevents unknown callers from flooding the jobs queue.
  */
 
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 
 export async function resolveWebhookOrg(req, res, next) {

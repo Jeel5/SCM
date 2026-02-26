@@ -1,7 +1,7 @@
 // Smart Carrier Assignment Retry Job
 // Handles automatic retry logic for orders that need carrier reassignment
 
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 import carrierAssignmentService from '../services/carrierAssignmentService.js';
 

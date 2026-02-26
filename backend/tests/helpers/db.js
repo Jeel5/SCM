@@ -1,4 +1,4 @@
-import pool from '../../configs/db.js';
+import pool from '../../config/db.js';
 
 /**
  * Helper to run repository tests in an isolated transaction.

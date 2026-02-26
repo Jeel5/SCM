@@ -1,1414 +1,568 @@
-# Architecture Task Summary
-
-**Last Updated:** 2026-02-23  
-**Status:** Development Phase (Webhooks & Finance Future)  
-**Analysis:** ChatGPT suggestions reviewed and filtered by actual system state
-
----
-
-## 🔴 CRITICAL — Act Now if Building
-
-### 1. Carrier Portal Security — `/carriers/assignments/pending`
-**Status:** Development Phase  
-**Issue:** Endpoint has NO authentication (anyone can call)  
-**Impact:** Partners could spy on other carriers' assignments  
-**Fix:** Add authentication middleware before shipping
-- Option A: API key header (`x-carrier-key`)
-- Option B: OAuth token (if building carrier dashboard)
-- **Recommendation:** Start with API key (simpler for now)
-
-**Action:** Add carrier auth middleware to verify identity before exposing any `/carriers/*` endpoints  
-**Complexity:** Low | **Priority:** HIGH (before carrier portal goes live)
-
----
-
-### 2. Webhook Security Architecture (FUTURE — Plan Now)
-**Status:** Not yet implemented  
-**When relevant:** When you start accepting carrier webhooks  
-**Critical gaps ChatGPT identified:**
-- ❌ Comment says "No authentication required" — DANGEROUS
-- ❌ Would allow anyone to inject fake quotes
-- ❌ No idempotency (duplicate webhooks = duplicate quotes)
-- ❌ No multi-tenant isolation check
-
-**Correct pattern to implement later:**
-```
-Webhook received → Verify HMAC signature → Validate schema → 
-Check idempotency (event_id) → Verify organization → 
-Queue job → Return 200 OK immediately → Worker processes DB
-```
-
-**Must-have safeguards:**
-1. ✅ HMAC signature verification (X-Signature header)
-2. ✅ Schema validation (zod/joi)
-3. ✅ Idempotency guard (`UNIQUE(carrier_id, webhook_id)` + check)
-4. ✅ Organization ownership check (Org A webhook can't modify Org B order)
-5. ✅ Queue-based processing (not sync DB writes)
-
-**Action:** Document this pattern in DESIGN.md before implementing webhooks  
-**Complexity:** Medium | **Priority:** HIGH (security-critical, plan now)
-
----
-
-## 🟡 IMPORTANT — Clean Up Architecture
-
-### 3. Route Structure Reorganization
-**Current state:** Routes scattered, some unauthenticated  
-**Better structure needed:**
-```
-routes/
-├── admin/           ← Superadmin only (platform-level)
-│   └── companies.routes.js
-├── internal/        ← Tenant user authenticated
-│   ├── orders.routes.js
-│   ├── inventory.routes.js
-│   └── ...
-├── carriers/        ← Partner API (API key or OAuth)
-│   └── portal.routes.js
-└── webhooks/        ← Webhook signatures (HMAC)
-    └── carriers.webhook.routes.js
-```
-
-**Why:** Different security models shouldn't live together  
-**Action:** Refactor routes into clear domains  
-**Complexity:** Medium | **Priority:** MEDIUM (cleanup, not blocking)
-
----
-
-### 4. Permission System Hardening
-**Current state:** Permissions are objects/arrays (mutable at runtime)  
-**Issues identified:**
-- ❌ Could be accidentally modified
-- ❌ Array lookups O(n) — scales poorly
-
-**Fixes:**
-1. Freeze permissions at module load
-2. Convert to Sets for O(1) lookups
-
-**Code pattern:**
-```javascript
-export const ALL_PERMISSIONS = Object.freeze([...]);
-export const ROLE_PERMISSIONS = Object.freeze({...});
-
-// Convert to Sets for fast lookup
-const rolePermissionSets = Object.fromEntries(
-  Object.entries(ROLE_PERMISSIONS).map(([role, perms]) => [
-    role,
-    new Set(perms.includes('*') ? ALL_PERMISSIONS : perms)
-  ])
-);
-
-// Then: rolePermissionSets[userRole].has(permission) → O(1)
-```
-
-**Action:** Update your RBAC module (auth/permissions.js, auth/roles.js)  
-**Complexity:** Low | **Priority:** LOW (works now, optimization)
-
----
-
-### 5. Folder Structure Cleanup
-**Issue:** `config/` and `configs/` both exist (confusing)  
-**Current:** `/backend/configs/db.js`  
-**Better:** Consolidate naming convention  
-**Also:** Move RBAC files to `/backend/auth/` instead of nested elsewhere
-
-**Action:** Rename `configs/` → `config/`, move any scattered auth files into `auth/`  
-**Complexity:** Low | **Priority:** LOW (cosmetic)
-
----
-
-## 🟠 FUTURE — Plan Architecture for Finance & Ledger
-
-### 6. Finance Module Design (FUTURE)
-**Status:** Planned feature  
-**What ChatGPT flagged:**
-- ❌ No dedicated finance permissions (they suggested reusing `settings.organization` ← WRONG)
-- ❌ No ledger concept
-- ❌ No idempotency for refunds
-- ❌ Finance queries not transactional
-
-**What you should do:**
-1. **Create dedicated permissions:**
-   ```javascript
-   finance.create_invoice
-   finance.update_invoice
-   finance.process_refund
-   finance.resolve_dispute
-   ```
-   (Never couple finance to settings permissions)
-
-2. **Design Ledger table:**
-   ```sql
-   ledger (id, org_id, account_type, amount, reference_type, reference_id, created_at)
-   -- Every transaction: invoice created (+), refund (-), adjustment (±)
-   ```
-
-3. **Make all financial writes transactional:**
-   ```javascript
-   BEGIN;
-   INSERT invoice
-   INSERT ledger entry
-   COMMIT;
-   ```
-
-4. **Add Idempotency-Key header support:**
-   - Client sends: `Idempotency-Key: unique-id`
-   - Store processed keys in `idempotency_keys` table
-   - Return cached response if key seen before
-
-5. **Financial Summary must be precomputed** (not live query)
-   - Create `financial_snapshots` table (updated by event)
-   - Read from snapshot, not live SUM/JOIN
-
-**Action:** Create `/backend/finance/DESIGN.md` documenting this before implementing  
-**Complexity:** High | **Priority:** MEDIUM (future but needs planning)
-
----
-
-### 7. Superadmin Route Namespace & Enforcement
-**Status:** Development (not yet critical)  
-**Issue:** Superadmin routes need clear namespace + explicit middleware
-
-**To implement later:**
-```javascript
-// routes/admin/companies.routes.js
-const router = Router();
-
-// Enforce superadmin on ALL routes in this router
-router.use(authenticate, requireSuperadmin);
-
-router.get('/companies', ...)
-router.post('/companies', ...)
-router.delete('/companies/:id', ...)
-// Mounted as: app.use('/api/admin', adminRoutes);
-// Result: /api/admin/companies
-```
-
-**What to add:**
-1. ✅ `requireSuperadmin` middleware (check role === 'superadmin')
-2. ✅ Namespace admin routes under `/api/admin/*`
-3. ✅ Audit logging (every admin action logged with who/what/when)
-4. ✅ Soft delete companies (not hard delete)
-5. ✅ Pagination on `GET /companies` (even if small now)
-6. ✅ Rate limiting on admin endpoints
-
-**Action:** When building admin panel, implement the above checklist  
-**Complexity:** Medium | **Priority:** MEDIUM (future feature)
-
----
-
-## ✅ GOOD DECISIONS (Keep Going)
-
-ChatGPT confirmed you're doing these right:
-- ✅ Finance isolated as separate module
-- ✅ Multi-tenant enforcement (`organization_id` checks)
-- ✅ Permission-based access control
-- ✅ Controller → Service separation exists
-- ✅ Graceful shutdown logic (SIGTERM handling)
-- ✅ Transaction support with worker queue
-
----
-
-## � CRITICAL — Security Holes Found in Inventory, MDM, Orders
-
-### 1. Missing Authorization on ALL MDM Mutations ⚠️ ACT NOW
-**Issue:** MDM endpoints authenticate but DON'T authorize  
-**Examples:** `POST /warehouses`, `DELETE /products`, `POST /carriers`  
-**Impact:** ANY logged-in user can create warehouses, delete products, modify master data  
-**Critical Fix (Add to every mutation route):**
-```javascript
-// Current: WRONG
-router.post('/warehouses', authenticate, injectOrgContext, createWarehouse);
-
-// Correct:
-router.post('/warehouses', authenticate, injectOrgContext, authorize('warehouses.manage'), createWarehouse);
-```
-**Decision:** ChatGPT is 100% correct. This is a security hole.  
-**Action:** Add permission checks (`warehouse.manage`, `product.manage`, `carrier.manage`, etc.) to ALL MDM mutations  
-**Complexity:** Low | **Priority:** 🔴 CRITICAL (do this week)
-
----
-
-### 2. Public Carrier Endpoints Expose Internal Data
-**Status:** Currently OK for demo, MUST fix before production  
-**Routes:** `GET /carriers`, `GET /carriers/:id` (unauthenticated)  
-**Issue:** Pricing, routing logic, internal codes exposed  
-**Your comment:** `// public - needed by simulation/demo site`  
-**Decision:** ✅ Keep for development. Before go-live, either:
-- Option A: Require API key auth
-- Option B: Create `/public/carriers` with sanitized DTO (hide internal_codes, routing_logic, secret_integrations)
-
-**Action:** Add TODO before production. For now, mark as demo-only in code.  
-**Complexity:** Low | **Priority:** 🟠 MEDIUM (future hardening)
-
----
-
-### 3. Inventory Adjustments + Transfers NOT Transactional
-**Data issue:** Stock can disappear if adjustment fails mid-operation  
-**Example:** `transferInventory` removes from A, adds to B — if B fails, stock vanishes  
-**Current code:** Likely does both operations separately  
-**ChatGPT identified:** Industry requires DB transactions or event + compensation  
-**Decision:** Use DB transactions first (simpler):
-```javascript
-await withTransaction(async (tx) => {
-  await InventoryRepository.addStock(..., tx);
-  await InventoryRepository.addStock(..., tx);
-  // Both succeed or both fail
-});
-```
-**Action:** Wrap `transferInventory` in transaction. Check `adjustStock` also uses transactions.  
-**Complexity:** Low | **Priority:** 🔴 CRITICAL (data integrity)
-
----
-
-### 4. Missing Inventory Reservation System
-**Issue:** No reserve → release → commit flow  
-**Risk:** Two customers buy last item → overselling  
-**You have:** `reserved_quantity` column exists  
-**You're missing:** API/logic to reserve on order creation, release on cancel, commit on ship  
-**Timeline:**
-- **Phase 1 (NOW):** Fix transaction safety first
-- **Phase 2 (SOON):** When orders connect to inventory, add reservation logic
-- **Phase 3 (LATER):** Complex allocation algorithms
-
-**Action:** Document flow in order design. NOT urgent yet.  
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (needed soon, not now)
-
----
-
-### 5. Inventory Stats Should Be Precomputed (ALREADY DONE ✅)
-**ChatGPT flagged:** Live SUM/COUNT kills performance  
-**Your actual code:** You already fixed this! Storing `current_utilization` in warehouses table, updating via background job  
-**⭐ This is smart design.** Keep doing this.
-
----
-
-## 🟠 IMPORTANT — Inventory & MDM Refactoring Tasks
-
-### Inventory Module Cleanup
-1. **Routing:** Mount at `/api/inventory` (stop repeating /inventory prefix)
-2. **Middleware:** Apply `router.use(authenticate, injectOrgContext)` once at top
-3. **Warehouse Scope:** EVERY query must filter by both `organization_id` AND `warehouse_id`
-4. **Transfer Atomicity:** Wrap in transaction (see #3 above)
-5. **Reason Codes:** Do you already have `reason` enum on adjustments? (DAMAGED, LOST, EXPIRED, etc.)
-   - Required for finance reconciliation
-
-### MDM Module Reorganization
-**Current:** Routes mixed (tenant + platform)  
-**Better:**
-```
-routes/mdm/
-├── tenant/
-│   ├── warehouses.routes.js
-│   └── products.routes.js
-└── platform/
-    ├── carriers.routes.js
-    └── sla.routes.js
-```
-**Why:** Warehouses/products are TENANT data. Carriers/SLAs are PLATFORM data. Different security models.  
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (cleanup, not blocking)
-
-### Soft Delete Master Data (Not Urgent Now)
-**Issue:** Hard delete breaks referential integrity  
-**When it matters:** If you delete a warehouse but orders reference it by ID  
-**Simple fix:** Rename `DELETE /warehouses/:id` to add validation:
-```javascript
-// Disallow if inventory exists
-const count = await countInventory(warehouseId);
-if (count > 0) throw new Error('Cannot delete warehouse with inventory');
-```
-**Full soft delete:** Use `status = inactive` instead of hard delete (future)  
-**Complexity:** Low | **Priority:** 🟡 MEDIUM (data safety)
-
----
-
-## 🟠 IMPORTANT — Orders Architecture (Event-Driven Missing)
-
-### Order State Machine (REQUIRED)
-**Current:** Order has status field  
-**Missing:** Validation that status transitions are legal  
-**Implement:**
-```
-CREATED → ALLOCATED → PICKED → SHIPPED → DELIVERED → CLOSED
-              ↑                   ↓
-              └─ CANCELLED ───────┘
-```
-**Use:** `OrderStatusService` to enforce valid transitions  
-**Complexity:** Low | **Priority:** 🟡 MEDIUM (prevents bad states)
-
-### Inventory Integration (CRITICAL GAP)
-**Current:** Orders exist, inventory exists, but NO LINK  
-**Missing:**
-1. When order created → reserve inventory (`reserved_quantity += qty`)
-2. When order cancelled → release (`reserved_quantity -= qty`)
-3. When order shipped → commit (`reserved_quantity -= qty`, actual removal)
-
-**Action:** Before orders go live, implement reservation flow  
-**Complexity:** Medium | **Priority:** 🟠 HIGH (prevents overselling)
-
-### Event-Driven (NOT Direct Calls)
-**Anti-pattern:** Controller calls inventory directly
-**Pattern:** Controller emits event, worker processes
-```javascript
-// Controller:
-emit('OrderCreated', orderData);
-res.json(order);
-
-// Worker listens:
-on('OrderCreated', async (order) => {
-  await reserveInventory(order);
-  emit('InventoryReserved', ...);
-});
-```
-**Why:** Order + inventory have different failure modes. Keep them async.  
-**Action:** Design order → worker flow before shipping  
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (architecture, not urgent)
-
-### Transfer Orders Must Be Atomic
-**Current:** `transferInventory` endpoint  
-**Issue:** If operation half-completes, stock disappears  
-**Fix:** Wrap in DB transaction (see #3 above)  
-**Action:** Verify transfer is transactional  
-**Complexity:** Low | **Priority:** 🔴 CRITICAL (fix this week)
-
----
-
-## 🟠 IMPORTANT — Organizations & Platform Control Plane
-
-### Explicit Superadmin Enforcement (SECURITY)
-**Current:** Implicit via `authorize('superadmin')`  
-**Better:** Explicit middleware
-```javascript
-// Instead of:
-router.use(authenticate, authorize('superadmin'));
-
-// Use:
-router.use(authenticate, requireSuperadmin());
-```
-**Why:** Permissions can change. Superadmin must be hardcoded enforcement.  
-**Complexity:** Low | **Priority:** 🟡 MEDIUM (harder to break)
-
-### Organization Lifecycle States (NOT Hard Delete)
-**Current:** `DELETE /companies/:id` hard deletes  
-**Better:** Use status enum
-- `active`
-- `suspended`
-- `trial`
-- `archived`
-
-**Why:** Billing, invoices, compliance require audit trail  
-**Complexity:** Low | **Priority:** 🟡 MEDIUM (not urgent, but better design)
-
-### Organization Creation Must Be Atomic
-**This matters when:** You have actual customers  
-**Currently:** Probably OK since dev phase  
-**When implementing:** Wrap in transaction:
-```javascript
-BEGIN;
-  1. Create organization
-  2. Create default admin user
-  3. Create default roles
-  4. Create billing profile
-COMMIT;
-```
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (structure before go-live)
-
-### Audit Logging on Organization Changes (ENTERPRISE)
-**Need:** Log who created/suspended/archived organizations  
-**Fields:** `actor_id`, `action`, `timestamp`, `before_state`, `after_state`, `ip_address`  
-**When:** Required for compliance customers  
-**Complexity:** Low | **Priority:** 🟠 LOW (future)
-
----
-
-## 🟠 IMPORTANT — Returns Module (State Machine + Events)
-
-### Return State Machine (REQUIRED)
-**Implement:**
-```
-REQUESTED → APPROVED → IN_TRANSIT → RECEIVED → INSPECTED → 
-  (RESTOCKED | DISPOSED | REFUNDED) → CLOSED
-```
-**Current:** Probably just CRUD  
-**Missing:** Prevent invalid state transitions  
-**Action:** Add `ReturnStatusService` like you have for other state machines  
-**Complexity:** Low | **Priority:** 🟡 MEDIUM (prevents bad states)
-
-### Inventory Integration (NOT DIRECT)
-**Anti-pattern:** Return controller updates inventory directly  
-**Pattern:** Emit `ReturnReceived` event, worker reintegrates stock  
-**Why:** Returns affect: inventory, finance, analytics. Keep async.  
-**Action:** Design return event flow before returns go live  
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (prevents cascading failures)
-
-### Finance Integration (ASYNC)
-**Rule:** Return approval ≠ refund execution  
-**Flow:** Approved → Inspected → Refund Decision → Refund Processed  
-**Why:** Warehouse receives return Monday, customer refund processes Friday (manual review)  
-**Action:** Never call refund logic directly from return controller  
-**Complexity:** Medium | **Priority:** 🟠 HIGH (money logic cannot be synchronous)
-
-### Validation Hardening
-Before `createReturn`, check:
-- Order belongs to organization ✓
-- Item exists in order ✓
-- Quantity ≤ purchased quantity ✓
-- Return window still valid ✓
-- Order eligible for return (shipped, not cancelled) ✓
-
-**Action:** Add validation layer  
-**Complexity:** Low | **Priority:** 🟡 MEDIUM (prevents bad returns)
-
----
-
-## 📋 NOT APPLICABLE / CHATGPT CONTEXT GAPS
-
-### Inventory Movement Event Architecture (FUTURE)
-**ChatGPT flagged:** Industry uses event-driven stock (SUM of movements, not direct updates)  
-**Reality:** Your current direct-update approach works fine at this scale  
-**Decision:** NOT urgent. Focus on making updates transactional first.  
-**When to revisit:** When you need:
-- Per-unit audit trails
-- Complex allocation (ML-based bin packing)
-- Carrier scans integration
-- Warehouse automation
-
-### Route Reorganization Priority
-**ChatGPT suggested:** Split into admin/internal/carriers/webhooks  
-**Reality:** Works currently as single router  
-**Decision:** Reorganize when it becomes painful (20+ route files)  
-**NOT urgent** but good to have in backlog
-
-### Carrier Lookup Caching
-**ChatGPT:** Cache to avoid SELECT per webhook  
-**Reality:** You're in dev, not at 100k webhooks/day  
-**Decision:** Skip for now. Add caching only if profiling shows bottleneck.
-
----
-
-## 🎯 SUMMARY BY TIMELINE
-
-### 🔴 **THIS WEEK** (Security + Data Integrity)
-- [ ] Add authorization checks to ALL MDM mutations (warehouse.manage, product.manage, etc.)
-- [ ] Verify `transferInventory` is wrapped in DB transaction
-- [ ] Verify `adjustStock` is wrapped in DB transaction
-
-### 🟠 **NEXT 2 WEEKS** (Before Shipping Features)
-- [ ] Add Order State Machine validation
-- [ ] Design inventory reservation flow (reserve on order, release on cancel, commit on ship)
-- [ ] Design return state machine + event flow
-- [ ] Organize MDM routes (tenant vs platform separation)
-
-### 🟡 **THIS MONTH** (Architecture Cleanup)
-- [ ] Reorganize routes into clear domains (admin/internal/carriers/webhooks)
-- [ ] Implement superadmin middleware (`requireSuperadmin`)
-- [ ] Add soft delete support to master data
-- [ ] Document order + return event patterns
-
-### 📅 **LATER** (After MVP)
-- [ ] Add idempotency keys to POST endpoints
-- [ ] Implement organization lifecycle (active/suspended/archived)
-- [ ] Add audit logging to platform actions
-- [ ] Implement event-driven inventory (movement-based SUM)
-
----
-
----
-
-# 📋 ROUND 2 ANALYSIS — Shipments, SLA, Auth, Webhooks Modules
-
-**Input Source:** found.txt Round 2  
-**Analysis Approach:** Critical evaluation of FutureState vs Current Reality  
-**Trust Level:** ChatGPT architectural patterns ✅ | ChatGPT urgency levels ❌
-
----
-
-## 🔴 URGENT — Webhook Implementation Foundation
-
-### 1. HMAC Signature Verification (CRITICAL for Webhooks)
-**Status:** Your webhooks code needs this BEFORE shipping  
-**Issue:** Current code likely accepts unauthenticated requests  
-**What ChatGPT said:** "verify X-Webhook-Signature header"  
-**My Assessment:** ✅ 100% correct. This is INDUSTRY STANDARD.
-
-**Implementation Pattern:**
-```javascript
-// middleware/verifyWebhookSignature.js
-const crypto = require('crypto');
-
-export const verifyWebhookSignature = (req, res, next) => {
-  const signature = req.headers['x-webhook-signature'];
-  const rawBody = req.rawBody; // Must capture raw body before JSON parsing
-  const secret = process.env.WEBHOOK_SECRET;
-  
-  const hash = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
-  
-  if (hash !== signature) {
-    return res.status(401).json({ error: 'Invalid signature' });
-  }
-  next();
-};
-```
-
-**Action:** Implement this middleware before webhook endpoints go live  
-**Complexity:** Low | **Priority:** 🔴 CRITICAL (security hole)
-
----
-
-### 2. Raw Body Capture for Signature Verification
-**What ChatGPT said:** "Capture raw request body before JSON parsing"  
-**Status:** Your Express setup likely parses JSON before signature check  
-**My Assessment:** ✅ Correct. Signature verification requires exact bytes.
-
-**Setup Pattern:**
-```javascript
-// app.js - BEFORE routes
-app.use(express.raw({ type: 'application/json' })); // Capture raw
-app.use((req, res, next) => {
-  if (Buffer.isBuffer(req.body)) {
-    req.rawBody = req.body; // Store raw
-    req.body = JSON.parse(req.body); // Then parse
-  }
-  next();
-});
-```
-
-**Action:** Add raw body capture to webhook routes  
-**Complexity:** Low | **Priority:** 🔴 CRITICAL (required for HMAC)
-
----
-
-### 3. Webhook Event Storage + Idempotency
-**What ChatGPT said:** Store events, reject duplicates via event_id  
-**Status:** You need `webhook_events` table  
-**My Assessment:** ✅ Correct. Essential for replay + debugging.
-
-**Schema:**
-```sql
-CREATE TABLE webhook_events (
-  id UUID PRIMARY KEY,
-  organization_id UUID NOT NULL,
-  external_event_id TEXT,  -- Carrier's event_id
-  source VARCHAR(50),      -- 'carrier_bluedart', 'warehouse_tata', etc.
-  event_type VARCHAR(100), -- 'tracking_update', 'order_imported'
-  payload_json JSONB,
-  signature_valid BOOLEAN,
-  received_at TIMESTAMPTZ DEFAULT NOW(),
-  processed_at TIMESTAMPTZ,
-  status ENUM('queued', 'processing', 'completed', 'failed'),
-  retry_count INT DEFAULT 0,
-  UNIQUE(organization_id, external_event_id) -- Prevent duplicates
-);
-```
-
-**Action:** Add webhook_events table + duplicate check  
-**Complexity:** Low | **Priority:** 🔴 CRITICAL (prevents data duplication)
-
----
-
-### 4. Webhook Error Handling: ACK Fast Strategy
-**What ChatGPT said:** Store event, queue job, return 200 immediately  
-**Status:** Your current code probably processes sync  
-**My Assessment:** ✅ Correct. External systems timeout after 2 seconds.
-
-**Pattern:**
-```javascript
-// Webhook route
-export const webhookOrderImported = asyncHandler(async (req, res) => {
-  // 1. Validate signature (done by middleware)
-  // 2. Store event
-  const event = await storeWebhookEvent(req.body, req.organization_id);
-  
-  // 3. Enqueue async job
-  await jobQueue.add('processWebhookEvent', event);
-  
-  // 4. ACK immediately (before job runs)
-  res.status(200).send('received');
-  
-  // Worker processes async → updates DB, creates orders, etc.
-});
-```
-
-**Why:** If you process sync, carrier retries → duplicate events spam your system  
-**Action:** Restructure webhook routes to ACK fast  
-**Complexity:** Medium | **Priority:** 🔴 CRITICAL (prevents retries/duplicates)
-
----
-
-## 🟠 IMPORTANT — Shipments Module Architecture
-
-### 5. Shipment State Machine (NOT URGENT, Pattern is Good)
-**What ChatGPT said:** Strict state transitions (CREATED → ASSIGNED → PICKED_UP → ...) 
-**Status:** Your shipments controller probably allows any status update  
-**My Assessment:** ✅ Pattern is correct for enterprise. NOT urgent given current build state.
-
-**When to implement:**
-- BEFORE shipping tracking logic
-- BEFORE carrier integrations
-- BEFORE customer-facing tracking page
-
-**For now:** Document the state flow in DESIGN.md  
-**Action:** Add `ShipmentStatusService` validation when building full shipment lifecycle  
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (implement before integrations)
-
----
-
-### 6. Append-Only Tracking Events (GOOD PATTERN)
-**What ChatGPT said:** "Never UPDATE shipment status. Instead, INSERT tracking_event."  
-**Status:** You probably UPDATE shipment.status directly  
-**My Assessment:** ✅ Correct for audit trail + historical accuracy. FUTURE upgrade.
-
-**Schema Pattern:**
-```sql
-CREATE TABLE shipments (
-  id UUID PRIMARY KEY,
-  status VARCHAR(50), -- current state
-  ...
-);
-
-CREATE TABLE shipment_tracking_events (
-  id UUID PRIMARY KEY,
-  shipment_id UUID,
-  status VARCHAR(50),
-  location JSONB,
-  event_source VARCHAR(50), -- 'carrier', 'manual', 'system'
-  timestamp TIMESTAMPTZ,
-  carrier_scan_id TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- shipment.status = latest event status
--- Full history in shipment_tracking_events
-```
-
-**When to implement:** LATER when you need logistics audit trail  
-**Action:** NOT urgent. Document in DESIGN.md  
-**Complexity:** High | **Priority:** 🟡 MEDIUM (future upgrade)
-
----
-
-### 7. Route Calculation as Async Worker
-**What ChatGPT said:** "Calculate route async, return job_id, don't compute sync"  
-**Status:** Your `calculate-route` endpoint probably computes sync  
-**My Assessment:** ✅ Good scaling pattern. NOT urgent now.
-
-**When to implement:** If route calculation becomes slow (>500ms)  
-**For now:** Document as optimization point in DESIGN.md  
-**Action:** Skip. Add if profiling shows bottleneck.  
-**Complexity:** Medium | **Priority:** 🟢 LOW (optimization, not blocking)
-
----
-
-## 🟡 GOOD PATTERNS — SLA & Exception Management (FUTURE)
-
-### 8. SLA Violation Detection as Background Worker
-**What ChatGPT said:** "Don't compute violations in API. Background worker scans shipments."  
-**Status:** SLA module not yet built  
-**My Assessment:** ✅ Correct architecture. This is FUTURE.
-
-**Pattern (for later):**
-```javascript
-// Worker runs every 5 minutes
-everyMinutes(5, async () => {
-  // Scan active shipments
-  const shipments = await getActiveShipments();
-  
-  // For each, check against SLA policy
-  for (const s of shipments) {
-    const policy = await getSlaPolicy(s.organization_id);
-    const violation = checkViolation(s, policy);
-    
-    if (violation) {
-      await createSlaViolation(s.id, policy.id);
-      emit('SlaViolationDetected', s.id);
-    }
-  }
-});
-```
-
-**When to implement:** When SLA module goes live  
-**Action:** Document pattern, implement later  
-**Complexity:** Medium | **Priority:** 🟠 LOW (future module)
-
----
-
-### 9. ETA Prediction Precomputation (FUTURE)
-**What ChatGPT said:** "Don't compute ETA live. Use background snapshot."  
-**Status:** You probably have static ETA  
-**My Assessment:** ✅ Correct for scale. FUTURE enhancement.
-
-**Pattern:**
-```sql
--- Current: queryable ETA
-shipments.estimated_delivery_date
-
--- Future: Precomputed snapshot
-CREATE TABLE shipment_eta_snapshots {
-  shipment_id UUID,
-  eta_timestamp TIMESTAMPTZ,
-  confidence_score DECIMAL,
-  updated_at TIMESTAMPTZ
-};
-```
-
-**When to implement:** When ETA becomes complex (ML-based)  
-**Action:** Skip for now. Document for future.  
-**Complexity:** High | **Priority:** 🟢 LOW (future)
-
----
-
-## 🟡 IMPORTANT — Auth & User Management Upgrades
-
-### 10. Session Table for Token Revocation (GOOD IDEA)
-**What ChatGPT said:** "Store sessions in DB, revoke by session_id"  
-**Status:** You likely use JWT without session tracking  
-**My Assessment:** ✅ Good for logout + device management. Moderate urgency.
-
-**Implementation Priority:** MEDIUM
-- ✅ Enables logout (revoke session)
-- ✅ Enables device management ("log out from other devices")
-- ⚠️ Adds DB query to every authenticated request (cache mitigates)
-
-**Schema:**
-```sql
-CREATE TABLE user_sessions (
-  id UUID PRIMARY KEY,
-  user_id UUID,
-  refresh_token_hash VARCHAR(255),
-  device_type VARCHAR(50),
-  ip_address INET,
-  last_seen TIMESTAMPTZ,
-  revoked_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**Action:** Add when implementing logout fixes  
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (improves UX + security)
-
----
-
-### 11. Refresh Token Rotation (GOOD SECURITY PATTERN)
-**What ChatGPT said:** "On refresh, invalidate old token, issue new one"  
-**Status:** Your current code probably doesn't rotate  
-**My Assessment:** ✅ Correct security practice (prevents replay attacks).
-
-**Pattern:**
-```javascript
-export const refreshToken = async (req, res) => {
-  const { refreshToken } = req.body;
-  
-  // Validate old token
-  const session = await validateRefreshToken(refreshToken);
-  
-  // Invalidate old token
-  await invalidateSession(session.id);
-  
-  // Issue new tokens
-  const newSession = await createSession(session.user_id, req.ip);
-  const newAccessToken = jwt.sign(...);
-  const newRefreshToken = jwt.sign(...);
-  
-  res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
-};
-```
-
-**Action:** Implement when fixing token architecture  
-**Complexity:** Medium | **Priority:** 🟡 MEDIUM (security best practice)
-
----
-
-### 12. Password Rules + Breach Checking (CAN SKIP EARLY)
-**What ChatGPT said:** "Add bcrypt, check breach database, password history"  
-**Status:** You probably have basic bcrypt. Breach checking is extra.  
-**My Assessment:** ✅ Good practice for enterprise. NOT urgent for MVP.
-
-**When to implement:** Before SaaS customers  
-**Complexity:** Low | **Priority:** 🟢 LOW (nice-to-have)
-
----
-
-## 🟢 ALREADY DOING WELL — Auth
-
-### ✅ Multi-tenant Access Guarantee
-**What ChatGPT said:** "Never accept org_id from request body. Derive from token."  
-**Your code:** You already do this (`injectOrgContext` pulls from token)  
-**My Assessment:** ✅ Excellent security design. Keep it.
-
----
-
-## 📊 Summary: Actionable from Found.txt Round 2
-
-| Module | Finding | Status | Urgency | Action |
-|--------|---------|--------|---------|--------|
-| **Webhooks** | Missing HMAC signature | 🔴 Blocking | NOW | Add verifyWebhookSignature middleware |
-| **Webhooks** | Raw body not captured | 🔴 Blocking | NOW | Add express.raw() middleware |
-| **Webhooks** | No idempotency check | 🔴 Blocking | NOW | Add webhook_events table + UNIQUE constraint |
-| **Webhooks** | Processing sync (should be async) | 🔴 Blocking | THIS WEEK | Restructure to ACK → queue → async process |
-| **Shipments** | State machine missing | 🟡 Good pattern | BEFORE INTEGRATIONS | Document, implement when needed |
-| **Shipments** | Tracking not append-only | 🟡 Design pattern | MEDIUM TERM | Upgrade when audit needed |
-| **SLA** | Violation detection | 🟡 Architecture | FUTURE | Design when SLA module built |
-| **Auth** | Session management | 🟡 Enhancement | SOON | Add user_sessions table + logout logic |
-| **Auth** | Token rotation | 🟡 Security | MEDIUM | Implement refresh rotation |
-
----
-
-## ❓ QUICK QUESTIONS FOR YOU
-
-1. **Webhooks:** Are you accepting ANY webhooks currently, or is this future?
-2. **Session Management:** Do you have logout implemented? Does it work?
-3. **Shipments:** Is this full implementation or MVP version?
-
-These answers help reprioritize further tasks.
-
----
-
-# 📋 ROUND 3 ANALYSIS — Validation Schemas (Critical Security Review)
-
-**Input Source:** found.txt Round 3  
-**Focus:** Validation layer + schema security across all modules  
-**Critical Findings:** Multiple HIGH-SEVERITY security holes in schema validation
-
----
-
-## 🔴 CRITICAL SECURITY ISSUES
-
-### 1. Order Financial Totals NOT Recalculated Server-Side ⚠️ URGENT
-**Issue:** Order totals (`subtotal`, `total_amount`, `tax`) likely trusted from client  
-**Risk:** 💰 Customers bypass pricing; financial records corrupted  
-**ChatGPT Identified:** "Treat as hints only. Recalculate from product catalog."
-
-**Current Code:** Need to verify [ordersController.js](backend/controllers/ordersController.js)
-
-**Correct Pattern:**
-```javascript
-// Server recalculates EVERYTHING
-const items = req.validated.body.items.map(item => {
-  const product = await getProduct(item.product_id); // FROM DB
-  return {
-    product_id: item.product_id,
-    quantity: item.quantity,
-    unit_price: product.unit_price, // NOT from client
-    tax: calculateTax(product, item.quantity),
-    discount: applyPromo(item, customer)
-  };
-});
-order.total_amount = SUM(items) + tax; // COMPUTED, never client value
-```
-
-**Action Required:**
-- [ ] Check if `createOrderSchema` or controller trusts client totals
-- [ ] If yes: refactor to recalculate server-side
-- [ ] Add mismatch detection: warn if client total vs calculated differs >5%
-
-**Complexity:** Medium | **Priority:** 🔴 CRITICAL NOW
-
----
-
-### 2. Users Can Set Own Role on Registration (Privilege Escalation) ⚠️ URGENT
-**Issue:** Registration endpoint probably allows client to set `role: 'admin'`  
-**Risk:** 🚨 Privilege escalation — anyone can register as SUPERADMIN  
-**Current State:** Need to verify user schemas
-
-**Correct Pattern:**
-```javascript
-export const registerUserSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().min(8).required()
-  // NO role field!
-});
-
-// Server code:
-user.role = 'user'; // ALWAYS default for self-registration
-// Only superadmin can create admin users via different endpoint
-```
-
-**Action Required:**
-- [ ] Check if your user validator allows `role` in registration
-- [ ] If yes: remove immediately
-- [ ] Ensure role always defaults to 'user'
-- [ ] Only superadmin via separate `createOrgUser` endpoint can set roles
-
-**Complexity:** Low | **Priority:** 🔴 CRITICAL NOW
-
----
-
-### 3. No Mass Assignment Protection (Universal Vulnerability)
-**Issue:** Controllers likely accept entire `req.body` without filtering  
-**Risk:** Attackers inject unexpected fields (e.g., `is_admin: true`, `organization_id: HACKER_ORG`, `deleted_at: time`)  
-**Current:** All endpoints probably vulnerable
-
-**Correct Pattern:**
-```javascript
-// BAD — accept everything:
-const order = await Order.create(req.body);
-
-// GOOD — only validated:
-const validated = await createOrderSchema.validateAsync(req.body, { 
-  stripUnknown: true  // Remove unexpected fields
-});
-const order = await Order.create(validated);
-```
-
-**Action Required:**
-- [ ] Add `stripUnknown: true` to ALL Joi validate() calls
-- [ ] Never use `req.body` directly in controllers
-- [ ] Create strict policy: "Controllers ONLY access req.validated.*"
-- [ ] Code review: scan for direct req.body usage
-
-**Complexity:** Low | **Priority:** 🔴 CRITICAL THIS WEEK
-
----
-
-## 🟠 HIGH PRIORITY — Schema Fixes (Find & Fix Fast)
-
-### 4. Inventory: Remove `reserved_quantity` From Client Input
-**Current Code:** [inventorySchemas.js line 20](backend/validators/inventorySchemas.js#L20)  
-**Problem:** Reserved quantities should ONLY be controlled by order system  
-**Fix:** Delete this line:
-```javascript
-// DELETE:
-reserved_quantity: Joi.number().integer().min(0).optional().default(0),
-```
-
-**Complexity:** 5 min | **Priority:** 🟠 THIS WEEK
-
----
-
-### 5. Inventory: Enforce Product XOR (Either ID OR Name)
-**Current:** Client can send both `product_id` AND `product_name` (ambiguous)  
-**Fix:** Add external validation to createInventorySchema
-```javascript
-.external(async (obj) => {
-  const hasId = !!obj.product_id;
-  const hasName = !!obj.product_name;
-  if (!hasId && !hasName) throw new Error('Must provide either product_id or product_name');
-  if (hasId && hasName) throw new Error('Cannot provide both');
-})
-```
-
-**Complexity:** 15 min | **Priority:** 🟠 THIS WEEK
-
----
-
-### 6. Order: Remove `status` From Create Schema
-**Current:** Client can probably set initial status  
-**Fix:** Remove `status` field from `createOrderSchema`  
-**Reason:** Status lifecycle is server-controlled (CREATED → ALLOCATED → SHIPPED...)
-
-**Complexity:** 5 min | **Priority:** 🟠 THIS WEEK
-
----
-
-### 7. Return: Remove `status` + `refund_amount` From Create
-**Current:** Both probably client-provided  
-**Fix:** Remove both from `createReturnSchema`  
-**Reason:** Refund decided AFTER inspection, status managed server-side
-
-**Complexity:** 10 min | **Priority:** 🟠 THIS WEEK
-
----
-
-## 🟡 GOOD PATTERNS — Implement Next (Not Urgent)
-
-### 8. Standardize to req.validated
-**Currently:** Validation middleware scattered  
-**Better:** Always use `req.validated.body`, `req.validated.query`, `req.validated.params`
-
-**Complexity:** Medium | **Priority:** 🟡 NEXT CHECKPOINT
-
----
-
-### 9. Add Param Validation
-**Currently:** URL params (`:id`) not validated  
-**Add:** UUID validation schemas for all ID parameters
-
-**Complexity:** Low | **Priority:** 🟡 NEXT CHECKPOINT
-
----
-
-### 10. Centralize Error Responses
-**Currently:** Validation errors formatted differently per route  
-**Add:** Global error handler for consistent JSON responses
-
-**Complexity:** Low | **Priority:** 🟡 NEXT CHECKPOINT
-
----
-
-## 📊 Validation Security Priority Matrix
-
-| Issue | Type | Severity | Est. Fix Time | Your Action |
-|-------|------|----------|----------------|-------------|
-| Order totals trusted from client | Financial | 🔴 CRITICAL | 1-2 hrs | Audit creationOrder logic |
-| Client can set own role | Privilege | 🔴 CRITICAL | 30 min | Check + remove from registerUserSchema |
-| No stripUnknown on schemas | Injection | 🔴 CRITICAL | 2-3 hrs | Add to all Joi validations |
-| reserved_quantity from client | Data | 🟠 HIGH | 5 min | Delete line 20 inventorySchemas.js |
-| Status settable on create | Logic | 🟠 HIGH | 10 min | Remove from all "create" schemas |
-| No param validation | Input | 🟡 MEDIUM | 1 hr | Create UUID schema |
-| req.body used directly | Pattern | 🔴 CRITICAL | Code review | Search + replace with req.validated |
-
----
-
-## ❓ QUESTIONS FOR YOU (Answer Asap)
-
-1. **Does your `registerUserSchema` include a `role` field that users can set?**
-2. **Does your order controller recalculate totals server-side or trust client values?**
-3. **Are any controllers using `req.body` directly (not through req.validated)?**
-
-These answers determine if you have data corruption + security vulnerabilities live.
-
----
-
-# 📋 ROUND 4 ANALYSIS — Warehouse Schemas, Transactions, JWT, Logger
-
-**Input Source:** found.txt Round 4  
-**Scope:** Warehouse validation schemas, dbTransaction utility, JWT auth utility, logger config  
-**Critical Findings:** JWT fallback secrets + warehouse schema trust issues
-
----
-
-## 🔴 CRITICAL SECURITY ISSUES
-
-### 1. JWT Fallback Secrets (Immediate Removal Required)
-**Current Code:** [backend/utils/jwt.js](backend/utils/jwt.js) uses `process.env.JWT_SECRET || 'fallback-secret-key'`  
-**Risk:** In production, if env var missing, system silently runs with known secret → full auth bypass  
-**Decision:** ChatGPT is correct. This is a real security hole.
-
-**Fix Pattern:**
-```javascript
-if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-  throw new Error('JWT secrets missing. Refusing to start.');
-}
-```
-
-**Action:** Remove fallback secrets and fail-fast on startup  
-**Complexity:** Low | **Priority:** 🔴 CRITICAL NOW
-
----
-
-### 2. Warehouse Schema Allows Client to Set `current_utilization`
-**Current Code:** [backend/validators/warehouseSchemas.js](backend/validators/warehouseSchemas.js) allows `current_utilization` in create + update  
-**Risk:** Clients can override utilization % and break capacity dashboards  
-**Decision:** This should be server-controlled only.
-
-**Action:** Remove `current_utilization` from create/update schema or restrict to admin-only  
-**Complexity:** Low | **Priority:** 🔴 HIGH (data integrity)
-
----
-
-## 🟠 IMPORTANT SCHEMA FIXES
-
-### 3. Warehouse `is_active` Should Not Be Client-Set on Create
-**Current Code:** createWarehouseSchema has `is_active` default true  
-**Decision:** If you want admins to control activation at creation, keep it but gate by permission.  
-If creation is always active by default, remove from client input.
-
-**Recommendation:** Remove from create schema; only allow update by admin route  
-**Complexity:** Low | **Priority:** 🟠 MEDIUM
-
----
-
-### 4. Warehouse `manager_id` Type Mismatch
-**Current Code:** `manager_id` is number/integer but users are UUIDs  
-**Risk:** Validation allows invalid IDs → runtime errors or silent no-op  
-**Decision:** Use UUID and enforce org ownership in service layer.
-
-**Action:** Change `manager_id` to Joi UUID  
-**Complexity:** Low | **Priority:** 🟠 MEDIUM
-
----
-
-### 5. Warehouse `country` Should Be ISO-2
-**Current Code:** defaults to `India` (string)  
-**Decision:** If UI expects country names, keep as-is for now. If you want strict ISO for future integrations, change to 2-letter codes.
-
-**Action:** Decide whether to enforce ISO-2 now or later.  
-**Complexity:** Low | **Priority:** 🟡 LOW (future interoperability)
-
----
-
-## 🟡 TRANSACTION UTILITY — MOSTLY OK
-
-### 6. Transaction Utility Observations
-**File:** [backend/utils/dbTransaction.js](backend/utils/dbTransaction.js)
-
-**Good:**
-- Begin/commit/rollback logic is sound
-- Retry logic handles deadlocks
-- Rollback ensures release
-
-**Potential Issues (Not urgent):**
-- No protection against nested transactions (if service calls service)
-- Rollback logs full stack; may duplicate global error handler logs
-- Retry delay has no jitter (can cause stampede)
-
-**Decision:** Not critical right now. Keep as-is unless nested service usage grows.
-
----
-
-## 🟡 LOGGER CONFIG — NO CRITICAL ISSUES FOUND
-
-### 7. Logger config appears solid
-**File:** [backend/utils/logger.js](backend/utils/logger.js)
-**No urgent issues detected.**
-Potential future improvements only:
-- Avoid logging sensitive tokens in auth logs
-- Ensure log directories exist in production
-
----
-
-## 📊 Actionable Summary — Round 4
-
-| Issue | Severity | Action |
-|------|----------|--------|
-| JWT fallback secrets | 🔴 CRITICAL | Remove fallback, fail fast on startup |
-| current_utilization client writable | 🔴 HIGH | Remove from warehouse schemas |
-| is_active on create | 🟠 MEDIUM | Remove or restrict to admin |
-| manager_id type mismatch | 🟠 MEDIUM | Change to UUID |
-| country ISO-2 enforcement | 🟡 LOW | Decide for future integrations |
-
----
-
-## ❓ Questions for You (Quick)
-
-1. Do you want `is_active` settable during warehouse creation, or always default true?
-2. Are you okay enforcing ISO-2 country codes now, or keep free text for UI simplicity?
-
----
-
-# Round 5 — Middleware Audit
-
-**Files Reviewed:** `middlewares/webhookAuth.js`, `middlewares/multiTenant.js`, `middlewares/rbac.js`, `middlewares/requestLogger.js`, `utils/jwt.js` (re-verification)
-
-**Methodology:** All ChatGPT findings verified against actual source code before inclusion. Claims that did not match the codebase are documented under Omissions with reasons.
-
----
-
-## 🔴 TASK-R5-001 — Webhook HMAC Signs Parsed Body, Not Raw Bytes
-
-**File:** `backend/middlewares/webhookAuth.js`, line ~184  
-**Severity:** Critical Bug  
-**ChatGPT Claim:** Verified ✅ — code signs `JSON.stringify(req.body)`, not the original raw bytes.
-
-**Problem:**  
-Express's `json()` middleware parses the body before `webhookAuth` runs. `JSON.stringify(req.body)` produces a re-serialized string that may differ from the original payload in:
-- Key ordering (no guarantee)
-- Unicode escaping
-- Whitespace normalization
-- Number precision edge cases
-
-This causes valid webhooks to fail signature verification intermittently, and allows invalid webhooks to bypass verification if they can predict how Express will re-serialize.
-
-**Confirmed Code (line ~184):**
-```js
-const hmac = crypto.createHmac('sha256', secret);
-hmac.update(JSON.stringify(req.body)); // ← BUG: re-serialized, not raw
-```
-
-**Fix:**  
-Capture raw bytes in Express's `verify` callback before the body is parsed:
-```js
-// In server.js or app setup:
-app.use(express.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf; // Buffer of original bytes
-  }
-}));
-
-// In webhookAuth.js:
-hmac.update(req.rawBody); // ← sign raw bytes, not re-serialized JSON
-```
-
-**Context:** This is the standard pattern used by Stripe, GitHub, and every major webhook provider. It is the only way to guarantee byte-identical HMAC verification.
-
----
-
-## 🔴 TASK-R5-002 — `timingSafeEqual` Called Without Buffer Length Guard
-
-**File:** `backend/middlewares/webhookAuth.js`, line ~195  
-**Severity:** High — Crash vector  
-**ChatGPT Claim:** Verified ✅
-
-**Problem:**  
-`crypto.timingSafeEqual(a, b)` throws a `TypeError` if the two buffers have different lengths. An attacker or misconfigured client sending a truncated/padded `X-Webhook-Signature` header will crash the middleware, causing a 500 and potentially leaking stack information or disrupting other requests.
-
-**Confirmed Code (line ~195):**
-```js
-// No length check before this:
-if (!crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
-  // ...
-}
-```
-
-**Fix:**
-```js
-if (
-  expectedBuf.length !== receivedBuf.length ||
-  !crypto.timingSafeEqual(expectedBuf, receivedBuf)
-) {
-  return res.status(401).json({ error: 'Invalid signature' });
-}
-```
-
-**Note:** The length check must come first (short-circuit). Comparing lengths before buffers does not introduce a timing oracle because the lengths of HMAC output are deterministic (always 64 hex chars for SHA-256).
-
----
-
-## 🔴 TASK-R5-003 — `req.user.id` Used in `companiesController.js` Inconsistently
-
-**File:** `backend/controllers/companiesController.js`, lines 42, 167, 220, 264  
-**Severity:** Medium — Silent wrong-field logging  
-**ChatGPT Claim:** Verified ✅
-
-**Problem:**  
-The JWT decode sets `req.user.userId` (not `req.user.id`). Every other controller and middleware (`rbac.js`, `multiTenant.js`, `usersController.js`, etc.) consistently accesses `req.user.userId`. `companiesController.js` uses `req.user.id` in its audit log calls, silently emitting `undefined` for the performer field.
-
-**Impact:**
-- Audit logs for all superadmin company operations have `undefined` as the acting user
-- Any future security review of company-level actions will show no attributable actor
-- No runtime crash or observable error, making this easy to miss in tests
-
-**Fix:** Replace all occurrences in `companiesController.js`:
-```js
-// Before:
-req.user.id
-// After:
-req.user.userId
-```
-
-Search scope: `grep -n 'req\.user\.id[^e]' backend/controllers/companiesController.js` to find all instances.
-
----
-
-## 🟡 TASK-R5-004 — `multiTenant.js` Issues DB Query on Every Authenticated Request
-
-**File:** `backend/middlewares/multiTenant.js`  
-**Severity:** Medium — Performance / scalability  
-**ChatGPT Claim:** Verified ✅
-
-**Problem:**  
-On every authenticated request, `multiTenant.js` runs:
-```sql
-SELECT organization_id FROM users WHERE id = $1
-```
-to determine the user's org context. At low volume this is invisible. At moderate scale (e.g. 50 concurrent users polling dashboards every 30s) this is ~100 additional DB queries/minute that return the same data until the user is reassigned.
-
-**The org assignment for a user changes extremely rarely** (org migration, superadmin reassignment) — making per-request DB lookup wasteful.
-
-**Fix — Embed `organization_id` in JWT at login:**
-```js
-// In authService / login handler:
-const token = jwt.sign({
-  userId: user.id,
-  organizationId: user.organization_id, // ← add this
-  role: user.role,
-}, process.env.JWT_SECRET, { expiresIn: '24h' });
-```
-
-```js
-// In multiTenant.js:
-// Instead of DB query:
-req.organizationId = req.user.organizationId; // from JWT payload
-```
-
-**Trade-off:** If a user's org is changed, old tokens remain valid until expiry (max 24h). For a supply chain platform where org reassignment is an admin-only exceptional operation, this is an acceptable trade-off. Add org change to the token revocation/invalidation mechanism if you have one.
-
----
-
-## 🟡 TASK-R5-005 — `requestLogger.js` Uses Weak Request ID Generation
-
-**File:** `backend/middlewares/requestLogger.js`  
-**Severity:** Low — Correctness / observability  
-**ChatGPT Claim:** Verified ✅
-
-**Problem:**  
-Request IDs are generated as:
-```js
-const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-```
-
-This is not a UUID and not guaranteed unique under load:
-- `Date.now()` has millisecond resolution — multiple requests in the same ms share the same prefix
-- `Math.random()` with 9 base-36 chars gives ~10⁻⁷ collision probability per ms — acceptable in dev, not in prod under load
-- The format is non-standard and won't be parsed by log aggregators expecting UUID v4
-
-**Fix:**
-```js
-const { randomUUID } = require('crypto');
-const requestId = req.headers['x-request-id'] || randomUUID();
-```
-
-Honouring an incoming `x-request-id` header also enables trace propagation from frontend → backend → logs without extra tooling.
-
----
-
-## 🟡 TASK-R5-006 — `requestLogger.js` Does Not Log Aborted / Dropped Connections
-
-**File:** `backend/middlewares/requestLogger.js`  
-**Severity:** Low — Observability gap  
-**ChatGPT Claim:** Partially correct — missing `close` listener is real, though the claim overstated severity
-
-**Problem:**  
-Only `res.on('finish', ...)` is attached. The `finish` event does not fire for:
-- Requests where the client disconnects before a response is sent
-- Requests killed by a reverse proxy timeout (nginx/ALB)
-- Requests that error before the response stream closes
-
-These are often the most interesting cases for debugging production issues (client impatience, slow queries, network resets).
-
-**Fix — Add `close` listener alongside `finish`:**
-```js
-let logged = false;
-const logOnce = (event) => {
-  if (logged) return;
-  logged = true;
-  const duration = Date.now() - start;
-  logger.info({
-    requestId,
-    method: req.method,
-    url: req.originalUrl,
-    status: res.statusCode,
-    duration,
-    event, // 'finish' or 'close'
-    userId: req.user?.userId,
-  });
-};
-
-res.on('finish', () => logOnce('finish'));
-res.on('close', () => logOnce('close'));
-```
-
----
-
-## ❌ Omitted from ChatGPT Round 5 (with Reasons)
-
-| Claim | Verdict | Why Omitted |
-|-------|---------|-------------|
-| "ADMIN role has `*:*` global access across all operations" | ❌ WRONG | `ADMIN → ['*']` expands to `ALL_PERMISSIONS` only. `SUPERADMIN_PERMISSIONS` are explicitly separate and excluded. System is correctly scoped. |
-| "Two RBAC systems exist in parallel" | ❌ WRONG | One authoritative system: `requirePermission()` importing from `config/permissions.js`. An older inline `PERMISSIONS` map exists inside `rbac.js` as legacy duplication, but there is no competing second enforcement system. |
-| "`buildOrgFilter` has a `$1` placeholder formatting bug" | ❌ NOT FOUND | This function does not exist in the current codebase. Likely hallucinated based on general pattern matching. |
-| "Add Postgres RLS as second enforcement layer" | Skipped | Valid in theory, but enforcing multi-tenancy at the DB layer adds significant ops complexity (per-user roles, session variables) that is not appropriate for current architecture and team size. Application-layer enforcement is sufficient when the middleware chain is trusted. |
-| "Embed full permission snapshot in JWT to avoid DB lookups" | Skipped | Over-engineering. JWT bloat for potentially 50+ permissions per role. Permission changes require either token revocation infrastructure or accepting stale permissions until expiry. DB lookup on permission check (not per request) is the right trade-off here. |
-| "Implement full idempotency middleware for all state-changing endpoints" | Deferred | Carrier assignments already have `idempotency_key`. Global idempotency middleware is a valid future investment but is a product decision (what to do on duplicate: return cached response? return 409?). Not a bug — defer to a dedicated spike. |
-| "Add log sampling (1–5% of normal traffic)" | Skipped | Dev phase — full logging is appropriate. Sampling is a cost optimization for high-volume production. Revisit when log storage costs become a concern. |
-| "Implement OpenTelemetry / distributed trace propagation" | Deferred | `x-request-id` header forwarding (TASK-R5-005) is the pragmatic first step. Full OTEL is a future enterprise concern and requires infrastructure changes beyond the backend codebase. |
-
----
-
-## 📊 Actionable Summary — Round 5
-
-| Task | File | Severity | Action |
-|------|------|----------|--------|
-| TASK-R5-001 | `webhookAuth.js` | 🔴 CRITICAL | Capture rawBody in express.json verify callback; sign raw bytes |
-| TASK-R5-002 | `webhookAuth.js` | 🔴 HIGH | Add buffer length check before `timingSafeEqual` |
-| TASK-R5-003 | `companiesController.js` | 🔴 MEDIUM | Replace `req.user.id` → `req.user.userId` (4 spots) |
-| TASK-R5-004 | `multiTenant.js` | 🟡 MEDIUM | Embed `organizationId` in JWT; remove per-request DB lookup |
-| TASK-R5-005 | `requestLogger.js` | 🟡 LOW | Replace `Date.now()+random` with `crypto.randomUUID()` |
-| TASK-R5-006 | `requestLogger.js` | 🟡 LOW | Add `res.on('close')` with dedup flag alongside `finish` |
-
----
-
-
+# Architecture Task Registry
+> Single source of truth for all code-review findings (R1–R6).
+> Code fix examples → see [PATTERNS.md](PATTERNS.md) keyed by Task ID.
+
+**Legend:** 🔴 CRITICAL · 🟠 HIGH · 🟡 MEDIUM · 🟢 LOW  
+**Status key:** open · done · deferred · future
+
+---
+
+## Round 1 — MDM, Inventory, Orders, Orgs, Returns
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R1-001 | Carrier security | `routes/carriers/` | 🔴 CRITICAL | open | Add carrier auth middleware before any `/carriers/*` endpoint goes live (API key or OAuth) |
+| TASK-R1-002 | MDM authz | `routes/mdm.js`, `controllers/mdmController.js` | 🔴 CRITICAL | open | Add `authorize('warehouses.manage')` etc. to **every** MDM mutation route |
+| TASK-R1-003 | Inventory atomicity | `controllers/inventoryController.js` | 🔴 CRITICAL | open | Wrap `adjustStock` + `transferInventory` in `withTransaction` |
+| TASK-R1-004 | Inventory atomicity | `controllers/inventoryController.js` | 🔴 CRITICAL | open | Wrap `transferInventory` specifically — stock WILL vanish on partial failure |
+| TASK-R1-005 | Carrier data leak | `routes/carriers.js` | 🟠 MEDIUM | deferred | Before prod: add auth or expose only sanitized DTO (hide pricing/routing codes) |
+| TASK-R1-006 | Inventory reservation | `services/orderService.js` | 🟠 HIGH | open | Wire reserve-on-create / release-on-cancel / commit-on-ship to order lifecycle |
+| TASK-R1-007 | Order state machine | `services/orderService.js` | 🟡 MEDIUM | open | Add `OrderStatusService` enforcing valid transitions (CREATED→ALLOCATED→SHIPPED…) |
+| TASK-R1-008 | Order-inventory link | `controllers/ordersController.js` | 🟠 HIGH | open | No link exists between orders and inventory today — plan before orders go live |
+| TASK-R1-009 | Event-driven orders | `controllers/ordersController.js` | 🟡 MEDIUM | future | Emit `OrderCreated`; worker reserves inventory (keeps failure modes separate) |
+| TASK-R1-010 | Superadmin middleware | `routes/admin/` | 🟡 MEDIUM | open | Replace `authorize('superadmin')` with explicit `requireSuperadmin()` middleware |
+| TASK-R1-011 | Org lifecycle | `controllers/companiesController.js` | 🟡 MEDIUM | open | Use `status` enum (active/suspended/archived) instead of hard-delete |
+| TASK-R1-012 | Org creation atomicity | `controllers/companiesController.js` | 🟡 MEDIUM | open | Wrap org provisioning (org+user+roles+billing) in a single transaction |
+| TASK-R1-013 | Org audit log | `controllers/companiesController.js` | 🟢 LOW | future | Log actor/action/ip/before/after on every org-level change |
+| TASK-R1-014 | Return state machine | `services/` (new) | 🟡 MEDIUM | open | Add `ReturnStatusService` (REQUESTED→APPROVED→RECEIVED→INSPECTED→CLOSED) |
+| TASK-R1-015 | Return-inventory async | `controllers/returnsController.js` | 🟡 MEDIUM | open | Emit `ReturnReceived` event; worker reintegrates stock (not a direct call) |
+| TASK-R1-016 | Return-finance async | `controllers/returnsController.js` | 🟠 HIGH | open | Never call refund logic from return controller — async queue only |
+| TASK-R1-017 | Return validation | `validators/returnSchemas.js` | 🟡 MEDIUM | open | Validate: order belongs to org, qty ≤ purchased, return window valid, order eligible |
+| TASK-R1-018 | Route structure | `routes/` | 🟡 MEDIUM | deferred | Reorganize into admin/ internal/ carriers/ webhooks/ namespaces when painful |
+| TASK-R1-019 | Permission perf | `middlewares/rbac.js` | 🟢 LOW | deferred | `Object.freeze` all permission maps; convert to `Set` for O(1) `.has()` lookups |
+| TASK-R1-020 | Finance design | `future` | 🟠 MEDIUM | future | Create finance permissions, ledger table, idempotency keys, precomputed snapshots |
+| TASK-R1-021 | Inventory stats | `controllers/inventoryController.js` | ✅ DONE | done | Already precomputed `current_utilization` via background job — keep this pattern |
+
+---
+
+## Round 2 — Webhooks, Shipments, SLA, Auth
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R2-001 | Webhook HMAC | `middlewares/webhookAuth.js` | 🔴 CRITICAL | open | Add `verifyWebhookSignature` middleware before webhook routes go live |
+| TASK-R2-002 | Raw body capture | `server.js` | 🔴 CRITICAL | open | Add `express.json({ verify: (req,res,buf)=>req.rawBody=buf })` before routes |
+| TASK-R2-003 | Webhook idempotency | schema | 🔴 CRITICAL | open | Create `webhook_events` table with `UNIQUE(org_id, external_event_id)` |
+| TASK-R2-004 | Webhook async | `routes/webhooks/` | 🔴 CRITICAL | open | ACK immediately (200) → enqueue job → worker processes async |
+| TASK-R2-005 | Shipment state machine | `services/` (new) | 🟡 MEDIUM | future | Add `ShipmentStatusService` before carrier integrations land |
+| TASK-R2-006 | Tracking append-only | schema | 🟡 MEDIUM | future | `shipment_tracking_events` table; keep `.status` as latest event reference |
+| TASK-R2-007 | Session management | schema | 🟡 MEDIUM | open | Add `user_sessions` table; enable logout + device management |
+| TASK-R2-008 | Token rotation | `controllers/authController.js` | 🟡 MEDIUM | open | On refresh: invalidate old token, issue new pair (prevents replay attacks) |
+
+---
+
+## Round 3 — Validation Schemas
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R3-001 | Order totals trust | `controllers/ordersController.js` | 🔴 CRITICAL | open | Never trust client `subtotal/total/tax` — recalculate server-side from DB prices |
+| TASK-R3-002 | Role self-assignment | `validators/userSchemas.js` | 🔴 CRITICAL | open | Remove `role` from `registerUserSchema`; server always defaults to `'user'` |
+| TASK-R3-003 | Mass assignment | all controllers | 🔴 CRITICAL | open | Add `stripUnknown: true` to every `schema.validateAsync()` call |
+| TASK-R3-004 | reserved_quantity | `validators/inventorySchemas.js:20` | 🟠 HIGH | open | Delete `reserved_quantity` from client input schema — system-controlled only |
+| TASK-R3-005 | Product XOR | `validators/inventorySchemas.js` | 🟠 HIGH | open | Add `.external()` enforcing exactly one of `product_id` / `product_name` |
+| TASK-R3-006 | Status on create | `validators/orderSchemas.js` | 🟠 HIGH | open | Remove `status` field from `createOrderSchema` |
+| TASK-R3-007 | Return fields | `validators/returnSchemas.js` | 🟠 HIGH | open | Remove `status` + `refund_amount` from `createReturnSchema` |
+| TASK-R3-008 | req.validated | all controllers | 🟡 MEDIUM | open | Standardize: controllers only access `req.validated.body/query/params` |
+| TASK-R3-009 | Param validation | all routes | 🟡 MEDIUM | open | Add UUID validation schema for all `:id` route params |
+
+---
+
+## Round 4 — Warehouse Schemas, JWT, Logger
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R4-001 | JWT fallback secret | `utils/jwt.js` | 🔴 CRITICAL | open | Remove `|| 'fallback-secret-key'`; throw on startup if env vars missing |
+| TASK-R4-002 | Utilization writable | `validators/warehouseSchemas.js` | 🔴 HIGH | open | Remove `current_utilization` from create/update schema (server-computed) |
+| TASK-R4-003 | is_active on create | `validators/warehouseSchemas.js` | 🟠 MEDIUM | open | Remove `is_active` from createWarehouseSchema; default server-side to `true` |
+| TASK-R4-004 | manager_id type | `validators/warehouseSchemas.js` | 🟠 MEDIUM | open | Change `manager_id` from `integer` to `Joi.string().uuid()` |
+| TASK-R4-005 | country ISO-2 | `validators/warehouseSchemas.js` | 🟢 LOW | deferred | Enforce ISO-3166-1 alpha-2 when international integrations are needed |
+
+---
+
+## Round 5 — Middleware
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R5-001 | Webhook raw body | `middlewares/webhookAuth.js:~184` | 🔴 CRITICAL | open | Sign `req.rawBody` (Buffer), not `JSON.stringify(req.body)` — see PATTERNS.md |
+| TASK-R5-002 | timingSafeEqual crash | `middlewares/webhookAuth.js:~195` | 🔴 HIGH | open | Add `expectedBuf.length !== receivedBuf.length` guard before `timingSafeEqual` |
+| TASK-R5-003 | req.user.id typo | `controllers/companiesController.js:42,167,220,264` | 🟠 MEDIUM | open | Replace `req.user.id` → `req.user.userId` (4 locations) — audit logs emit `undefined` now |
+| TASK-R5-004 | Per-request org DB query | `middlewares/multiTenant.js` | 🟡 MEDIUM | open | Embed `organizationId` in JWT at login; read from token instead of DB on every request |
+| TASK-R5-005 | Weak request ID | `middlewares/requestLogger.js` | 🟡 LOW | open | Replace `Date.now()+Math.random()` with `crypto.randomUUID()`; honour `x-request-id` header |
+| TASK-R5-006 | Dropped connections | `middlewares/requestLogger.js` | 🟡 LOW | open | Add `res.on('close', ...)` with dedup flag alongside existing `finish` listener |
+
+---
+
+## Round 6 — Repository Layer
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R6-001 | exists() org bypass | `repositories/BaseRepository.js` | 🔴 CRITICAL | open | Fix `exists()` sig: add `organizationId` param before `client`; pass correctly to `count()` |
+| TASK-R6-002 | ORDER BY injection | `repositories/BaseRepository.js` | 🔴 HIGH | open | Whitelist `orderBy`/`order` values before interpolating into SQL |
+| TASK-R6-003 | buildOrgFilter API | `repositories/BaseRepository.js` | 🟠 HIGH | open | Return complete `{ clause, params, nextIndex }` — callers must not append `$N` manually |
+| TASK-R6-004 | Dual transaction API | `repositories/BaseRepository.js` | 🟡 MEDIUM | open | Remove `beginTransaction/commit/rollback` methods; standardize on `withTransaction()` only |
+| TASK-R6-005 | No org scope | `repositories/CarrierAssignmentRepository.js` | 🔴 CRITICAL | open | All 4 methods lack `org_id` filter — enforce via `JOIN orders ON … AND o.organization_id = $N` |
+| TASK-R6-006 | Race condition | `repositories/CarrierAssignmentRepository.js` | 🔴 HIGH | open | Add `UNIQUE partial index ON carrier_assignments(order_id) WHERE status NOT IN (…)` |
+| TASK-R6-007 | markAsBusy index bypass | `repositories/CarrierAssignmentRepository.js` | 🟠 MEDIUM | open | Remove `id::text` cast / code fallback; service resolves code→UUID before calling repo |
+| TASK-R6-008 | Correlated subqueries | `repositories/CarrierRepository.js` | 🟠 HIGH | open | Replace 3 per-row subqueries with `LEFT JOIN … GROUP BY c.id` |
+| TASK-R6-009 | Hardcoded LIMIT 10 | `repositories/CarrierRepository.js` | 🟡 MEDIUM | open | Make limit a parameter with default 10 in `findAvailableCarriers` |
+| TASK-R6-010 | Stock mutations no org | `repositories/InventoryRepository.js` | 🔴 CRITICAL | open | Add `organization_id` param + WHERE clause to all 6 stock mutation methods |
+| TASK-R6-011 | recordMovement not called | `repositories/InventoryRepository.js` | 🔴 HIGH | open | Internalize `recordMovement()` inside each mutation — don't leave to callers |
+| TASK-R6-012 | Quantity invariant | schema | 🟠 HIGH | open | `ALTER TABLE inventory ADD CONSTRAINT chk_quantity_invariant CHECK (qty = avail+reserved+damaged+transit)` |
+| TASK-R6-013 | reserveStock no lock | `repositories/InventoryRepository.js` (callers) | 🟠 HIGH | open | Callers must hold `SELECT … FOR UPDATE` inside transaction before calling `reserveStock` |
+| TASK-R6-014 | NULL SKU duplicates | schema | 🟡 MEDIUM | open | Add `NOT NULL` on `inventory.sku` if SKUs are mandatory; otherwise add surrogate key |
+
+---
+
+## Master Priority Queue
+
+### 🔴 Fix Now (before any feature goes live)
+TASK-R1-002 · TASK-R1-003 · TASK-R1-004 · TASK-R2-001 · TASK-R2-002 · TASK-R2-003 · TASK-R2-004  
+TASK-R3-001 · TASK-R3-002 · TASK-R3-003 · TASK-R4-001 · TASK-R5-001 · TASK-R5-002  
+TASK-R6-001 · TASK-R6-005 · TASK-R6-010  
+TASK-R7-001 · TASK-R7-003 · TASK-R7-006  
+TASK-R8-001 · TASK-R8-004 · TASK-R8-006 · TASK-R8-007 · TASK-R8-008 · TASK-R8-010 · TASK-R8-014 · TASK-R8-018
+TASK-R9-001 · TASK-R9-003 · TASK-R9-010 · TASK-R9-016 · TASK-R9-017 · TASK-R9-018 · TASK-R9-029 · TASK-R9-030
+TASK-R10-001 · TASK-R10-005 · TASK-R10-015 · TASK-R10-016 · TASK-R10-017 · TASK-R10-021 · TASK-R10-022 · TASK-R10-023 · TASK-R10-025
+TASK-R11-003 · TASK-R11-009 · TASK-R11-010 · TASK-R11-011 · TASK-R11-012 · TASK-R11-016 · TASK-R11-017
+TASK-R12-001 · TASK-R12-010 · TASK-R12-014 · TASK-R12-015
+TASK-R13-001 · TASK-R13-002 · TASK-R13-003 · TASK-R13-009 · TASK-R13-010
+TASK-R14-006
+TASK-R15-003 · TASK-R15-004 · TASK-R15-009
+TASK-R16-003 · TASK-R16-006 · TASK-R16-007
+TASK-R17-001 · TASK-R17-002 · TASK-R17-003 · TASK-R17-004
+
+### 🟠 This week
+TASK-R1-006 · TASK-R1-008 · TASK-R1-016 · TASK-R3-004 · TASK-R3-005 · TASK-R3-006 · TASK-R3-007  
+TASK-R4-002 · TASK-R5-003 · TASK-R6-002 · TASK-R6-003 · TASK-R6-006 · TASK-R6-008 · TASK-R6-011 · TASK-R6-012 · TASK-R6-013  
+TASK-R7-002 · TASK-R7-004 · TASK-R7-007 · TASK-R7-008 · TASK-R7-010  
+TASK-R8-002 · TASK-R8-003 · TASK-R8-009 · TASK-R8-011 · TASK-R8-015 · TASK-R8-019 · TASK-R8-021
+TASK-R9-011 · TASK-R9-019 · TASK-R9-024 · TASK-R9-026
+TASK-R10-002 · TASK-R10-009 · TASK-R10-020 · TASK-R10-026
+TASK-R11-002 · TASK-R11-005 · TASK-R11-008
+TASK-R12-002 · TASK-R12-003 · TASK-R12-011 · TASK-R12-017
+TASK-R13-004 · TASK-R13-011 · TASK-R13-012
+TASK-R14-002
+TASK-R15-001 · TASK-R15-002 · TASK-R15-005 · TASK-R15-010
+TASK-R16-001 · TASK-R16-002
+
+### 🟡 This month
+TASK-R1-007 · TASK-R1-010 · TASK-R1-011 · TASK-R1-012 · TASK-R1-014 · TASK-R1-017 · TASK-R1-018  
+TASK-R2-007 · TASK-R2-008 · TASK-R3-008 · TASK-R3-009 · TASK-R4-003 · TASK-R4-004  
+TASK-R5-004 · TASK-R5-005 · TASK-R5-006 · TASK-R6-004 · TASK-R6-007 · TASK-R6-009 · TASK-R6-014  
+TASK-R7-005 · TASK-R7-009 · TASK-R7-012 · TASK-R7-013  
+TASK-R8-012 · TASK-R8-013 · TASK-R8-016 · TASK-R8-017 · TASK-R8-020 · TASK-R8-022 · TASK-R8-023
+TASK-R9-004 · TASK-R9-005 · TASK-R9-009 · TASK-R9-012 · TASK-R9-013 · TASK-R9-020 · TASK-R9-021 · TASK-R9-022 · TASK-R9-023 · TASK-R9-025 · TASK-R9-027 · TASK-R9-031 · TASK-R9-032
+TASK-R10-003 · TASK-R10-006 · TASK-R10-007 · TASK-R10-008 · TASK-R10-010 · TASK-R10-011 · TASK-R10-012 · TASK-R10-013 · TASK-R10-014 · TASK-R10-018 · TASK-R10-019 · TASK-R10-024 · TASK-R10-027
+TASK-R11-001 · TASK-R11-004 · TASK-R11-007 · TASK-R11-013 · TASK-R11-014 · TASK-R11-015
+TASK-R12-004 · TASK-R12-005 · TASK-R12-006 · TASK-R12-007 · TASK-R12-008 · TASK-R12-009 · TASK-R12-012 · TASK-R12-016 · TASK-R12-019
+TASK-R13-005 · TASK-R13-006 · TASK-R13-013 · TASK-R13-014 · TASK-R13-015
+TASK-R14-003 · TASK-R14-004 · TASK-R14-007 · TASK-R14-008 · TASK-R14-009 · TASK-R14-011
+TASK-R15-006 · TASK-R15-007 · TASK-R15-011 · TASK-R15-012
+TASK-R16-005 · TASK-R16-008 · TASK-R16-009 · TASK-R16-010 · TASK-R16-011
+TASK-R17-005 · TASK-R17-006 · TASK-R17-007 · TASK-R17-009 · TASK-R17-010 · TASK-R17-011 · TASK-R17-012 · TASK-R17-016
+
+### 📅 After MVP / Future
+TASK-R1-001 · TASK-R1-005 · TASK-R1-009 · TASK-R1-013 · TASK-R1-015 · TASK-R1-019 · TASK-R1-020 · TASK-R1-021  
+TASK-R2-005 · TASK-R2-006 · TASK-R4-005 · TASK-R7-011 · TASK-R8-005
+TASK-R9-006 · TASK-R9-007 · TASK-R9-008 · TASK-R9-014 · TASK-R9-015 · TASK-R9-028 · TASK-R9-033
+TASK-R10-004
+TASK-R11-006 · TASK-R11-018
+TASK-R12-013 · TASK-R12-018
+TASK-R13-007 · TASK-R13-008 · TASK-R13-016
+TASK-R14-001 · TASK-R14-005 · TASK-R14-010 · TASK-R14-012
+TASK-R15-008 · TASK-R15-013 · TASK-R15-014 · TASK-R15-015 · TASK-R15-016
+TASK-R16-004 · TASK-R16-012 · TASK-R16-013
+TASK-R17-008 · TASK-R17-013 · TASK-R17-014 · TASK-R17-015 · TASK-R17-017
+
+---
+
+## Omitted / Rejected Claims (per round)
+
+| Claim | Round | Verdict |
+|-------|-------|---------|
+| ADMIN role has `*:*` global access | R5 | ❌ Wrong — expands to `ALL_PERMISSIONS` only; SUPERADMIN set is separate |
+| Two RBAC systems in parallel | R5 | ❌ Wrong — one authoritative system; second is legacy duplication in same file |
+| `buildOrgFilter` `$1` placeholder bug | R5 | ❌ Not found — function didn't exist at review time |
+| tableName injection from dynamic names | R6 | ❌ Not a risk — all constructors use hardcoded literal strings |
+| Low-stock logic leak in InventoryRepository | R6 | ❌ Overstated — SQL filter is correct placement |
+| Singleton export makes testing harder | R6 | Deferred — valid in principle, not immediate |
+| Repository should enforce assignment state machine | R6 | Wrong layer — state machine belongs in service |
+| Add Postgres RLS as second tenant layer | R5 | Skipped — ops complexity not justified at current team size |
+| Embed full permission snapshot in JWT | R5 | Skipped — over-engineering; 50+ perms per role = JWT bloat |
+| Global idempotency middleware for all POSTs | R5 | Deferred — product decision, not a bug |
+| "Repository domain leak — returns items/statistics" | R7 | ❌ Rejected — JSON aggregation in read layer is pragmatic for SCM; style preference, not a bug |
+| "Two-query pagination strategy" | R7 | Deferred — valid future optimization; not urgent at current scale |
+| "Returns not atomic business events" | R7 | Duplicate — already TASK-R1-015/TASK-R1-016 |
+| "Org creation must be transactional" | R7 | Duplicate — already TASK-R1-012 |
+| "Missing webhook token in org repo" | R7 | Wrong layer — token generation is a service concern |
+| "Org lifecycle events missing" | R7 | Duplicate — already TASK-R1-013 |
+| "updateOrganization too verbose" | R7 | ❌ Rejected — verbose but correct; style issue, not a bug |
+| "Status machines not enforced in repos" | R7 | Wrong layer — already TASK-R1-007/TASK-R1-014; service concern |
+| "Customer search fraud vector" | R7 | Wrong layer — auth/rate limiting is middleware/controller concern |
+| "No permission model (ROLE ≠ AUTH)" | R8 | Duplicate — RBAC permission system already reviewed in R5; not a repo concern |
+| "Role system string-based" | R8 | Valid schema concern; changing to enum is significant migration; deferred to schema review |
+| "Account lock/brute force controls" | R8 | Feature gap, not a repo bug; defer to auth service design sprint |
+| "Actor privilege check in updateRole" | R8 | Service layer concern — repo correctly persists what service authorizes |
+| "Double accept race condition" | R8 | Duplicate of TASK-R6-006 (unique partial index already documented) |
+| "Redis caching for analytics" | R8 | Future optimization — not a bug; add after analytics table refactor |
+| "OLTP ≠ analytics engine" | R8 | Future architecture upgrade — not a code bug; relevant after tenant isolation fixed |
+| "req.context standardization" | R8 | Style pattern — covered by fixing actual missing org filter (TASK-R8-014/R8-018) |
+| "Org state machine (trial/expired/suspended states)" | R9 | Future architecture — confirmed no state machine exists but it is a roadmap feature, not an immediate bug |
+| "Materialized views / metrics pipeline for dashboard" | R9 | Future architecture recommendation — valid at scale; not a code bug |
+| "Redis caching for dashboard/finance summary" | R9 | Future optimization — not a bug; add after tenant isolation is fixed |
+| "Currency support (exchange_rate, base_currency_amount)" | R9 | Future SaaS feature — not present in codebase, not a bug |
+| "Monetary precision risk via parseFloat" | R9 | Low risk — `parseFloat()` parses SQL NUMERIC return string, no JS arithmetic on money amounts; defer |
+| "Event-driven updates for inventory" | R9 | Future improvement — valid pattern; not a code bug |
+| "Max cron frequency guard" | R9 | Partially unverified — jobsService handles cron validation; cannot confirm without reading it |
+| "DLQ soft archive before purge" | R9 | Future improvement — purge with `older_than_days` guard is functionally acceptable; defer |
+| "Job circuit breaker / priority buckets / worker health" | R9 | Future async architecture upgrades — not code bugs |
+| "Domain Events / Event Bus" | R10 | Future architecture evolution — background jobs foundation exists; not an immediate code bug |
+| "Workflow State Machine Engine" | R10 | Future architecture — duplicate of TASK-R1-007/TASK-R2-005; already tracked |
+| "Control Tower / Operational Intelligence" | R10 | Future architecture — materialized views + jobs foundation already proposed |
+| "Transfer Order Carrier Assignment Hook" | R10 | Confirmed GOOD design — intentional extensibility point; no action needed |
+| "Frontend DTO mapping in controllers" | R10 | Confirmed present (ordersController, organizationController) — deferred as style issue; all other domains do same |
+| "listShipments sequential N+1" | R10 | Partially wrong characterization — code uses `Promise.all` so queries are parallel, not sequential; confirmed as N+1 but NOT sequential; TASK-R10-020 correctly describes it |
+| "SLA Evaluation Worker (background SLA job)" | R11 | Deferred — valid architectural evolution; background job infrastructure already exists; not an immediate controller bug |
+| "Exception Creation Should Be Automated" | R11 | Deferred — current manual `createException` is functional; automation requires event bus integration; not a code bug |
+| "ETA prediction_source versioning" | R11 | Deferred — `ml_model` + `predicted_at` already stored; `prediction_source` enum is a future experimentation platform enhancement |
+| "Missing SLA Escalation Workflow" | R11 | Deferred — future enterprise feature; existing violation + exception data structures support it; no immediate bug |
+| "Tracking Events append-only enforcement" | R11 | Deferred — service-layer design principle for `shipmentTrackingService`; cannot fully verify from controller layer; valid but not confirmed |
+| "calculateRoute Should Be Async (202 Accepted)" | R11 | Deferred — valid async pattern; not a security bug or crash; address after async quote architecture (TASK-R11-007) |
+| "Tracking Timeline derived metadata (isDelayed, slaRiskLevel)" | R11 | Deferred — feature enhancement for frontend; timeline returns raw events correctly; no bug |
+| "IP rate limiting on estimate endpoint" | R11 | Deferred — infrastructure/middleware concern (express-rate-limit or API gateway); not a controller code bug |
+| "SSO / carrier API tokens / service accounts / M2M auth / partner auth" | R12 | Future feature additions — identity provider evolution; not a code bug |
+| "IP rate limiting on login endpoint" | R12 | Deferred — middleware/ops concern (express-rate-limit); not a controller code bug |
+| "Password history enforcement" | R12 | Future compliance feature — requires `password_history` table; no code bug present |
+| "Dead Letter Queue for failed webhooks" | R12 | Duplicate — already tracked as deferred in R9 (jobsService DLQ) |
+| "Webhook event versioning (order.created.v1)" | R12 | Future architecture — integrations not yet versioned; no current code bug |
+| "Extract shipping folder as microservice" | R12 | Future architecture — valid only after all org filter and security bugs fixed |
+| "Carrier Intelligence Tables (capacity/zones/lanes)" | R12 | Data evolution — valid upgrade to carrierValidationService; not a code crash bug |
+| "Quote Lifecycle State Machine" | R12 | Overlaps TASK-R11-005 scope; full state machine is future evolution |
+| "Event-driven shipping engine (quote_requested/accepted events)" | R12 | Future async architecture — depends on event bus infrastructure |
+| "OSRM route caching in estimateService" | R12 | Future optimization — no crash or data risk; add after org isolation fixed |
+| CarrierPayloadBuilder.js — all claims (7 improvements + architecture review) | R13 | ❌ File does not exist anywhere in codebase — `find backend/ -name 'CarrierPayloadBuilder*'` returns nothing; cannot verify any claim; all rejected |
+| "Alert lifecycle model (open/ack/investigating/mitigated/resolved/closed)" | R13 | Deferred — current `open/acknowledged/resolved` is functional; 6-state model is enterprise enhancement; not a current code bug |
+| "Move alerts to event-driven (no cron polling)" | R13 | Future architecture — event bus infrastructure not yet in place; cron-based checking is functionally correct for current scale |
+| "Replace check functions with aggregated metrics tables" | R13 | Future optimization — pre-aggregated metrics are valid at scale; not a code bug at current volume |
+| "Alert escalation chain / levels table" | R13 | Deferred — escalation job IS created (level 1 hardcoded); multi-level escalation table is a future enterprise feature |
+| "checkCarrierPerformance move to nightly job" | R13 | Deferred — valid performance optimization; not a crash or security bug; defer after warehouse_metrics table is implemented |
+| "Add domain event emission to CarrierRateService" | R14 | Deferred — future event bus architecture; facade is functionally correct without it |
+| "Add requestId/tenantId context parameter to CarrierRateService" | R14 | Deferred — future observability enhancement; no current distributed tracing infrastructure |
+| "Prepare CarrierRateService for circuit breakers" | R14 | Deferred — resilience patterns appropriate after carrier quote service is productionized |
+| "Versioned public API contract comments on CarrierRateService" | R14 | Skipped — documentation-only; not a code bug |
+| "Replace static carrier imports with strategy registry" | R14 | Deferred — valid evolution point after carrierQuoteService matures; not a current bug |
+| "No formal state machine for exception status transitions" | R14 | Deferred — partial guard present in `assignException` SQL (`CASE WHEN status = 'open' THEN 'investigating'`); formal state machine is a future enterprise enhancement |
+| "GST fixed at 18% in InvoiceService" | R15 | ❌ Rejected — not present in invoiceService.js; no `gst` variable or `* 0.18` multiplication in the file; `finalAmount = baseAmount + fuelSurcharge - totalPenalties` only; this claim applies to deliveryChargeService.js already tracked as TASK-R14-004 |
+| "Add configurable tax engine to InvoiceService" | R15 | Deferred — future evolution; invoiceService correctly omits GST (carrier-to-carrier B2B settlement uses reverse charge); valid future enhancement for multi-country support |
+| "Expand dispute resolution workflow (investigating/adjusted states)" | R15 | Deferred — current single 'disputed' status is functional; multi-step dispute lifecycle is a future enterprise feature |
+| "Add payment reconciliation fields (payment_reference_id, bank_transaction_id)" | R15 | Deferred — valid for finance teams; not a crash or security bug; add after basic payment flow is verified |
+| "Concurrency limits per job type" | R15 | Deferred — valid future feature; not a current code bug; relevant after worker infrastructure is built |
+| "Job metrics dashboard from execution_time_ms" | R15 | Deferred — `execution_time_ms` already stored in `job_execution_logs`; aggregation + UI is a future observability feature |
+| "Add delivery status layer to notifications (pending/sent/delivered/failed)" | R15 | Deferred — future evolution; no email/SMS transport exists yet; add delivery status tracking once transport layer is wired |
+| "Decouple notification delivery to background jobs" | R15 | Deferred — future async architecture; `createNotification` as pure storage is correct for current stage |
+| "Cache notification preferences in Redis" | R15 | Deferred — future optimization; not a crash at current scale; add after Redis infrastructure is in place |
+| "Soft delete notifications (deleted_at instead of DELETE)" | R15 | Deferred — future audit requirement; hard delete is functionally correct for current compliance needs |
+| "Order State Machine validation" | R16 | ❌ Duplicate — already tracked as TASK-R1-007; not re-raised |
+| "Domain event queue for logEvent" | R16 | Deferred — future async architecture; `logEvent` is correctly synchronous at current scale |
+| "Carrier selection should be a separate service" | R16 | Deferred — future architectural slimming; inline carrier query inside createOrder is functionally correct |
+| "Batch inventory reservations" | R16 | Deferred — future performance optimization; sequential reservation is correct for current order sizes |
+| "financial_transactions table for refunds" | R16 | Deferred — valid domain separation; negative invoice row is functional for current reporting; tracked contextually via TASK-R16-009 |
+| "Return SLA monitoring" | R16 | Deferred — future feature; no current SLA policy schema exists for returns |
+| "Routing provider interface (OSRM/Google/Mapbox)" | R16 | Deferred — future architecture; `process.env.OSRM_URL` already supports backend swap without code changes |
+| "Redis distance caching for OSRM results" | R16 | Deferred — future optimization; valid after base routing is stabilized |
+| "Self-host OSRM container" | R16 | Deferred — deployment/ops concern; env var override already present |
+| "Retry-before-fallback in OSRM service" | R16 | Deferred — future resilience improvement; current fallback to Haversine is functionally safe |
+| "Confidence scoring on OSRM response" | R16 | Deferred — future enrichment; `method: 'osrm'` vs `'haversine_fallback'` field already returned by the service |
+| "SSO / OAuth provider integration" | R17 | Deferred — future identity architecture; SettingsService correctly handles own-credential management at current scope |
+| "Rate limiting for password change / sensitive actions" | R17 | Deferred — cross-cutting concern; belongs at route/middleware layer (express-rate-limit), not in service |
+| "Email re-verification workflow — full email delivery pipeline" | R17 | Partially deferred — account takeover risk is tracked as TASK-R17-004 (instant email change); full token-email flow deferred until email transport is built |
+| "zxcvbn / Have I Been Pwned breach-list check" | R17 | Deferred — future security hardening; basic complexity enforcement tracked as TASK-R17-006 |
+| "SLA timezone — ensure DB uses UTC" | R17 | Deferred — operational/infrastructure config concern; JS date math in `detectViolation` is UTC-safe; risk is at DB session timezone level |
+| "SLA multi-stage tracking (pickup SLA, hub SLA, delivery SLA)" | R17 | Deferred — future SLA policy model extension; current per-shipment delivery SLA is functionally complete |
+| "Dynamic penalty curves (warning tiers, mild/severe bands)" | R17 | Deferred — future contract modeling; linear cap-at-50% is contractually valid for current policies |
+| "SLA predictive breach monitoring" | R17 | Deferred — future ML/analytics feature; no prediction model or history volume yet |
+| "Carrier auto-downgrading on performance threshold" | R17 | Deferred — future allocation intelligence; performance score already calculated (TASK-R17 praised); routing use is future |
+| "Zone picking / smart pick path optimization" | R17 | Deferred — future WES optimization; current ORDER BY category/sku gives a usable pick sequence |
+| "Scan-based picking (barcode validation before pick)" | R17 | Deferred — future hardware integration; not feasible without scanner infrastructure |
+| "Labor productivity metrics (items/hour, pick accuracy)" | R17 | Deferred — future WES analytics feature |
+| "Partial shipment support (ship subset if item unavailable)" | R17 | Deferred — future OMS feature requiring split-order schema changes |
+| "Carrier webhook idempotency (carrier_event_id dedup)" | R17 | Deferred — future resilience; valid after carrier webhook integration is live; risk is low in simulation mode |
+| "PostGIS POINT for location storage (replace JSON)" | R17 | Deferred — future infrastructure migration; JSON location is functionally correct; PostGIS requires schema + extension migration |
+
+---
+
+## Round 7 — Order, Organization, Return, Shipment Repositories
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R7-001 | Org scoping optional | `OrderRepository.js`, `ReturnRepository.js`, `ShipmentRepository.js` | 🔴 CRITICAL | open | `organizationId = undefined` on every query method — unscoped reads possible on all three repos; make it required or fail fast if missing |
+| TASK-R7-002 | Hardcoded $2/$3 params | `OrderRepository.js` | 🔴 HIGH | open | `findOrderWithItems` hardcodes `$2`, `updateStatus` hardcodes `$3` for org filter while `findOrders` correctly uses `paramCount++` — inconsistency; any future query change silently breaks tenant scoping |
+| TASK-R7-003 | createOrderWithItems no tx guard | `OrderRepository.js` | 🔴 HIGH | open | `client` param has no default and no fail-fast check — if caller passes `null`, two separate pool queries run; items insert failure leaves orphan order with no rollback |
+| TASK-R7-004 | ILIKE no trigram index | `OrderRepository.js`, `ReturnRepository.js`, `ShipmentRepository.js` | 🟠 HIGH | open | All three repos use ILIKE on text columns (order_number, customer_email, tracking_number etc.) with no GIN index — full table scan on the most frequent queries at scale |
+| TASK-R7-005 | COUNT(*) OVER() systemic | `OrderRepository.js`, `ReturnRepository.js`, `ShipmentRepository.js`, `OrganizationRepository.js` | 🟡 MEDIUM | open | All 4 repos use window-function count in paginated queries — full dataset scan on every page request; replace with separate `SELECT COUNT(*)` query |
+| TASK-R7-006 | Org code generation race | `OrganizationRepository.js` | 🔴 CRITICAL | open | `generateOrganizationCode` uses `COUNT(*)` to derive next sequence — two concurrent org creations get the same count → same code; use DB sequence or `INSERT … ON CONFLICT (code) DO UPDATE` retry loop |
+| TASK-R7-007 | getOrganizationStats 4 subqueries | `OrganizationRepository.js` | 🟠 HIGH | open | `getOrganizationStats` runs 4 correlated subqueries per call (users, warehouses, orders, shipments) — each request scans 4 tables; replace with LEFT JOIN + GROUP BY or precomputed stats row |
+| TASK-R7-008 | Refund amount no idempotency | `ReturnRepository.js` | 🔴 HIGH | open | `updateStatus` blindly writes `refund_amount` on any call — no guard if refund already issued, no cap vs. order value, no status precondition; concurrent service calls can double-refund |
+| TASK-R7-009 | createReturnWithItems hardcoded columns | `ReturnRepository.js` | 🟡 MEDIUM | open | Items insert hardcodes 7 positional columns `(return_id, product_id, sku, product_name, quantity, condition, reason)` — any schema extension (serial number, photos) silently inserts NULLs or fails; use dynamic column builder like OrderRepository does |
+| TASK-R7-010 | addTrackingEvent no idempotency | `ShipmentRepository.js` | 🔴 HIGH | open | `addTrackingEvent` inserts unconditionally — carrier webhook retries produce duplicate tracking rows, corrupting timeline and analytics; add `UNIQUE(shipment_id, carrier_status, event_time)` or an external idempotency key |
+| TASK-R7-011 | findDelayed no grace period | `ShipmentRepository.js` | 🟢 LOW | open | `estimated_delivery < NOW()` fires false-positive delayed alerts; use `estimated_delivery + INTERVAL '2 hours' < NOW()` or a configurable grace period per SLA policy |
+| TASK-R7-012 | carrier_name denormalized | `ShipmentRepository.js` | 🟡 MEDIUM | open | `getCarrierPerformance` groups by `carrier_name` column on shipments — carrier rename splits historical analytics across old + new name; JOIN `carriers` table on `carrier_id` and group by id |
+| TASK-R7-013 | No optimistic locking on shipments | `ShipmentRepository.js` | 🟡 MEDIUM | open | Concurrent `updateStatus` calls (tracker webhook + admin + cron) can clobber each other silently — add `version INT` column with `WHERE version = $old_version` check and increment on every write |
+
+---
+
+## Round 8 — UserRepository, WarehouseRepository, analyticsController, assignmentController
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R8-001 | findByEmail/findByUsername no org scope | `repositories/UserRepository.js` | 🔴 CRITICAL | open | Both lookup methods have no `organization_id` filter — same email across tenants authenticates wrong user; add `AND organization_id = $2` to both |
+| TASK-R8-002 | updatePassword no security guards | `repositories/UserRepository.js` | 🔴 HIGH | open | Directly writes new password hash with no old-password verification, no `token_version` bump, no session revocation — stolen JWT remains valid after forced password change |
+| TASK-R8-003 | deactivate() no token invalidation | `repositories/UserRepository.js` | 🔴 HIGH | open | `deactivate()` only sets `is_active = false` — existing JWTs keep working until expiry; must bump `token_version` or purge session store entry on deactivation |
+| TASK-R8-004 | organizationId optional on all user queries | `repositories/UserRepository.js` | 🔴 CRITICAL | open | `findUsers`, `getUserStats`, `getRoleDistribution`, `findByRole`, `updateRole`, `deactivate`, `activate` all default `organizationId = undefined` — unscoped call leaks all-tenant data |
+| TASK-R8-005 | updateLastLogin synchronous per-request write | `repositories/UserRepository.js` | 🟢 LOW | open | Every login fires a synchronous `UPDATE users SET last_login = NOW()` — unnecessary write pressure at scale; batch or async-update, or throttle to once per session |
+| TASK-R8-006 | findByCode no org scope | `repositories/WarehouseRepository.js` | 🔴 CRITICAL | open | `SELECT * FROM warehouses WHERE code = $1` — warehouse codes can collide across orgs; any caller knowing a code reads another tenant's warehouse; add `AND organization_id = $2` |
+| TASK-R8-007 | getActiveWarehouses fully global | `repositories/WarehouseRepository.js` | 🔴 CRITICAL | open | `getActiveWarehouses()` has no org filter at all — returns every warehouse across all tenants; used for dropdowns, leaks all tenant warehouse names |
+| TASK-R8-008 | getWarehouseInventory no org scope | `repositories/WarehouseRepository.js` | 🔴 CRITICAL | open | `WHERE i.warehouse_id = $1` only — guessing or leaking a warehouse UUID exposes another tenant's full stock; add `AND i.organization_id = $2` |
+| TASK-R8-009 | manager_id not cross-org validated | `repositories/WarehouseRepository.js` | 🟠 HIGH | open | `createWarehouse` and `updateWarehouse` accept `manager_id` with no check that the user belongs to the same org — User from Org A could become manager of Org B warehouse |
+| TASK-R8-010 | generateWarehouseCode race condition | `repositories/WarehouseRepository.js` | 🔴 CRITICAL | open | Same COUNT(*) derivation pattern as TASK-R7-006 — concurrent creates produce duplicate warehouse codes; use DB sequence or `ON CONFLICT (code)` retry loop |
+| TASK-R8-011 | deactivateWarehouse no pre-check | `repositories/WarehouseRepository.js` | 🟠 HIGH | open | `deactivateWarehouse()` flips `is_active` without calling `hasInventory()` (method exists but is unused here) — deactivating a warehouse with live stock silently breaks fulfillment |
+| TASK-R8-012 | updateUtilization unconstrained | `repositories/WarehouseRepository.js` | 🟡 MEDIUM | open | Accepts any numeric value directly — callers can set `current_utilization > capacity` or negative; validate `0 ≤ value ≤ warehouse.capacity` in service before calling |
+| TASK-R8-013 | address JSONB ILIKE no index | `repositories/WarehouseRepository.js` | 🟡 MEDIUM | open | `address->>'city' ILIKE` and `address->>'state' ILIKE` in `findWarehouses` search — no GIN index on `address` JSONB column; full table scan on every search |
+| TASK-R8-014 | Analytics controller no org filter | `controllers/analyticsController.js` | 🔴 CRITICAL | open | All 8 `pool.query()` calls have zero `organization_id` filter — revenue, shipments, warehouses, exceptions, returns, SLA penalties all exposed globally to any authenticated user |
+| TASK-R8-015 | Analytics 8 sequential queries | `controllers/analyticsController.js` | 🟠 HIGH | open | All 8 queries run sequentially with `await pool.query(...)` — independent queries; wrap in `Promise.all([...])` for 5–8× latency improvement |
+| TASK-R8-016 | INTERVAL string interpolation | `controllers/analyticsController.js` | 🟡 MEDIUM | open | `INTERVAL '${interval}'` interpolated into SQL — value comes from internal controlled map so actual injection risk is low, but pattern is unsafe; use `INTERVAL $N` with parameterized value instead |
+| TASK-R8-017 | Analytics logic in controller | `controllers/analyticsController.js` | 🟡 MEDIUM | open | All query building, KPI computation, and response formatting lives in `getAnalytics()` controller function; extract to `services/analyticsService.js` |
+| TASK-R8-018 | Assignment controller no org passed | `controllers/assignmentController.js` | 🔴 CRITICAL | open | `OrderRepository.findOrderWithItems(orderId)`, `CarrierAssignmentRepository.findActiveByOrderId(orderId)`, `findDetailsById`, `findByOrderId`, `markAsBusy` — none pass `organizationId`; cross-tenant order/assignment access possible |
+| TASK-R8-019 | Client-supplied carrierId trusted | `controllers/assignmentController.js` | 🔴 HIGH | open | `acceptAssignment` and `rejectAssignment` fall back to `req.query.carrierId \|\| req.body.carrierId` — carrier can supply any competitor's ID to accept/reject their assignments; only `req.authenticatedCarrier.id` should be accepted |
+| TASK-R8-020 | force flag no role check | `controllers/assignmentController.js` | 🟠 MEDIUM | open | `?force=true` bypasses active assignment check with no role validation — any caller can force-reassign; gate behind `admin` or `operations` role check |
+| TASK-R8-021 | updateCarrierAvailability code-only auth | `controllers/assignmentController.js` | 🟠 HIGH | open | `POST /carriers/:code/availability` accepts carrier code from URL with no carrier identity verification — knowledge of carrier code alone lets anyone toggle carrier online/offline |
+| TASK-R8-022 | Controller imports 3 repos directly | `controllers/assignmentController.js` | 🟡 MEDIUM | open | Imports `OrderRepository`, `CarrierAssignmentRepository`, `CarrierRepository` and queries them directly — breaks service abstraction; all data access should go through `carrierAssignmentService` |
+| TASK-R8-023 | Fragile carrier ID heuristic | `controllers/assignmentController.js` | 🟡 MEDIUM | open | `getPendingAssignments` uses `isNaN(carrierId) && !carrierId.includes('-')` to guess if input is a code vs UUID — brittle; enforce explicit `carrierCode` vs `carrierId` query params |
+
+---
+
+## Round 9 — companiesController, dashboardController, financeController, inventoryController, jobsController
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R9-001 | No in-controller superadmin role assertion | `controllers/companiesController.js`, `routes/companies.js` | 🔴 HIGH | open | Route uses `authorize('companies:read')` permission, not `requireRole('superadmin')` — controller has zero auth assertion; RBAC misconfiguration exposes entire Tier-0 surface; add explicit role guard at controller entry |
+| TASK-R9-002 | Direct pool access, no service layer | `controllers/companiesController.js` | 🟡 MEDIUM | open | All 7 handler functions import and query `pool` directly — bypasses service/repository abstraction; move SQL into `OrganizationRepository` + `CompanyService` |
+| TASK-R9-003 | deleteCompany hard-deletes empty orgs | `controllers/companiesController.js` | 🔴 HIGH | open | `DELETE FROM organizations WHERE id = $1` — no audit trail, no archiving; tenants with zero users/orders are permanently destroyed; replace with `is_active = false` soft delete |
+| TASK-R9-004 | createCompany no transaction | `controllers/companiesController.js` | 🟡 MEDIUM | open | Uniqueness check (`SELECT id FROM organizations WHERE code = $1`) and `INSERT` are two separate unguarded calls — concurrent create can pass the check simultaneously; wrap in `BEGIN/COMMIT` or use `INSERT ... ON CONFLICT` |
+| TASK-R9-005 | No rate limiting on admin endpoints | `routes/companies.js` | 🟡 MEDIUM | open | No `rateLimit()` middleware on any company or global-stats route — enables tenant enumeration, revenue scraping, brute-force of company codes; add `adminRateLimit()` middleware |
+| TASK-R9-006 | getAllCompanies exposes cross-tenant revenue without audit log | `controllers/companiesController.js` | 🟢 LOW | open | Response includes `total_revenue`, `user_count`, `order_count` for every tenant; no audit log entry on read; classify with `HIGH_PRIVILEGE_READ` and log `{ userId, count, timestamp }` |
+| TASK-R9-007 | Address reshape inline in controller | `controllers/companiesController.js` | 🟢 LOW | open | `getAllCompanies` and `getCompanyById` map flat DB columns (`address`, `city`, `postal_code`) to nested object inline — presentation transform belongs in `mappers/companyMapper.js` |
+| TASK-R9-008 | Status computed in SQL CASE expression | `controllers/companiesController.js` | 🟢 LOW | open | `CASE WHEN MAX(last_login) > NOW() - INTERVAL '7 days' THEN 'active' ... ELSE 'suspended'` in SQL — business rule inside query; extract to `CompanyStatusPolicy.evaluate(org)` |
+| TASK-R9-009 | getGlobalStats 7 correlated subqueries | `controllers/companiesController.js` | 🟡 MEDIUM | open | Single `statsQuery` runs 7 `(SELECT COUNT/SUM/AVG ...)` correlated subqueries across all orgs/users/orders/shipments in one call — expensive at scale; precompute via scheduled aggregation job or `admin_stats_cache` table |
+| TASK-R9-010 | Dashboard controller zero org_id filter | `controllers/dashboardController.js` | 🔴 CRITICAL | open | ALL 5 `pool.query()` calls (orders, shipments, inventory, returns, exceptions) have no `WHERE organization_id = $1` — every tenant sees platform-wide metrics; add `req.orgContext?.organizationId` filter to every query |
+| TASK-R9-011 | Dashboard 5 sequential independent queries | `controllers/dashboardController.js` | 🟠 HIGH | open | ordersResult → shipmentsResult → inventoryResult → returnsResult → exceptionsResult are five sequential `await pool.query(...)` calls with no data dependency; replace with `Promise.all([...])` to reduce latency by ~4× |
+| TASK-R9-012 | Dashboard direct pool access, no service layer | `controllers/dashboardController.js` | 🟡 MEDIUM | open | Imports and uses `pool` directly — no caching layer possible, no reuse, no testability; move to `DashboardService` + `DashboardRepository` |
+| TASK-R9-013 | Dashboard no asyncHandler, console.error, direct status(500) | `controllers/dashboardController.js` | 🟡 MEDIUM | open | `catch(error) { console.error(...); res.status(500).json({ error: ... }) }` — bypasses global error middleware and structured logging; wrap function with `asyncHandler`, call `next(error)` |
+| TASK-R9-014 | Dashboard hardcoded thresholds and window | `controllers/dashboardController.js` | 🟢 LOW | open | `available_quantity <= 5` hard-coded for low stock; `INTERVAL '30 days'` hard-coded window; both should be tenant-configurable and accept `?range=day|week|month|year` |
+| TASK-R9-015 | onTimeRate KPI computed in controller | `controllers/dashboardController.js` | 🟢 LOW | open | `parseInt(shipments.on_time) / parseInt(shipments.delivered) * 100` calculated inline in controller — KPI logic belongs in `metricsCalculator.js` |
+| TASK-R9-016 | getInvoiceById missing org ownership check | `controllers/financeController.js` | 🔴 CRITICAL | open | `WHERE i.id = $1` only — no `AND i.organization_id = $2`; Tenant A can read Tenant B invoice by guessing/knowing UUID; add `AND i.organization_id = $2` with `organizationId` from `req.orgContext` |
+| TASK-R9-017 | getFinancialSummary orgFilter SQL injection | `controllers/financeController.js` | 🔴 HIGH | open | `const orgFilter = organizationId ? \` AND organization_id = '${organizationId}'\` : ''` — organizationId string-interpolated directly into three live SQL strings; parameterize as `AND organization_id = $N` |
+| TASK-R9-018 | Financial writes have no transactions | `controllers/financeController.js` | 🔴 HIGH | open | `createInvoice`, `processRefund`, `resolveDispute` each execute a single `db.query()` with no `BEGIN/COMMIT` wrapping — future multi-step financial mutations will be non-atomic; wrap all financial writes in explicit transactions |
+| TASK-R9-019 | No financial audit trail | `controllers/financeController.js` | 🟠 HIGH | open | `processRefund` and `resolveDispute` silently mutate money fields with no `finance_audit_log` entry; every financial state change must record `{ entity_type, entity_id, action, old_value, new_value, performed_by, created_at }` |
+| TASK-R9-020 | updateInvoice no status transition validation | `controllers/financeController.js` | 🟡 MEDIUM | open | `UPDATE invoices SET status = $N WHERE id = $M` accepts any status value with no guard — any → any transition allowed; implement `InvoiceStatusMachine.validate(from, to)` or allowable-transitions map |
+| TASK-R9-021 | getDisputes pagination count missing org filter | `controllers/financeController.js` | 🟡 MEDIUM | open | Main query applies `AND i.organization_id = $N` but count query is `SELECT COUNT(*) FROM invoices WHERE status = 'disputed'` with no org filter — `totalPages` is platform-wide, list is org-scoped; incorrect pagination |
+| TASK-R9-022 | createInvoice no idempotency protection | `controllers/financeController.js` | 🟡 MEDIUM | open | No unique constraint enforcement and no idempotency key — duplicate POST requests create duplicate invoice records; add `UNIQUE(invoice_number, organization_id)` DB constraint and handle `ON CONFLICT` |
+| TASK-R9-023 | Finance controller direct DB access | `controllers/financeController.js` | 🟡 MEDIUM | open | All handlers import and query `db` directly — no service/repository layer; move into `InvoiceRepository`, `FinanceRepository`, `financeService` |
+| TASK-R9-024 | generateUniqueSKU SELECT-before-INSERT race | `controllers/inventoryController.js` | 🟠 HIGH | open | `SELECT 1 FROM inventory WHERE sku = $2` then generate + `INSERT` — concurrent calls with same prefix+month can both pass SELECT and collide on INSERT; rely on `UNIQUE(organization_id, sku)` constraint + `ON CONFLICT DO RETRY` instead of polling |
+| TASK-R9-025 | res.json() inside withTransaction callback | `controllers/inventoryController.js` | 🟡 MEDIUM | open | `adjustStock` and `transferInventory` call `res.json(...)` inside the `withTransaction(async (tx) => {...})` closure — response can be sent before the transaction commits; return data from callback, send response after `withTransaction` resolves |
+| TASK-R9-026 | transferInventory no SELECT FOR UPDATE | `controllers/inventoryController.js` | 🟠 HIGH | open | `findBySKUAndWarehouse` fetches source row then deducts — no `SELECT ... FOR UPDATE` lock; concurrent transfers against the same SKU/warehouse pass the availability check simultaneously and double-spend stock |
+| TASK-R9-027 | Inventory controller creates product catalog entries | `controllers/inventoryController.js` | 🟡 MEDIUM | open | `createInventoryItem` handler directly `INSERT INTO products` via `pool.query` when no `product_id` supplied — Inventory ≠ Product Catalog domain; separate into `ProductController → ProductService → ProductRepository` |
+| TASK-R9-028 | formatInventoryItem presentation helper in controller | `controllers/inventoryController.js` | 🟢 LOW | open | `formatInventoryItem()` function lives in controller file — presentation transform belongs in `mappers/inventoryMapper.js`; controller should import and call mapper |
+| TASK-R9-029 | Jobs controller no org scope on any endpoint | `controllers/jobsController.js` | 🔴 CRITICAL | open | `listJobs`, `getJobDetails`, `retryJob`, `cancelJob`, `createJob`, `getDeadLetterQueue`, `retryFromDeadLetterQueue`, `purgeDeadLetterQueue` — none extract `req.orgContext?.organizationId`; in multi-tenant setup one tenant sees/controls all orgs' jobs |
+| TASK-R9-030 | Jobs controller no RBAC authorization | `controllers/jobsController.js` | 🔴 HIGH | open | No `authorize()` middleware on any endpoint — any authenticated user can cancel jobs, retry failed jobs, purge the DLQ, create cron schedules; add `authorize('jobs:view')`, `authorize('jobs:manage')`, `authorize('jobs:admin')` |
+| TASK-R9-031 | getJobStats dynamic import per request | `controllers/jobsController.js` | 🟡 MEDIUM | open | `const pool = (await import('../configs/db.js')).default` executes inside `getJobStats` handler on every request — dynamic module import is unnecessary overhead; import `pool` at file top like all other controllers |
+| TASK-R9-032 | retryJob and cancelJob no status pre-validation | `controllers/jobsController.js` | 🟡 MEDIUM | open | `retryJob` passes any job status to `jobsService.retryJob(id)` — retrying a `pending` or `running` job causes lifecycle corruption; add guard: `status IN ('failed', 'dead_letter')` for retry, `status IN ('pending', 'scheduled')` for cancel |
+| TASK-R9-033 | console.error logging throughout | `controllers/jobsController.js` | 🟢 LOW | open | All 12+ catch blocks use `console.error(...)` — background job system needs structured logging for observability; replace with `logger.error('...', { error, jobId })` |
+
+---
+
+## Round 10 — ordersController, organizationController, returnsController, shipmentsController
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R10-001 | updateOrderStatus no org scope | `controllers/ordersController.js` | 🔴 CRITICAL | open | `orderService.updateOrderStatus(id, status)` passes no `organizationId` — any authenticated user knowing an order UUID can change another tenant's order status; pass `req.orgContext?.organizationId` as third arg and enforce in service/repo |
+| TASK-R10-002 | createTransferOrder no org injection | `controllers/ordersController.js` | 🔴 HIGH | open | `orderService.createTransferOrder(req.body)` passes raw body with no org injection — unlike `createOrder` which injects `organization_id: req.orgContext?.organizationId`; transfer orders are created org-less |
+| TASK-R10-003 | No order status enum validation | `controllers/ordersController.js` | 🟡 MEDIUM | open | `updateOrderStatus` accepts any `status` string from req.body with no whitelist validation — caller can set status to arbitrary strings; add `VALID_ORDER_STATUSES` constant and validate before delegating to service |
+| TASK-R10-004 | Pagination limit uncapped | `controllers/ordersController.js` | 🟢 LOW | open | `parseInt(limit) || 20` with no upper bound — caller can request 100,000 rows; add `limit = Math.min(parseInt(limit) \|\| 20, 100)` |
+| TASK-R10-005 | organizationController no in-controller auth assertion | `controllers/organizationController.js` | 🔴 HIGH | open | Controller comment says "Superadmin only" but no `if (req.user?.role !== 'superadmin')` guard exists in any handler — relies entirely on route-level middleware; single misconfigured route exposes tenant provisioning to any authenticated user |
+| TASK-R10-006 | createOrganization orchestration in controller | `controllers/organizationController.js` | 🟡 MEDIUM | open | `createOrganization` performs 5 DB operations (code check, email check, org create, admin email check, user insert) inside controller — orchestration belongs in `organizationProvisioningService.createTenant()`; controller will explode when default warehouses/SLAs/roles are added |
+| TASK-R10-007 | No admin password strength validation | `controllers/organizationController.js` | 🟡 MEDIUM | open | `bcrypt.hash(adminData.password, 10)` applied with no strength check — caller can create an org with `password='a'`; validate minimum length, uppercase, number, symbol before hashing |
+| TASK-R10-008 | Admin email uniqueness SELECT+INSERT race | `controllers/organizationController.js` | 🟡 MEDIUM | open | `SELECT id FROM users WHERE email = $1` then separate INSERT — two concurrent provisioning calls pass the check simultaneously; rely on `UNIQUE` DB constraint on `users.email` + handle `23505` error instead of application-level advisory check |
+| TASK-R10-009 | No audit logging on org mutations | `controllers/organizationController.js` | 🟠 HIGH | open | `createOrganization`, `updateOrganization`, `deleteOrganization` have no `logInfo(...)` or audit trail — platform-critical mutations are untraceable; log `{ action, orgId, actorId, ip, timestamp, changes }` for every mutation |
+| TASK-R10-010 | returnsController direct pool access, no service layer | `controllers/returnsController.js` | 🟡 MEDIUM | open | All 5 handlers import and query `pool` directly — entirely bypasses service/repository layer that exists for every other domain; create `ReturnService` + delegate logic out of controller |
+| TASK-R10-011 | Count query fragile regex replace | `controllers/returnsController.js`, `controllers/shipmentsController.js` | 🟡 MEDIUM | open | `query.replace(/SELECT .* FROM/, 'SELECT COUNT(*) FROM').split('ORDER BY')[0]` — regex greedy match breaks if SELECT contains a subquery or CTE; maintain explicit separate count query |
+| TASK-R10-012 | LIMIT/OFFSET string-interpolated | `controllers/returnsController.js`, `controllers/shipmentsController.js` | 🟡 MEDIUM | open | `LIMIT ${limit} OFFSET ${offset}` interpolated directly into SQL — values come from validated query params but pattern is unsafe; use `LIMIT $N OFFSET $M` with parameterized values |
+| TASK-R10-013 | No asyncHandler, console.error, direct 500 | `controllers/returnsController.js`, `controllers/shipmentsController.js` | 🟡 MEDIUM | open | All catch blocks use `console.error(...)` + `res.status(500).json(...)` — bypasses global error middleware and structured logging; wrap with `asyncHandler` and call `next(error)` |
+| TASK-R10-014 | Weak RMA number generation | `controllers/returnsController.js` | 🟡 MEDIUM | open | `RMA-${Date.now()}-${Math.random().toString(36)...}` — collision possible at scale, unsortable per tenant, unreadable for support teams; use `RMA-{ORG_CODE}-{YYYY}-{SEQUENCE}` with DB sequence |
+| TASK-R10-015 | createReturn single-item only | `controllers/returnsController.js` | 🔴 HIGH | open | `const firstItem = items[0]` — acknowledged TODO in code; only the first item of a multi-item return is persisted; other items silently dropped; use transaction + `return_items` table insert for all items |
+| TASK-R10-016 | updateReturn no org ownership check | `controllers/returnsController.js` | 🔴 CRITICAL | open | `UPDATE returns ... WHERE id = $1` only — no `AND organization_id = $N`; any authenticated user knowing a return UUID can mutate another tenant's refund amount, status, or notes |
+| TASK-R10-017 | getReturnStats no org filter | `controllers/returnsController.js` | 🔴 CRITICAL | open | `SELECT COUNT(*), SUM(refund_amount) FROM returns WHERE created_at >= ...` — no org filter; every tenant sees platform-wide refund totals and return counts; add `AND organization_id = $1` |
+| TASK-R10-018 | No return status transition validation | `controllers/returnsController.js` | 🟡 MEDIUM | open | `updateReturn` accepts any status string — no state machine enforcement; caller can jump from `pending` → `completed` skipping inspection; add allowable-transitions map: `pending→approved/rejected`, `approved→processing`, `processing→completed/refunded` |
+| TASK-R10-019 | shipmentsController direct pool access, no service layer | `controllers/shipmentsController.js` | 🟡 MEDIUM | open | All handlers import and query `pool` directly, including inline inventory transfer (50+ lines of SQL); business logic belongs in `ShipmentService` + `InventoryService.executeTransfer()` |
+| TASK-R10-020 | listShipments N+1 events queries | `controllers/shipmentsController.js` | 🟠 HIGH | open | `Promise.all(result.rows.map(async (row) => { await pool.query('... WHERE shipment_id = $1', [row.id]) }))` — runs one events query per shipment in parallel; at 50 shipments per page = 51 DB round-trips; fetch all events in one query `WHERE shipment_id = ANY($1)` then group in memory |
+| TASK-R10-021 | createShipment crashes — undefined `value` | `controllers/shipmentsController.js` | 🔴 CRITICAL | open | `value.tracking_number` on line ~283 — variable `value` is never defined; `req.body` was destructured as `{ order_id, carrier_id, carrier_name, origin, destination }` but `value` is not assigned; crashes every shipment creation call |
+| TASK-R10-022 | createShipment crashes — undefined `orderId` | `controllers/shipmentsController.js` | 🔴 CRITICAL | open | `UPDATE orders SET status = 'shipped' WHERE id = $1` uses `orderId` variable — destructured param is `order_id` (snake_case); `orderId` is undefined at that line; crashes in transaction, triggering rollback on every shipment create |
+| TASK-R10-023 | Destination warehouse text address match | `controllers/shipmentsController.js` | 🔴 HIGH | open | `SELECT id FROM warehouses WHERE address::text = $1` — address JSON text match for warehouse routing; any minor formatting difference (`"  "` vs `" "`, key ordering) silently fails → transfer delivery crashes; add `to_warehouse_id` column to `orders` table and use it directly |
+| TASK-R10-024 | Inventory transfer logic in shipments controller | `controllers/shipmentsController.js` | 🟡 MEDIUM | open | `updateShipmentStatus` contains ~50 lines of direct inventory mutations (6 SQL queries, loop over items) — tightly couples shipment system to inventory system; extract to `inventoryService.executeWarehouseTransfer(orderId, fromId, toId, items, tx)` |
+| TASK-R10-025 | getShipmentTimeline no org filter | `controllers/shipmentsController.js` | 🔴 CRITICAL | open | `SELECT ... FROM shipment_events WHERE shipment_id = $1` — no `AND s.organization_id = $N` join; any authenticated user knowing a shipment UUID reads full tracking history of another tenant's shipment |
+| TASK-R10-026 | updateShipmentStatus no org check | `controllers/shipmentsController.js` | 🔴 HIGH | open | `UPDATE shipments SET status = $1 WHERE id = $3` — no WHERE clause verifying `organization_id`; cross-tenant shipment status modification and event injection is possible |
+| TASK-R10-027 | Shipment status transitions unconstrained | `controllers/shipmentsController.js` | 🟡 MEDIUM | open | `updateShipmentStatus` writes any incoming `status` string with no state machine validation — caller can jump `pending → delivered` skipping `picked_up / in_transit`; add enforcement: `pending→picked_up`, `picked_up→in_transit`, `in_transit→delivered/failed` (duplicate with TASK-R2-005 but now confirmed in actual code) |
+
+## Round 11 — shippingQuoteController, slaController, trackingController
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R11-001 | getQuickEstimate warehouse lookup no org filter | `controllers/shippingQuoteController.js` | 🟡 MEDIUM | open | `SELECT ... FROM warehouses WHERE id = $1` — no `AND organization_id = $N`; any authenticated user can probe coordinates and address of any warehouse by passing arbitrary `warehouse_id`; add `AND organization_id = $2` with `req.orgContext?.organizationId` |
+| TASK-R11-002 | getShippingQuotes no org context to carrier service | `controllers/shippingQuoteController.js` | 🟠 HIGH | open | Neither `getShippingQuotes` nor `getShippingQuotesWithCriteria` passes `organizationId` from `req.orgContext` to `carrierRateService.getQuotesFromAllCarriers`; stored quotes in `carrier_quotes` become unscoped; add `organizationId: req.orgContext?.organizationId` to the service call and persist it on every quote row |
+| TASK-R11-003 | getQuotesForOrder no org filter | `controllers/shippingQuoteController.js` | 🔴 CRITICAL | open | `SELECT cq.* FROM carrier_quotes cq ... WHERE cq.order_id = $1` — no org filter; any authenticated user knowing an order UUID reads all submitted carrier quotes (pricing intelligence) for another tenant's order; add `JOIN orders o ON cq.order_id = o.id WHERE cq.order_id = $1 AND o.organization_id = $2` |
+| TASK-R11-004 | getQuoteFromCarrier carrier query no org filter | `controllers/shippingQuoteController.js` | 🟡 MEDIUM | open | `SELECT * FROM carriers WHERE id = $1 AND is_active = true` — no org filter; any org can request a quote from any carrier regardless of tenant contract; add `AND (organization_id = $2 OR organization_id IS NULL)` to support both global and tenant-specific carriers |
+| TASK-R11-005 | selectQuote no state guard | `controllers/shippingQuoteController.js` | 🟠 HIGH | open | `selectQuote` only validates `orderId` is present then calls `markQuoteAsSelected(quoteId, orderId)` — no checks that quote belongs to the order, order is still open, quote has not expired, no shipment already exists; add pre-flight: verify `carrier_quotes.order_id = $orderId`, `orders.status IN ('confirmed','pending')`, `carrier_quotes.expires_at > NOW()`, no existing shipment for order |
+| TASK-R11-006 | Legacy endpoint no deprecation headers | `controllers/shippingQuoteController.js` | 🟢 LOW | open | `getShippingQuotesLegacy` has `// DEPRECATED` comment but emits no HTTP headers; add `res.set('Deprecation', 'true')` and `res.set('Sunset', '<date>')` before response so integrations can programmatically detect and plan migration |
+| TASK-R11-007 | getShippingQuotes waitForResponses blocks HTTP | `controllers/shippingQuoteController.js` | 🟡 MEDIUM | open | `carrierRateService.getQuotesFromAllCarriers({ waitForResponses: true })` blocks the HTTP request while awaiting multiple external carrier API responses; return `202 Accepted` with a `quoteRequestId`, expose `GET /quotes/status/:quoteRequestId` for polling; prevents timeout on slow carrier networks |
+| TASK-R11-008 | listSlaPolicies no org filter | `controllers/slaController.js` | 🟠 HIGH | open | `SELECT * FROM sla_policies WHERE is_active = true` — no `AND organization_id = $N`; if SLA policies are tenant-specific every org sees all other tenants' SLA terms; add `AND (organization_id = $1 OR organization_id IS NULL)` with `req.orgContext?.organizationId` |
+| TASK-R11-009 | getEta no org filter | `controllers/slaController.js` | 🔴 CRITICAL | open | `SELECT ep.* FROM eta_predictions ep JOIN shipments s ON ep.shipment_id = s.id WHERE ep.shipment_id = $1` — no org filter on shipments join; any authenticated user knowing a shipment UUID reads ETA confidence data for another tenant's shipment; add `AND s.organization_id = $2` |
+| TASK-R11-010 | getSlaViolations no org filter | `controllers/slaController.js` | 🔴 CRITICAL | open | `SELECT sv.* FROM sla_violations sv ... WHERE 1=1` with optional status filter only — zero org scoping; every tenant reads all SLA violations across the platform; add `AND sv.organization_id = $N` with `req.orgContext?.organizationId` |
+| TASK-R11-011 | getSlaDashboard no org filter | `controllers/slaController.js` | 🔴 CRITICAL | open | Both aggregation queries (`FROM shipments WHERE status='delivered'` and `FROM sla_violations WHERE violated_at >= ...`) have no org filter — returns platform-wide compliance metrics to every tenant; add `AND s.organization_id = $1` / `AND sv.organization_id = $1` throughout |
+| TASK-R11-012 | resolveException no org ownership check | `controllers/slaController.js` | 🔴 CRITICAL | open | `UPDATE exceptions SET status='resolved'... WHERE id = $2` — no `AND organization_id = $N`; any authenticated user knowing an exception UUID can resolve another tenant's exception and inject arbitrary resolution notes; add `AND organization_id = $3` with `req.orgContext?.organizationId` and verify rowcount > 0 |
+| TASK-R11-013 | Warning threshold hardcoded ratio | `controllers/slaController.js` | 🟢 LOW | open | `warningThresholdHours: Math.floor(p.delivery_hours * 0.8)` — 80% ratio hardcoded in controller transform; add `warning_hours` and `breach_hours` columns to `sla_policies` table (or `warning_threshold_pct`) so operations teams can configure per-policy thresholds |
+| TASK-R11-014 | slaController no asyncHandler, console.error, direct 500 | `controllers/slaController.js` | 🟡 MEDIUM | open | All 7 handlers use `console.error(...)` + `res.status(500).json(...)` in catch blocks — bypasses structured logger and global error middleware; wrap handlers with `asyncHandler` and replace error paths with `next(new AppError(...))` |
+| TASK-R11-015 | getSlaViolations LIMIT/OFFSET interpolated | `controllers/slaController.js` | 🟡 MEDIUM | open | `query += \` ORDER BY sv.violated_at DESC LIMIT ${limit} OFFSET ${offset}\`` — values from `req.query` string-interpolated directly without parameterization; use `LIMIT $N OFFSET $M` with bound values (same pattern as TASK-R10-012) |
+| TASK-R11-016 | All tracking handlers no org filter | `controllers/trackingController.js` | 🔴 CRITICAL | open | All 5 handlers (`getShipmentDetails`, `updateShipmentTracking`, `calculateRoute`, `simulateTrackingUpdate`, `getTrackingTimeline`) look up shipment using `WHERE tracking_number = $1` only — no `AND organization_id = $N`; anyone who knows or guesses a tracking number can read or mutate any org's shipment; add `AND organization_id = $2` with `req.orgContext?.organizationId` to every lookup |
+| TASK-R11-017 | updateShipmentTracking no carrier authentication | `controllers/trackingController.js` | 🔴 CRITICAL | open | POST `/update-tracking` only validates `eventType` is present — no carrier identity check, no webhook signature verification, no guard that caller is the assigned carrier; anyone knowing a tracking number can inject fake events (fake `delivered` suppresses SLA violations and triggers refunds); add HMAC signature validation: `verifyCarrierWebhookSignature(req.headers['x-carrier-signature'], req.body)` and verify carrier assignment |
+| TASK-R11-018 | trackingController no asyncHandler, direct 500 | `controllers/trackingController.js` | 🟢 LOW | open | All handlers use `try/catch` with `logger.error(...)` + `res.status(500).json(...)` — bypasses global error middleware (uses logger, better than slaController); wrap with `asyncHandler` and replace catch bodies with `next(error)` |
+
+## Round 12 — usersController, webhooksController, carrierRateService, shipping/* services
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R12-001 | Refresh token stateless — cannot be revoked | `controllers/usersController.js`, `utils/jwt.js` | 🔴 CRITICAL | open | `login()` calls `generateRefreshToken(tokenPayload)` and returns it to client — token is a stateless JWT never stored in DB; stolen refresh token lives until expiry with no revocation path; `logout()` logs to audit table but token remains live; create `user_sessions` table, store hashed token on login, verify + delete on refresh/logout: `INSERT INTO user_sessions (user_id, token_hash, expires_at)` |
+| TASK-R12-002 | Login no org active status check | `controllers/usersController.js` | 🔴 HIGH | open | Login query: `WHERE u.email = $1 AND u.is_active = true` — joins `organizations` but never checks `o.is_active`; a user from a disabled/suspended tenant can still log in and acquire tokens; add `AND (o.id IS NULL OR o.is_active = true)` to the login SELECT |
+| TASK-R12-003 | JWT token payload missing organizationId | `controllers/usersController.js` | 🔴 HIGH | open | `tokenPayload = { userId, role, email }` — no `organizationId`; every auth middleware must do an extra DB lookup to get org context instead of reading it from token claims; add `organization_id: user.organization_id` to token payload in `login()` and `refreshToken()` |
+| TASK-R12-004 | createOrgUser no password strength validation | `controllers/usersController.js` | 🟡 MEDIUM | open | `bcrypt.hash(password, 10)` called directly with no minimum-length or complexity check — admin can create users with `password='a'`; `settingsService.changePassword` enforces ≥8 chars but `createOrgUser` has no equivalent guard; add strength regex before `bcrypt.hash` |
+| TASK-R12-005 | createOrgUser SELECT+INSERT email race | `controllers/usersController.js` | 🟡 MEDIUM | open | `SELECT id FROM users WHERE email = $1` then separate `INSERT` — two concurrent create-user calls pass the check simultaneously; rely on `UNIQUE` DB constraint on `users.email` and handle `23505` error instead of advisory SELECT (same pattern as TASK-R10-008) |
+| TASK-R12-006 | listUsers count query fragile regex replace | `controllers/usersController.js` | 🟡 MEDIUM | open | `query.replace(/SELECT .* FROM/, 'SELECT COUNT(*) FROM')` — greedy regex breaks if SELECT contains a subquery or CTE; maintain explicit separate count query (same pattern as TASK-R10-011) |
+| TASK-R12-007 | listUsers LIMIT/OFFSET string-interpolated | `controllers/usersController.js` | 🟡 MEDIUM | open | `query += \` ORDER BY u.created_at DESC LIMIT ${limit} OFFSET ${offset}\`` — values from `req.query` interpolated directly; use `LIMIT $N OFFSET $M` with parameterized values (same pattern as TASK-R10-012) |
+| TASK-R12-008 | updateOrgUser/deactivateOrgUser no audit log | `controllers/usersController.js` | 🟡 MEDIUM | open | `createOrgUser` inserts to `audit_logs` after creating a user; `updateOrgUser` (role/active status changes) and `deactivateOrgUser` have no equivalent audit insert — role escalation and account disablement are untraceable; add `audit_logs` insert to both with `{ action, actorId, targetUserId, changes }` |
+| TASK-R12-009 | usersController no asyncHandler, console.error, direct 500 | `controllers/usersController.js` | 🟡 MEDIUM | open | All handlers use `try/catch` with `console.error(...)` + `res.status(500).json(...)` — bypasses structured logger and global error middleware; wrap all handlers with `asyncHandler` and replace catch paths with `next(new AppError(...))` (same pattern as TASK-R10-013) |
+| TASK-R12-010 | No HMAC signature verification on any webhook endpoint | `controllers/webhooksController.js` | 🔴 CRITICAL | open | All 5 event endpoints (`handleOrderWebhook`, `handleTrackingWebhook`, `handleInventoryWebhook`, `handleReturnWebhook`, `handleRatesWebhook`) accept POST data with zero identity verification — no `X-Shopify-Hmac-Sha256`, no `X-Webhook-Signature`, no per-source secret check; any actor who discovers the URL can inject arbitrary orders, fake delivered status, or flood inventory; add per-source HMAC middleware: `verifyWebhookSignature(req, source, secret)` before enqueueing |
+| TASK-R12-011 | No webhook event idempotency | `controllers/webhooksController.js` | 🟠 HIGH | open | Webhook senders retry on network failure — same event (same `event_type` + payload) can be received 5+ times with no dedup; no `webhook_events` table with `(event_id, source, received_at, processed)` — duplicate events create duplicate orders and double inventory mutations; add idempotency key check: if `event_id` already in `webhook_events` return `200 Already processed` |
+| TASK-R12-012 | Webhook source field trusted from payload body | `controllers/webhooksController.js` | 🟡 MEDIUM | open | `source` is read directly from `req.body.source` — caller controls which platform adapter runs (Amazon/Shopify/eBay/generic); a malicious sender can claim `source: 'amazon'` and trigger Amazon-specific order parsing logic; authenticate source from route parameter or HMAC secret lookup table, not from the payload |
+| TASK-R12-013 | No request body size limit on webhook endpoints | `controllers/webhooksController.js` | 🟢 LOW | open | No explicit payload size guard on any webhook handler; a malicious sender sends 100MB JSON payload → memory exhaustion crash; add `express.json({ limit: '1mb' })` on webhook routes or global middleware |
+| TASK-R12-014 | api_key_encrypted used directly without decryption | `services/shipping/carrierQuoteService.js` | 🔴 HIGH | open | `carrier.api_key_encrypted` is used as the Authorization Bearer token in the commented-out DHL/carrier API call: `Bearer ${carrier.api_key_encrypted}`; if encryption is real, encrypted blob is sent to carrier API instead of the actual key — auth fails; if column stores plaintext the `_encrypted` name is misleading; add a `decryptApiKey(carrier.api_key_encrypted)` call before any API request |
+| TASK-R12-015 | No request timeout on carrier API calls | `services/shipping/carrierQuoteService.js` | 🔴 HIGH | open | None of `getDHLQuote`, `getFedExQuote`, `getBlueDartQuote`, `getDelhiveryQuote`, or `getGenericQuote` set `timeout` on axios calls — a hanging carrier API blocks the `Promise.allSettled` for all carriers indefinitely; add `timeout: 5000` (5s) to every `axios.post` call in carrier quote functions |
+| TASK-R12-016 | No circuit breaker for repeated carrier API failures | `services/shipping/carrierQuoteService.js` | 🟡 MEDIUM | open | Repeated carrier API failures cause the same carrier's API to be called every quoting request even when known unavailable — amplifies load during outages; add `carrier_health` table with `failure_count`, `last_failure_at`, `disabled_until`; skip calls to disabled carriers with `at_capacity` rejection instead of HTTP error |
+| TASK-R12-017 | Random rejection simulation left in production code | `services/shipping/carrierValidationService.js` | 🔴 HIGH | open | `checkCarrierRejectionReasons` uses `Math.random() > 0.85` for capacity rejection and `Math.random() > 0.7` for long-route rejection — non-deterministic behavior in production code; same shipment is accepted sometimes and rejected other times; replace with real data: query `carrier_capacity` table for current availability or use a feature flag `SIMULATION_MODE` |
+| TASK-R12-018 | Carrier reliability scores hardcoded static map | `services/shipping/carrierSelectionService.js` | 🟢 LOW | open | `getCarrierReliabilityScore` returns values from a hardcoded `reliabilityMap: { DHL: 0.95, FEDEX: 0.92, ... }` — scores never change despite real carrier performance; move to `carrier_performance` table with rolling average from historical `shipments` data (on_time_count / total_count) |
+| TASK-R12-019 | markQuoteAsSelected not transactional | `services/shipping/quoteDataService.js` | 🟡 MEDIUM | open | Two separate UPDATE queries: `SET is_selected = false WHERE order_id = $1` then `SET is_selected = true WHERE id = $1`; if second UPDATE fails or connection drops between them, all quotes are unselected and order has no carrier; wrap both in a `BEGIN/COMMIT` transaction |
+---
+
+## Round 13 — alertService, allocationService
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R13-001 | No alert deduplication / cooldown | `services/alertService.js` | 🔴 HIGH | open | `evaluateAlerts` loops all rules each cron cycle and calls `triggerAlert` whenever rule is true — no check for existing open alert with same `rule_id`, no `cooldown_minutes` / `last_triggered_at` guard; same SLA breach creates a new alert row every 5 minutes; add `SELECT id FROM alerts WHERE rule_id = $1 AND status IN ('open','acknowledged')` check before inserting, or add `cooldown_minutes` + `last_triggered_at` columns to `alert_rules` |
+| TASK-R13-002 | getAlerts / acknowledgeAlert / resolveAlert no org filter | `services/alertService.js` | 🔴 HIGH | open | `getAlerts` builds query with no `organization_id` condition — any tenant reads all orgs' alerts; `acknowledgeAlert` uses `WHERE id = $1` only — any user can ack another org's alert; `resolveAlert` same issue; add `AND organization_id = $N` via `req.orgContext?.organizationId` to all three |
+| TASK-R13-003 | Alert recipient fallback queries all admins globally | `services/alertService.js` | 🔴 HIGH | open | `getAlertRecipients` fallback: `SELECT id FROM users WHERE role = 'admin' AND is_active = true` — no `organization_id` filter; Tenant A outage notifies Tenant B admins; add `AND organization_id = $1` using `rule.organization_id` or alert context |
+| TASK-R13-004 | Notifications and job creation inside DB transaction | `services/alertService.js` | 🟠 HIGH | open | `triggerAlert` calls `notificationService.createNotification()` and `jobsService.createJob()` inside `BEGIN/COMMIT` block; if notification or job service throws, the alert INSERT is rolled back — alert never created despite rule firing; move both side-effects outside the transaction: commit alert first, then dispatch notifications and jobs |
+| TASK-R13-005 | checkStuckShipments LEFT JOIN duplicates rows | `services/alertService.js` | 🟡 MEDIUM | open | `LEFT JOIN shipment_events se ON s.id = se.shipment_id` in `COUNT(*)` query — a shipment with 4 events is counted 4 times, inflating the stuck-shipment count; use `MAX(se.event_time)` subquery: `LEFT JOIN (SELECT shipment_id, MAX(event_time) as last_event FROM shipment_events GROUP BY shipment_id) se ON s.id = se.shipment_id` |
+| TASK-R13-006 | `conditions` field fetched but ignored in every check function | `services/alertService.js` | 🟡 MEDIUM | open | Every check function signature is `checkXxx(threshold, conditions)` but `conditions` is never read in any function body — `alert_rules.conditions` JSON is fetched from DB and discarded; implement `applyConditionFilters(query, conditions)` helper that adds `AND warehouse_id = $N` / `AND carrier_id = $N` from conditions object |
+| TASK-R13-007 | evaluateRule switch — rule registry pattern | `services/alertService.js` | 🟢 LOW | open | `switch(rule_type)` with 6 cases; replace with evaluator map: `const ruleEvaluators = { sla_breach: this.checkSLABreach, ... }; return ruleEvaluators[rule_type]?.(threshold, conditions)` — removes growing switch, enables dynamic rule registration |
+| TASK-R13-008 | checkLowStock no discontinued SKU filter | `services/alertService.js` | 🟢 LOW | open | `WHERE quantity_available <= reorder_point AND quantity_available > 0` — no filter for discontinued/inactive products; discontinued SKUs permanently trigger low-stock alerts; add `AND (p.is_active = true OR p.status != 'discontinued')` via join to `products` |
+| TASK-R13-009 | allocateOrderItems no transaction + no inventory row lock | `services/allocationService.js` | 🔴 CRITICAL | open | `allocateOrderItems` queries warehouse stock and records allocation history, but never opens a transaction or issues `SELECT ... FOR UPDATE` on inventory rows; two concurrent orders for the same SKU both read the same available_quantity, both pass the availability check, both get allocated — neither can be fulfilled; wrap in `BEGIN TRANSACTION` and add `SELECT ... FOR UPDATE SKIP LOCKED` on inventory before scoring |
+| TASK-R13-010 | Allocation has no inventory reservation step | `services/allocationService.js` | 🔴 HIGH | open | After selecting the best warehouse, function inserts `allocation_history` but never calls `reserveStock` or inserts into `inventory_reservations`; stock remains fully available to the next concurrent order; add `UPDATE inventory SET reserved_quantity = reserved_quantity + $qty WHERE warehouse_id = $wh AND sku = $sku` (inside same transaction as R13-009) after each successful allocation |
+| TASK-R13-011 | N+1 DB queries — one warehouse query per item | `services/allocationService.js` | 🟠 HIGH | open | `allocateOrderItems` loop: for each item → `allocateItem` → DB query for `warehouses + inventory`; a 50-item order = 50 DB round-trips plus `calculateSLAScore` adds one more per warehouse per item; fetch all SKU inventory in a single `WHERE p.sku = ANY($1)` query upfront and build in-memory map for scoring |
+| TASK-R13-012 | calculateSLAScore queries shipments table per warehouse per allocation | `services/allocationService.js` | 🟠 HIGH | open | `calculateSLAScore` runs `SELECT COUNT(*) FROM shipments WHERE warehouse_id = $1 AND created_at >= NOW() - INTERVAL '30 days'` for every warehouse during every allocation call; at 50 items × 10 warehouses = 500 shipments scans per order; maintain `warehouse_metrics` table updated hourly by background job; allocation reads `on_time_rate` from metrics row instantly |
+| TASK-R13-013 | round_robin strategy uses Math.random — causes clustering | `services/allocationService.js` | 🟡 MEDIUM | open | `case 'round_robin': score = Math.random() * 100` — random assignment skews toward the same warehouse over time (clustering); implement true round robin: store `last_selected_warehouse_id` per allocation rule in DB and cycle deterministically |
+| TASK-R13-014 | Scoring model winner-takes-all — not weighted | `services/allocationService.js` | 🟡 MEDIUM | open | `scoreWarehouse` tracks `maxScore` across all rules — only the single highest-scoring rule determines the choice; a warehouse scoring proximity=90, cost=88, sla=85 beats one scoring proximity=92, cost=10, sla=10; add weighted sum: `finalScore = proximity*0.4 + cost*0.3 + sla*0.2 + stock*0.1` using `rule.weight` (already exists as `priority` in `allocation_rules`) |
+| TASK-R13-015 | calculateProximityScore uses state-string match instead of real distance | `services/allocationService.js` | 🟡 MEDIUM | open | `return warehouseState === shippingState ? 100 : 50` — binary score ignores city distance, cross-state nearby cities, and rural vs urban routes; code has `// In production, use actual distance calculation` comment confirming intent; integrate with existing `estimateService.calculateRoute` or Haversine from `shippingUtils` |
+| TASK-R13-016 | scoreWarehouse switch — strategy registry pattern | `services/allocationService.js` | 🟢 LOW | open | `switch(rule.strategy)` with 5 cases; replace with strategy map: `const strategies = { proximity: calculateProximityScore, cost: calculateCostScore, sla: calculateSLAScore, stock_level: calculateStockScore, round_robin: getRoundRobinScore }; return strategies[strategy]?.(warehouse, item, shippingAddress)` |
+
+---
+
+## Round 14 — carrierRateService, deliveryChargeService, exceptionService
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R14-001 | Pass-through try/catch at facade | `services/carrierRateService.js` | 🟢 LOW | open | All 11 async methods follow `try { return await sub.method() } catch(err) { logger.error(...); throw err; }` — log-and-rethrow never transforms errors and adds nothing beyond the controller's `asyncHandler`; remove wrappers and let sub-service errors propagate naturally |
+| TASK-R14-002 | Zone parameter silently ignored in rate lookup | `services/deliveryChargeService.js` | 🟠 HIGH | open | `getBaseRate(carrierId, zone, serviceType)` computes `zone` before calling but the SQL is `WHERE carrier_id = $1 AND service_type = $2` only — zone is never bound; all zones receive the same rate; add `AND zone = $3` to the query and pass `zone` as the third bind variable |
+| TASK-R14-003 | LIMIT 1 without ORDER BY in rate card query | `services/deliveryChargeService.js` | 🟡 MEDIUM | open | `FROM rate_cards WHERE carrier_id = $1 AND service_type = $2 LIMIT 1` with no ORDER BY — Postgres returns an arbitrary row when multiple rate cards match (e.g. different effective dates); add `ORDER BY effective_from DESC LIMIT 1` to always use the most recently effective rate card |
+| TASK-R14-004 | GST hardcoded at 18% | `services/deliveryChargeService.js` | 🟡 MEDIUM | open | `const gst = subtotal * 0.18; // 18% GST in India` — GST rates vary by service category (5% essential, 12% standard, 18% general, 28% luxury/hazmat); flat 18% overcharges lower-rate items; add `gst_rate FLOAT DEFAULT 0.18` to `rate_cards`, return it from `getBaseRate`, and apply per-service rate |
+| TASK-R14-005 | Zone distance thresholds hardcoded in JS | `services/deliveryChargeService.js` | 🟢 LOW | open | `determineZone` has five distance cutoffs (100/300/1000/2000 km) as JS constants; carrier-specific zone boundaries differ; move to `carrier_zone_thresholds (carrier_id, max_km, zone_name)` table: `SELECT zone_name FROM carrier_zone_thresholds WHERE carrier_id = $1 AND max_km >= $2 ORDER BY max_km ASC LIMIT 1` |
+| TASK-R14-006 | No org filter on exception stats and priority queries | `services/exceptionService.js` | 🔴 HIGH | open | `getExceptionStatistics(startDate, endDate)` and `getHighPriorityExceptions()` have no `organization_id` WHERE clause — any authenticated tenant reads all orgs' exception counts, severity breakdowns, avg resolution hours, and live priority queue; add `AND organization_id = $N` to all four sub-queries and require `organizationId` as a parameter from the calling controller |
+| TASK-R14-007 | Escalation sends no notifications | `services/exceptionService.js` | 🟡 MEDIUM | open | `escalateException` updates the DB row and calls `logEvent` only — no notification to the `escalated_to` user or on-call team; a critical exception can reach escalation_level 3 with no one alerted; call `notificationService.createNotification({ userId: escalatedTo, type: 'exception_escalated', payload: { exceptionId, escalationLevel, reason } })` after the DB UPDATE |
+| TASK-R14-008 | No exception assignment history | `services/exceptionService.js` | 🟡 MEDIUM | open | `assignException` runs `UPDATE exceptions SET assigned_to = $1 WHERE id = $2` — previous assignee is silently overwritten with no audit trail; create `exception_assignment_history (exception_id, assigned_from, assigned_to, assigned_at, assigned_by)` and INSERT a row on every `assignException` call before the UPDATE |
+| TASK-R14-009 | Duplicate exception dedup only for delay type | `services/exceptionService.js` | 🟡 MEDIUM | open | `autoDetectDelayExceptions` prevents duplicates via `NOT EXISTS (... WHERE exception_type = 'delay')`; `createException` has no dedup at all — damage/lost_shipment/carrier_issue exceptions can be created multiple times for the same shipment; add pre-insert check `SELECT id FROM exceptions WHERE shipment_id = $1 AND exception_type = $2 AND status IN ('open','investigating')` in `createException` and surface existing exception if found |
+| TASK-R14-010 | console.error instead of logger.error | `services/exceptionService.js` | 🟢 LOW | open | `autoEscalateOverdueExceptions` and `autoDetectDelayExceptions` both use `console.error(...)` in their catch blocks — inconsistent with codebase convention; replace both with `logger.error('...', { exceptionId: exception.id, error: error.message })` |
+| TASK-R14-011 | Reship and refund resolution branches are stubs | `services/exceptionService.js` | 🟡 MEDIUM | open | `resolveException` has `if (resolution === 'reship')` and `if (resolution === 'refund')` blocks that only call `logEvent` with a comment "Logic would go here" — these are silent no-ops; reship must call `shipmentService.createReplacementShipment(exception.order_id, exceptionId)` and refund must call `financeService.initiateRefund(exception.order_id, resolutionNotes, resolvedBy)` inside the transaction |
+| TASK-R14-012 | Rounding inconsistency in pricing breakdown | `services/deliveryChargeService.js` | 🟢 LOW | open | Each field in the return is independently rounded with `parseFloat(x.toFixed(2))` — the displayed sum of rounded components can differ from the displayed total by ±0.01; compute total from already-rounded values: `const roundedSubtotal = parseFloat(subtotal.toFixed(2)); const roundedGst = parseFloat(gst.toFixed(2)); const total = roundedSubtotal + roundedGst;` |
+
+---
+
+## Round 15 — invoiceService, jobsService, notificationService
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R15-001 | Invoice number collision via Date.now() | `services/invoiceService.js` | 🟠 HIGH | open | `` const invoiceNumber = `INV-${carrier.code}-${Date.now()}` `` — millisecond timestamp collides when two invoices for the same carrier are generated within 1ms by concurrent jobs; replace with DB sequence: `SELECT nextval('invoice_number_seq')` and format as `` `INV-${carrier.code}-${year}-${seq.toString().padStart(6,'0')}` `` |
+| TASK-R15-002 | No duplicate invoice guard per billing period | `services/invoiceService.js` | 🟠 HIGH | open | `generateInvoiceForCarrier` has no pre-insert check for an existing invoice with same `(carrier_id, billing_period_start, billing_period_end)`; `generateMonthlyInvoices` triggered twice (cron double-fire, manual retry) produces two identical invoices; add `SELECT id FROM invoices WHERE carrier_id = $1 AND billing_period_start = $2 AND billing_period_end = $3` before INSERT inside the transaction, and add `UNIQUE(carrier_id, billing_period_start, billing_period_end)` DB constraint |
+| TASK-R15-003 | getInvoicingSummary no org filter — platform-wide billing exposed | `services/invoiceService.js` | 🔴 HIGH | open | `SELECT COUNT(*), SUM(base_amount), SUM(final_amount) ... FROM invoices WHERE created_at >= $1 AND created_at < $2` has no `organization_id` clause; any authenticated user reads global revenue totals, total penalties, and payout status across all tenants; add `AND organization_id = $N` with `organizationId` required from the calling controller |
+| TASK-R15-004 | Invoice lifecycle mutations no org ownership check | `services/invoiceService.js` | 🔴 HIGH | open | `getInvoiceWithLineItems`, `approveInvoice`, `markInvoicePaid`, and `disputeInvoice` all filter by `id = $N` only — no `AND organization_id = $M`; Tenant A knowing an invoice UUID can read, approve, mark paid, or dispute Tenant B's carrier invoice; add `AND organization_id = $N` to all four queries using `organizationId` from the calling controller |
+| TASK-R15-005 | generateMonthlyInvoices fetches all carriers globally | `services/invoiceService.js` | 🟠 HIGH | open | `SELECT id FROM carriers WHERE is_active = true` returns every carrier across all orgs; cron trigger processes all tenants' carriers in one run with shared error tracking and no per-org isolation; add `organization_id` parameter and `AND organization_id = $1` to the carriers query; dispatch one job per org from the cron scheduler |
+| TASK-R15-006 | Fuel surcharge hardcoded at 5% | `services/invoiceService.js` | 🟡 MEDIUM | open | `const fuelSurcharge = baseAmount * 0.05` and `'Fuel Surcharge (5%)'` — fuel rates change weekly in real logistics; move to `carrier_contracts` or `rate_cards` table with a `fuel_surcharge_percent` column; `deliveryChargeService.getBaseRate` already reads `fuel_surcharge_percent` from `rate_cards` — apply same lookup here |
+| TASK-R15-007 | disputeInvoice reason and actor not persisted | `services/invoiceService.js` | 🟡 MEDIUM | open | `disputeInvoice(invoiceId, reason, disputedBy)` runs `UPDATE invoices SET status = 'disputed' WHERE id = $1` — `reason` and `disputedBy` params are accepted but only passed to `logEvent`, never stored in the row; add `dispute_reason TEXT, disputed_by UUID, disputed_at TIMESTAMPTZ` columns and bind them: `SET status = 'disputed', dispute_reason = $2, disputed_by = $3, disputed_at = NOW()` |
+| TASK-R15-008 | Line items inserted one-by-one inside transaction loop | `services/invoiceService.js` | 🟢 LOW | open | `for (const lineItem of allLineItems) { await client.query(INSERT ...) }` — each iteration is a sequential await; a monthly invoice with 200 shipments produces 200+ sequential DB round-trips; replace with a single parameterized bulk INSERT: build `VALUES ($1,$2,...),($8,$9,...)` from `allLineItems.map((item, i) => ...)` and call one `client.query` |
+| TASK-R15-009 | getPendingJobs no SELECT FOR UPDATE SKIP LOCKED — concurrent workers pick same jobs | `services/jobsService.js` | 🔴 CRITICAL | open | `SELECT * FROM background_jobs WHERE status IN ('pending','retrying') AND scheduled_for <= NOW() LIMIT $1` — two worker processes calling this simultaneously read the same batch; both then call `startJobExecution` on identical IDs; results in double invoice generation, double notifications, double carrier API calls; change to `SELECT ... FOR UPDATE SKIP LOCKED` inside a caller-held transaction that is released only after `startJobExecution` completes |
+| TASK-R15-010 | No worker heartbeat — crashed workers leave jobs stuck in 'running' | `services/jobsService.js` | 🟡 MEDIUM | open | `startJobExecution` sets `status = 'running'` but writes no `worker_id` or `heartbeat_at`; worker crash leaves job 'running' forever and it is never retried; add `worker_id TEXT, heartbeat_at TIMESTAMPTZ` to `background_jobs`; worker sets both on start and updates `heartbeat_at = NOW()` every 30s; add recovery function: `WHERE status = 'running' AND heartbeat_at < NOW() - INTERVAL '2 minutes'` → requeue |
+| TASK-R15-011 | Fixed 5-minute retry delay, no exponential backoff | `services/jobsService.js` | 🟡 MEDIUM | open | `failJobExecution` always sets `scheduled_for = NOW() + INTERVAL '5 minutes'` regardless of retry count; repeated fast retries during outages amplify load; replace with `scheduled_for = NOW() + (INTERVAL '1 minute' * POWER(2, retry_count))` giving 1m→2m→4m→8m→16m progression, capped at 60m via `LEAST(POWER(2, retry_count), 60)` |
+| TASK-R15-012 | Jobs list / cancel / retry / DLQ queries have no org filter | `services/jobsService.js` | 🟠 HIGH | open | `getJobs`, `getJobById`, `getPendingJobs`, `getDeadLetterQueue`, `cancelJob`, `retryJob`, `retryFromDeadLetterQueue`, and `purgeDeadLetterQueue` have no `organization_id` filter; Tenant A can list, cancel, or purge Tenant B's background jobs (invoice generation, allocation, SLA checks); add `organization_id` column to `background_jobs` and `dead_letter_queue`, set it from `createdBy`'s org on `createJob`, and add `AND organization_id = $N` to all query methods |
+| TASK-R15-013 | Job type free text, no registry | `services/jobsService.js` | 🟢 LOW | open | `createJob(jobType, ...)` accepts any string — a typo creates a job that silently rots in the queue; add `export const JOB_TYPES = { GENERATE_INVOICE: 'generate_invoice', PROCESS_ORDER: 'process_order', SEND_NOTIFICATION: 'send_notification', RETRY_ASSIGNMENT: 'retry_assignment', ... }` and validate `jobType` against `Object.values(JOB_TYPES)` at entry |
+| TASK-R15-014 | Bulk notifications loop — one INSERT per user | `services/notificationService.js` | 🟢 LOW | open | `createBulkNotifications` does `for (const userId of userIds) { await client.query(INSERT ...) }` — correct transaction but each iteration is a sequential round-trip; for 500 users = 500 DB calls; replace with single multi-row INSERT: build `($1,$2,$3,$4,$5,$6),($7,$8,...)` from `userIds.map((uid, i) => ...)` and a flattened params array |
+| TASK-R15-015 | Notification type free text | `services/notificationService.js` | 🟢 LOW | open | `createNotification(userId, type, ...)` accepts any string; a typo creates a notification the frontend cannot route to the correct UI component; add `export const NOTIFICATION_TYPES = { ORDER_UPDATE: 'order_update', SHIPMENT_UPDATE: 'shipment_update', SLA_ALERT: 'sla_alert', EXCEPTION_ALERT: 'exception_alert', RETURN_UPDATE: 'return_update' }` and validate `type` at entry |
+| TASK-R15-016 | No notification deduplication key | `services/notificationService.js` | 🟢 LOW | open | `createNotification` inserts unconditionally; a looping alert rule fires the same notification every minute; add `deduplication_key TEXT` column to `notifications` and an optional caller-supplied key (e.g. `sla_breach_${shipmentId}_${date}`); use `INSERT ... ON CONFLICT (user_id, deduplication_key) WHERE deduplication_key IS NOT NULL DO NOTHING` to prevent notification spam |
+
+---
+
+## Round 16 — orderService, osrmService, returnsService
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R16-001 | Order number Math.random() collision | `services/orderService.js` | 🟠 HIGH | open | `randPart = Math.floor(10000 + Math.random() * 90000)` — 5-digit random gives 90,000 possibilities; two simultaneous orders can generate the same `ORD-${datePart}-${randPart}`; replace with DB sequence: `SELECT nextval('order_number_seq')` formatted as `` `ORD-${datePart}-${seq.toString().padStart(8,'0')}` `` |
+| TASK-R16-002 | Transfer order number uses Date.now() | `services/orderService.js` | 🟠 HIGH | open | `` `TRF-${Date.now()}` `` and `` `SHP-TRF-${Date.now()}` `` — millisecond timestamps collide when two transfers are initiated concurrently; use same DB sequence approach as R16-001: `` `TRF-${year}-${seq.toString().padStart(8,'0')}` `` |
+| TASK-R16-003 | organization_id trusted from client payload | `services/orderService.js` | 🔴 HIGH | open | `organization_id: orderData.organization_id \|\| null` — `orderData` comes from the calling controller which may pass `req.body.organization_id`; any authenticated user can supply any `organization_id` and create orders under a different tenant; the service must receive `organizationId` from validated auth context (JWT-extracted) at the controller layer and override `orderData.organization_id` unconditionally |
+| TASK-R16-004 | cancelOrder uses manual transaction instead of withTransaction | `services/orderService.js` | 🟢 LOW | open | `cancelOrder` calls `OrderRepository.beginTransaction()` / `commitTransaction()` / `rollbackTransaction()` manually while every other transactional method uses `withTransaction()`; refactor to `await withTransaction(async (tx) => { ... })` pattern for consistency |
+| TASK-R16-005 | No idempotency key on order creation | `services/orderService.js` | 🟡 MEDIUM | open | `createOrder` has no idempotency guard — client retries (network timeout, double-submit) create duplicate orders; add `idempotency_key` column to `orders` table, accept `orderData.idempotency_key`, pre-check `SELECT id FROM orders WHERE idempotency_key = $1 AND organization_id = $2` and return the existing order record if found |
+| TASK-R16-006 | `withTransaction` not imported — inspectReturn crashes at runtime | `services/returnsService.js` | 🔴 CRITICAL | open | `inspectReturn` calls `withTransaction(async (tx) => { ... })` but the import section only includes `pool`, `NotFoundError/BusinessLogicError`, and `logEvent`; every call to `inspectReturn` throws `ReferenceError: withTransaction is not defined`; add `import { withTransaction } from '../utils/dbTransaction.js'` |
+| TASK-R16-007 | Haversine fallback durationMinutes off by 60x | `services/osrmService.js` | 🔴 HIGH | open | Fallback returns `durationMinutes: Math.round(roadAdjustedKm / 60)` — divides km by 60 yielding hours, not minutes; a 500 km route returns `durationMinutes: 8` instead of `~500`; fix: at 60 km/h average, minutes = km, so use `durationMinutes: Math.round(roadAdjustedKm)`, or explicitly `Math.round((roadAdjustedKm / AVG_SPEED_KMH) * 60)` with a named constant |
+| TASK-R16-008 | rejectReturn no status guard | `services/returnsService.js` | 🟡 MEDIUM | open | `UPDATE returns SET status = 'rejected' WHERE id = $2` — no `AND status IN ('requested', 'approved', 'inspected')` precondition; a refunded or already-rejected return can be re-rejected, overwriting `resolved_at` and inspection notes; add status guard to WHERE clause |
+| TASK-R16-009 | processRefund stores refund as negative invoice row | `services/returnsService.js` | 🟡 MEDIUM | open | `INSERT INTO invoices (invoice_number, carrier_id, ..., base_amount, final_amount, status) VALUES ('REFUND-...', NULL, 0, -refundAmount, -refundAmount, 'paid')` — refund is persisted as a carrier invoice with NULL carrier and negative amounts; mixes refund transactions with carrier billing documents, causing reconciliation errors; replace with `INSERT INTO financial_transactions (type='refund', reference_id=$returnId, amount=$refundAmount, ...)` |
+| TASK-R16-010 | inspectReturn UPDATE has no status precondition — concurrent inspection race | `services/returnsService.js` | 🟡 MEDIUM | open | `UPDATE returns SET quality_check_result = $1, status = 'inspected' WHERE id = $3` — no `AND status = 'in_transit'` guard; two warehouse staff calling concurrently both succeed, and inventory is added twice for the same return items; add `AND status = 'in_transit'` and verify `updateResult.rowCount > 0` before executing inventory mutations |
+| TASK-R16-011 | processRefund double-call creates duplicate refund invoice | `services/returnsService.js` | 🟡 MEDIUM | open | `processRefund` first UPDATEs `returns.status = 'refunded'` (idempotent on retry), then INSERTs `invoices` with `REFUND-${rma_number}` — on a second call the UPDATE is a no-op but the INSERT succeeds again, creating a second negative invoice row; add `INSERT ... ON CONFLICT (invoice_number) DO NOTHING` or pre-check `SELECT id FROM invoices WHERE invoice_number = 'REFUND-...'` |
+| TASK-R16-012 | completePickup carrierNotes param silently dropped | `services/returnsService.js` | 🟢 LOW | open | `async completePickup(returnId, carrierNotes)` — `carrierNotes` is accepted but never bound in the UPDATE query; caller's operational notes are silently discarded; add `carrier_pickup_notes TEXT` column to `returns` and bind: `SET pickup_completed_at = NOW(), carrier_pickup_notes = $2, status = 'in_transit' WHERE id = $3` |
+| TASK-R16-013 | inspectReturn inventory restoration bypasses InventoryRepository | `services/returnsService.js` | 🟢 LOW | open | Inventory mutations in `inspectReturn` use raw `tx.query()` directly (`INSERT INTO inventory ... ON CONFLICT DO UPDATE`, `UPDATE inventory SET damaged_quantity = ...`) instead of `InventoryRepository` methods; bypasses future centralized validation, event hooks, or quantity invariants; delegate to `InventoryRepository.addStock()` / `InventoryRepository.markDamaged()` |
+
+---
+
+## Round 17 — settingsService, shipmentTrackingService, slaService, warehouseOpsService
+
+| Task ID | Area | File(s) | Sev | Status | Action |
+|---------|------|---------|-----|--------|--------|
+| TASK-R17-001 | updateShipmentTracking returns undefined variable — runtime crash | `services/shipmentTrackingService.js` | 🔴 CRITICAL | open | `withTransaction` callback returns `{ shipmentId, newStatus, eventType }` into `result`, but the function then does `return updateResult.rows[0]` — `updateResult` is a `tx.query()` return value scoped inside the callback, never returned; throws `ReferenceError: updateResult is not defined` on every call; fix: return the full updated row from inside the callback and use `return result` outside |
+| TASK-R17-002 | catch/finally references undeclared `client` variable — crash on any failure | `services/shipmentTrackingService.js` | 🔴 CRITICAL | open | `updateShipmentTracking` catch block calls `await client.query('ROLLBACK')` and finally calls `client.release()` — `client` is never declared in this function; `withTransaction` already handles rollback internally; remove the entire catch/finally manual rollback block; only keep `logger.error` + `throw error` in catch |
+| TASK-R17-003 | Password change has no transaction wrapping | `services/settingsService.js` | 🔴 HIGH | open | `changePassword` executes `UPDATE users SET password_hash = ...` and `INSERT INTO audit_logs ...` as two separate `pool.query()` calls; if the audit INSERT fails (e.g. DB overload), the password is changed with no audit record; wrap both queries in `withTransaction(async (tx) => { ... })` |
+| TASK-R17-004 | Email change takes effect instantly with no re-verification | `services/settingsService.js` | 🔴 HIGH | open | `updateUserProfile` updates `email` column directly after only checking uniqueness — no verification email, no token, no confirmation step; an attacker who briefly controls a session can permanently change the account email to their own address, locking out the real owner; add `pending_email` column, send verification token, activate via `/settings/confirm-email?token=...` endpoint |
+| TASK-R17-005 | All methods throw generic `Error()` instead of domain error classes | `services/settingsService.js` | 🟡 MEDIUM | open | `changePassword`, `updateUserProfile`, `revokeSession`, and others all throw `new Error('...')` — controllers cannot reliably distinguish `409 Conflict` (email taken) from `401 Unauthorized` (wrong password) from `404 Not Found` (session missing); replace with `new ConflictError(...)`, `new UnauthorizedError(...)`, `new NotFoundError(...)` from the shared errors module |
+| TASK-R17-006 | Password policy enforces length-only, no complexity requirements | `services/settingsService.js` | 🟡 MEDIUM | open | `changePassword` validates only `newPassword.length < 8`; enterprise minimum includes: at least one uppercase, one lowercase, one digit, one symbol; add a regex or a utility validator: `/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}/`; optionally integrate `zxcvbn` for strength scoring |
+| TASK-R17-007 | Session revocation does not invalidate issued JWTs or refresh tokens | `services/settingsService.js` | 🟡 MEDIUM | open | `revokeSession` sets `user_sessions.is_active = false` but any JWT issued for that session remains valid until its `exp`; an attacker who stole the JWT retains access for the full token lifetime; fix: store a `jti` (JWT ID) on each token, add `revoked_tokens` table or Redis set, and check on each authenticated request; short-lived access tokens (15 min) reduce the exposure window |
+| TASK-R17-008 | Notification preference upsert uses manual SELECT-then-INSERT/UPDATE | `services/settingsService.js` | 🟢 LOW | open | `updateNotificationPreferences` first queries `SELECT id FROM user_notification_preferences WHERE user_id = $1` then branches to INSERT or UPDATE — two round-trips, race-prone if called concurrently; replace with `INSERT INTO user_notification_preferences (...) VALUES (...) ON CONFLICT (user_id) DO UPDATE SET email_enabled = EXCLUDED.email_enabled, ...` |
+| TASK-R17-009 | calculateRoute silently falls back to hardcoded NYC + LA coordinates | `services/shipmentTrackingService.js` | 🟡 MEDIUM | open | `originCoords = originAddress.coordinates \|\| { lat: 40.7128, lng: -74.0060 }` and `destCoords = destinationAddress.coordinates \|\| { lat: 34.0522, lng: -118.2437 }` — callers that omit `.coordinates` silently get an NYC→LA route; in an India-deployed SCM this produces completely wrong distances and ETAs; throw a `ValidationError` if `coordinates` is missing, or geocode the address string |
+| TASK-R17-010 | Tracking event ID uses `EVT-${Date.now()}` — collision under concurrency | `services/shipmentTrackingService.js` | 🟡 MEDIUM | open | `id: \`EVT-${Date.now()}\`` inside `updateShipmentTracking` — two simultaneous carrier webhooks for different shipments processed within the same millisecond produce duplicate IDs in the JSON array; replace with `import { randomUUID } from 'crypto'` and use `id: randomUUID()` |
+| TASK-R17-011 | No shipment status transition FSM — any event can overwrite any status | `services/shipmentTrackingService.js` | 🟡 MEDIUM | open | `updateShipmentTracking` switch maps `eventType` → `newStatus` unconditionally; a `in_transit` event can follow `delivered`, or `picked_up` can overwrite `out_for_delivery`; add a transition guard: `const ALLOWED_TRANSITIONS = { created: ['picked_up'], picked_up: ['in_transit'], in_transit: ['out_for_delivery','failed_delivery'], out_for_delivery: ['delivered','failed_delivery'], failed_delivery: ['in_transit'] }` and throw `BusinessLogicError` on invalid transitions |
+| TASK-R17-012 | `monitorSLAViolations` does full-table scan on every hourly run | `services/slaService.js` | 🟡 MEDIUM | open | Query scans all non-delivered shipments with `delivery_scheduled < NOW()` — at scale (10M shipments) this is a full-table sequential scan each run; add `next_sla_check_at TIMESTAMPTZ` column to `shipments`, set it to `delivery_scheduled` on creation, and filter `WHERE next_sla_check_at <= NOW() AND status NOT IN (...)` — updates it after each check to eliminate reprocessing |
+| TASK-R17-013 | SLA breach detected but no domain event emitted | `services/slaService.js` | 🟢 LOW | open | `detectViolation` calls `logEvent('SLAViolationCreated', ...)` which writes to the application log; no notification, no alert, no job queue message is published; downstream systems (alert engine, notification service, dashboard) cannot react without polling; after INSERT, call `notificationService.createNotification` or enqueue a job of type `sla_breach_notify` |
+| TASK-R17-014 | Pick list number uses `PL-${Date.now()}` — timestamp collision | `services/warehouseOpsService.js` | 🟢 LOW | open | `const pickListNumber = \`PL-${Date.now()}\`` — two concurrent warehouse pick-list creations within the same millisecond produce the same number; replace with DB sequence: `SELECT nextval('pick_list_number_seq')` and format as `` `PL-${warehouseId}-${seq.toString().padStart(8,'0')}` `` |
+| TASK-R17-015 | Hardcoded bin location `'A1-B2'` for all pick list items | `services/warehouseOpsService.js` | 🟢 LOW | open | `INSERT INTO pick_list_items ... VALUES ($1, $2, $3, $4, $5, 'pending')` passes `'A1-B2'` as `$5` (location) for every item regardless of warehouse or product; real location must be queried from `inventory_locations` table joining on `product_id` and `warehouse_id`; add `JOIN inventory_locations il ON il.product_id = oi.product_id AND il.warehouse_id = $1` to the items SELECT |
+| TASK-R17-016 | `pickItem` does not deduct or confirm inventory reservation at pick time | `services/warehouseOpsService.js` | 🟡 MEDIUM | open | `pickItem` updates `pick_list_items` and `order_items` only — inventory table is never touched; a picker marking an item as picked does not reduce `reserved_quantity` or `available_quantity`, so the allocation service sees the inventory as still reserved without confirmation; at pick time call `InventoryRepository.confirmReservation(productId, warehouseId, quantity)` to move from `reserved` to committed/depleted |
+| TASK-R17-017 | `pickItem` has no concurrent pick control (`SELECT ... FOR UPDATE`) | `services/warehouseOpsService.js` | 🟢 LOW | open | `pickItem` reads the pick_list_item then updates it in a BEGIN/COMMIT block but does not lock the row first; two warehouse workers scanning the same item barcode simultaneously both read `status = 'pending'` and both proceed to mark it `picked`, incrementing `picked_items` twice; add `SELECT ... FOR UPDATE` on the `pick_list_items` row before the update to serialize access |

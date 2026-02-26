@@ -117,8 +117,13 @@ class JobWorker {
         retryCount: job.retry_count,
       });
 
-      // Start job execution
+      // Start job execution — returns null if another worker already claimed it
       const logResult = await jobsService.startJobExecution(jobId);
+      if (!logResult) {
+        logger.info(`⏭️  Job ${jobId} already claimed by another worker — skipping`);
+        this.activeJobs.delete(jobId);
+        return;
+      }
       logId = logResult.id; // Extract just the ID from the log object
 
       // Get the appropriate handler for this job type

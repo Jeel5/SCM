@@ -28,15 +28,23 @@ class CarrierRepository extends BaseRepository {
         const params = [];
         let paramCount = 1;
 
+        // TASK-R6-008: Replace 3 correlated per-row subqueries with a single
+        // LEFT JOIN + GROUP BY to avoid N+1 scans on the shipments table.
         let query = `
       SELECT
         c.*,
         COUNT(*) OVER()                                                           AS total_count,
-        (SELECT COUNT(*) FROM shipments s WHERE s.carrier_id = c.id)::int         AS total_shipments,
-        (SELECT COUNT(*) FROM shipments s
-          WHERE s.carrier_id = c.id
-          AND s.status NOT IN ('delivered', 'returned', 'cancelled'))::int        AS active_shipments
+        COALESCE(cs.total_shipments, 0)::int                                     AS total_shipments,
+        COALESCE(cs.active_shipments, 0)::int                                    AS active_shipments
       FROM carriers c
+      LEFT JOIN (
+        SELECT
+          carrier_id,
+          COUNT(*)                                                                AS total_shipments,
+          COUNT(*) FILTER (WHERE status NOT IN ('delivered', 'returned', 'cancelled')) AS active_shipments
+        FROM shipments
+        GROUP BY carrier_id
+      ) cs ON cs.carrier_id = c.id
       WHERE 1=1
     `;
 
@@ -131,7 +139,7 @@ class CarrierRepository extends BaseRepository {
      * Find available carriers eligible to pick up new assignments.
      * Used by carrierAssignmentService to select candidates.
      */
-    async findAvailableCarriers(serviceType = null, organizationId = undefined, client = null) {
+    async findAvailableCarriers(serviceType = null, organizationId = undefined, limit = 10, client = null) {
         const params = [];
         let paramCount = 1;
 
@@ -152,7 +160,8 @@ class CarrierRepository extends BaseRepository {
             params.push(organizationId);
         }
 
-        query += ` ORDER BY reliability_score DESC LIMIT 10`;
+        query += ` ORDER BY reliability_score DESC LIMIT $${paramCount++}`;
+        params.push(limit);
         const result = await this.query(query, params, client);
         return result.rows;
     }

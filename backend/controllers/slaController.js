@@ -1,5 +1,5 @@
 // SLA Controller - handles service level agreements, ETAs, and violations
-import pool from '../configs/db.js';
+import pool from '../config/db.js';
 
 // Get list of active SLA policies
 export async function listSlaPolicies(req, res) {
@@ -31,13 +31,14 @@ export async function listSlaPolicies(req, res) {
 export async function getEta(req, res) {
   try {
     const { shipmentId } = req.params;
+    const organizationId = req.user?.organizationId;
     
     const result = await pool.query(
       `SELECT ep.*, s.tracking_number FROM eta_predictions ep
        JOIN shipments s ON ep.shipment_id = s.id
-       WHERE ep.shipment_id = $1
+       WHERE ep.shipment_id = $1${organizationId ? ' AND s.organization_id = $2' : ''}
        ORDER BY ep.predicted_at DESC LIMIT 1`,
-      [shipmentId]
+      organizationId ? [shipmentId, organizationId] : [shipmentId]
     );
     
     if (result.rows.length === 0) {
@@ -67,6 +68,7 @@ export async function getSlaViolations(req, res) {
   try {
     const { page = 1, limit = 20, status } = req.query;
     const offset = (page - 1) * limit;
+    const organizationId = req.user?.organizationId;
     
     let query = `
       SELECT sv.*, s.tracking_number, sp.name as policy_name
@@ -76,20 +78,33 @@ export async function getSlaViolations(req, res) {
       WHERE 1=1
     `;
     const params = [];
+
+    if (organizationId) {
+      params.push(organizationId);
+      query += ` AND sv.organization_id = $${params.length}`;
+    }
     
     if (status) {
       params.push(status);
       query += ` AND sv.status = $${params.length}`;
     }
     
-    query += ` ORDER BY sv.violated_at DESC LIMIT ${limit} OFFSET ${offset}`;
-    
+    params.push(parseInt(limit) || 20, offset);
+    query += ` ORDER BY sv.violated_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
     const result = await pool.query(query, params);
-    
-    const countResult = await pool.query(
-      'SELECT COUNT(*) FROM sla_violations' + (status ? ' WHERE status = $1' : ''),
-      status ? [status] : []
-    );
+
+    let countQuery = 'SELECT COUNT(*) FROM sla_violations WHERE 1=1';
+    const countParams = [];
+    if (organizationId) {
+      countParams.push(organizationId);
+      countQuery += ` AND organization_id = $${countParams.length}`;
+    }
+    if (status) {
+      countParams.push(status);
+      countQuery += ` AND status = $${countParams.length}`;
+    }
+    const countResult = await pool.query(countQuery, countParams);
     
     res.json({
       success: true,
@@ -119,6 +134,10 @@ export async function getSlaViolations(req, res) {
 
 export async function getSlaDashboard(req, res) {
   try {
+    const organizationId = req.user?.organizationId;
+    const orgParam = organizationId ? ' AND organization_id = $1' : '';
+    const orgArgs = organizationId ? [organizationId] : [];
+
     // Get overall SLA compliance rate
     const complianceResult = await pool.query(`
       SELECT 
@@ -126,8 +145,8 @@ export async function getSlaDashboard(req, res) {
         COUNT(CASE WHEN s.delivery_actual <= s.delivery_scheduled THEN 1 END) as on_time
       FROM shipments s
       WHERE s.status = 'delivered'
-        AND s.created_at >= NOW() - INTERVAL '30 days'
-    `);
+        AND s.created_at >= NOW() - INTERVAL '30 days'${organizationId ? ' AND s.organization_id = $1' : ''}
+    `, orgArgs);
     
     const compliance = complianceResult.rows[0];
     const onTimeRate = compliance.total_shipments > 0 
@@ -138,9 +157,9 @@ export async function getSlaDashboard(req, res) {
     const violationsResult = await pool.query(`
       SELECT status, COUNT(*) as count
       FROM sla_violations
-      WHERE violated_at >= NOW() - INTERVAL '30 days'
+      WHERE violated_at >= NOW() - INTERVAL '30 days'${orgParam}
       GROUP BY status
-    `);
+    `, orgArgs);
     
     // Get carrier performance
     const carrierResult = await pool.query(`
@@ -215,10 +234,14 @@ export async function listExceptions(req, res) {
       countQuery += ` AND e.status = $${params.length}`;
     }
     
-    query += ` ORDER BY e.created_at DESC LIMIT ${limitNumber} OFFSET ${offset}`;
-    
+    // Snapshot filter params before appending pagination so countQuery receives
+    // only the filter placeholders it was built with (TASK-R11-015).
+    const countParams = [...params];
+    params.push(limitNumber, offset);
+    query += ` ORDER BY e.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
     const result = await pool.query(query, params);
-    const countResult = await pool.query(countQuery, params);
+    const countResult = await pool.query(countQuery, countParams);
     const total = countResult.rows[0] ? parseInt(countResult.rows[0].count) : 0;
     
     res.json({
@@ -271,10 +294,11 @@ export async function resolveException(req, res) {
     const { id } = req.params;
     const { resolution } = req.body;
     
+    const organizationId = req.user?.organizationId;
     const result = await pool.query(
       `UPDATE exceptions SET status = 'resolved', resolution = $1, resolved_at = NOW()
-       WHERE id = $2 RETURNING *`,
-      [resolution, id]
+       WHERE id = $2${organizationId ? ' AND organization_id = $3' : ''} RETURNING *`,
+      organizationId ? [resolution, id, organizationId] : [resolution, id]
     );
     
     if (result.rows.length === 0) {

@@ -89,9 +89,10 @@ class OSRMService {
       const haversineKm = this.calculateHaversineDistance(origin, destination);
       const roadAdjustedKm = haversineKm * 1.25; // 25% buffer for road routing
 
+      const avgSpeedKmh = 60; // 60 km/h average road speed
       return {
         distanceKm: parseFloat(roadAdjustedKm.toFixed(2)),
-        durationMinutes: Math.round(roadAdjustedKm / 60), // Estimate: 60 km/h avg
+        durationMinutes: Math.round((roadAdjustedKm / avgSpeedKmh) * 60), // hours → minutes
         success: false,
         method: 'haversine_fallback',
         fallbackReason: error.message

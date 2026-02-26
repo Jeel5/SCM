@@ -7,8 +7,9 @@
  * - Handle data persistence without business logic
  */
 
-import db from '../../configs/db.js';
+import db from '../../config/db.js';
 import logger from '../../utils/logger.js';
+import { withTransaction } from '../../utils/dbTransaction.js';
 
 /**
  * Store quotes in database for tracking and auditing
@@ -85,24 +86,24 @@ export async function storeRejections(rejections, orderId) {
  * @param {String} orderId - Order ID
  */
 export async function markQuoteAsSelected(quoteId, orderId) {
-  try {
+  // Wrap both UPDATEs in a transaction so the deselect + select pair is atomic.
+  // Without this a concurrent call could see an intermediate state where two
+  // quotes are selected (or none), breaking carrier assignment logic (TASK-R12-019).
+  await withTransaction(async (tx) => {
     // Unmark any previously selected quotes for this order
-    await db.query(
+    await tx.query(
       'UPDATE carrier_quotes SET is_selected = false WHERE order_id = $1',
       [orderId]
     );
 
     // Mark the new quote as selected
-    await db.query(
+    await tx.query(
       'UPDATE carrier_quotes SET is_selected = true WHERE id = $1',
       [quoteId]
     );
+  });
 
-    logger.info(`Marked quote ${quoteId} as selected for order ${orderId}`);
-  } catch (error) {
-    logger.error('Error marking quote as selected', { error: error.message });
-    throw error;
-  }
+  logger.info(`Marked quote ${quoteId} as selected for order ${orderId}`);
 }
 
 export default {

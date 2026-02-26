@@ -1,7 +1,7 @@
 // Companies Routes - superadmin company management endpoints
 import express from 'express';
 import { authenticate } from '../middlewares/auth.js';
-import { authorize } from '../middlewares/rbac.js';
+import { requireRoles, ROLES } from '../middlewares/rbac.js';
 import {
   getAllCompanies,
   getCompanyById,
@@ -14,17 +14,20 @@ import {
 
 const router = express.Router();
 
+// All company management routes are superadmin-only
+const requireSuperadmin = requireRoles(ROLES.SUPERADMIN);
+
 // Get global statistics (superadmin only)
-router.get('/super-admin/stats', authenticate, authorize('companies:read'), getGlobalStats);
+router.get('/super-admin/stats', authenticate, requireSuperadmin, getGlobalStats);
 
 // Company CRUD operations (superadmin only)
-router.get('/companies', authenticate, authorize('companies:read'), getAllCompanies);
-router.get('/companies/:id', authenticate, authorize('companies:read'), getCompanyById);
-router.post('/companies', authenticate, authorize('companies:create'), createCompany);
-router.put('/companies/:id', authenticate, authorize('companies:update'), updateCompany);
-router.delete('/companies/:id', authenticate, authorize('companies:delete'), deleteCompany);
+router.get('/companies', authenticate, requireSuperadmin, getAllCompanies);
+router.get('/companies/:id', authenticate, requireSuperadmin, getCompanyById);
+router.post('/companies', authenticate, requireSuperadmin, createCompany);
+router.put('/companies/:id', authenticate, requireSuperadmin, updateCompany);
+router.delete('/companies/:id', authenticate, requireSuperadmin, deleteCompany);
 
 // Company users (superadmin only)
-router.get('/companies/:id/users', authenticate, authorize('companies:read'), getCompanyUsers);
+router.get('/companies/:id/users', authenticate, requireSuperadmin, getCompanyUsers);
 
 export default router;

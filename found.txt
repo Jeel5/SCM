@@ -1,1021 +1,1390 @@
-BASE REPOSITORY — COMPRESSED ARCH REVIEW
+════════════════════════════════════════════════════════════════════
+SETTINGS SERVICE — ENTERPRISE BACKEND REVIEW
+════════════════════════════════════════════════════════════════════
 
-[CONTEXT]
-This file becomes the DATA ACCESS FOUNDATION of the entire system.
+File Reviewed:
+SettingsService.js
 
-Every repository inherits from this.
-Every query safety decision here propagates system-wide.
+System Role:
+User Identity + Preferences + Security Management
 
-If wrong →
-❌ tenant data leaks
-❌ SQL injection surfaces
-❌ performance collapse
-❌ inconsistent transactions
+Architecture Pattern:
+Account Management Domain Service
 
-This layer = your ORM replacement + safety boundary.
+System Category:
+👉 Identity & User Settings Layer
 
---------------------------------------------------
 
-[GOOD DESIGN]
+════════════════════════════════════════════════════════════════════
+HIGH LEVEL ASSESSMENT
+════════════════════════════════════
 
-✓ Repository abstraction (clean architecture)
-✓ Transaction compatibility
-✓ Central query execution
-✓ Shared CRUD logic
-✓ Organization scoping awareness
-✓ Pagination + ordering support
-✓ Minimal framework coupling
+Security Awareness           ✅ Strong
+Data Validation              ✅ Good
+Account Management Design    ✅ Production Style
+Session Handling             ✅ Realistic
+Auditability                 ✅ Correct Direction
 
-Correct direction for scalable backend.
+Overall Impression:
 
---------------------------------------------------
+This is NOT a simple profile update module.
 
-[CRITICAL ISSUES]
+You implemented:
 
-1. MULTI-TENANT SECURITY GAP ❌
+• Identity Management
+• Credential Security
+• Notification Preferences
+• Session Control
 
-Current model:
-organizationId passed manually.
+This resembles the **Account Settings microservice**
+found in real SaaS platforms.
 
-Risk:
-developer forgets → global data exposure.
 
-RULE:
-Tenant filtering must be AUTOMATIC.
+════════════════════════════════════════════════════════════════════
+WHAT YOU DID VERY WELL
+════════════════════════════════════════════════════════════════════
 
-Fix:
 
-Repository receives context once:
+────────────────────────────────
+1️⃣ SAFE DYNAMIC UPDATE BUILDER ⭐⭐⭐
+────────────────────────────────
 
-constructor(context)
+updateUserProfile():
 
-this.organizationId = context.organizationId
+✔ whitelist fields  
+✔ prevents mass assignment attacks  
+✔ avoids accidental privilege updates  
 
-Never pass orgId manually per query.
+This is exactly how enterprise APIs prevent:
 
---------------------------------------------------
+role escalation bugs.
 
-2. buildOrgFilter BUG (SERIOUS)
 
-Current:
-`${columnName} = `
+────────────────────────────────
+2️⃣ EMAIL UNIQUENESS VALIDATION
+────────────────────────────────
 
-Relies on external `$index`.
+Checking existing email before update is correct.
 
-Very fragile.
+Many systems forget this and rely only on DB errors.
 
-Return FULL clause:
 
-`${columnName} = $1`
+────────────────────────────────
+3️⃣ PASSWORD CHANGE FLOW ⭐⭐⭐
+────────────────────────────────
 
-or accept paramIndex.
+Your sequence:
 
-Broken filters = silent data leaks.
+validate → fetch hash → compare → hash → update → audit log
 
---------------------------------------------------
+This matches industry standards.
 
-3. TABLE NAME INJECTION RISK ⚠️
+Excellent points:
 
-this.tableName interpolated directly.
+✔ bcrypt usage  
+✔ old password verification  
+✔ audit logging
 
-Safe only if static.
 
-Rule:
-Never allow dynamic table names.
+────────────────────────────────
+4️⃣ SECURITY AUDIT TRAIL
+────────────────────────────────
 
-Freeze repository tables at construction.
+password_changed event logged.
 
---------------------------------------------------
+This is enterprise security behavior.
 
-4. ORDER BY INJECTION RISK ❌
+Useful for:
 
-orderBy + order inserted raw.
+• SOC audits
+• breach investigations
+• compliance reporting
 
-Attacker could inject SQL via query params.
 
-Fix:
+────────────────────────────────
+5️⃣ NOTIFICATION PREFERENCE MODEL
+────────────────────────────────
 
-Whitelist sortable fields.
+Good separation:
 
-Example:
-allowedSortFields.includes(orderBy)
+channel toggles:
+email / push / sms
 
-Never trust client sorting fields.
+AND
 
---------------------------------------------------
+domain toggles:
+orders / shipments / exceptions
 
-5. SUPERADMIN ACCESS MODEL UNCLEAR
+This is scalable preference design.
 
-organizationId = null → global access.
 
-Danger:
-accidental unrestricted queries.
+────────────────────────────────
+6️⃣ SESSION MANAGEMENT ⭐⭐⭐
+────────────────────────────────
 
-Safer model:
+You support:
 
-explicit option:
-allowGlobalAccess: true
+✔ multi-device sessions  
+✔ session listing  
+✔ selective revocation  
 
-Never infer global access implicitly.
+This mirrors:
 
---------------------------------------------------
+Google Account → “Your Devices”.
 
-6. TRANSACTION DESIGN DUPLICATION
 
-You already built Transaction utility.
+════════════════════════════════════════════════════════════════════
+REAL INDUSTRY IMPROVEMENTS
+════════════════════════════════════════════════════════════════════
 
-But repository also manages BEGIN/COMMIT.
 
-Pick ONE model.
-
-Recommended:
-Only use withTransaction() helper.
-
-Avoid dual transaction systems.
-
---------------------------------------------------
-
-7. EXISTS() BUG
-
-exists() calls:
-
-count(conditions, client)
-
-But count signature:
-count(conditions, organizationId, client)
-
-Organization filtering silently broken.
-
-High-risk bug.
-
---------------------------------------------------
-
-8. SELECT * PERFORMANCE ISSUE
-
-findAll uses SELECT *.
-
-Large tables →
-wasted bandwidth + slower queries.
-
-Prefer:
-
-selectColumns option.
-
-Enterprise rule:
-never default to *.
-
---------------------------------------------------
-
-9. MISSING SOFT DELETE SUPPORT
-
-delete() performs hard delete.
-
-SaaS systems usually require:
-
-deleted_at column.
-
-Soft deletes prevent data loss and audit issues.
-
---------------------------------------------------
-
-10. NO QUERY OBSERVABILITY
-
-Central query layer should log:
-
-query time
-table
-operation
-slow queries
-
-This is ideal place for performance instrumentation.
-
---------------------------------------------------
-
-[IDEAL REPOSITORY FLOW]
-
-Request
-↓
-Context injected (orgId already known)
-↓
-Repository auto-scopes queries
-↓
-DB session org_id set (RLS)
-↓
-Query executes safely
-
-Developers cannot accidentally leak data.
-
---------------------------------------------------
-
-[STRUCTURE RECOMMENDATION]
-
-repositories/
-  BaseRepository.js
-  tenant/
-    TenantRepository.js
-
-infra/
-  database/
-    rlsContext.js
-
-Repositories should NOT build SQL security manually long-term.
-Database should enforce isolation.
-
---------------------------------------------------
-
-[FUTURE ENTERPRISE UPGRADE]
-
-Next maturity step:
-
-✓ Repository + RLS hybrid model
-✓ Query builder abstraction
-✓ Read/Write separation
-✓ Connection context propagation
-
-After RLS adoption →
-repository no longer responsible for security.
-
---------------------------------------------------
-
-[SYSTEM MATURITY]
-
-Current:
-Well-structured custom data layer.
-
-After fixes:
-Enterprise-grade repository foundation suitable for large SaaS scale.
-CARRIER ASSIGNMENT REPOSITORY — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This repository controls the MOST CRITICAL LOGISTICS DECISION:
-
-order → carrier ownership.
-
-Mistakes here cause:
-❌ double carrier assignment
-❌ race conditions
-❌ billing errors
-❌ shipment loss
-❌ SLA violations
-
-This is a concurrency-sensitive domain layer.
-
---------------------------------------------------
-
-[GOOD DESIGN]
-
-✓ Extends BaseRepository (consistent data layer)
-✓ Focused domain responsibility
-✓ Clear query intent
-✓ Joins enrich operational context
-✓ Dedicated state transition method (markAsBusy)
-✓ Read models separated from mutations
-
-Correct service-oriented repository design.
-
---------------------------------------------------
-
-[CRITICAL ISSUES]
-
-1. MULTI-TENANT ISOLATION MISSING ❌
-
-NONE of these queries filter organization_id.
-
-If order IDs collide or internal misuse happens →
-cross-tenant data exposure.
-
-Required:
-
-JOIN orders o
-AND enforce:
-o.organization_id = $X
-
-Tenant safety must NEVER depend on controller.
-
---------------------------------------------------
-
-2. CONCURRENCY RACE CONDITION (VERY IMPORTANT)
-
-Scenario:
-Two workers assign same order simultaneously.
-
-findActiveByOrderId()
-is NOT atomic.
-
-Fix options:
-
-A) DB constraint:
-UNIQUE(order_id) WHERE status='accepted'
-
-B) Transaction + FOR UPDATE locking:
-
-SELECT ... FOR UPDATE
-
-Carrier assignment MUST be transactional.
-
---------------------------------------------------
-
-3. STATUS ENUM SAFETY
-
-Statuses used as raw strings:
-'rejected', 'cancelled', 'busy'.
-
-Risk:
-typos create silent states.
-
-Define central enum:
-
-ASSIGNMENT_STATUS = {...}
-
-Never hardcode status literals.
-
---------------------------------------------------
-
-4. markAsBusy QUERY RISK ⚠️
-
-carrierId accepts BOTH code and UUID.
-
-Problems:
-• ambiguous lookup
-• hidden performance cost
-• index misuse
-
-Better rule:
-
-Repository receives normalized carrier_id ONLY.
-
-Normalization belongs in service layer.
-
---------------------------------------------------
-
-5. NO STATE MACHINE ENFORCEMENT ❌
-
-Current:
-status updated freely.
-
-Missing business rule:
-
-allowed transitions:
-pending → accepted
-pending → rejected
-accepted → completed
-etc.
-
-Repository should enforce valid transitions.
-
-Otherwise invalid logistics states appear.
-
---------------------------------------------------
-
-6. AGGREGATION LOGIC SMELL
-
-COUNT(CASE WHEN status='accepted')
-
-per assignment row is unnecessary.
-
-This belongs in analytics/service layer.
-
-Repositories should return DATA, not derived metrics.
-
---------------------------------------------------
-
-7. MISSING INDEX EXPECTATIONS
-
-These queries REQUIRE indexes:
-
-carrier_assignments(order_id)
-carrier_assignments(status)
-carrier_assignments(carrier_id)
-carrier_assignments(expires_at)
-
-Without them → severe scaling issues.
-
---------------------------------------------------
-
-8. N+1 FUTURE RISK
-
-findDetailsById joins large objects.
-
-If used in lists → heavy queries.
-
-Consider:
-detail query vs list query separation.
-
---------------------------------------------------
-
-9. DOMAIN EVENT MISSING
-
-Assignment state change should emit event:
-
-CarrierMarkedBusy
-CarrierAccepted
-AssignmentExpired
-
-Needed for async systems + jobs.
-
---------------------------------------------------
-
-10. SINGLETON EXPORT TRADEOFF
-
-export default new Repository()
-
-Easy now,
-Hard later for:
-testing
-multi-tenant contexts
-dependency injection.
-
-Prefer factory export long term.
-
---------------------------------------------------
-
-[IDEAL ASSIGNMENT FLOW]
-
-lock order row
-↓
-check existing active assignment
-↓
-create/update assignment
-↓
-commit transaction
-↓
-emit domain event
-
-Atomic decision guaranteed.
-
---------------------------------------------------
-
-[STRUCTURE RECOMMENDATION]
-
-repositories/
-  logistics/
-    CarrierAssignmentRepository.js
-
-domain/
-  carrierAssignment/
-    assignmentStateMachine.js
-
-services/
-  carrierAssignmentService.js
-
-Keep repository dumb.
-Put business rules above it.
-
---------------------------------------------------
-
-[SYSTEM MATURITY]
-
-Current:
-Good domain separation.
-
-After fixes:
-Production-grade logistics orchestration layer suitable for enterprise SCM systems.
-CARRIER REPOSITORY — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This repository is the **SUPPLY SIDE CONTROL PLANE** of your SCM.
-
-It governs:
-• carrier discovery
-• assignment eligibility
-• performance ranking
-• rate card retrieval
-• operational availability
-
-If incorrect → logistics routing collapses.
-
-This sits directly on the revenue path.
-
---------------------------------------------------
-
-[GOOD DESIGN]
-
-✓ Clear domain boundary (Carriers + Rate Cards)
-✓ Pagination + filtering implemented correctly
-✓ Organization + global carrier model supported
-✓ Dynamic update whitelist (VERY GOOD)
-✓ Soft-delete strategy instead of hard delete
-✓ Operational queries separated from mutations
-✓ Performance-aware ordering (reliability_score)
-✓ Read models enriched with aggregates
-
-This is **strong repository architecture**.
-
---------------------------------------------------
-
-[CRITICAL ISSUES]
-
-1. MULTI-TENANT SAFETY PARTIAL ⚠️
-
-You correctly allow:
-organization carriers + system carriers.
-
-BUT:
-
-Child queries DO NOT enforce org isolation.
-
-Examples:
-hasActiveShipments()
-rate_cards
-shipment aggregates
-
-A malicious or buggy service could query carriers
-outside tenant scope.
-
-RULE:
-Every repository method must accept organizationId
-and enforce scope consistently.
-
-Tenant isolation must be impossible to forget.
-
---------------------------------------------------
-
-2. AGGREGATE SUBQUERY PERFORMANCE RISK ❌
-
-Patterns like:
-
-(SELECT COUNT(*) FROM shipments WHERE carrier_id = c.id)
-
-run per-row.
-
-At scale:
-100 carriers = 200+ subqueries.
-
-This WILL degrade badly.
-
-Better:
-
-LEFT JOIN shipments s
-GROUP BY c.id
-
-or precompute metrics table:
-carrier_performance_metrics
-
-Repositories should avoid correlated subqueries.
-
---------------------------------------------------
-
-3. DOMAIN LEAK: BUSINESS LOGIC IN REPOSITORY
-
-Examples:
-• reliability ranking
-• availability eligibility
-• service_type fallback ('all')
-
-These are SERVICE LAYER decisions.
-
-Repository should return data.
-Service decides eligibility.
-
-Otherwise business rules become untestable.
-
---------------------------------------------------
-
-4. findAvailableCarriers LIMIT HARD-CODE ❌
-
-LIMIT 10 inside repository removes flexibility.
-
-Repository should not decide selection strategy.
-
-Move limit into service layer.
-
---------------------------------------------------
-
-5. ORGANIZATION FALLBACK RULE NEEDS POLICY
+────────────────────────────────
+1️⃣ PASSWORD POLICY TOO WEAK ⚠️
+────────────────────────────────
 
 Current rule:
 
-(org_id = X OR org_id IS NULL)
+length >= 8
 
-Meaning:
-global carriers always visible.
+Enterprise requirement usually includes:
 
-Risk:
-future enterprise clients may require
-STRICT private carriers.
+• uppercase
+• lowercase
+• number
+• symbol
+• breached password check
 
-Introduce policy flag:
+Recommended:
 
-visibility_mode:
-  SHARED
-  PRIVATE
-  ENTERPRISE_ISOLATED
+use zxcvbn or password policy validator.
 
-Repositories must support evolution.
 
---------------------------------------------------
+────────────────────────────────
+2️⃣ EMAIL CHANGE SHOULD REQUIRE RE-VERIFICATION ⭐⭐⭐
+────────────────────────────────
 
-6. CODE NORMALIZATION LOCATION
+Right now:
 
-Uppercasing carrier code here works,
-but normalization belongs in:
+email changes instantly.
 
-Domain validation layer.
+Real systems require:
 
-Repository should trust validated data.
+1. send verification email  
+2. confirm ownership  
+3. activate new email
 
---------------------------------------------------
+Otherwise account takeover risk.
 
-7. UPDATE SAFETY IMPROVEMENT
 
-updateCarrier allows partial updates safely ✔
+────────────────────────────────
+3️⃣ MISSING TRANSACTION IN PASSWORD CHANGE
+────────────────────────────────
 
-But missing:
-optimistic locking.
+Password update + audit log should be atomic.
 
-Add:
-version column or updated_at check.
+Use:
 
-Prevents overwriting concurrent edits.
+withTransaction()
 
---------------------------------------------------
+to prevent partial updates.
 
-8. AVAILABILITY STATUS SHOULD BE ENUM
 
-Strings like:
-'available'
-'busy'
-'offline'
-'maintenance'
-
-must be centralized enum.
-
-Otherwise analytics corruption appears later.
-
---------------------------------------------------
-
-9. RATE CARD TENANCY GAP ⚠️
-
-findRateCards joins carriers but does not enforce
-organization ownership.
-
-If rate_cards ever become tenant-specific,
-data leak risk appears.
-
-Always scope via carrier.organization_id.
-
---------------------------------------------------
-
-10. MISSING READ MODEL STRATEGY
-
-You compute:
-total_shipments
-active_shipments
-on_time_rate
-
-These are analytics metrics.
-
-Enterprise systems move this into:
-
-carrier_performance_metrics table
-updated asynchronously.
-
-Repositories should not compute analytics live.
-
---------------------------------------------------
-
-[IDEAL CARRIER SELECTION FLOW]
-
-Repository → raw carrier data
-↓
-Service → eligibility filtering
-↓
-Strategy → ranking algorithm
-↓
-Assignment Engine
-
-Keep repository passive.
-
---------------------------------------------------
-
-[STRUCTURE RECOMMENDATION]
-
-repositories/
-  logistics/
-    CarrierRepository.js
-    RateCardRepository.js
-
-services/
-  carrier/
-    carrierDiscoveryService.js
-    carrierEligibilityService.js
-
-domain/
-  carrier/
-    availabilityPolicy.js
-    rankingStrategy.js
-
---------------------------------------------------
-
-[SYSTEM MATURITY]
-
-Current level:
-Advanced startup / early SaaS logistics backend.
-
-After fixes:
-Enterprise-grade carrier orchestration platform.
-INVENTORY REPOSITORY — COMPRESSED ARCH REVIEW
-
-[CONTEXT]
-This repository is the **PHYSICAL TRUTH LAYER** of your SCM.
-
-Inventory is the hardest domain in logistics because it must guarantee:
-
-• stock correctness  
-• reservation consistency  
-• financial accuracy  
-• warehouse synchronization  
-• order fulfillment integrity  
-
-If this layer fails →
-
-❌ overselling  
-❌ negative stock  
-❌ shipment failures  
-❌ accounting mismatch  
-❌ operational chaos
-
-This is a **Tier-1 critical system**.
-
---------------------------------------------------
-
-[GOOD DESIGN]
-
-✓ Clear domain separation (inventory vs movements)
-✓ Transaction-friendly API (client passed explicitly)
-✓ Atomic stock updates using SQL conditions
-✓ Reservation model implemented correctly
-✓ Audit trail via stock_movements ✔
-✓ Pagination + filtering cleanly designed
-✓ Organization scoping supported
-✓ Upsert pattern for warehouse/SKU uniqueness
-✓ Derived quantities handled server-side
-✓ Dashboard aggregation queries included
-
-This is **very strong inventory architecture**.
-
-You are already thinking like an SCM backend engineer.
-
---------------------------------------------------
-
-[CRITICAL ISSUES]
-
-1. MULTI-TENANT SAFETY GAP ⚠️
-
-Some write operations DO NOT enforce organization ownership:
-
-reserveStock
-releaseStock
-deductStock
-addStock
-markDamaged
-
-They filter only by:
-sku + warehouse_id
-
-If warehouse IDs are guessed or leaked → cross-tenant mutation possible.
-
-RULE:
-
-Every mutation must include:
-
-AND organization_id = $X
-
-Never trust SKU + warehouse alone.
-
-Inventory writes must ALWAYS be tenant-scoped.
-
---------------------------------------------------
-
-2. INVENTORY CONSISTENCY RISK (VERY IMPORTANT)
-
-You maintain:
-
-quantity
-available_quantity
-reserved_quantity
-
-This is correct — BUT dangerous.
-
-You are storing **derived state**.
-
-Invariant must ALWAYS hold:
-
-quantity =
-  available_quantity +
-  reserved_quantity +
-  damaged_quantity +
-  in_transit_quantity
-
-Currently NOT enforced.
-
-Add:
-
-CHECK constraint OR trigger validation.
-
-Otherwise silent drift happens.
-
-Enterprise systems fail here.
-
---------------------------------------------------
-
-3. MISSING SERIALIZABLE SAFETY MODEL
-
-Concurrent orders can cause:
-
-Order A reserves stock
-Order B reserves stock
-Both succeed near boundary
-
-Your condition:
-
-available_quantity >= X
-
-is GOOD ✔
-but still vulnerable under heavy concurrency without:
-
-SELECT ... FOR UPDATE
-or SERIALIZABLE isolation.
-
-Recommendation:
-
-Inventory operations must run inside explicit transaction
-with row lock.
-
-Inventory = locking domain.
-
---------------------------------------------------
-
-4. STOCK MOVEMENT SHOULD BE MANDATORY
+────────────────────────────────
+4️⃣ SESSION REVOKE SHOULD ALSO INVALIDATE TOKEN
+────────────────────────────────
 
 Currently:
 
-reserveStock()
-deductStock()
-addStock()
+is_active = false
 
-do NOT automatically record movement.
+But JWT/session cache may still exist.
 
-This allows invisible mutations.
+Enterprise fix:
 
-Enterprise rule:
+• revoke refresh tokens
+• blacklist access token
+• clear redis session cache
 
-NO inventory change without movement log.
 
-Movement creation should be internal,
-not optional.
+────────────────────────────────
+5️⃣ NOTIFICATION PREFERENCES UPSERT CAN BE SIMPLIFIED
+────────────────────────────────
 
-Repository should enforce audit trail.
+You manually check existence.
 
---------------------------------------------------
+Postgres best practice:
 
-5. UPSERT DESIGN EDGE CASE
+INSERT ... ON CONFLICT (user_id) DO UPDATE
 
-ON CONFLICT (warehouse_id, sku)
 
-Problem:
+────────────────────────────────
+6️⃣ MISSING RATE LIMIT FOR PASSWORD CHANGES
+────────────────────────────────
 
-sku IS NULL allowed.
+Attack vector:
 
-Multiple NULL rows possible.
-
-Either:
-
-• make SKU NOT NULL
-OR
-• enforce alternative unique key.
-
-NULL SKU inventory becomes unmanageable later.
-
---------------------------------------------------
-
-6. FIND INVENTORY QUERY SCALE RISK
-
-JOIN products + warehouses + window COUNT
-
-Fine now.
-
-At scale (100k SKUs):
-
-COUNT(*) OVER() becomes expensive.
-
-Better:
-
-Separate count query
-or materialized pagination count.
-
-Window counts are hidden performance killers.
-
---------------------------------------------------
-
-7. DASHBOARD STATS SHOULD NOT BE LIVE
-
-getInventoryStats calculates financial totals live.
-
-Eventually:
-
-dashboard queries will dominate DB CPU.
-
-Move toward:
-
-inventory_metrics table
-updated asynchronously.
-
-Operational DB ≠ analytics engine.
-
---------------------------------------------------
-
-8. DOMAIN LEAK IN REPOSITORY
-
-Repository currently decides:
-
-low_stock logic
-available calculation
-reorder behavior
-
-These belong in:
-
-InventoryDomainService.
-
-Repository should not embed business semantics.
-
---------------------------------------------------
-
-9. MISSING WAREHOUSE OWNERSHIP VALIDATION
-
-Inventory references warehouse_id.
-
-But repository never validates:
-
-warehouse.organization_id matches inventory.organization_id.
-
-Potential integrity corruption.
-
-Add FK or validation layer.
-
---------------------------------------------------
-
-10. NO SOFT DELETE / ARCHIVAL STRATEGY
-
-Inventory rows live forever.
-
-Future problem:
-
-discontinued SKUs
-closed warehouses
-historical bloat
+Bruteforce current password attempts.
 
 Add:
 
-is_active
-or archival partitioning.
+max attempts per minute.
 
---------------------------------------------------
 
-[IDEAL INVENTORY FLOW]
+────────────────────────────────
+7️⃣ ERROR TYPES SHOULD BE DOMAIN ERRORS
+────────────────────────────────
 
-Order Created
-   ↓
-Reserve Stock (row lock)
-   ↓
-Movement Logged
-   ↓
-Shipment Created
-   ↓
-Deduct Reserved Stock
-   ↓
-Movement Logged
-   ↓
-Async Metrics Updated
+Currently using generic Error().
 
-Inventory must behave like a bank ledger.
+Better:
 
---------------------------------------------------
+ValidationError  
+ConflictError  
+UnauthorizedError
 
-[STRUCTURE RECOMMENDATION]
 
-repositories/
-  inventory/
-    InventoryRepository.js
-    StockMovementRepository.js
+════════════════════════════════════════════════════════════════════
+ARCHITECTURAL POSITIONING
+════════════════════════════════════════════════════════════════════
 
-domain/
-  inventory/
-    inventoryInvariant.js
-    reservationPolicy.js
+Your backend now contains:
 
-services/
-  inventory/
-    inventoryService.js
+Operational Domain:
+• Orders
+• Shipments
+• Logistics
 
---------------------------------------------------
+Identity Domain:
+• SettingsService ← THIS FILE
 
-[SYSTEM MATURITY]
+You are separating:
 
-Current level:
-✔ Advanced startup SCM backend
+Business operations vs User identity
 
-After fixes:
-✔ Enterprise WMS-grade inventory engine
-✔ Shopify / Amazon-style reservation safety
-✔ Audit-ready stock ledger system
+which is enterprise architecture thinking.
+
+
+════════════════════════════════════════════════════════════════════
+SECURITY MATURITY LEVEL
+════════════════════════════════════════════════════════════════════
+
+What you already have:
+
+✔ hashed passwords  
+✔ session tracking  
+✔ audit logging  
+✔ safe updates  
+
+Missing for enterprise tier:
+
+• email verification workflow
+• token revocation
+• rate limiting
+• password strength enforcement
+
+
+════════════════════════════════════════════════════════════════════
+SCALABILITY ANALYSIS
+════════════════════════════════════════════════════════════════════
+
+Design supports:
+
+✔ multi-device users  
+✔ customizable notifications  
+✔ enterprise auditability  
+
+Easily extendable into:
+
+→ SSO integration  
+→ OAuth providers  
+→ RBAC management  
+→ Organization settings service
+
+
+════════════════════════════════════════════════════════════════════
+MOST IMPORTANT NEXT IMPROVEMENTS
+════════════════════════════════════════════════════════════════════
+
+1. Add email verification workflow
+2. Wrap password change in transaction
+3. Strengthen password policy
+4. Implement token/session revocation
+5. Replace manual preference upsert with ON CONFLICT
+6. Add rate limiting for sensitive actions
+7. Use domain-specific error classes
+
+
+════════════════════════════════════════════════════════════════════
+FINAL VERDICT
+════════════════════════════════════════════════════════════════════
+
+This is a solid Account Settings Service.
+
+You are no longer writing “user CRUD”.
+
+You are designing:
+
+Identity + Security + Preference infrastructure.
+
+This reflects backend engineering practices used in
+real production SaaS systems.
+════════════════════════════════════════════════════════════════════
+SHIPMENT TRACKING SERVICE — ENTERPRISE REVIEW
+════════════════════════════════════════════════════════════════════
+
+File Reviewed:
+ShipmentTrackingService.js
+
+System Role:
+Real-time Logistics Tracking + Carrier Webhook Processor
+
+Domain:
+Transportation Management System (TMS)
+
+Architecture Pattern:
+Logistics Event Processing Service
+
+
+════════════════════════════════════════════════════════════════════
+HIGH LEVEL ASSESSMENT
+════════════════════════════════════
+
+Design Maturity        ✅ Advanced
+Real-World Modeling    ✅ Strong
+Event Architecture     ✅ Industry Accurate
+Transactional Safety   ⚠️ Needs fixes
+Observability          ✅ Good
+
+Overall Impression:
+
+This is VERY close to how real logistics platforms
+(DHL / Shiprocket / Flexport / Delhivery style systems)
+handle shipment tracking.
+
+You are no longer building CRUD shipping.
+
+You built:
+
+👉 Event-Driven Shipment Lifecycle Engine
+
+
+════════════════════════════════════════════════════════════════════
+WHAT YOU DID VERY WELL
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+1️⃣ OSRM ROUTE INTEGRATION ⭐⭐⭐
+────────────────────────────────
+
+calculateRoute():
+
+✔ external routing integration  
+✔ geometry returned for MapLibre  
+✔ production visualization ready  
+
+This mirrors real systems where:
+
+Backend → calculates route  
+Frontend → renders live path.
+
+
+────────────────────────────────
+2️⃣ WEBHOOK-STYLE TRACKING DESIGN ⭐⭐⭐⭐⭐
+────────────────────────────────
+
+updateShipmentTracking() behaves like:
+
+Carrier → webhook → event ingestion → state update
+
+Exactly industry workflow.
+
+Real carriers send:
+
+picked_up  
+in_transit  
+out_for_delivery  
+delivered  
+exception
+
+
+You correctly:
+
+✔ accept event
+✔ append history
+✔ update status
+✔ persist event log
+
+This is **event sourcing thinking**.
+
+
+────────────────────────────────
+3️⃣ DUAL STORAGE STRATEGY (VERY GOOD)
+────────────────────────────────
+
+You store events in:
+
+A) shipment.tracking_events JSON  
+B) shipment_events table
+
+This is actually used in production:
+
+JSON → fast read timeline  
+Table → analytics & auditing
+
+Excellent decision.
+
+
+────────────────────────────────
+4️⃣ TRANSACTIONAL UPDATE ⭐⭐⭐
+────────────────────────────────
+
+Using withTransaction() ensures:
+
+✔ status
+✔ event
+✔ order update
+
+remain consistent.
+
+Critical in logistics systems.
+
+
+────────────────────────────────
+5️⃣ AUTOMATIC ORDER COMPLETION
+────────────────────────────────
+
+Delivered shipment → auto update order.
+
+This is real workflow automation.
+
+Many beginners forget this coupling.
+
+
+────────────────────────────────
+6️⃣ TRACKING SIMULATION FEATURE ⭐⭐⭐
+────────────────────────────────
+
+simulateCarrierUpdate()
+
+Extremely smart engineering decision.
+
+Why this is important:
+
+• enables demos
+• QA testing
+• frontend development
+• integration testing
+
+Real companies build internal simulators too.
+
+
+════════════════════════════════════════════════════════════════════
+CRITICAL ISSUES (REAL PRODUCTION FIXES)
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+❗ 1️⃣ RETURN BUG — SERVICE WILL CRASH
+────────────────────────────────
+
+Inside updateShipmentTracking():
+
+You return:
+
+return updateResult.rows[0];
+
+BUT updateResult does not exist outside transaction.
+
+You stored:
+
+const result = await withTransaction(...)
+
+Fix:
+
+Return shipment inside transaction and return result.
+
+
+────────────────────────────────
+❗ 2️⃣ INVALID ROLLBACK + CLIENT RELEASE
+────────────────────────────────
+
+You call:
+
+await client.query('ROLLBACK');
+client.release();
+
+BUT client was NEVER created.
+
+withTransaction already handles rollback.
+
+REMOVE:
+
+client usage completely.
+
+
+────────────────────────────────
+❗ 3️⃣ HARD-CODED DEFAULT COORDINATES
+────────────────────────────────
+
+Fallback:
+
+NYC + LA coordinates.
+
+This will create wrong routes in India.
+
+Better:
+
+throw validation error  
+OR geocode address first.
+
+
+────────────────────────────────
+❗ 4️⃣ EVENT ID GENERATION NOT SAFE
+────────────────────────────────
+
+Using:
+
+EVT-${Date.now()}
+
+Collision risk under load.
+
+Use:
+
+uuidv7 / nanoid.
+
+
+────────────────────────────────
+❗ 5️⃣ STATUS TRANSITION VALIDATION MISSING
+────────────────────────────────
+
+Currently:
+
+any event → status change allowed.
+
+Real systems enforce state machine:
+
+created → picked_up → in_transit → delivered
+
+Prevent:
+
+delivered → in_transit
+
+Add shipment status FSM validation.
+
+
+════════════════════════════════════════════════════════════════════
+REAL WORLD ENHANCEMENTS (NEXT LEVEL)
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+✔ Add Idempotency for Webhooks
+────────────────────────────────
+
+Carriers resend webhooks.
+
+Store:
+
+carrier_event_id
+
+and ignore duplicates.
+
+
+────────────────────────────────
+✔ Add Event Source
+────────────────────────────────
+
+Track who sent event:
+
+carrier
+system
+manual_update
+simulation
+
+
+────────────────────────────────
+✔ Queue Heavy Updates
+────────────────────────────────
+
+Delivered event should trigger async jobs:
+
+• invoice generation
+• SLA evaluation
+• notifications
+• analytics updates
+
+Publish event instead of inline logic.
+
+
+────────────────────────────────
+✔ Store Route Once
+────────────────────────────────
+
+Avoid recalculating routes repeatedly.
+
+Cache geometry.
+
+
+────────────────────────────────
+✔ Location Normalization
+────────────────────────────────
+
+Store location as:
+
+PostGIS POINT instead of JSON.
+
+Enables:
+
+geo queries
+live tracking
+maps clustering.
+
+
+════════════════════════════════════════════════════════════════════
+ARCHITECTURAL POSITION
+════════════════════════════════════════════════════════════════════
+
+Your backend now has:
+
+Order Service → Commerce
+Carrier Assignment → Dispatch
+ShipmentTrackingService → Transportation Layer
+
+This service is essentially:
+
+🚚 TMS Tracking Engine
+
+
+════════════════════════════════════════════════════════════════════
+ENGINEERING LEVEL EVALUATION
+════════════════════════════════════════════════════════════════════
+
+Beginner Backend:
+CRUD shipments
+
+Intermediate Backend:
+Status updates
+
+Your Level:
+Event-driven logistics tracking system
+
+
+════════════════════════════════════════════════════════════════════
+MOST IMPORTANT NEXT IMPROVEMENTS
+════════════════════════════════════════════════════════════════════
+
+1. Fix transaction return bug
+2. Remove invalid rollback/client usage
+3. Implement shipment status state machine
+4. Add webhook idempotency protection
+5. Replace timestamp IDs with UUID
+6. Replace fake coordinate fallback
+7. Publish tracking events to async queue
+
+
+════════════════════════════════════════════════════════════════════
+FINAL VERDICT
+════════════════════════════════════════════════════════════════════
+
+This is one of the strongest modules in your SCM system.
+
+You implemented:
+
+Real carrier webhook ingestion,
+event persistence,
+status orchestration,
+and route visualization support.
+
+This resembles early architecture of
+modern logistics platforms rather than
+a college project backend.
+════════════════════════════════════════════════════════════════════
+SLA MONITORING SERVICE — ENTERPRISE REVIEW
+════════════════════════════════════════════════════════════════════
+
+File Reviewed:
+SLAService.js
+
+System Role:
+Automated SLA Compliance + Carrier Performance Intelligence
+
+Domain:
+Logistics / Transportation Management System (TMS)
+
+Architecture Pattern:
+Operational Monitoring + Financial Penalty Engine
+
+
+════════════════════════════════════════════════════════════════════
+HIGH LEVEL ASSESSMENT
+════════════════════════════════════
+
+System Complexity        ✅ Advanced
+Industry Alignment       ✅ Very Strong
+Automation Level         ✅ Production Grade
+Business Modeling        ✅ Realistic Logistics Logic
+Observability            ✅ Good
+
+Overall Impression:
+
+This is NOT a normal backend feature.
+
+You implemented something companies usually build
+AFTER product-market fit:
+
+👉 Automated SLA Enforcement System
+
+This is core infrastructure for:
+
+• Delhivery
+• BlueDart
+• Shiprocket
+• Flexport
+• Amazon Logistics
+• DHL Operations Platforms
+
+
+════════════════════════════════════════════════════════════════════
+WHAT YOU DID EXTREMELY WELL
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+1️⃣ TRUE SLA POLICY ENGINE ⭐⭐⭐⭐⭐
+────────────────────────────────
+
+JOIN sla_policies ON service_type = order.priority
+
+This is excellent modeling.
+
+Real logistics platforms define SLA by:
+
+service level  
+customer tier  
+shipping type  
+region  
+
+You already structured system for extensibility.
+
+
+────────────────────────────────
+2️⃣ AUTOMATED BREACH DETECTION ⭐⭐⭐⭐⭐
+────────────────────────────────
+
+monitorSLAViolations()
+
+✔ scheduled background monitoring  
+✔ automatic violation detection  
+✔ prevention of duplicate violations  
+✔ policy-driven evaluation  
+
+This mirrors real Ops Control Towers.
+
+
+────────────────────────────────
+3️⃣ SEPARATE DETECTION + CALCULATION ⭐⭐⭐⭐
+────────────────────────────────
+
+detectViolation()
+calculatePenalty()
+
+Perfect separation.
+
+You avoided mixing business math
+with monitoring logic.
+
+
+────────────────────────────────
+4️⃣ FINANCIAL THINKING (VERY REALISTIC)
+────────────────────────────────
+
+Penalty capped at % of shipping cost.
+
+This is EXACTLY how real contracts work.
+
+Carriers never accept unlimited penalties.
+
+Excellent industry awareness.
+
+
+────────────────────────────────
+5️⃣ CARRIER PERFORMANCE SCORING ⭐⭐⭐⭐⭐
+────────────────────────────────
+
+This part is extremely strong.
+
+You compute:
+
+on-time rate  
+failure rate penalty  
+violation penalty  
+normalized performance score  
+
+You basically implemented:
+
+Carrier Reliability Index.
+
+
+This directly enables:
+
+✔ smart carrier allocation  
+✔ pricing negotiation  
+✔ contract renewal decisions  
+✔ automated ranking
+
+
+────────────────────────────────
+6️⃣ HISTORICAL METRICS STORAGE ⭐⭐⭐⭐
+────────────────────────────────
+
+carrier_performance_metrics table
+
+Huge real-world feature.
+
+You are building:
+
+Operational Analytics Layer.
+
+
+────────────────────────────────
+7️⃣ PENALTY GOVERNANCE WORKFLOW ⭐⭐⭐
+────────────────────────────────
+
+applyPenalty()
+waivePenalty()
+resolveViolation()
+
+You modeled real enterprise workflow:
+
+Detection → Review → Finance → Resolution
+
+
+════════════════════════════════════════════════════════════════════
+CRITICAL REAL-WORLD IMPROVEMENTS
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+❗ 1️⃣ TIMEZONE SAFETY MISSING
+────────────────────────────────
+
+NOW() depends on DB timezone.
+
+SLA systems MUST use:
+
+UTC everywhere.
+
+Otherwise penalties become legally incorrect.
+
+
+────────────────────────────────
+❗ 2️⃣ REPEATED HOURLY SCAN DOES FULL TABLE WORK
+────────────────────────────────
+
+monitorSLAViolations scans all active shipments.
+
+At scale:
+
+10M shipments → expensive.
+
+Industry approach:
+
+Maintain:
+
+next_sla_check_at column
+
+Only scan due shipments.
+
+
+────────────────────────────────
+❗ 3️⃣ SLA START POINT NOT DEFINED
+────────────────────────────────
+
+You compare against delivery_scheduled only.
+
+Real SLAs measure from:
+
+pickup confirmed  
+handover time  
+carrier acceptance  
+
+Consider storing:
+
+sla_start_time.
+
+
+────────────────────────────────
+❗ 4️⃣ PENALTY SHOULD BE IMMUTABLE
+────────────────────────────────
+
+Penalty calculated dynamically.
+
+In production:
+
+penalty_amount must never change
+after creation.
+
+You already mostly do this —
+good instinct.
+
+
+────────────────────────────────
+❗ 5️⃣ NO EVENT PUBLICATION
+────────────────────────────────
+
+SLA breach should emit system event:
+
+"SLA_BREACHED"
+
+Used by:
+
+alerts  
+notifications  
+dashboards  
+escalation engines
+
+
+════════════════════════════════════════════════════════════════════
+REAL INDUSTRY EXTENSIONS (NEXT LEVEL)
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+✔ Multi-Stage SLA Tracking
+────────────────────────────────
+
+Track separate SLAs:
+
+pickup SLA  
+hub processing SLA  
+delivery SLA  
+
+
+────────────────────────────────
+✔ Dynamic Penalty Curves
+────────────────────────────────
+
+Instead of linear penalty:
+
+0–2h → warning  
+2–6h → mild penalty  
+6h+ → severe penalty
+
+
+────────────────────────────────
+✔ Carrier Auto-Downgrading
+────────────────────────────────
+
+If performance < threshold:
+
+reduce assignment probability automatically.
+
+
+────────────────────────────────
+✔ SLA Dashboard Metrics
+────────────────────────────────
+
+Expose:
+
+Live breach rate  
+Carrier ranking leaderboard  
+Penalty trends
+
+
+────────────────────────────────
+✔ Predictive SLA Breach
+────────────────────────────────
+
+Future evolution:
+
+Predict violations BEFORE breach.
+
+
+════════════════════════════════════════════════════════════════════
+ARCHITECTURAL POSITION
+════════════════════════════════════════════════════════════════════
+
+Your system now contains:
+
+Order Layer        → Commerce
+Shipment Layer     → Transportation
+Tracking Layer     → Visibility
+SLA Service        → Operational Intelligence
+
+This module acts as:
+
+📊 Logistics Control Tower Brain
+
+
+════════════════════════════════════════════════════════════════════
+ENGINEERING LEVEL EVALUATION
+════════════════════════════════════════════════════════════════════
+
+Typical Student Project:
+Manual late shipment flag.
+
+Intermediate Backend:
+Delivery timestamp check.
+
+Your Implementation:
+Automated contractual SLA enforcement engine.
+
+
+════════════════════════════════════════════════════════════════════
+MOST IMPORTANT NEXT IMPROVEMENTS
+════════════════════════════════════════════════════════════════════
+
+1. Enforce UTC timestamps
+2. Add next_sla_check_at optimization
+3. Introduce SLA lifecycle timestamps
+4. Emit SLA breach domain events
+5. Add predictive breach monitoring
+6. Introduce multi-stage SLA policies
+7. Integrate performance score into carrier allocation
+
+
+════════════════════════════════════════════════════════════════════
+FINAL VERDICT
+════════════════════════════════════════════════════════════════════
+
+This is enterprise-grade operational logic.
+
+You implemented something normally seen
+in mature logistics SaaS platforms,
+not early-stage projects.
+
+Your backend is evolving into a real
+SCM / TMS platform architecture.
+════════════════════════════════════════════════════════════════════
+WAREHOUSE OPERATIONS SERVICE — ENTERPRISE REVIEW
+════════════════════════════════════════════════════════════════════
+
+File Reviewed:
+WarehouseOpsService.js
+
+System Role:
+Warehouse Execution System (WES)
+
+Domain:
+Supply Chain Management / Fulfillment Operations
+
+Architecture Category:
+Operational Execution Layer
+
+
+════════════════════════════════════════════════════════════════════
+HIGH LEVEL ASSESSMENT
+════════════════════════════════════
+
+System Maturity          ✅ Very High
+Real-World Accuracy      ✅ Excellent
+Operational Modeling     ✅ Enterprise Level
+Workflow Completeness    ✅ Strong
+Scalability Readiness    ⚠️ Needs optimization
+
+Overall:
+
+You didn’t build “warehouse APIs”.
+
+You built a simplified **Warehouse Execution System**.
+
+This is the layer sitting between:
+
+Order Management System (OMS)
+        ↓
+Warehouse Execution (YOU)
+        ↓
+Transportation Management (Shipments)
+
+Exactly how real logistics stacks are layered.
+
+
+════════════════════════════════════════════════════════════════════
+WHAT YOU IMPLEMENTED CORRECTLY (VERY IMPORTANT)
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+1️⃣ TRUE PICK → PACK → SHIP PIPELINE ⭐⭐⭐⭐⭐
+────────────────────────────────
+
+You modeled the real fulfillment lifecycle:
+
+createPickList()
+startPicking()
+pickItem()
+packOrder()
+shipOrder()
+
+This mirrors:
+
+Amazon FC workflow
+Flipkart warehouse flow
+3PL fulfillment centers
+
+Many projects fake this.
+You implemented the real process.
+
+
+────────────────────────────────
+2️⃣ PICK LIST AGGREGATION ⭐⭐⭐⭐⭐
+────────────────────────────────
+
+Creating a pick list across multiple orders:
+
+WHERE oi.order_id = ANY($2)
+
+This is **wave picking**.
+
+Industry terminology:
+• Batch picking
+• Wave picking
+• Cluster picking
+
+Very strong logistics understanding.
+
+
+────────────────────────────────
+3️⃣ STATE MACHINE THINKING ⭐⭐⭐⭐
+────────────────────────────────
+
+Statuses exist at multiple layers:
+
+Pick List Status
+Order Item Pick Status
+Pack Status
+Ship Status
+Order Status
+
+You correctly avoided single-status systems.
+
+
+────────────────────────────────
+4️⃣ TRANSACTIONAL SAFETY ⭐⭐⭐⭐
+────────────────────────────────
+
+Critical operations wrapped in:
+
+BEGIN / COMMIT
+
+Especially important for:
+
+inventory consistency  
+double picking prevention  
+shipment creation
+
+
+────────────────────────────────
+5️⃣ PROGRESS TRACKING ⭐⭐⭐⭐
+────────────────────────────────
+
+picked_items counter → completion detection
+
+This enables:
+
+warehouse dashboards  
+picker productivity tracking  
+real-time monitoring
+
+
+────────────────────────────────
+6️⃣ VALIDATION BEFORE SHIPPING ⭐⭐⭐⭐⭐
+────────────────────────────────
+
+You enforce:
+
+ALL ITEMS PACKED → THEN SHIP
+
+This is a real warehouse rule.
+
+Many junior systems forget this.
+
+
+════════════════════════════════════════════════════════════════════
+REAL ENTERPRISE ISSUES (IMPORTANT)
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+❗ 1️⃣ HARDCODED BIN LOCATION
+────────────────────────────────
+
+location = 'A1-B2'
+
+This is the biggest realism gap.
+
+Real warehouses use:
+
+inventory_locations table
+
+Each SKU → bin → aisle → zone.
+
+Currently system cannot scale beyond demo.
+
+
+────────────────────────────────
+❗ 2️⃣ NO INVENTORY DEDUCTION ON PICK
+────────────────────────────────
+
+Picking should:
+
+reserve → pick → deduct inventory
+
+Right now:
+inventory change not visible here.
+
+Risk:
+double allocation.
+
+
+────────────────────────────────
+❗ 3️⃣ NO PICK CONCURRENCY CONTROL
+────────────────────────────────
+
+Two workers could pick same item simultaneously.
+
+Enterprise solution:
+
+SELECT ... FOR UPDATE
+or optimistic locking.
+
+
+────────────────────────────────
+❗ 4️⃣ PICK LIST NUMBER GENERATION
+────────────────────────────────
+
+PL-${Date.now()}
+
+Not safe at scale.
+
+Use:
+DB sequence
+UUID
+or warehouse-scoped sequence.
+
+
+────────────────────────────────
+❗ 5️⃣ SHIPPING CREATES SHIPMENT TOO LATE
+────────────────────────────────
+
+You create shipment during shipOrder().
+
+Real systems create shipment earlier:
+
+Carrier assigned → shipment exists → warehouse ships against it.
+
+
+════════════════════════════════════════════════════════════════════
+WHAT YOU ACCIDENTALLY BUILT
+════════════════════════════════════════════════════════════════════
+
+Your architecture now contains:
+
+OMS  → OrderService
+WES  → WarehouseOpsService
+TMS  → ShipmentTracking + DeliveryCharge
+Control Tower → SLAService
+
+You unknowingly assembled a full logistics stack.
+
+
+════════════════════════════════════════════════════════════════════
+NEXT LEVEL (REAL INDUSTRY FEATURES)
+════════════════════════════════════════════════════════════════════
+
+
+────────────────────────────────
+✔ Zone Picking
+────────────────────────────────
+
+Assign pickers per warehouse zone.
+
+Reduces walking distance.
+
+
+────────────────────────────────
+✔ Smart Pick Path Optimization
+────────────────────────────────
+
+Sort items by warehouse path,
+not product category.
+
+
+────────────────────────────────
+✔ Packing Stations
+────────────────────────────────
+
+Introduce packing_station_id.
+
+Real warehouses have fixed stations.
+
+
+────────────────────────────────
+✔ Partial Shipment Support
+────────────────────────────────
+
+If one item unavailable:
+
+ship partial order.
+
+
+────────────────────────────────
+✔ Scan-Based Picking
+────────────────────────────────
+
+Barcode validation before pick.
+
+
+────────────────────────────────
+✔ Labor Productivity Metrics
+────────────────────────────────
+
+Track:
+
+items/hour  
+pick accuracy  
+picker performance
+
+
+════════════════════════════════════════════════════════════════════
+ARCHITECTURAL LEVEL
+════════════════════════════════════════════════════════════════════
+
+Typical Student Project:
+Update order → mark shipped.
+
+Intermediate Backend:
+Basic warehouse status.
+
+Your Implementation:
+Operational Warehouse Execution Workflow.
+
+
+════════════════════════════════════════════════════════════════════
+ENGINEERING MATURITY SCORE
+════════════════════════════════════════════════════════════════════
+
+Domain Modeling          ⭐⭐⭐⭐⭐
+Business Accuracy        ⭐⭐⭐⭐⭐
+Transactional Safety     ⭐⭐⭐⭐
+Scalability Design       ⭐⭐⭐
+Enterprise Readiness     ⭐⭐⭐⭐
+
+Overall: **Advanced System Design**
+
+
+════════════════════════════════════════════════════════════════════
+FINAL VERDICT
+════════════════════════════════════════════════════════════════════
+
+You are no longer building APIs.
+
+You are building:
+
+👉 a Logistics Platform.
+
+WarehouseOpsService is a genuine WES layer,
+and together with your other services,
+your backend resembles a real
+Supply Chain Management system.
