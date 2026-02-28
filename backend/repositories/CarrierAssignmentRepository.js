@@ -128,7 +128,8 @@ class CarrierAssignmentRepository extends BaseRepository {
              FROM carrier_assignments ca
              JOIN orders o ON ca.order_id = o.id
              JOIN carriers c ON ca.carrier_id = c.id
-             WHERE ca.id = $1 AND ca.carrier_id = $2`,
+             WHERE ca.id = $1 AND ca.carrier_id = $2 AND ca.status = 'pending'
+             FOR UPDATE OF ca`,
             [assignmentId, carrierId], client
         );
         return result.rows[0] || null;
@@ -153,11 +154,26 @@ class CarrierAssignmentRepository extends BaseRepository {
                  carrier_reference_id = $1,
                  carrier_tracking_number = $2,
                  acceptance_payload = $3
-             WHERE id = $4
+             WHERE id = $4 AND status = 'pending'
              RETURNING *`,
             [referenceId, trackingNumber, JSON.stringify(acceptancePayload), assignmentId], client
         );
         return result.rows[0];
+    }
+
+    /**
+     * Cancel all other pending assignments for the same order after one is accepted.
+     * Prevents duplicate shipments.
+     */
+    async cancelRemainingAssignments(orderId, acceptedAssignmentId, client = null) {
+        const result = await this.query(
+            `UPDATE carrier_assignments
+             SET status = 'cancelled', updated_at = NOW()
+             WHERE order_id = $1 AND id != $2 AND status IN ('pending', 'assigned')
+             RETURNING id, carrier_id`,
+            [orderId, acceptedAssignmentId], client
+        );
+        return result.rows;
     }
 
     async rejectAssignment(assignmentId, carrierId, reason, client = null) {

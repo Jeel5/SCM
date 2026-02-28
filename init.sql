@@ -1069,6 +1069,8 @@ CREATE TABLE background_jobs (
     timeout_seconds INTEGER DEFAULT 300,
     -- Audit
     created_by UUID REFERENCES users(id),
+    -- Idempotency
+    idempotency_key VARCHAR(255),
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -1435,6 +1437,7 @@ CREATE INDEX idx_jobs_scheduled ON background_jobs(scheduled_for) WHERE status I
 CREATE INDEX idx_jobs_priority ON background_jobs(priority, scheduled_for) WHERE status IN ('pending', 'queued');
 CREATE INDEX idx_jobs_org ON background_jobs(organization_id) WHERE organization_id IS NOT NULL;
 CREATE INDEX idx_jobs_created ON background_jobs(created_at);
+CREATE UNIQUE INDEX idx_jobs_idempotency ON background_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 -- Job Execution Logs (FK lookup)
 CREATE INDEX idx_job_execution_logs_job ON job_execution_logs(job_id);

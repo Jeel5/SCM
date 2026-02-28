@@ -548,8 +548,8 @@ export const dashboardApi = {
       warehouseId: wh.id,
       warehouseName: wh.name,
       capacity: wh.capacity || 0,
-      used: Math.floor((wh.capacity || 0) * ((wh.currentUtilization || 0) / 100)),
-      utilizationRate: Number(wh.currentUtilization) || 0,
+      used: wh.currentUtilization || 0,
+      utilizationRate: Number(wh.utilizationPercentage) || 0,
       inboundToday: _warehouseActivityCache[wh.id]?.inbound ?? 0,
       outboundToday: _warehouseActivityCache[wh.id]?.outbound ?? 0,
     }));
@@ -580,6 +580,70 @@ export const notificationsApi = {
 
   async markAllNotificationsRead(): Promise<ApiResponse<null>> {
     return { data: null, success: true };
+  },
+};
+
+// ==================== SALES CHANNELS ====================
+export const channelsApi = {
+  async getChannels(filters?: Record<string, unknown>): Promise<PaginatedResponse<any>> {
+    const response = await get<{ success: boolean; data: any[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      '/channels', filters
+    );
+    return {
+      data: response.data,
+      total: response.pagination?.total || 0,
+      page: response.pagination?.page || 1,
+      pageSize: response.pagination?.limit || 50,
+      totalPages: response.pagination?.totalPages || 1,
+    };
+  },
+
+  async getChannel(id: string): Promise<ApiResponse<any>> {
+    return get(`/channels/${id}`);
+  },
+
+  async createChannel(data: Record<string, unknown>): Promise<ApiResponse<any>> {
+    return post('/channels', data);
+  },
+
+  async updateChannel(id: string, data: Record<string, unknown>): Promise<ApiResponse<any>> {
+    return put(`/channels/${id}`, data);
+  },
+
+  async deleteChannel(id: string): Promise<ApiResponse<void>> {
+    return del(`/channels/${id}`);
+  },
+};
+
+// ==================== SUPPLIERS ====================
+export const suppliersApi = {
+  async getSuppliers(filters?: Record<string, unknown>): Promise<PaginatedResponse<any>> {
+    const response = await get<{ success: boolean; data: any[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      '/suppliers', filters
+    );
+    return {
+      data: response.data,
+      total: response.pagination?.total || 0,
+      page: response.pagination?.page || 1,
+      pageSize: response.pagination?.limit || 50,
+      totalPages: response.pagination?.totalPages || 1,
+    };
+  },
+
+  async getSupplier(id: string): Promise<ApiResponse<any>> {
+    return get(`/suppliers/${id}`);
+  },
+
+  async createSupplier(data: Record<string, unknown>): Promise<ApiResponse<any>> {
+    return post('/suppliers', data);
+  },
+
+  async updateSupplier(id: string, data: Record<string, unknown>): Promise<ApiResponse<any>> {
+    return put(`/suppliers/${id}`, data);
+  },
+
+  async deleteSupplier(id: string): Promise<ApiResponse<void>> {
+    return del(`/suppliers/${id}`);
   },
 };
 

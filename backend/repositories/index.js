@@ -20,3 +20,5 @@ export { default as ExceptionRepository } from './ExceptionRepository.js';
 export { default as WarehouseOpsRepository } from './WarehouseOpsRepository.js';
 export { default as AlertRepository } from './AlertRepository.js';
 export { default as BaseRepository } from './BaseRepository.js';
+export { default as SalesChannelRepository } from './SalesChannelRepository.js';
+export { default as SupplierRepository } from './SupplierRepository.js';

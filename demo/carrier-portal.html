@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Carrier Partner Portal - Demo</title>
+    <title>Carrier Partner Portal — SCM Platform</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -28,16 +28,17 @@
         }
         .header h1 { font-size: 2.5em; margin-bottom: 10px; }
         .header p { font-size: 1.1em; opacity: 0.9; }
-        
         .carrier-selector {
             display: flex;
             gap: 15px;
             padding: 20px 30px;
             background: #f8f9fa;
             border-bottom: 3px solid #dee2e6;
+            flex-wrap: wrap;
         }
         .carrier-btn {
             flex: 1;
+            min-width: 140px;
             padding: 15px;
             border: 3px solid #dee2e6;
             background: white;
@@ -56,10 +57,7 @@
             background: #fff5f7;
             color: #f5576c;
         }
-        
-        .content {
-            padding: 30px;
-        }
+        .content { padding: 30px; }
         .section-title {
             font-size: 1.8em;
             margin-bottom: 25px;
@@ -67,7 +65,6 @@
             border-bottom: 3px solid #f5576c;
             padding-bottom: 10px;
         }
-        
         .quote-request {
             background: #f8f9fa;
             border: 3px solid #dee2e6;
@@ -80,7 +77,6 @@
             border-color: #f5576c;
             box-shadow: 0 5px 20px rgba(245, 87, 108, 0.1);
         }
-        
         .request-header {
             display: flex;
             justify-content: space-between;
@@ -89,15 +85,8 @@
             padding-bottom: 15px;
             border-bottom: 2px solid #dee2e6;
         }
-        .request-header h3 {
-            font-size: 1.5em;
-            color: #f5576c;
-        }
-        .request-time {
-            color: #6c757d;
-            font-size: 0.9em;
-        }
-        
+        .request-header h3 { font-size: 1.5em; color: #f5576c; }
+        .request-time { color: #6c757d; font-size: 0.9em; }
         .data-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -126,12 +115,7 @@
             overflow-y: auto;
             margin-top: 10px;
         }
-        .data-display pre {
-            margin: 0;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        
+        .data-display pre { margin: 0; white-space: pre-wrap; word-wrap: break-word; }
         .shipment-details {
             background: white;
             padding: 20px;
@@ -146,14 +130,8 @@
             border-bottom: 1px solid #f1f3f5;
         }
         .detail-row:last-child { border-bottom: none; }
-        .detail-label {
-            font-weight: bold;
-            color: #495057;
-        }
-        .detail-value {
-            color: #212529;
-        }
-        
+        .detail-label { font-weight: bold; color: #495057; }
+        .detail-value { color: #212529; }
         .action-section {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -166,14 +144,8 @@
             border-radius: 8px;
             border: 2px solid #e9ecef;
         }
-        .action-card h4 {
-            color: #495057;
-            margin-bottom: 15px;
-        }
-        
-        .input-group {
-            margin-bottom: 15px;
-        }
+        .action-card h4 { color: #495057; margin-bottom: 15px; }
+        .input-group { margin-bottom: 15px; }
         .input-group label {
             display: block;
             margin-bottom: 5px;
@@ -188,11 +160,7 @@
             border-radius: 6px;
             font-size: 1em;
         }
-        .input-group input:focus {
-            outline: none;
-            border-color: #f5576c;
-        }
-        
+        .input-group input:focus { outline: none; border-color: #f5576c; }
         .btn {
             width: 100%;
             padding: 15px;
@@ -208,19 +176,12 @@
             background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
             color: white;
         }
-        .btn-accept:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(40, 167, 69, 0.4);
-        }
+        .btn-accept:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(40,167,69,0.4); }
         .btn-reject {
             background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
             color: white;
         }
-        .btn-reject:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(220, 53, 69, 0.4);
-        }
-        
+        .btn-reject:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(220,53,69,0.4); }
         .response-section {
             margin-top: 20px;
             padding: 20px;
@@ -229,28 +190,15 @@
             border-radius: 8px;
             display: none;
         }
-        .response-section.reject {
-            background: #ffebee;
-            border-color: #f44336;
-        }
-        .response-section h4 {
-            color: #2e7d32;
-            margin-bottom: 10px;
-        }
-        .response-section.reject h4 {
-            color: #c62828;
-        }
-        
+        .response-section.reject { background: #ffebee; border-color: #f44336; }
+        .response-section h4 { color: #2e7d32; margin-bottom: 10px; }
+        .response-section.reject h4 { color: #c62828; }
         .empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #6c757d;
         }
-        .empty-state h3 {
-            font-size: 2em;
-            margin-bottom: 15px;
-        }
-        
+        .empty-state h3 { font-size: 2em; margin-bottom: 15px; }
         .badge {
             display: inline-block;
             padding: 5px 15px;
@@ -259,15 +207,8 @@
             font-weight: bold;
             margin-left: 10px;
         }
-        .badge-pending {
-            background: #ffc107;
-            color: #000;
-        }
-        .badge-fragile {
-            background: #dc3545;
-            color: white;
-        }
-        
+        .badge-pending { background: #ffc107; color: #000; }
+        .badge-fragile { background: #dc3545; color: white; }
         .btn-pickup {
             background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             color: white;
@@ -279,17 +220,10 @@
             font-weight: bold;
             margin-top: 15px;
             transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(17, 153, 142, 0.3);
+            box-shadow: 0 4px 15px rgba(17,153,142,0.3);
         }
-        .btn-pickup:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(17, 153, 142, 0.4);
-        }
-        .btn-pickup:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
+        .btn-pickup:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(17,153,142,0.4); }
+        .btn-pickup:disabled { background: #6c757d; cursor: not-allowed; opacity: 0.6; }
         .shipment-card {
             background: #e8f5e9;
             border: 3px solid #4caf50;
@@ -305,46 +239,43 @@
             background: #ffc107;
             color: #000;
         }
-        .shipment-status.in-transit {
-            background: #17a2b8;
-            color: white;
-        }
+        .shipment-status.in-transit { background: #17a2b8; color: white; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>🚚 Carrier Partner Portal</h1>
-            <p>Review incoming quote requests and respond with accept/reject</p>
+            <p>Review assignments, accept/reject, confirm pickups, and update shipment status</p>
         </div>
-        
+
         <div class="carrier-selector" id="carrierSelectorDiv">
-            <div style="color:#6c757d; font-size:0.9em; padding:10px;">Loading carriers...</div>
+            <div style="color:#6c757d; font-size:0.9em; padding:10px;">Loading carriers…</div>
         </div>
-        
+
         <div class="content">
             <div class="section-title">
-                📬 Pending Quote Requests for <span id="currentCarrierName">Delhivery</span>
+                📬 Pending Assignments for <span id="currentCarrierName">—</span>
             </div>
-            
+
             <div id="requestsContainer">
                 <div class="empty-state">
                     <h3>📭 No Pending Requests</h3>
-                    <p>Waiting for customers to place orders...</p>
+                    <p>Waiting for customers to place orders…</p>
                     <p style="margin-top: 15px; font-size: 0.9em;">
-                        <strong>Tip:</strong> Go to customer portal and place an order to see requests here.
+                        <strong>Tip:</strong> Go to the Customer Portal and place an order to see requests here.
                     </p>
                 </div>
             </div>
 
             <div class="section-title" style="margin-top: 40px;">
-                📦 My Shipments - Ready for Pickup
+                📦 My Shipments — Ready for Pickup
             </div>
-            
+
             <div id="shipmentsContainer">
                 <div class="empty-state">
                     <h3>📦 No Shipments Waiting</h3>
-                    <p>Accept a quote request to see shipments here.</p>
+                    <p>Accept an assignment to see shipments here.</p>
                 </div>
             </div>
 
@@ -353,23 +284,22 @@
             </div>
 
             <div style="background:white; padding:25px; border-radius:12px; margin-bottom:20px; border:2px solid #e9ecef;">
-                <p style="color:#6c757d; margin-bottom:20px; font-size:0.95em;">Directly update the status of any tracked shipment (simulates carrier status webhook).</p>
+                <p style="color:#6c757d; margin-bottom:20px; font-size:0.95em;">
+                    Update the real-time status of any shipment using the carrier tracking API (HMAC-authenticated).
+                </p>
                 <div class="data-grid">
                     <div class="input-group">
                         <label>Tracking Number</label>
                         <input type="text" id="updateTrackingNumber" placeholder="e.g., DELHIVERY-TRACK-12345">
                     </div>
                     <div class="input-group">
-                        <label>New Status</label>
-                        <select id="updateStatus">
+                        <label>Event Type</label>
+                        <select id="updateEventType">
                             <option value="picked_up">Picked Up</option>
                             <option value="in_transit">In Transit</option>
-                            <option value="at_hub">At Hub</option>
                             <option value="out_for_delivery">Out for Delivery</option>
                             <option value="delivered">Delivered</option>
                             <option value="failed_delivery">Failed Delivery</option>
-                            <option value="rto_initiated">RTO Initiated</option>
-                            <option value="returned">Returned</option>
                         </select>
                     </div>
                     <div class="input-group">
@@ -392,26 +322,15 @@
     <script>
         const API_BASE = 'http://localhost:3000/api';
         let currentCarrier = null;
-        let currentCarrierId = null; // Store current carrier ID
-        let currentWebhookSecret = null; // Store webhook secret for HMAC signing
-        let pollingInterval = null;
-        let carrierNames = {}; // code -> display name
-        
-        // Map carrier button names to database codes (fallback for hardcoded names)
-        const CARRIER_CODE_MAP = {
-            'DHL': 'DHL-001',
-            'FEDEX': 'FEDEX-001',
-            'BLUEDART': 'BLUEDART-001',
-            'DELHIVERY': 'DELHIVERY',
-            'UPS': 'UPS-001',
-            'DTDC': 'DTDC-001',
-            'ECOM': 'ECOM-001',
-            'XPRESSBEES': 'XPRESSBEES-001'
-        };
+        let currentCarrierId = null;
+        let currentWebhookSecret = null;
+        let carrierNames = {};
+
+        // ──────────── Load carriers from real API ────────────
 
         async function loadCarriers() {
             try {
-                const res = await fetch(`${API_BASE}/demo/carriers`);
+                const res = await fetch(`${API_BASE}/carriers`);
                 const result = await res.json();
                 const div = document.getElementById('carrierSelectorDiv');
 
@@ -431,7 +350,6 @@
                     div.appendChild(btn);
                 });
 
-                // Select first carrier by default
                 if (carriers.length > 0) {
                     await selectCarrier(null, carriers[0].code);
                 }
@@ -442,107 +360,32 @@
             }
         }
 
-        async function updateShipmentStatus() {
-            const tracking = document.getElementById('updateTrackingNumber').value.trim();
-            const status = document.getElementById('updateStatus').value;
-            const city = document.getElementById('updateCity').value.trim();
-            const description = document.getElementById('updateDescription').value.trim();
-            const resultDiv = document.getElementById('statusUpdateResult');
+        // ──────────── HMAC Signature Generation ────────────
 
-            if (!tracking) {
-                alert('Please enter a tracking number.');
-                return;
-            }
-
-            try {
-                const res = await fetch(`${API_BASE}/demo/carrier/update-status`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tracking_number: tracking, status, city: city || undefined, description: description || undefined })
-                });
-                const result = await res.json();
-
-                if (result.success) {
-                    resultDiv.style.display = 'block';
-                    resultDiv.style.background = '#d4edda';
-                    resultDiv.style.border = '2px solid #28a745';
-                    resultDiv.style.color = '#155724';
-                    resultDiv.innerHTML = `<strong>✅ Status updated!</strong><br>
-                        Tracking: <code>${tracking}</code><br>
-                        New Status: <strong>${status}</strong><br>
-                        <small style="color:#6c757d; margin-top:8px; display:block;">Response: <pre style="margin:5px 0;">${JSON.stringify(result.data || result, null, 2)}</pre></small>`;
-                    // Refresh shipment list
-                    await loadMyShipments();
-                } else {
-                    throw new Error(result.message || result.error || 'Update failed');
-                }
-            } catch (err) {
-                console.error('Error updating status:', err);
-                resultDiv.style.display = 'block';
-                resultDiv.style.background = '#f8d7da';
-                resultDiv.style.border = '2px solid #dc3545';
-                resultDiv.style.color = '#721c24';
-                resultDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
-            }
-        }
-
-        /**
-         * HMAC-SHA256 Signature Generation (Industry Standard)
-         * Same pattern used by: Stripe, Shopify, GitHub, Twilio
-         */
         async function generateHmacSignature(payload, secret, timestamp) {
             const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
             const signedPayload = `${timestamp}.${payloadString}`;
-            
-            // Convert secret and payload to ArrayBuffer
+
             const enc = new TextEncoder();
             const key = await crypto.subtle.importKey(
-                'raw',
-                enc.encode(secret),
-                { name: 'HMAC', hash: 'SHA-256' },
-                false,
-                ['sign']
+                'raw', enc.encode(secret),
+                { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
             );
-            
-            const signature = await crypto.subtle.sign(
-                'HMAC',
-                key,
-                enc.encode(signedPayload)
-            );
-            
-            // Convert to hex string
-            const hashArray = Array.from(new Uint8Array(signature));
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            
+            const signature = await crypto.subtle.sign('HMAC', key, enc.encode(signedPayload));
+            const hashHex = Array.from(new Uint8Array(signature))
+                .map(b => b.toString(16).padStart(2, '0')).join('');
             return `sha256=${hashHex}`;
         }
 
-        /**
-         * Send authenticated webhook request
-         * Includes HMAC signature and timestamp
-         */
         async function sendAuthenticatedRequest(url, method, body) {
-            if (!currentWebhookSecret) {
-                throw new Error('Webhook secret not loaded. Please wait for carrier initialization.');
-            }
-            
-            if (!currentCarrierId) {
-                throw new Error('Carrier ID not loaded. Please wait for carrier initialization.');
-            }
+            if (!currentWebhookSecret) throw new Error('Webhook secret not loaded. Select a carrier first.');
+            if (!currentCarrierId) throw new Error('Carrier ID not loaded. Select a carrier first.');
 
             const timestamp = Math.floor(Date.now() / 1000);
             const signature = await generateHmacSignature(body, currentWebhookSecret, timestamp);
 
-            console.log('🔐 Sending authenticated request:', {
-                url,
-                carrierId: currentCarrierId,
-                carrierCode: currentCarrier,
-                timestamp,
-                hasSecret: !!currentWebhookSecret
-            });
-
             const response = await fetch(url, {
-                method: method,
+                method,
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Carrier-ID': currentCarrierId,
@@ -553,226 +396,137 @@
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
+                const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.message || `Request failed with status ${response.status}`);
             }
 
             return response.json();
         }
-        
+
+        // ──────────── Carrier selection ────────────
+
         async function selectCarrier(evt, carrier) {
-            console.log('🔄 Switching carrier to:', carrier);
-            
             currentCarrier = carrier;
-            currentCarrierId = null; // Reset carrier ID when switching carriers
-            currentWebhookSecret = null; // Reset webhook secret
-            
-            console.log('🔄 Reset state:', { 
-                carrier: currentCarrier, 
-                carrierId: currentCarrierId, 
-                hasSecret: !!currentWebhookSecret 
-            });
-            
-            // Update UI
-            document.querySelectorAll('.carrier-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            if (evt && evt.currentTarget) {
-                evt.currentTarget.classList.add('active');
-            }
-            
+            currentCarrierId = null;
+            currentWebhookSecret = null;
+
+            document.querySelectorAll('.carrier-btn').forEach(btn => btn.classList.remove('active'));
+            if (evt?.currentTarget) evt.currentTarget.classList.add('active');
+
             document.getElementById('currentCarrierName').textContent = carrierNames[carrier] || carrier;
-            
-            // Load assignments first (sets currentCarrierId), then load shipments
+
             await loadPendingRequests();
             await loadMyShipments();
         }
-        
+
+        // ──────────── Pending assignments ────────────
+
         async function loadPendingRequests() {
             try {
-                // Use DB code directly — loaded from /api/demo/carriers
-                const carrierCode = currentCarrier;
-                
-                // Fetch actual pending assignments from backend API
-                const response = await fetch(`${API_BASE}/carriers/assignments/pending?carrierId=${carrierCode}`);
-                
-                if (!response.ok) {
-                    console.error('Failed to load assignments:', response.status);
-                    showEmptyState();
-                    return;
-                }
-                
+                const response = await fetch(`${API_BASE}/carriers/assignments/pending?carrierId=${currentCarrier}`);
+                if (!response.ok) { showEmptyState(); return; }
+
                 const result = await response.json();
-                
-                if (!result.success || !result.data || result.data.length === 0) {
-                    showEmptyState();
-                    return;
-                }
-                
-                // Display the first pending assignment
+                if (!result.success || !result.data || result.data.length === 0) { showEmptyState(); return; }
+
                 const assignment = result.data[0];
                 const newCarrierId = assignment.carrierId;
-                
-                console.log('📋 Assignment loaded:', {
-                    carrier: currentCarrier,
-                    newCarrierId: newCarrierId,
-                    oldCarrierId: currentCarrierId
-                });
-                
-                // Only update if different or not set
+
                 if (currentCarrierId !== newCarrierId) {
                     currentCarrierId = newCarrierId;
-                    // Fetch webhook secret for authentication
                     await fetchWebhookSecret(currentCarrierId);
                 }
-                
+
                 displayAssignment(assignment);
-                
             } catch (error) {
                 console.error('Error loading requests:', error);
                 showEmptyState();
             }
         }
 
-        /**
-         * Fetch webhook secret for current carrier
-         * Required for HMAC signature generation
-         */
         async function fetchWebhookSecret(carrierId) {
             try {
                 const response = await fetch(`${API_BASE}/carriers/${carrierId}`);
                 const result = await response.json();
-                
-                if (result.success && result.data && result.data.webhook_secret) {
+                if (result.success && result.data?.webhook_secret) {
                     currentWebhookSecret = result.data.webhook_secret;
-                    console.log('✅ Webhook secret loaded:', {
-                        carrierId: carrierId,
-                        carrierCode: result.data.code,
-                        carrierName: result.data.name,
-                        currentCarrier: currentCarrier
-                    });
                 } else {
-                    console.warn('⚠️ No webhook secret found for carrier:', carrierId);
                     currentWebhookSecret = null;
                 }
-            } catch (error) {
-                console.error('❌ Failed to fetch webhook secret:', error);
-                currentWebhookSecret = null;
-            }
+            } catch { currentWebhookSecret = null; }
         }
-        
+
         function showEmptyState() {
             document.getElementById('requestsContainer').innerHTML = `
                 <div class="empty-state">
                     <h3>📭 No Pending Requests</h3>
-                    <p>Waiting for customers to place orders...</p>
+                    <p>Waiting for customers to place orders…</p>
                     <p style="margin-top: 15px; font-size: 0.9em;">
-                        <strong>Tip:</strong> Go to customer portal and place an order to see requests here.
+                        <strong>Tip:</strong> Go to the Customer Portal and place an order to see requests here.
                     </p>
-                </div>
-            `;
+                </div>`;
         }
-        
+
         function displayAssignment(assignment) {
             const container = document.getElementById('requestsContainer');
-            container.dataset.assignmentId = assignment.id; // Track current assignment
-            
+            container.dataset.assignmentId = assignment.id;
+
             const orderData = assignment.orderData || {};
             const items = orderData.items || [];
             const firstItem = items[0] || {};
             const shippingAddr = assignment.shippingAddress || {};
-            
+
             container.innerHTML = `
                 <div class="quote-request">
                     <div class="request-header">
                         <h3>Order ${assignment.orderNumber}</h3>
                         <div class="request-time">
                             <span class="badge badge-pending">⏳ PENDING</span>
-                            <small style="display: block; margin-top: 5px;">Expires: ${new Date(assignment.expiresAt).toLocaleString()}</small>
+                            <small style="display:block; margin-top:5px;">Expires: ${new Date(assignment.expiresAt).toLocaleString()}</small>
                         </div>
                     </div>
-                    
+
                     <div class="shipment-details">
-                        <h4 style="margin-bottom: 15px; color: #495057;">📦 Shipment Details</h4>
-                        <div class="detail-row">
-                            <div class="detail-label">Customer:</div>
-                            <div class="detail-value">${assignment.customerName}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Email:</div>
-                            <div class="detail-value">${assignment.customerEmail}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Product:</div>
-                            <div class="detail-value">${firstItem.productName || 'N/A'}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Quantity:</div>
-                            <div class="detail-value">${firstItem.quantity || 1}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Weight:</div>
-                            <div class="detail-value">${firstItem.weight || 'N/A'} kg</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Dimensions:</div>
-                            <div class="detail-value">
-                                ${firstItem.dimensions ? 
-                                    `${firstItem.dimensions.length}×${firstItem.dimensions.width}×${firstItem.dimensions.height} cm` : 
-                                    'N/A'}
-                                ${firstItem.volumetric_weight ? 
-                                    `<small style="color: #6c757d;"> (Vol: ${firstItem.volumetric_weight}kg)</small>` : 
-                                    ''}
-                            </div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Special Handling:</div>
-                            <div class="detail-value">
-                                ${firstItem.is_fragile ? '<span style="color: #dc3545;">⚠️ Fragile</span>' : ''}
-                                ${firstItem.is_hazardous ? '<span style="color: #dc3545;">☢️ Hazardous</span>' : ''}
-                                ${firstItem.requires_cold_storage ? '<span style="color: #0d6efd;">❄️ Cold Storage</span>' : ''}
-                                ${!firstItem.is_fragile && !firstItem.is_hazardous && !firstItem.requires_cold_storage ? 'Standard' : ''}
-                            </div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Order Value:</div>
-                            <div class="detail-value">₹${assignment.totalAmount.toLocaleString()}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Delivery To:</div>
-                            <div class="detail-value">${shippingAddr.city || 'N/A'}, ${shippingAddr.state || ''} ${shippingAddr.postal_code || ''}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Service Type:</div>
-                            <div class="detail-value">${assignment.serviceType}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Requested:</div>
-                            <div class="detail-value">${new Date(assignment.requestedAt).toLocaleString()}</div>
-                        </div>
+                        <h4 style="margin-bottom:15px; color:#495057;">📦 Shipment Details</h4>
+                        <div class="detail-row"><div class="detail-label">Customer:</div><div class="detail-value">${assignment.customerName}</div></div>
+                        <div class="detail-row"><div class="detail-label">Email:</div><div class="detail-value">${assignment.customerEmail}</div></div>
+                        <div class="detail-row"><div class="detail-label">Product:</div><div class="detail-value">${firstItem.productName || 'N/A'}</div></div>
+                        <div class="detail-row"><div class="detail-label">Quantity:</div><div class="detail-value">${firstItem.quantity || 1}</div></div>
+                        <div class="detail-row"><div class="detail-label">Weight:</div><div class="detail-value">${firstItem.weight || 'N/A'} kg</div></div>
+                        <div class="detail-row"><div class="detail-label">Dimensions:</div><div class="detail-value">
+                            ${firstItem.dimensions ? `${firstItem.dimensions.length}×${firstItem.dimensions.width}×${firstItem.dimensions.height} cm` : 'N/A'}
+                            ${firstItem.volumetric_weight ? `<small style="color:#6c757d;"> (Vol: ${firstItem.volumetric_weight}kg)</small>` : ''}
+                        </div></div>
+                        <div class="detail-row"><div class="detail-label">Special Handling:</div><div class="detail-value">
+                            ${firstItem.is_fragile ? '<span style="color:#dc3545;">⚠️ Fragile</span>' : ''}
+                            ${firstItem.is_hazardous ? '<span style="color:#dc3545;">☢️ Hazardous</span>' : ''}
+                            ${firstItem.requires_cold_storage ? '<span style="color:#0d6efd;">❄️ Cold Storage</span>' : ''}
+                            ${!firstItem.is_fragile && !firstItem.is_hazardous && !firstItem.requires_cold_storage ? 'Standard' : ''}
+                        </div></div>
+                        <div class="detail-row"><div class="detail-label">Order Value:</div><div class="detail-value">₹${assignment.totalAmount.toLocaleString()}</div></div>
+                        <div class="detail-row"><div class="detail-label">Delivery To:</div><div class="detail-value">${shippingAddr.city || 'N/A'}, ${shippingAddr.state || ''} ${shippingAddr.postal_code || ''}</div></div>
+                        <div class="detail-row"><div class="detail-label">Service Type:</div><div class="detail-value">${assignment.serviceType}</div></div>
+                        <div class="detail-row"><div class="detail-label">Requested:</div><div class="detail-value">${new Date(assignment.requestedAt).toLocaleString()}</div></div>
                     </div>
-                    
+
                     <div class="data-grid">
                         <div class="data-section">
                             <h4>📄 Full Request Payload</h4>
-                            <div class="data-display">
-                                <pre>${JSON.stringify(orderData, null, 2)}</pre>
-                            </div>
+                            <div class="data-display"><pre>${JSON.stringify(orderData, null, 2)}</pre></div>
                         </div>
-                        
                         <div class="data-section">
                             <h4>🎯 Assignment Info</h4>
-                            <div style="padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                            <div style="padding:15px; background:#f8f9fa; border-radius:6px;">
                                 <p><strong>Assignment ID:</strong> ${assignment.id}</p>
                                 <p><strong>Order ID:</strong> ${assignment.orderId}</p>
                                 <p><strong>Status:</strong> ${assignment.status}</p>
                                 <p><strong>Hours until expiry:</strong> ${assignment.hoursUntilExpiry || 'N/A'}</p>
-                                <p style="margin-top: 10px;"><strong>Suggested Price:</strong> ₹${Math.round(assignment.totalAmount * 0.15)}</p>
-                                <p><strong>Estimated Days:</strong> 2-3 days</p>
+                                <p style="margin-top:10px;"><strong>Suggested Price:</strong> ₹${Math.round(assignment.totalAmount * 0.15)}</p>
+                                <p><strong>Estimated Days:</strong> 2–3 days</p>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="action-section">
                         <div class="action-card">
                             <h4>✅ Accept Assignment</h4>
@@ -786,9 +540,9 @@
                             </div>
                             <div class="input-group">
                                 <label>Service Type</label>
-                                <select id="serviceType">
-                                    <option value="express" ${currentCarrier === 'DHL' ? 'selected' : ''}>Express</option>
-                                    <option value="standard" ${currentCarrier !== 'DHL' ? 'selected' : ''}>Standard</option>
+                                <select id="quoteServiceType">
+                                    <option value="standard" selected>Standard</option>
+                                    <option value="express">Express</option>
                                     <option value="overnight">Overnight</option>
                                 </select>
                             </div>
@@ -796,7 +550,6 @@
                                 ✅ Accept & Create Shipment
                             </button>
                         </div>
-                        
                         <div class="action-card">
                             <h4>❌ Reject Assignment</h4>
                             <div class="input-group">
@@ -812,343 +565,248 @@
                             </div>
                             <div class="input-group">
                                 <label>Additional Message</label>
-                                <input type="text" id="rejectionMessage" placeholder="Optional details...">
+                                <input type="text" id="rejectionMessage" placeholder="Optional details…">
                             </div>
                             <button type="button" class="btn btn-reject" onclick="rejectAssignment('${assignment.id}')">
                                 ❌ Reject Assignment
                             </button>
                         </div>
                     </div>
-                    
+
                     <div id="responseDisplay-${assignment.id}" class="response-section"></div>
-                </div>
-            `;
+                </div>`;
         }
-        
-        function calculateDistance(origin, destination) {
-            const R = 6371;
-            const lat1 = origin.lat * Math.PI / 180;
-            const lat2 = destination.lat * Math.PI / 180;
-            const deltaLat = (destination.lat - origin.lat) * Math.PI / 180;
-            const deltaLon = (destination.lon - origin.lon) * Math.PI / 180;
-            const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
-                     Math.cos(lat1) * Math.cos(lat2) *
-                     Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return Math.round(R * c);
-        }
-        
-        function checkIfCanAccept(items, request) {
-            if (currentCarrier === 'DELHIVERY' && items.weight > 20) return false;
-            if (items.is_fragile && Math.random() > 0.9) return false;
-            return true;
-        }
-        
-        function calculateCarrierPrice(items, request) {
-            const basePrices = {
-                'DHL': 50,
-                'FEDEX': 45,
-                'BLUEDART': 40,
-                'DELHIVERY': 35
-            };
-            const baseRate = basePrices[currentCarrier] || 50;
-            const distance = calculateDistance(request.origin, request.destination);
-            return Math.round(baseRate + (items.weight * 15) + (distance * 0.05));
-        }
-        
-        function calculateDeliveryDays(request) {
-            const distance = calculateDistance(request.origin, request.destination);
-            const daysMap = {
-                'DHL': distance > 500 ? 2 : 1,
-                'FEDEX': distance > 500 ? 3 : 2,
-                'BLUEDART': distance > 500 ? 3 : 2,
-                'DELHIVERY': distance > 500 ? 4 : 2
-            };
-            return daysMap[currentCarrier] || 3;
-        }
-        
-        function getRiskFactors(items, request) {
-            const factors = [];
-            if (items.is_fragile) factors.push('Fragile item - handle with care');
-            if (items.weight > 2) factors.push('Heavy item - special handling');
-            if (items.value > 50000) factors.push('High value - insurance required');
-            return factors.length > 0 ? factors : ['No special risks identified'];
-        }
-        
+
+        // ──────────── Accept / Reject ────────────
+
         async function acceptAssignment(assignmentId) {
             const quotedPrice = parseFloat(document.getElementById('quotedPrice').value);
             const deliveryDays = parseInt(document.getElementById('deliveryDays').value);
-            const serviceType = document.getElementById('serviceType').value;
-            
+            const serviceType = document.getElementById('quoteServiceType').value;
+
             const acceptanceData = {
                 carrierReferenceId: `${currentCarrier}-${Date.now()}`,
                 trackingNumber: `${currentCarrier}-TRACK-${Date.now()}`,
-                quotedPrice: quotedPrice,
-                price: quotedPrice,
-                currency: 'INR',
+                quotedPrice, price: quotedPrice, currency: 'INR',
                 serviceLevel: serviceType,
-                estimatedPickupTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-                estimatedDeliveryTime: new Date(Date.now() + deliveryDays * 24 * 60 * 60 * 1000).toISOString(),
+                estimatedPickupTime: new Date(Date.now() + 2*60*60*1000).toISOString(),
+                estimatedDeliveryTime: new Date(Date.now() + deliveryDays*24*60*60*1000).toISOString(),
                 driver: {
-                    name: 'Demo Driver',
+                    name: 'Driver',
                     phone: '+91-9876543210',
-                    vehicleNumber: 'TN-01-AB-1234',
+                    vehicleNumber: 'MH-01-AB-1234',
                     vehicleType: 'Van'
                 },
                 additionalInfo: `Service Type: ${serviceType}, Quoted Price: ₹${quotedPrice}`
             };
-            
+
             try {
-                // Send authenticated request with HMAC signature
                 const result = await sendAuthenticatedRequest(
-                    `${API_BASE}/assignments/${assignmentId}/accept`,
-                    'POST',
-                    acceptanceData
+                    `${API_BASE}/assignments/${assignmentId}/accept`, 'POST', acceptanceData
                 );
-                
-                if (result.success) {
-                    displayResponse(assignmentId, result.data, true);
-                } else {
-                    throw new Error(result.error || 'Failed to accept assignment');
-                }
-                
+                if (result.success) displayResponse(assignmentId, result.data, true);
+                else throw new Error(result.error || 'Failed to accept assignment');
             } catch (error) {
                 console.error('Error accepting assignment:', error);
                 alert('Error: ' + error.message);
             }
         }
-        
+
         async function rejectAssignment(assignmentId) {
             const reason = document.getElementById('rejectionReason').value;
-            const message = document.getElementById('rejectionMessage').value || 
-                          getRejectionMessage(reason);
-            
+            const message = document.getElementById('rejectionMessage').value || getRejectionMessage(reason);
+
             try {
-                // Send authenticated request with HMAC signature
                 const result = await sendAuthenticatedRequest(
-                    `${API_BASE}/assignments/${assignmentId}/reject`,
-                    'POST',
-                    { reason, message }
+                    `${API_BASE}/assignments/${assignmentId}/reject`, 'POST', { reason, message }
                 );
-                
-                if (result.success) {
-                    displayResponse(assignmentId, result.data, false);
-                } else {
-                    throw new Error(result.error || 'Failed to reject assignment');
-                }
-                
+                if (result.success) displayResponse(assignmentId, result.data, false);
+                else throw new Error(result.error || 'Failed to reject assignment');
             } catch (error) {
                 console.error('Error rejecting assignment:', error);
                 alert('Error: ' + error.message);
             }
         }
-        
+
         function getRejectionMessage(reason) {
             const messages = {
-                'weight_exceeded': 'Shipment weight exceeds our capacity limits',
-                'route_not_serviceable': 'This route is not currently serviceable',
-                'at_capacity': 'We are at maximum capacity and cannot accept new shipments',
-                'no_cold_storage': 'Cold storage facilities not available',
-                'fragile_handling_unavailable': 'Fragile handling service unavailable on this route',
-                'pricing_not_viable': 'Unable to provide competitive pricing for this shipment'
+                weight_exceeded: 'Shipment weight exceeds our capacity limits',
+                route_not_serviceable: 'This route is not currently serviceable',
+                at_capacity: 'We are at maximum capacity and cannot accept new shipments',
+                no_cold_storage: 'Cold storage facilities not available',
+                fragile_handling_unavailable: 'Fragile handling service unavailable on this route',
+                pricing_not_viable: 'Unable to provide competitive pricing for this shipment'
             };
             return messages[reason] || 'Unable to accept this shipment';
         }
-        
+
         function displayResponse(assignmentId, responseData, isAccepted) {
             const responseDiv = document.getElementById(`responseDisplay-${assignmentId}`);
             responseDiv.className = 'response-section ' + (isAccepted ? '' : 'reject');
             responseDiv.style.display = 'block';
-            
             responseDiv.innerHTML = `
                 <h4>${isAccepted ? '✅ Assignment Accepted & Shipment Created!' : '❌ Assignment Rejected'}</h4>
-                <p style="margin-bottom: 15px; color: #495057;">
-                    Response processed at ${new Date().toLocaleTimeString()}
-                </p>
+                <p style="margin-bottom:15px; color:#495057;">Processed at ${new Date().toLocaleTimeString()}</p>
                 ${isAccepted ? `
-                    <div style="background: #d4edda; border: 2px solid #c3e6cb; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                        <h4 style="color: #155724; margin-bottom: 10px;">📦 Shipment Details</h4>
-                        <p><strong>Tracking Number:</strong> ${responseData.shipment?.trackingNumber || 'N/A'}</p>
-                        <p><strong>Status:</strong> ${responseData.shipment?.status || 'pending'}</p>
-                        <p><strong>Created:</strong> ${new Date(responseData.shipment?.createdAt || Date.now()).toLocaleString()}</p>
-                    </div>
-                ` : ''}
-                <h4 style="margin-top: 15px; color: #495057;">📤 Response Data:</h4>
-                <div class="data-display">
-                    <pre>${JSON.stringify(responseData, null, 2)}</pre>
-                </div>
-                <p style="margin-top: 15px; text-align: center; font-size: 0.9em; color: #6c757d;">
-                    ℹ️ Assignment has been processed. Refreshing in 3 seconds...
-                </p>
-            `;
-            
-            // Reload after 3 seconds
+                <div style="background:#d4edda; border:2px solid #c3e6cb; padding:15px; border-radius:8px; margin-bottom:15px;">
+                    <h4 style="color:#155724; margin-bottom:10px;">📦 Shipment Details</h4>
+                    <p><strong>Tracking Number:</strong> ${responseData.shipment?.trackingNumber || 'N/A'}</p>
+                    <p><strong>Status:</strong> ${responseData.shipment?.status || 'pending'}</p>
+                    <p><strong>Created:</strong> ${new Date(responseData.shipment?.createdAt || Date.now()).toLocaleString()}</p>
+                </div>` : ''}
+                <h4 style="margin-top:15px; color:#495057;">📤 Response Data:</h4>
+                <div class="data-display"><pre>${JSON.stringify(responseData, null, 2)}</pre></div>
+                <p style="margin-top:15px; text-align:center; font-size:0.9em; color:#6c757d;">
+                    Refreshing in 3 seconds…
+                </p>`;
+
             setTimeout(async () => {
                 await loadPendingRequests();
                 await loadMyShipments();
             }, 3000);
         }
 
-        /**
-         * Load shipments that belong to current carrier and are pending pickup
-         * Method A: Carrier-Only Control - Only carrier can mark as picked up
-         */
+        // ──────────── Shipments (Pending Pickup) ────────────
+
         async function loadMyShipments() {
             try {
-                console.log('📦 Loading shipments for:', {
-                    carrier: currentCarrier,
-                    existingCarrierId: currentCarrierId
-                });
-                
-                // If currentCarrierId is already set (from loadPendingRequests), reuse it
-                // Otherwise fetch carrier by code directly from DB
                 if (!currentCarrierId) {
                     const carrierResponse = await fetch(`${API_BASE}/carriers?code=${currentCarrier}`);
                     const carrierData = await carrierResponse.json();
-                    
                     if (!carrierData.success || !carrierData.data || carrierData.data.length === 0) {
                         document.getElementById('shipmentsContainer').innerHTML = `
-                            <div class="empty-state">
-                                <h3>❌ Carrier Not Found</h3>
-                                <p>Could not find carrier with code: ${currentCarrier}</p>
-                            </div>
-                        `;
+                            <div class="empty-state"><h3>❌ Carrier Not Found</h3><p>Could not find carrier with code: ${currentCarrier}</p></div>`;
                         return;
                     }
-                    
                     currentCarrierId = carrierData.data[0].id;
-                    console.log('🚚 Fetched new carrier ID:', currentCarrierId);
-                    
-                    // Fetch webhook secret for authentication
                     await fetchWebhookSecret(currentCarrierId);
-                } else {
-                    console.log('♻️ Reusing existing carrier ID:', currentCarrierId);
                 }
-                
-                // Get shipments for this carrier with status 'pending' (waiting for pickup)
+
                 const response = await fetch(`${API_BASE}/shipments?carrier_id=${currentCarrierId}&status=pending`);
                 const data = await response.json();
-                
+
                 if (!data.success || !data.data || data.data.length === 0) {
                     document.getElementById('shipmentsContainer').innerHTML = `
-                        <div class="empty-state">
-                            <h3>📦 No Shipments Waiting</h3>
-                            <p>Accept a quote request to see shipments here.</p>
-                        </div>
-                    `;
+                        <div class="empty-state"><h3>📦 No Shipments Waiting</h3><p>Accept an assignment to see shipments here.</p></div>`;
                     return;
                 }
-                
-                const shipmentsHtml = data.data.map(shipment => `
+
+                document.getElementById('shipmentsContainer').innerHTML = data.data.map(shipment => `
                     <div class="shipment-card">
                         <div class="request-header">
                             <h3>📦 ${shipment.trackingNumber}</h3>
                             <span class="shipment-status">${shipment.status.toUpperCase()}</span>
                         </div>
-                        
-                        <div class="request-details">
-                            <div class="detail-row">
-                                <span class="label">Order Number:</span>
-                                <span class="value">${shipment.orderNumber || 'N/A'}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="label">Destination:</span>
-                                <span class="value">${shipment.destination?.city || 'N/A'}, ${shipment.destination?.state || ''}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="label">Weight:</span>
-                                <span class="value">${shipment.weight} kg</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="label">Shipping Cost:</span>
-                                <span class="value">₹${shipment.cost}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="label">SLA Deadline:</span>
-                                <span class="value">${new Date(shipment.slaDeadline).toLocaleString()}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="label">Created:</span>
-                                <span class="value">${new Date(shipment.createdAt).toLocaleString()}</span>
-                            </div>
+                        <div class="shipment-details">
+                            <div class="detail-row"><span class="detail-label">Order Number:</span><span class="detail-value">${shipment.orderNumber || 'N/A'}</span></div>
+                            <div class="detail-row"><span class="detail-label">Destination:</span><span class="detail-value">${shipment.destination?.city || 'N/A'}, ${shipment.destination?.state || ''}</span></div>
+                            <div class="detail-row"><span class="detail-label">Weight:</span><span class="detail-value">${shipment.weight} kg</span></div>
+                            <div class="detail-row"><span class="detail-label">Shipping Cost:</span><span class="detail-value">₹${shipment.cost}</span></div>
+                            <div class="detail-row"><span class="detail-label">SLA Deadline:</span><span class="detail-value">${new Date(shipment.slaDeadline).toLocaleString()}</span></div>
+                            <div class="detail-row"><span class="detail-label">Created:</span><span class="detail-value">${new Date(shipment.createdAt).toLocaleString()}</span></div>
                         </div>
-
-                        <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-                            <h4 style="margin-bottom: 10px; color: #856404;">⚠️ Action Required: Confirm Pickup</h4>
-                            <p style="margin-bottom: 15px; color: #856404;">
-                                This shipment is ready for pickup. Once you collect the package, click the button below.
-                                <strong>SLA timer starts from your confirmation timestamp.</strong>
+                        <div style="margin-top:20px; padding:15px; background:#fff3cd; border-left:4px solid #ffc107; border-radius:4px;">
+                            <h4 style="margin-bottom:10px; color:#856404;">⚠️ Action Required: Confirm Pickup</h4>
+                            <p style="margin-bottom:15px; color:#856404;">
+                                This shipment is ready for pickup. Once you collect the package, click below.
+                                <strong>SLA timer starts from confirmation.</strong>
                             </p>
-                            
                             <button class="btn-pickup" onclick="confirmPickup('${shipment.id}', '${shipment.trackingNumber}')">
-                                ✅ Confirm Pickup - Start Transit
+                                ✅ Confirm Pickup — Start Transit
                             </button>
                         </div>
-                    </div>
-                `).join('');
-                
-                document.getElementById('shipmentsContainer').innerHTML = shipmentsHtml;
-                
+                    </div>`).join('');
             } catch (error) {
                 console.error('Error loading shipments:', error);
                 document.getElementById('shipmentsContainer').innerHTML = `
-                    <div class="empty-state">
-                        <h3>❌ Error Loading Shipments</h3>
-                        <p>${error.message}</p>
-                    </div>
-                `;
+                    <div class="empty-state"><h3>❌ Error Loading Shipments</h3><p>${error.message}</p></div>`;
             }
         }
 
-        /**
-         * Confirm package pickup - Method A: Carrier-Only Control
-         * Only carrier can mark shipment as in_transit
-         * SLA starts from this timestamp (tamper-proof)
-         * Uses HMAC-SHA256 signature for authentication
-         */
+        // ──────────── Confirm Pickup ────────────
+
         async function confirmPickup(shipmentId, trackingNumber) {
-            if (!confirm(`Confirm that you have picked up shipment ${trackingNumber}?\n\nThis will:\n✓ Mark shipment as IN TRANSIT\n✓ Update order status to SHIPPED\n✓ Start SLA timer (cannot be undone)`)) {
-                return;
-            }
+            if (!confirm(`Confirm pickup of shipment ${trackingNumber}?\n\nThis will:\n✓ Mark shipment as IN TRANSIT\n✓ Update order status to SHIPPED\n✓ Start SLA timer (cannot be undone)`)) return;
 
             const pickupData = {
                 carrierId: currentCarrierId,
                 pickupTimestamp: new Date().toISOString(),
-                driverName: `${currentCarrier} Driver`,
-                vehicleNumber: `${currentCarrier.substring(0,2)}-01-AB-${Math.floor(1000 + Math.random() * 9000)}`,
+                driverName: `${carrierNames[currentCarrier] || currentCarrier} Driver`,
+                vehicleNumber: `MH-01-AB-${Math.floor(1000 + Math.random() * 9000)}`,
                 gpsLocation: {
                     lat: 19.076 + (Math.random() - 0.5) * 0.1,
                     lon: 72.877 + (Math.random() - 0.5) * 0.1,
-                    city: 'Mumbai',
-                    state: 'Maharashtra'
+                    city: 'Mumbai', state: 'Maharashtra'
                 },
-                notes: `Package picked up by ${currentCarrier} carrier`
+                notes: `Package picked up by ${carrierNames[currentCarrier] || currentCarrier}`
             };
 
             try {
-                // Send authenticated request with HMAC signature
                 const result = await sendAuthenticatedRequest(
-                    `${API_BASE}/shipments/${shipmentId}/confirm-pickup`,
-                    'POST',
-                    pickupData
+                    `${API_BASE}/shipments/${shipmentId}/confirm-pickup`, 'POST', pickupData
                 );
-
                 if (result.success) {
-                    alert(`✅ Pickup Confirmed!\n\nTracking: ${result.data.trackingNumber}\nStatus: ${result.data.status}\nOrder: ${result.data.orderStatus}\n\nSLA timer has started. Package is now in transit.`);
-                    loadMyShipments(); // Reload to remove from pending list
-                } else {
-                    throw new Error(result.error || 'Failed to confirm pickup');
-                }
+                    alert(`✅ Pickup Confirmed!\n\nTracking: ${result.data.trackingNumber}\nStatus: ${result.data.status}\nOrder: ${result.data.orderStatus}\n\nSLA timer started.`);
+                    loadMyShipments();
+                } else throw new Error(result.error || 'Failed to confirm pickup');
             } catch (error) {
                 console.error('Error confirming pickup:', error);
                 alert('❌ Error: ' + error.message);
             }
         }
-        
-        // Load requests on page load
+
+        // ──────────── Update Shipment Status (real tracking API) ────────────
+
+        async function updateShipmentStatus() {
+            const trackingNumber = document.getElementById('updateTrackingNumber').value.trim();
+            const eventType = document.getElementById('updateEventType').value;
+            const city = document.getElementById('updateCity').value.trim();
+            const description = document.getElementById('updateDescription').value.trim();
+            const resultDiv = document.getElementById('statusUpdateResult');
+
+            if (!trackingNumber) { alert('Please enter a tracking number.'); return; }
+            if (!currentWebhookSecret || !currentCarrierId) {
+                alert('Please select a carrier first so the HMAC secret is loaded.');
+                return;
+            }
+
+            const body = {
+                eventType,
+                location: city ? { city, state: '' } : undefined,
+                description: description || `Status updated to ${eventType}`
+            };
+
+            try {
+                const result = await sendAuthenticatedRequest(
+                    `${API_BASE}/shipments/${trackingNumber}/update-tracking`, 'POST', body
+                );
+
+                resultDiv.style.display = 'block';
+                resultDiv.style.background = '#d4edda';
+                resultDiv.style.border = '2px solid #28a745';
+                resultDiv.style.color = '#155724';
+                resultDiv.innerHTML = `<strong>✅ Tracking updated!</strong><br>
+                    Tracking: <code>${trackingNumber}</code><br>
+                    Status: <strong>${result.data?.status || eventType}</strong><br>
+                    <small style="color:#6c757d; margin-top:8px; display:block;">
+                        Response: <pre style="margin:5px 0;">${JSON.stringify(result.data || result, null, 2)}</pre>
+                    </small>`;
+
+                await loadMyShipments();
+            } catch (err) {
+                console.error('Error updating status:', err);
+                resultDiv.style.display = 'block';
+                resultDiv.style.background = '#f8d7da';
+                resultDiv.style.border = '2px solid #dc3545';
+                resultDiv.style.color = '#721c24';
+                resultDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+            }
+        }
+
+        // ──────────── Init ────────────
+
         window.onload = async () => {
             await loadCarriers();
-            // Refresh every 5 seconds to check for new orders and shipments
             setInterval(async () => {
                 if (!currentCarrier) return;
                 await loadPendingRequests();

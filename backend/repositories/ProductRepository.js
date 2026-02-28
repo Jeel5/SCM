@@ -59,7 +59,7 @@ class ProductRepository extends BaseRepository {
   }
 
   /**
-   * Find a product by SKU within org (for duplicate checking).
+   * Find a product by SKU within org — returns the FULL product row.
    */
   async findBySku(sku, organizationId = undefined, client = null) {
     const params = [sku];
@@ -68,7 +68,7 @@ class ProductRepository extends BaseRepository {
       : '';
     if (organizationId) params.push(organizationId);
     const result = await this.query(
-      `SELECT id FROM products WHERE sku = $1${orgClause} LIMIT 1`,
+      `SELECT * FROM products WHERE sku = $1${orgClause} LIMIT 1`,
       params, client
     );
     return result.rows[0] || null;

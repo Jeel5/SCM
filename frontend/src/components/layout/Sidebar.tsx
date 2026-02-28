@@ -17,6 +17,7 @@ import {
   DollarSign,
   Users,
   Activity,
+  Handshake,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores';
@@ -108,6 +109,13 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     icon: <Building2 className="h-5 w-5" />,
     path: '/carriers',
     permission: 'carriers.view',
+  },
+  {
+    id: 'partners',
+    label: 'Partners',
+    icon: <Handshake className="h-5 w-5" />,
+    path: '/partners',
+    permission: 'channels.view',
   },
   {
     id: 'sla',

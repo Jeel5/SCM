@@ -448,17 +448,16 @@ class InventoryRepository extends BaseRepository {
   async recordMovement(movementData, client = null) {
     const query = `
       INSERT INTO stock_movements (
-        organization_id, warehouse_id, product_id, inventory_id,
+        warehouse_id, product_id, inventory_id,
         movement_type, quantity,
         reference_type, reference_id,
         notes, batch_number, created_by,
         created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       RETURNING *
     `;
 
     const params = [
-      movementData.organization_id || null,
       movementData.warehouse_id,
       movementData.product_id     || null,
       movementData.inventory_id   || null,
@@ -592,6 +591,26 @@ class InventoryRepository extends BaseRepository {
       [sku], client
     );
     return result.rows;
+  }
+
+  /**
+   * Find the best warehouse with stock for a SKU within an organization.
+   * Returns the warehouse_id with the highest available_quantity, or null.
+   */
+  async findBestWarehouseForSku(sku, organizationId, quantity = 1, client = null) {
+    const result = await this.query(
+      `SELECT i.warehouse_id, i.available_quantity
+       FROM inventory i
+       JOIN warehouses w ON w.id = i.warehouse_id
+       WHERE i.sku = $1
+         AND i.organization_id = $2
+         AND i.available_quantity >= $3
+         AND w.is_active = true
+       ORDER BY i.available_quantity DESC
+       LIMIT 1`,
+      [sku, organizationId, quantity], client
+    );
+    return result.rows[0]?.warehouse_id || null;
   }
 
   /**

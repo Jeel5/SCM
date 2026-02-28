@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserPlus, Lock, Mail } from 'lucide-react';
+import { UserPlus, Lock, Mail, Phone } from 'lucide-react';
 import { Button, Input, Modal, Select } from '@/components/ui';
 import { post } from '@/api/client';
 import { toast } from '@/stores/toastStore';
@@ -32,6 +32,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
     name: '',
     email: '',
     password: '',
+    phone: '',
     role: 'operations_manager',
   });
 
@@ -39,7 +40,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const handleClose = () => {
-    setForm({ name: '', email: '', password: '', role: 'operations_manager' });
+    setForm({ name: '', email: '', password: '', phone: '', role: 'operations_manager' });
     onClose();
   };
 
@@ -117,6 +118,19 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
             value={form.email}
             onChange={(e) => set('email', e.target.value)}
             leftIcon={<Mail className="h-4 w-4 text-gray-400" />}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Phone Number
+          </label>
+          <Input
+            type="tel"
+            placeholder="+91 98765 43210"
+            value={form.phone}
+            onChange={(e) => set('phone', e.target.value)}
+            leftIcon={<Phone className="h-4 w-4 text-gray-400" />}
           />
         </div>
 

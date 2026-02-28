@@ -3,10 +3,31 @@ import InventoryRepository from '../repositories/InventoryRepository.js';
 import WarehouseRepository from '../repositories/WarehouseRepository.js';
 import CarrierRepository from '../repositories/CarrierRepository.js';
 import ShipmentRepository from '../repositories/ShipmentRepository.js';
+import ProductRepository from '../repositories/ProductRepository.js';
 import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index.js';
 import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Generate a reasonable SKU from a product name when none was provided.
+ * Format: {PREFIX}-{YYYYMM}-{RAND5}  e.g. LAPTOP-202507-K3P9Q
+ */
+function generateSkuFromName(name) {
+  const prefix = (name || 'ITEM')
+    .replace(/[^A-Z0-9\s]/gi, '')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w.slice(0, 3).toUpperCase())
+    .join('')
+    .slice(0, 6) || 'ITEM';
+  const month = new Date().toISOString().slice(0, 7).replace('-', '');
+  const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
+  return `${prefix}-${month}-${rand}`;
+}
 
 // ─── Order State Machine ────────────────────────────────────────────────────
 // Defines which status transitions are legal.  An order can only move forward
@@ -108,36 +129,106 @@ class OrderService {
           tags: orderData.tags ? JSON.stringify(orderData.tags) : null
         };
 
-        // Prepare items with complete shipping attributes
-        const items = orderData.items.map(item => ({
-          product_id: item.product_id,
-          sku: item.sku,
-          product_name: item.product_name,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          discount: item.discount || 0,
-          tax: item.tax || 0,
-          total_price: item.total_price || (item.unit_price * item.quantity),
-          weight: item.weight || null,
-          dimensions: item.dimensions ? JSON.stringify(item.dimensions) : null,
-          is_fragile: item.is_fragile || false,
-          is_hazardous: item.is_hazardous || false,
-          is_perishable: item.is_perishable || false,
-          requires_cold_storage: item.requires_cold_storage || false,
-          item_type: item.item_type || 'general',
-          package_type: item.package_type || 'box',
-          handling_instructions: item.handling_instructions || null,
-          requires_insurance: item.requires_insurance || false,
-          declared_value: item.declared_value || null,
-          warehouse_id: item.warehouse_id || null
-        }));
+        // ── Product Validation & Warehouse Allocation ────────────────────────────
+        // For each item:
+        //   1. Match SKU → product in products table (enrich with product data)
+        //   2. If product not found AND this is a webhook order (has external_order_id), auto-create product
+        //   3. Auto-assign warehouse if not specified (find best warehouse with stock)
+        //   4. Validate stock availability
+        const isWebhookOrder = !!orderData.external_order_id;
+        const orgId = orderData.organization_id;
+        const enrichedItems = [];
+
+        for (const item of orderData.items) {
+          let product = null;
+
+          // 1. Resolve product by product_id or SKU
+          if (item.product_id) {
+            product = await ProductRepository.findById(item.product_id, orgId, tx);
+          } else if (item.sku) {
+            product = await ProductRepository.findBySku(item.sku, orgId, tx);
+          }
+
+          // 2. For webhook orders: auto-create product if not found
+          if (!product && isWebhookOrder) {
+            // Generate a SKU if the webhook didn't provide one
+            const productName = item.product_name || item.name || 'ITEM';
+            const autoSku = item.sku || generateSkuFromName(productName);
+            logger.info(`Auto-creating product from webhook for SKU: ${autoSku}`);
+            product = await ProductRepository.create({
+              organization_id: orgId,
+              sku: autoSku,
+              name: productName,
+              category: item.category || null,
+              weight: item.weight || null,
+              dimensions: item.dimensions || null,
+              unit_price: item.unit_price || item.price || null,
+              is_fragile: item.is_fragile || false,
+              is_hazmat: item.is_hazardous || false,
+              is_perishable: item.is_perishable || false,
+              requires_cold_storage: item.requires_cold_storage || false,
+              item_type: item.item_type || 'general',
+              package_type: item.package_type || 'box',
+              requires_insurance: item.requires_insurance || false,
+              declared_value: item.declared_value || null,
+            }, tx);
+          }
+
+          // 3. For API orders: product must exist
+          if (!product && !isWebhookOrder) {
+            throw new BusinessLogicError(
+              item.sku
+                ? `Product with SKU "${item.sku}" not found. Create the product first or add it to inventory.`
+                : `Product not found. Each item must reference a valid product_id or SKU.`
+            );
+          }
+
+          // Enrich item with product data where not already provided
+          const enrichedItem = {
+            product_id: product?.id || item.product_id || null,
+            sku: product?.sku || item.sku,
+            product_name: item.product_name || product?.name || 'Unknown',
+            quantity: item.quantity,
+            unit_price: item.unit_price || parseFloat(product?.unit_price) || 0,
+            discount: item.discount || 0,
+            tax: item.tax || 0,
+            total_price: item.total_price || ((item.unit_price || parseFloat(product?.unit_price) || 0) * item.quantity),
+            weight: item.weight || parseFloat(product?.weight) || null,
+            dimensions: item.dimensions ? JSON.stringify(item.dimensions) : (product?.dimensions || null),
+            is_fragile: item.is_fragile ?? product?.is_fragile ?? false,
+            is_hazardous: item.is_hazardous ?? product?.is_hazmat ?? false,
+            is_perishable: item.is_perishable ?? product?.is_perishable ?? false,
+            requires_cold_storage: item.requires_cold_storage ?? product?.requires_cold_storage ?? false,
+            item_type: item.item_type || product?.item_type || 'general',
+            package_type: item.package_type || product?.package_type || 'box',
+            handling_instructions: item.handling_instructions || product?.handling_instructions || null,
+            requires_insurance: item.requires_insurance ?? product?.requires_insurance ?? false,
+            declared_value: item.declared_value || parseFloat(product?.declared_value) || null,
+            warehouse_id: item.warehouse_id || null,
+          };
+
+          // 4. Auto-assign warehouse if not specified
+          if (!enrichedItem.warehouse_id && orgId && enrichedItem.sku) {
+            const warehouseId = await InventoryRepository.findBestWarehouseForSku(
+              enrichedItem.sku, orgId, enrichedItem.quantity, tx
+            );
+            if (warehouseId) {
+              enrichedItem.warehouse_id = warehouseId;
+              logger.debug(`Auto-assigned warehouse ${warehouseId} for SKU ${enrichedItem.sku}`);
+            } else {
+              logger.warn(`No warehouse with sufficient stock for SKU ${enrichedItem.sku} (qty: ${enrichedItem.quantity})`);
+            }
+          }
+
+          enrichedItems.push(enrichedItem);
+        }
 
         // SERVER-SIDE recalculation of financial totals — never trust client-supplied values
-        const serverSubtotal = items.reduce((sum, item) => {
+        const serverSubtotal = enrichedItems.reduce((sum, item) => {
           const lineTotal = (item.unit_price * item.quantity) - (item.discount || 0);
           return sum + lineTotal;
         }, 0);
-        const serverTaxAmount = items.reduce((sum, item) => sum + (item.tax || 0), 0);
+        const serverTaxAmount = enrichedItems.reduce((sum, item) => sum + (item.tax || 0), 0);
         const shippingAmount = orderData.shipping_amount || 0;
         const discountAmount = orderData.discount_amount || 0;
         const serverTotal = serverSubtotal + serverTaxAmount + shippingAmount - discountAmount;
@@ -150,10 +241,10 @@ class OrderService {
         orderRecord.total_amount = serverTotal;
 
         // Create order with items in transaction
-        const order = await OrderRepository.createOrderWithItems(orderRecord, items, tx);
+        const order = await OrderRepository.createOrderWithItems(orderRecord, enrichedItems, tx);
 
-        // Reserve inventory for each item
-        for (const item of orderData.items) {
+        // Reserve inventory for each item that has a warehouse assignment
+        for (const item of enrichedItems) {
           if (item.warehouse_id && item.sku) {
             const reserved = await InventoryRepository.reserveStock(
               item.sku,
@@ -163,7 +254,15 @@ class OrderService {
             );
             
             if (!reserved) {
-              throw new BusinessLogicError(`Insufficient inventory for SKU: ${item.sku}`);
+              if (isWebhookOrder) {
+                // Webhook orders: don't reject — flag for attention, order continues without reservation
+                logger.warn(`Insufficient stock for SKU ${item.sku} (qty: ${item.quantity}). Order will proceed without reservation.`, { orderId: order.id });
+              } else {
+                throw new BusinessLogicError(
+                  `Insufficient stock for SKU "${item.sku}". ` +
+                  `Required: ${item.quantity}. Check available inventory and try again.`
+                );
+              }
             }
           }
         }

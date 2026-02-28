@@ -31,6 +31,7 @@ const FinancePage = lazy(() => import('@/pages/finance').then(m => ({ default: m
 const HelpSupportPage = lazy(() => import('@/pages/help').then(m => ({ default: m.HelpSupportPage })));
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })));
 const TeamPage = lazy(() => import('@/pages/team').then(m => ({ default: m.TeamPage })));
+const PartnersPage = lazy(() => import('@/pages/partners').then(m => ({ default: m.PartnersPage })));
 const LandingPage = lazy(() => import('@/pages/public').then(m => ({ default: m.LandingPage })));
 const AboutPage = lazy(() => import('@/pages/public').then(m => ({ default: m.AboutPage })));
 const GetDemoPage = lazy(() => import('@/pages/public').then(m => ({ default: m.GetDemoPage })));
@@ -383,6 +384,16 @@ function App() {
                       <PageLoader>
                         <PermissionRoute permission="team.manage">
                           <TeamPage />
+                        </PermissionRoute>
+                      </PageLoader>
+                    }
+                  />
+                  <Route
+                    path="partners"
+                    element={
+                      <PageLoader>
+                        <PermissionRoute permission="channels.view">
+                          <PartnersPage />
                         </PermissionRoute>
                       </PageLoader>
                     }

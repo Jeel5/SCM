@@ -124,12 +124,12 @@ export function CarrierCard({
       {/* Footer */}
       <div className="p-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {carrier.services.slice(0, 2).map((service) => (
+          {(carrier.services ?? []).slice(0, 2).map((service) => (
             <Badge key={service} variant="default" className="text-xs capitalize">
               {service.replace('_', ' ')}
             </Badge>
           ))}
-          {carrier.services.length > 2 && (
+          {(carrier.services ?? []).length > 2 && (
             <Badge variant="default" className="text-xs">
               +{carrier.services.length - 2}
             </Badge>

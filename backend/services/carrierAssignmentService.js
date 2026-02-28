@@ -291,6 +291,22 @@ class CarrierAssignmentService {
           tx
         );
 
+        if (!updatedAssignment) {
+          throw new AppError('Assignment is no longer available (already accepted or cancelled)', 409);
+        }
+
+        // Cancel all other pending assignments for this order to prevent duplicates
+        const cancelled = await carrierAssignmentRepo.cancelRemainingAssignments(
+          assignment.order_id, assignmentId, tx
+        );
+        if (cancelled.length > 0) {
+          logger.info('Cancelled remaining assignments after acceptance', {
+            orderId: assignment.order_id,
+            acceptedAssignmentId: assignmentId,
+            cancelledIds: cancelled.map(c => c.id)
+          });
+        }
+
         // Create shipment from accepted assignment
         const trackingNumber = acceptancePayload.tracking.trackingNumber || 
                               `TRACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

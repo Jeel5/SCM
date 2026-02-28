@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import userRepo from '../repositories/UserRepository.js';
+import orgRepo from '../repositories/OrganizationRepository.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { settingsService } from '../services/settingsService.js';
 import { ORG_ASSIGNABLE_ROLES } from '../config/roles.js';
@@ -267,7 +268,7 @@ export const createOrgUser = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
   if (!organizationId) throw new AuthorizationError('Organization context required');
 
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, phone } = req.body;
 
   if (!ORG_ASSIGNABLE_ROLES.includes(role)) {
     throw new ValidationError(`Invalid role. Allowed roles: ${ORG_ASSIGNABLE_ROLES.join(', ')}`);
@@ -285,7 +286,7 @@ export const createOrgUser = asyncHandler(async (req, res) => {
 
   const password_hash = await bcrypt.hash(password, 10);
 
-  const user = await userRepo.createUser({ name, email, password_hash, role, organization_id: organizationId });
+  const user = await userRepo.createUser({ name, email, password_hash, role, phone: phone || null, organization_id: organizationId });
   await userRepo.insertAuditLog(req.user.userId, 'create_user', 'user', user.id);
 
   res.status(201).json({ success: true, data: user });
@@ -357,4 +358,23 @@ export const deactivateOrgUser = asyncHandler(async (req, res) => {
   await userRepo.insertAuditLog(req.user.userId, 'deactivate_user', 'user', id);
 
   res.json({ success: true, data: deactivated });
+});
+
+// Get organization webhook token (admin only, org-scoped)
+export const getOrgWebhook = asyncHandler(async (req, res) => {
+  const organizationId = req.orgContext?.organizationId;
+  if (!organizationId) throw new AuthorizationError('Organization context required');
+
+  const org = await orgRepo.findById(organizationId);
+  if (!org) throw new NotFoundError('Organization');
+
+  res.json({
+    success: true,
+    data: {
+      organizationId: org.id,
+      name: org.name,
+      code: org.code,
+      webhookToken: org.webhook_token
+    }
+  });
 });

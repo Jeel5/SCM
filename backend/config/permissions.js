@@ -38,6 +38,10 @@ export const ALL_PERMISSIONS = [
   'jobs.create',        // create / trigger jobs
   'jobs.update',        // cancel / retry jobs
   'jobs.delete',        // delete cron schedules / purge DLQ
+  'channels.view',
+  'channels.manage',
+  'suppliers.view',
+  'suppliers.manage',
   'settings.personal',
   'settings.organization',
 ];
@@ -63,6 +67,8 @@ export const ROLE_PERMISSIONS = {
     'inventory.view', 'inventory.update', 'inventory.manage',
     'warehouses.view', 'warehouses.manage',
     'carriers.view', 'carriers.manage',
+    'channels.view',
+    'suppliers.view',
     'exceptions.view', 'exceptions.create', 'exceptions.update',
     'returns.view', 'returns.create', 'returns.update',
     'sla.view',
@@ -76,6 +82,7 @@ export const ROLE_PERMISSIONS = {
     'shipments.view',
     'inventory.view', 'inventory.update',
     'warehouses.view',
+    'suppliers.view',
     'returns.view', 'returns.create', 'returns.update',
     'exceptions.view', 'exceptions.update',
     'settings.personal',
@@ -96,6 +103,8 @@ export const ROLE_PERMISSIONS = {
     'analytics.view',
     'orders.view',
     'returns.view',
+    'channels.view',
+    'suppliers.view',
     'settings.personal',
   ],
 

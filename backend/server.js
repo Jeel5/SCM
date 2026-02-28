@@ -32,6 +32,7 @@ import shippingRoutes from './routes/shipping.js';
 import carriersRoutes from './routes/carriers.js';
 import companiesRoutes from './routes/companies.js';
 import organizationsRoutes from './routes/organizations.js';
+import partnersRoutes from './routes/partners.js';
 
 // Security headers middleware
 app.use(helmet());
@@ -96,6 +97,7 @@ app.use(API_PREFIX, shippingRoutes); // Shipping quote routes
 app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
 app.use(API_PREFIX, companiesRoutes); // Superadmin company management
 app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization management (superadmin)
+app.use(API_PREFIX, partnersRoutes); // Sales channels & suppliers
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes

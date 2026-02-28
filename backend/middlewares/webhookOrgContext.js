@@ -17,6 +17,7 @@
  */
 
 import organizationRepo from '../repositories/OrganizationRepository.js';
+import SalesChannelRepo from '../repositories/SalesChannelRepository.js';
 import logger from '../utils/logger.js';
 
 export async function resolveWebhookOrg(req, res, next) {
@@ -30,27 +31,38 @@ export async function resolveWebhookOrg(req, res, next) {
   }
 
   try {
+    // 1. Try organization webhook token first
     const org = await organizationRepo.findByWebhookToken(orgToken);
 
-    if (!org) {
-      logger.warn(`Webhook: invalid/unknown org token`, {
-        path: req.path,
-        ip: req.ip,
-        tokenPrefix: orgToken.substring(0, 8) + '...'
-      });
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid webhook token'
-      });
+    if (org) {
+      req.webhookOrganizationId = org.id;
+      req.webhookOrgCode        = org.code;
+      req.webhookOrgName        = org.name;
+      logger.debug(`Webhook org resolved: ${org.code} (${org.id})`);
+      return next();
     }
 
-    // Attach org info so controller can stamp organization_id on the record
-    req.webhookOrganizationId = org.id;
-    req.webhookOrgCode        = org.code;
-    req.webhookOrgName        = org.name;
+    // 2. Fall back to sales_channels webhook token
+    const channel = await SalesChannelRepo.findByWebhookToken(orgToken);
 
-    logger.debug(`Webhook org resolved: ${org.code} (${org.id})`);
-    next();
+    if (channel) {
+      req.webhookOrganizationId = channel.organization_id;
+      req.webhookOrgCode        = channel.code;
+      req.webhookOrgName        = channel.name;
+      req.webhookChannelId      = channel.id;
+      logger.debug(`Webhook channel resolved: ${channel.code} (org ${channel.organization_id})`);
+      return next();
+    }
+
+    logger.warn(`Webhook: invalid/unknown org token`, {
+      path: req.path,
+      ip: req.ip,
+      tokenPrefix: orgToken.substring(0, 8) + '...'
+    });
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid webhook token'
+    });
   } catch (error) {
     logger.error('Error resolving webhook org token:', error);
     next(error);

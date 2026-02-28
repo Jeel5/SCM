@@ -5,7 +5,8 @@ import {
   updateProfile, changePassword, verifyEmailChange,
   getNotificationPreferences, updateNotificationPreferences,
   getActiveSessions, revokeSession,
-  createOrgUser, getOrgUser, updateOrgUser, deactivateOrgUser
+  createOrgUser, getOrgUser, updateOrgUser, deactivateOrgUser,
+  getOrgWebhook
 } from '../controllers/usersController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize, requireRoles, ROLES } from '../middlewares/rbac.js';
@@ -40,6 +41,9 @@ router.get('/settings/notifications', authenticate, getNotificationPreferences);
 router.patch('/settings/notifications', authenticate, validateRequest(notificationPreferencesSchema), updateNotificationPreferences);
 router.get('/settings/sessions', authenticate, getActiveSessions);
 router.delete('/settings/sessions/:sessionId', authenticate, revokeSession);
+
+// Organization webhook token (Admin only — for integration configuration)
+router.get('/settings/webhook', authenticate, injectOrgContext, requireRoles(ROLES.ADMIN), getOrgWebhook);
 
 // Admin-only routes
 router.get('/users', authenticate, injectOrgContext, requireRoles(ROLES.ADMIN, ROLES.OPERATIONS), validateQuery(listUsersQuerySchema), listUsers);

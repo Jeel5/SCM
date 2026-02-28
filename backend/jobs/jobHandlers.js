@@ -386,10 +386,14 @@ async function handleProcessOrder(payload) {
       notes:             order.notes || null,
       items: (order.items || []).map(item => ({
         product_name: item.product_name || item.name || 'Unknown',
-        sku:          item.sku          || `WEBHOOK-SKU-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        sku:          item.sku          || null,
         quantity:     parseInt(item.quantity)  || 1,
         unit_price:   parseFloat(item.unit_price ?? item.price ?? 0),
         weight:       parseFloat(item.weight   ?? item.unit_weight ?? 0.5),
+        category:     item.category || null,
+        dimensions:   item.dimensions || null,
+        is_fragile:   item.is_fragile || false,
+        is_hazardous: item.is_hazardous || false,
       })),
     };
 
