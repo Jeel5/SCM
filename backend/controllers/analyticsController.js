@@ -1,10 +1,11 @@
 // Analytics Controller - provides comprehensive analytics and reporting
-import pool from '../config/db.js';
+import analyticsRepo from '../repositories/AnalyticsRepository.js';
+import logger from '../utils/logger.js';
+import { asyncHandler, ValidationError } from '../errors/index.js';
 
 // Get analytics data with time-series trends and breakdowns
-export async function getAnalytics(req, res) {
-  try {
-    const { range = 'month' } = req.query; // day, week, month, year
+export const getAnalytics = asyncHandler(async (req, res) => {
+  const { range = 'month' } = req.query; // day, week, month, year
     
     // Map range to SQL interval
     let interval = '30 days';
@@ -21,7 +22,7 @@ export async function getAnalytics(req, res) {
       dateGrouping = "DATE_TRUNC('month', created_at)";
     }
 
-    const organizationId = req.user?.organizationId;
+    const organizationId = req.orgContext?.organizationId;
 
     // Build query param array: [interval, orgId?]
     // Using $N::INTERVAL avoids interpolating user-controlled strings into SQL (TASK-R8-016).
@@ -47,140 +48,14 @@ export async function getAnalytics(req, res) {
       returnsAnalysis,
       financialMetrics,
     ] = await Promise.all([
-      pool.query(`
-        SELECT 
-          ${dateGrouping} as date, 
-          COUNT(*) as count, 
-          COALESCE(SUM(total_amount), 0) as value,
-          COUNT(CASE WHEN status = 'delivered' THEN 1 END) as delivered,
-          COUNT(CASE WHEN status IN ('shipped','in_transit','out_for_delivery') THEN 1 END) as in_transit,
-          COUNT(CASE WHEN status IN ('created','confirmed','allocated','processing') THEN 1 END) as pending
-        FROM orders
-        WHERE created_at >= ${intClause}
-        ${orgClause}
-        GROUP BY ${dateGrouping}
-        ORDER BY date ASC
-      `, baseArgs),
-
-      pool.query(`
-        SELECT 
-          c.name as carrier,
-          c.id as carrier_id,
-          COUNT(s.id) as total_shipments,
-          COUNT(CASE WHEN s.status = 'delivered' THEN 1 END) as delivered,
-          AVG(CASE 
-            WHEN s.delivery_actual IS NOT NULL AND s.delivery_scheduled IS NOT NULL
-            THEN EXTRACT(EPOCH FROM (s.delivery_actual - s.delivery_scheduled))/3600
-          END) as avg_delay_hours,
-          COUNT(CASE 
-            WHEN s.delivery_actual IS NOT NULL 
-            AND s.delivery_scheduled IS NOT NULL
-            AND s.delivery_actual <= s.delivery_scheduled
-            THEN 1 
-          END) as on_time_deliveries,
-          COALESCE(SUM(s.shipping_cost), 0) as total_cost
-        FROM shipments s
-        JOIN carriers c ON s.carrier_id = c.id
-        WHERE s.created_at >= ${intClause}
-        ${orgClauseAlias('s')}
-        GROUP BY c.id, c.name
-        ORDER BY total_shipments DESC
-        LIMIT 10
-      `, baseArgs),
-
-      pool.query(`
-        SELECT 
-          p.name,
-          p.sku,
-          p.category,
-          SUM(oi.quantity) as units_sold, 
-          SUM(oi.quantity * oi.unit_price) as revenue,
-          COUNT(DISTINCT oi.order_id) as order_count
-        FROM order_items oi
-        JOIN products p ON oi.product_id = p.id
-        JOIN orders o ON oi.order_id = o.id
-        WHERE o.created_at >= ${intClause}
-        ${orgClauseAlias('o')}
-        GROUP BY p.id, p.name, p.sku, p.category
-        ORDER BY revenue DESC
-        LIMIT 10
-      `, baseArgs),
-
-      pool.query(`
-        SELECT 
-          w.name,
-          w.code,
-          w.capacity,
-          COALESCE(SUM(i.available_quantity + i.reserved_quantity), 0) as current_stock,
-          COUNT(DISTINCT s.id) as shipments_processed,
-          COUNT(DISTINCT oi.order_id) as orders_fulfilled
-        FROM warehouses w
-        LEFT JOIN inventory i ON i.warehouse_id = w.id
-        LEFT JOIN shipments s ON s.warehouse_id = w.id AND s.created_at >= ${intClause}
-        LEFT JOIN order_items oi ON oi.warehouse_id = w.id
-        LEFT JOIN orders o ON o.id = oi.order_id AND o.created_at >= ${intClause}
-        WHERE w.is_active = true${organizationId ? ` AND w.organization_id = $${orgParam}` : ''}
-        GROUP BY w.id, w.name, w.code, w.capacity
-        ORDER BY w.name
-      `, baseArgs),
-
-      pool.query(`
-        SELECT 
-          ${dateGrouping} as date,
-          COUNT(*) as violations,
-          COALESCE(SUM(penalty_amount), 0) as total_penalties
-        FROM sla_violations
-        WHERE created_at >= ${intClause}
-        ${orgClause}
-        GROUP BY ${dateGrouping}
-        ORDER BY date ASC
-      `, baseArgs),
-
-      pool.query(`
-        SELECT 
-          exception_type,
-          severity,
-          COUNT(*) as count,
-          COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved,
-          AVG(CASE 
-            WHEN resolved_at IS NOT NULL 
-            THEN EXTRACT(EPOCH FROM (resolved_at - created_at))/3600 
-          END) as avg_resolution_hours
-        FROM exceptions
-        WHERE created_at >= ${intClause}
-        ${orgClause}
-        GROUP BY exception_type, severity
-        ORDER BY count DESC
-      `, baseArgs),
-
-      pool.query(`
-        SELECT 
-          COUNT(*) as total_returns,
-          COUNT(CASE WHEN status = 'refunded' THEN 1 END) as refunded,
-          COALESCE(SUM(refund_amount), 0) as total_refund_amount,
-          COALESCE(AVG(refund_amount), 0) as avg_refund_amount,
-          COUNT(CASE WHEN quality_check_result = 'passed' THEN 1 END) as quality_passed,
-          COUNT(CASE WHEN quality_check_result = 'failed' THEN 1 END) as quality_failed
-        FROM returns
-        WHERE requested_at >= ${intClause}
-        ${orgClause}
-      `, baseArgs),
-
-      pool.query(`
-        SELECT 
-          COALESCE(SUM(o.total_amount), 0) as total_revenue,
-          COALESCE(SUM(s.shipping_cost), 0) as total_shipping_cost,
-          COALESCE(SUM(sv.penalty_amount), 0) as total_penalties,
-          COALESCE(SUM(r.refund_amount), 0) as total_refunds,
-          COUNT(DISTINCT o.id) as total_orders,
-          COALESCE(AVG(o.total_amount), 0) as avg_order_value
-        FROM orders o
-        LEFT JOIN shipments s ON s.order_id = o.id
-        LEFT JOIN sla_violations sv ON sv.shipment_id = s.id
-        LEFT JOIN returns r ON r.order_id = o.id AND r.status = 'refunded'
-        WHERE o.created_at >= ${intClause}
-        ${orgClause}
-      `, baseArgs),
+      analyticsRepo.getOrdersOverTime({ dateGrouping, intClause, orgClause, baseArgs }),
+      analyticsRepo.getShipmentsByCarrier({ intClause, orgClauseAlias, baseArgs }),
+      analyticsRepo.getTopProducts({ intClause, orgClauseAlias, baseArgs }),
+      analyticsRepo.getWarehouseUtilization({ intClause, orgParam, baseArgs }),
+      analyticsRepo.getSlaViolations({ dateGrouping, intClause, orgClause, baseArgs }),
+      analyticsRepo.getExceptionsByType({ intClause, orgClause, baseArgs }),
+      analyticsRepo.getReturnsAnalysis({ intClause, orgClause, baseArgs }),
+      analyticsRepo.getFinancialMetrics({ intClause, orgClause, baseArgs }),
     ]);
 
     // Calculate derived metrics
@@ -260,29 +135,25 @@ export async function getAnalytics(req, res) {
         }
       }
     });
-  } catch (error) {
-    console.error('Get analytics error:', error);
-    res.status(500).json({ error: 'Failed to get analytics' });
-  }
-}
+
+});
 
 // ─── Analytics CSV Export ──────────────────────────────────────────────────
 // GET /api/analytics/export?type=orders|shipments|returns|violations&range=day|week|month|year
 // Returns a CSV file download scoped to the authenticated org.
-export async function getAnalyticsExport(req, res) {
-  try {
-    const { type = 'orders', range = 'month' } = req.query;
+export const getAnalyticsExport = asyncHandler(async (req, res) => {
+  const { type = 'orders', range = 'month' } = req.query;
 
-    const VALID_TYPES = ['orders', 'shipments', 'returns', 'violations'];
-    if (!VALID_TYPES.includes(type)) {
-      return res.status(400).json({ error: `Invalid export type. Must be one of: ${VALID_TYPES.join(', ')}` });
-    }
+  const VALID_TYPES = ['orders', 'shipments', 'returns', 'violations'];
+  if (!VALID_TYPES.includes(type)) {
+    throw new ValidationError(`Invalid export type. Must be one of: ${VALID_TYPES.join(', ')}`);
+  }
 
     // Map range to interval (same whitelist as getAnalytics — no interpolation)
     const RANGE_MAP = { day: '1 day', week: '7 days', month: '30 days', year: '1 year' };
     const interval = RANGE_MAP[range] || '30 days';
 
-    const organizationId = req.user?.organizationId;
+    const organizationId = req.orgContext?.organizationId;
     const params = organizationId ? [organizationId, interval] : [interval];
     const orgClause = organizationId ? 'AND organization_id = $1' : '';
     const intIdx   = organizationId ? '$2' : '$1';
@@ -292,52 +163,22 @@ export async function getAnalyticsExport(req, res) {
 
     if (type === 'orders') {
       columns = ['order_number', 'customer_name', 'customer_email', 'status', 'total_amount', 'currency', 'created_at'];
-      const result = await pool.query(`
-        SELECT order_number, customer_name, customer_email, status,
-               total_amount, currency, created_at
-        FROM orders
-        WHERE created_at >= NOW() - ${intIdx}::INTERVAL
-        ${orgClause}
-        ORDER BY created_at DESC
-      `, params);
+      const result = await analyticsRepo.exportOrders({ intIdx, orgClause, params });
       rows = result.rows;
 
     } else if (type === 'shipments') {
       columns = ['id', 'tracking_number', 'carrier_name', 'status', 'shipping_cost', 'estimated_delivery', 'delivery_actual', 'created_at'];
-      const result = await pool.query(`
-        SELECT s.id, s.tracking_number, c.name AS carrier_name, s.status,
-               s.shipping_cost, s.delivery_scheduled AS estimated_delivery,
-               s.delivery_actual, s.created_at
-        FROM shipments s
-        LEFT JOIN carriers c ON s.carrier_id = c.id
-        WHERE s.created_at >= NOW() - ${intIdx}::INTERVAL
-        ${organizationId ? `AND s.organization_id = $1` : ''}
-        ORDER BY s.created_at DESC
-      `, params);
+      const result = await analyticsRepo.exportShipments({ intIdx, orgParam: organizationId, params });
       rows = result.rows;
 
     } else if (type === 'returns') {
       columns = ['rma_number', 'customer_name', 'status', 'refund_amount', 'reason', 'requested_at'];
-      const result = await pool.query(`
-        SELECT rma_number, customer_name, status, refund_amount, reason, requested_at
-        FROM returns
-        WHERE requested_at >= NOW() - ${intIdx}::INTERVAL
-        ${orgClause}
-        ORDER BY requested_at DESC
-      `, params);
+      const result = await analyticsRepo.exportReturns({ intIdx, orgClause, params });
       rows = result.rows;
 
     } else if (type === 'violations') {
       columns = ['id', 'shipment_id', 'policy_name', 'violation_type', 'penalty_amount', 'violated_at'];
-      const result = await pool.query(`
-        SELECT sv.id, sv.shipment_id, sp.name AS policy_name,
-               sv.violation_type, sv.penalty_amount, sv.violated_at
-        FROM sla_violations sv
-        LEFT JOIN sla_policies sp ON sv.policy_id = sp.id
-        WHERE sv.violated_at >= NOW() - ${intIdx}::INTERVAL
-        ${organizationId ? `AND sv.organization_id = $1` : ''}
-        ORDER BY sv.violated_at DESC
-      `, params);
+      const result = await analyticsRepo.exportViolations({ intIdx, orgParam: organizationId, params });
       rows = result.rows;
     }
 
@@ -360,10 +201,5 @@ export async function getAnalyticsExport(req, res) {
     const filename = `${type}-export-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(csv);
-
-  } catch (error) {
-    console.error('Analytics export error:', error);
-    res.status(500).json({ error: 'Failed to export analytics data' });
-  }
-}
+  res.send(csv);
+});

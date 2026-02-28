@@ -1,190 +1,48 @@
-// Lightweight validation utilities for request data
-
-class ValidationError extends Error {
-  constructor(errors) {
-    super('Validation failed');
-    this.name = 'ValidationError';
-    this.errors = errors;
-    this.statusCode = 400;
-  }
-}
+// Validation middleware factories — all schemas are Joi schemas (schema.validate exists)
+// ValidationError lives in errors/AppError.js; import from there if needed outside this file.
 
 /**
- * Validation middleware factory for Joi schemas (request body)
+ * Validates req.body against a Joi schema.
+ * Strips unknown fields (stripUnknown: true) so controllers receive only declared keys.
+ * Replaces req.body with the coerced/sanitised value on success.
  */
-function validateRequest(schema) {
+export function validateRequest(schema) {
   return (req, res, next) => {
-    // Check if schema has Joi validate method
-    if (schema && typeof schema.validate === 'function') {
-      const { error, value } = schema.validate(req.body, { stripUnknown: true });
-      
-      if (error) {
-        return res.status(400).json({
-          success: false,
-          error: 'Validation failed',
-          message: error.details[0].message,
-          details: error.details
-        });
-      }
-      
-      // Replace req.body with validated and sanitized value
-      req.body = value;
-      return next();
-    }
-    
-    // Fallback to old custom validation for backward compatibility
-    const errors = validateCustom(schema, req.body);
-    
-    if (errors.length > 0) {
+    const { error, value } = schema.validate(req.body, { stripUnknown: true });
+
+    if (error) {
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
-        errors
+        message: error.details[0].message,
+        details: error.details,
       });
     }
-    
-    next();
+
+    req.body = value;
+    return next();
   };
 }
 
 /**
- * Query validation middleware factory for Joi schemas
+ * Validates req.query against a Joi schema.
+ * Stores the coerced result in req.validatedQuery because req.query is read-only.
+ * Controllers should read from req.validatedQuery (or req.query for unvalidated routes).
  */
-function validateQuery(schema) {
+export function validateQuery(schema) {
   return (req, res, next) => {
-    // Check if schema has Joi validate method
-    if (schema && typeof schema.validate === 'function') {
-      const { error, value } = schema.validate(req.query, { stripUnknown: true });
-      
-      if (error) {
-        return res.status(400).json({
-          success: false,
-          error: 'Validation failed',
-          message: error.details[0].message,
-          details: error.details
-        });
-      }
-      
-      // Store validated values in a new property (req.query is read-only)
-      // Controllers can access validated/coerced values via req.validatedQuery if needed
-      req.validatedQuery = value;
-      return next();
-    }
-    
-    // Fallback to old custom validation for backward compatibility
-    const errors = validateCustom(schema, req.query);
-    
-    if (errors.length > 0) {
+    const { error, value } = schema.validate(req.query, { stripUnknown: true });
+
+    if (error) {
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
-        errors
+        message: error.details[0].message,
+        details: error.details,
       });
     }
-    
-    next();
+
+    req.validatedQuery = value;
+    return next();
   };
 }
-
-// Old custom validation function (kept for backward compatibility)
-function validateCustom(schema, data) {
-  const errors = [];
-
-  for (const [field, rules] of Object.entries(schema)) {
-    const value = data[field];
-
-    // Required check
-    if (rules.required && (value === undefined || value === null || value === '')) {
-      errors.push({ field, message: `${field} is required` });
-      continue;
-    }
-
-    // Skip other validations if field is not required and not provided
-    if (!rules.required && (value === undefined || value === null)) {
-      continue;
-    }
-
-    // Type check
-    if (rules.type) {
-      const actualType = Array.isArray(value) ? 'array' : typeof value;
-      if (actualType !== rules.type) {
-        errors.push({ field, message: `${field} must be of type ${rules.type}` });
-        continue;
-      }
-    }
-
-    // String validations
-    if (rules.type === 'string') {
-      if (rules.minLength && value.length < rules.minLength) {
-        errors.push({ field, message: `${field} must be at least ${rules.minLength} characters` });
-      }
-      if (rules.maxLength && value.length > rules.maxLength) {
-        errors.push({ field, message: `${field} must be at most ${rules.maxLength} characters` });
-      }
-      if (rules.pattern && !rules.pattern.test(value)) {
-        errors.push({ field, message: `${field} format is invalid` });
-      }
-      if (rules.email && !isValidEmail(value)) {
-        errors.push({ field, message: `${field} must be a valid email` });
-      }
-    }
-
-    // Number validations
-    if (rules.type === 'number') {
-      if (rules.min !== undefined && value < rules.min) {
-        errors.push({ field, message: `${field} must be at least ${rules.min}` });
-      }
-      if (rules.max !== undefined && value > rules.max) {
-        errors.push({ field, message: `${field} must be at most ${rules.max}` });
-      }
-      if (rules.integer && !Number.isInteger(value)) {
-        errors.push({ field, message: `${field} must be an integer` });
-      }
-    }
-
-    // Array validations
-    if (rules.type === 'array') {
-      if (rules.minItems && value.length < rules.minItems) {
-        errors.push({ field, message: `${field} must have at least ${rules.minItems} items` });
-      }
-      if (rules.maxItems && value.length > rules.maxItems) {
-        errors.push({ field, message: `${field} must have at most ${rules.maxItems} items` });
-      }
-      if (rules.items) {
-        value.forEach((item, index) => {
-          const itemErrors = validateCustom(rules.items, item);
-          if (itemErrors.length > 0) {
-            itemErrors.forEach(err => {
-              errors.push({ field: `${field}[${index}].${err.field}`, message: err.message });
-            });
-          }
-        });
-      }
-    }
-
-    // Enum validation
-    if (rules.enum && !rules.enum.includes(value)) {
-      errors.push({ field, message: `${field} must be one of: ${rules.enum.join(', ')}` });
-    }
-
-    // Custom validation
-    if (rules.custom) {
-      const customError = rules.custom(value, data);
-      if (customError) {
-        errors.push({ field, message: customError });
-      }
-    }
-  }
-
-  return errors;
-}
-
-/**
- * Email validation
- */
-function isValidEmail(email) {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-export { validateCustom, validateRequest, validateQuery, ValidationError };

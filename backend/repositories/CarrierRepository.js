@@ -1,6 +1,7 @@
 // Carrier Repository — all SQL queries for the carriers, rate_cards, and
 // carrier_performance_metrics tables live here.
 import BaseRepository from './BaseRepository.js';
+import { ValidationError } from '../errors/AppError.js';
 
 class CarrierRepository extends BaseRepository {
     constructor() {
@@ -245,7 +246,7 @@ class CarrierRepository extends BaseRepository {
             params.push(JSON.stringify(updates.service_areas));
         }
 
-        if (setClauses.length === 0) throw new Error('No valid fields to update');
+        if (setClauses.length === 0) throw new ValidationError('No valid fields to update');
 
         setClauses.push(`updated_at = NOW()`);
         params.push(id);
@@ -321,6 +322,363 @@ class CarrierRepository extends BaseRepository {
     `;
         const result = await this.query(query, [id], client);
         return result.rows[0].has_active;
+    }
+
+    // ── Carrier quotes / rejections ──────────────────────────────────────────────
+
+    /**
+     * Find a carrier by its code string (e.g. 'DTDC', 'delhivery').
+     */
+    async findByCodeSimple(carrierCode, client = null) {
+        const result = await this.query(
+            'SELECT id, name FROM carriers WHERE code = $1 LIMIT 1',
+            [carrierCode], client
+        );
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Insert an accepted carrier quote row.
+     * `data.estimatedDeliveryDate` accepts an explicit date value from the carrier
+     * API response; falls back to null when not supplied.
+     */
+    async createQuote(data, client = null) {
+        const result = await this.query(
+            `INSERT INTO carrier_quotes
+               (order_id, carrier_id, quoted_price, currency, estimated_delivery_days,
+                estimated_delivery_date, service_type, valid_until, breakdown, is_selected)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)
+             RETURNING *`,
+            [
+                data.orderId,
+                data.carrierId,
+                data.quotedPrice,
+                data.currency || 'INR',
+                data.estimatedDeliveryDays,
+                data.estimatedDeliveryDate || null,
+                data.serviceType,
+                data.validUntil,
+                JSON.stringify(data.breakdown || {}),
+            ],
+            client
+        );
+        return result.rows[0];
+    }
+
+    /**
+     * Insert a carrier rejection row.
+     */
+    async createRejection(data, client = null) {
+        const result = await this.query(
+            `INSERT INTO carrier_rejections
+               (order_id, carrier_name, carrier_code, reason, message, rejected_at)
+             VALUES ($1, $2, $3, $4, $5, NOW())
+             RETURNING *`,
+            [data.orderId, data.carrierName, data.carrierCode, data.reason, data.message],
+            client
+        );
+        return result.rows[0];
+    }
+
+    /**
+     * Fetch all accepted quotes for an order, joined with carrier info.
+     */
+    async findQuotesByOrder(orderId, client = null) {
+        const result = await this.query(
+            `SELECT cq.*, c.name AS carrier_name, c.code AS carrier_code
+             FROM carrier_quotes cq
+             JOIN carriers c ON c.id = cq.carrier_id
+             WHERE cq.order_id = $1
+             ORDER BY cq.created_at DESC`,
+            [orderId], client
+        );
+        return result.rows;
+    }
+
+    /**
+     * Fetch all rejections for an order.
+     */
+    async findRejectionsByOrder(orderId, client = null) {
+        const result = await this.query(
+            'SELECT * FROM carrier_rejections WHERE order_id = $1',
+            [orderId], client
+        );
+        return result.rows;
+    }
+
+    /**
+     * Return a single active carrier by primary key.
+     * Lightweight — no aggregate subqueries.
+     */
+    async findActiveById(id, client = null) {
+        const result = await this.query(
+            'SELECT * FROM carriers WHERE id = $1 AND is_active = true',
+            [id], client
+        );
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Fetch reliability_score for multiple carrier codes in one query.
+     * Returns a plain object keyed by carrier code: { DHL: 0.95, FEDEX: 0.92, ... }
+     *
+     * @param {string[]} codes
+     * @param {object|null} client
+     * @returns {Promise<Record<string, number>>}
+     */
+    async findReliabilityScoresByCode(codes, client = null) {
+        if (!codes.length) return {};
+        const result = await this.query(
+            `SELECT code, COALESCE(reliability_score, 0.80) AS reliability_score
+             FROM carriers
+             WHERE code = ANY($1) AND is_active = true`,
+            [codes], client
+        );
+        return result.rows.reduce((acc, row) => {
+            acc[row.code] = parseFloat(row.reliability_score);
+            return acc;
+        }, {});
+    }
+
+    /**
+     * Fetch the reliability_score for a single carrier code.
+     * Returns null when no active carrier matches.
+     *
+     * @param {string} code
+     * @param {object|null} client
+     * @returns {Promise<number|null>}
+     */
+    async findReliabilityScoreByCode(code, client = null) {
+        const result = await this.query(
+            `SELECT COALESCE(reliability_score, 0.80) AS reliability_score
+             FROM carriers WHERE code = $1 AND is_active = true LIMIT 1`,
+            [code], client
+        );
+        return result.rows.length > 0 ? parseFloat(result.rows[0].reliability_score) : null;
+    }
+
+    /**
+     * Find eligible/available carriers for order carrier assignment.
+     * Returns up to `limit` active carriers in availability with matching service type.
+     *
+     * @param {string} serviceType
+     * @param {number} limit
+     * @param {object|null} client
+     * @returns {Promise<Array>}
+     */
+    async findEligibleCarriers(serviceType, limit = 3, client = null) {
+        const result = await this.query(
+            `SELECT id, code, name, contact_email, service_type, is_active, availability_status
+             FROM carriers
+             WHERE is_active = true
+               AND availability_status = 'available'
+               AND (service_type = $1 OR service_type = 'all')
+             ORDER BY reliability_score DESC
+             LIMIT $2`,
+            [serviceType, limit],
+            client
+        );
+        return result.rows;
+    }
+
+    /**
+     * Insert a new carrier assignment row inside a transaction.
+     * Returns the created row.
+     *
+     * @param {object} data  - assignment fields
+     * @param {object} client - pg transaction client (required)
+     */
+    async createCarrierAssignment(data, client) {
+        const result = await this.query(
+            `INSERT INTO carrier_assignments
+               (order_id, carrier_id, service_type, status, pickup_address, delivery_address,
+                estimated_pickup, estimated_delivery, request_payload, expires_at, idempotency_key)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             RETURNING id, carrier_id, order_id, status, created_at`,
+            [
+                data.orderId, data.carrierId, data.serviceType, data.status || 'pending',
+                data.pickupAddress, data.deliveryAddress,
+                data.estimatedPickup, data.estimatedDelivery,
+                JSON.stringify(data.requestPayload), data.expiresAt, data.idempotencyKey,
+            ],
+            client
+        );
+        return result.rows[0];
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ACTIVE-CARRIER FINDERS (used by quote & assignment services)
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * Return all active carriers that have an API endpoint configured.
+     * Used for the PUSH (API) quoting model.
+     */
+    async findActiveWithApiEndpoint(client = null) {
+        const result = await this.query(
+            `SELECT id, name, code, api_endpoint, api_key_encrypted,
+                    is_active, availability_status, api_timeout_ms
+             FROM carriers
+             WHERE is_active = true AND api_endpoint IS NOT NULL`,
+            [],
+            client
+        );
+        return result.rows;
+    }
+
+    /**
+     * Return every active carrier regardless of API configuration.
+     * Used to build the full pending-assignment list (PULL / portal model).
+     */
+    async findAllActive(client = null) {
+        const result = await this.query(
+            `SELECT id, name, code, api_endpoint, api_key_encrypted,
+                    is_active, availability_status, api_timeout_ms
+             FROM carriers
+             WHERE is_active = true`,
+            [],
+            client
+        );
+        return result.rows;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // QUOTE SELECTION
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * Clear the is_selected flag from every quote belonging to an order.
+     * Always call this before selectQuoteById to keep exactly one selection.
+     */
+    async deselectAllQuotesForOrder(orderId, client = null) {
+        await this.query(
+            'UPDATE carrier_quotes SET is_selected = false WHERE order_id = $1',
+            [orderId],
+            client
+        );
+    }
+
+    /**
+     * Mark a single quote as selected.
+     * Returns the updated row or null if not found.
+     */
+    async selectQuoteById(quoteId, client = null) {
+        const result = await this.query(
+            'UPDATE carrier_quotes SET is_selected = true WHERE id = $1 RETURNING *',
+            [quoteId],
+            client
+        );
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Find rate card for a carrier + service type combination.
+     * Used by deliveryChargeService to price shipments.
+     */
+    async findRateByServiceType(carrierId, serviceType, client = null) {
+        const result = await this.query(
+            `SELECT base_rate, rate_per_kg, fuel_surcharge_percent, min_charge_amount
+             FROM rate_cards
+             WHERE carrier_id = $1 AND service_type = $2
+             LIMIT 1`,
+            [carrierId, serviceType], client
+        );
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Find warehouse details by id, for payload building.
+     */
+    async findWarehouseById(warehouseId, client = null) {
+        const result = await this.query(
+            `SELECT id, code, name, address, address_line1, address_line2, city, state,
+                    postal_code, country, latitude, longitude, contact_person, contact_phone
+             FROM warehouses
+             WHERE id = $1`,
+            [warehouseId], client
+        );
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Find carrier by ID, returning webhook-specific config fields.
+     */
+    async findByIdWithWebhookConfig(id, client = null) {
+        const result = await this.query(
+            `SELECT id, code, name, webhook_secret, webhook_enabled, ip_whitelist
+             FROM carriers
+             WHERE id = $1`,
+            [id], client
+        );
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Log a webhook attempt for audit trail.
+     */
+    async logWebhookAttempt(data, client = null) {
+        await this.query(
+            `INSERT INTO webhook_logs
+             (carrier_id, endpoint, method, request_signature, request_timestamp,
+              signature_valid, ip_address, user_agent, payload, headers,
+              response_status, error_message, processing_time_ms)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            [
+                data.carrierId, data.endpoint, data.method, data.requestSignature,
+                data.requestTimestamp, data.signatureValid, data.ipAddress,
+                data.userAgent, data.payload, data.headers,
+                data.responseStatus, data.errorMessage, data.processingTimeMs
+            ],
+            client
+        );
+    }
+
+    /**
+     * Get carrier performance report for a date range.
+     */
+    async getPerformanceReport(carrierId, startDate, endDate, client = null) {
+        const result = await this.query(
+            `SELECT
+               c.id AS carrier_id,
+               c.code AS carrier_code,
+               c.name AS carrier_name,
+               COALESCE(SUM(m.total_shipments), 0)     AS total_shipments,
+               COALESCE(SUM(m.delivered_on_time), 0)   AS on_time_deliveries,
+               COALESCE(SUM(m.delivered_late), 0)      AS late_deliveries,
+               COALESCE(SUM(m.failed_deliveries), 0)   AS failed_deliveries,
+               ROUND(
+                 CASE WHEN SUM(m.total_shipments) > 0
+                      THEN SUM(m.delivered_on_time)::DECIMAL / SUM(m.total_shipments) * 100
+                      ELSE NULL END, 2
+               ) AS on_time_rate_pct,
+               ROUND(AVG(m.avg_delivery_hours), 1) AS avg_delivery_hours,
+               c.reliability_score AS current_reliability_score
+             FROM carriers c
+             LEFT JOIN carrier_performance_metrics m
+               ON m.carrier_id = c.id
+               AND m.period_start >= $2
+               AND m.period_end   <= $3
+             WHERE c.is_active = true
+               AND ($1::uuid IS NULL OR c.id = $1)
+             GROUP BY c.id, c.code, c.name, c.reliability_score
+             ORDER BY on_time_rate_pct DESC NULLS LAST`,
+            [carrierId || null, startDate || '1900-01-01', endDate || 'now()'],
+            client
+        );
+        return result.rows;
+    }
+
+    /**
+     * Update selection reason on a carrier quote.
+     */
+    async updateQuoteSelectionReason(orderId, carrierId, reason, client = null) {
+        await this.query(
+            `UPDATE carrier_quotes
+             SET selection_reason = $1
+             WHERE order_id = $2 AND carrier_id = $3`,
+            [reason, orderId, carrierId],
+            client
+        );
     }
 }
 

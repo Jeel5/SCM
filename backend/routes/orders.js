@@ -1,6 +1,6 @@
 // Orders routes
 import express from 'express';
-import { listOrders, getOrder, createOrder, createTransferOrder } from '../controllers/ordersController.js';
+import { listOrders, getOrder, createOrder, createTransferOrder, updateOrderStatus } from '../controllers/ordersController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
 import { injectOrgContext } from '../middlewares/multiTenant.js';
@@ -8,6 +8,7 @@ import { validateRequest, validateQuery } from '../validators/index.js';
 import { 
   createOrderSchema,
   createTransferOrderSchema,
+  updateOrderStatusSchema,
   listOrdersQuerySchema 
 } from '../validators/orderSchemas.js';
 
@@ -21,5 +22,7 @@ router.get('/orders/:id', authenticate, injectOrgContext, authorize('orders:read
 router.post('/orders', authenticate, injectOrgContext, authorize('orders:create'), validateRequest(createOrderSchema), createOrder);
 // POST /api/orders/transfer - create transfer order (warehouse-to-warehouse)
 router.post('/orders/transfer', authenticate, injectOrgContext, authorize('orders:create'), validateRequest(createTransferOrderSchema), createTransferOrder);
+// PATCH /api/orders/:id/status - update order status
+router.patch('/orders/:id/status', authenticate, injectOrgContext, authorize('orders:update'), validateRequest(updateOrderStatusSchema), updateOrderStatus);
 
 export default router;

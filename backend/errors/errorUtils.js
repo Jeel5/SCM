@@ -1,5 +1,6 @@
 // Helper functions for throwing errors consistently
 
+import logger from '../utils/logger.js';
 import {
   ValidationError,
   NotFoundError,
@@ -50,7 +51,7 @@ export async function safeDatabaseOperation(operation, errorMessage = 'Database 
   try {
     return await operation();
   } catch (error) {
-    console.error('Database error:', error);
+    logger.error('Database error:', { message: error.message, stack: error.stack });
     throw new DatabaseError(errorMessage, error);
   }
 }

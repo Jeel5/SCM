@@ -6,6 +6,7 @@
  */
 
 import logger from '../utils/logger.js';
+import { ValidationError, AppError } from '../errors/AppError.js';
 
 class OSRMService {
   constructor() {
@@ -24,7 +25,7 @@ class OSRMService {
     try {
       // Validate coordinates
       if (!this.validateCoordinates(origin) || !this.validateCoordinates(destination)) {
-        throw new Error('Invalid coordinates provided');
+        throw new ValidationError('Invalid coordinates provided');
       }
 
       const startTime = Date.now();
@@ -49,13 +50,13 @@ class OSRMService {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`OSRM API error: ${response.status}`);
+        throw new AppError(`OSRM API error: ${response.status}`, 502);
       }
 
       const data = await response.json();
 
       if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-        throw new Error(`OSRM routing failed: ${data.code || 'No route found'}`);
+        throw new AppError(`OSRM routing failed: ${data.code || 'No route found'}`, 502);
       }
 
       const route = data.routes[0];

@@ -1,6 +1,6 @@
 import carrierAssignmentService from '../services/carrierAssignmentService.js';
 import logger from '../utils/logger.js';
-import { asyncHandler } from '../errors/index.js';
+import { asyncHandler, AuthorizationError, NotFoundError, AuthenticationError, ValidationError } from '../errors/index.js';
 import OrderRepository from '../repositories/OrderRepository.js';
 import CarrierAssignmentRepository from '../repositories/CarrierAssignmentRepository.js';
 import CarrierRepository from '../repositories/CarrierRepository.js';
@@ -19,14 +19,12 @@ export const requestCarrierAssignment = asyncHandler(async (req, res) => {
   if (force) {
     const allowedRoles = ['admin', 'operations_manager', 'superadmin'];
     if (!allowedRoles.includes(req.user?.role)) {
-      return res.status(403).json({ error: 'force flag requires operations_manager or admin role' });
+      throw new AuthorizationError('force flag requires operations_manager or admin role');
     }
   }
   const order = await OrderRepository.findOrderWithItems(orderId, req.orgContext?.organizationId);
 
-  if (!order) {
-    return res.status(404).json({ error: 'Order not found' });
-  }
+  if (!order) throw new NotFoundError('Order');
 
   // Check if assignment already exists (unless force flag)
   if (!force) {
@@ -57,23 +55,14 @@ export const requestCarrierAssignment = asyncHandler(async (req, res) => {
  * GET /api/carriers/assignments/pending
  */
 export const getPendingAssignments = asyncHandler(async (req, res) => {
-  // Get carrier ID or code from query
-  const { carrierId } = req.query;
-
-  if (!carrierId) {
-    return res.status(400).json({ error: 'carrierId required' });
-  }
+  // carrierId is validated by the query schema (pendingAssignmentsQuerySchema)
+  const { carrierId } = req.validatedQuery ?? req.query;
 
   // Check if carrierId is a code (e.g., "DHL-001") or numeric ID
   let actualCarrierId = carrierId;
   if (isNaN(carrierId) && !carrierId.includes('-')) {
-    // If not UUID format or number, it might be a code
     const carrier = await CarrierRepository.findByCode(carrierId);
-
-    if (!carrier) {
-      return res.status(404).json({ error: `Carrier not found: ${carrierId}` });
-    }
-
+    if (!carrier) throw new NotFoundError(`Carrier '${carrierId}'`);
     actualCarrierId = carrier.id;
   }
 
@@ -94,9 +83,7 @@ export const getAssignmentDetails = asyncHandler(async (req, res) => {
 
   const assignment = await CarrierAssignmentRepository.findDetailsById(assignmentId, req.orgContext?.organizationId);
 
-  if (!assignment) {
-    return res.status(404).json({ error: 'Assignment not found' });
-  }
+  if (!assignment) throw new NotFoundError('Assignment');
 
   // Parse JSON payloads
   assignment.requestPayload = typeof assignment.request_payload === 'string'
@@ -134,9 +121,7 @@ export const acceptAssignment = asyncHandler(async (req, res) => {
     authenticatedCarrier: req.authenticatedCarrier
   });
 
-  if (!carrierId) {
-    return res.status(401).json({ error: 'Carrier authentication required' });
-  }
+  if (!carrierId) throw new AuthenticationError('Carrier authentication required');
 
   const result = await carrierAssignmentService.acceptAssignment(
     assignmentId,
@@ -157,9 +142,7 @@ export const rejectAssignment = asyncHandler(async (req, res) => {
   const carrierId = req.authenticatedCarrier?.id;
   const { reason } = req.body;
 
-  if (!carrierId) {
-    return res.status(401).json({ error: 'Carrier authentication required' });
-  }
+  if (!carrierId) throw new AuthenticationError('Carrier authentication required');
 
   const result = await carrierAssignmentService.rejectAssignment(
     assignmentId,
@@ -206,15 +189,11 @@ export const markAsBusy = asyncHandler(async (req, res) => {
 
   // TASK-R6-007: carrier identity comes from HMAC-authenticated webhook token, not a query param
   const carrierId = req.authenticatedCarrier?.id;
-  if (!carrierId) {
-    return res.status(401).json({ error: 'Carrier authentication required' });
-  }
+  if (!carrierId) throw new AuthenticationError('Carrier authentication required');
 
   const assignment = await CarrierAssignmentRepository.markAsBusy(assignmentId, carrierId, reason);
 
-  if (!assignment) {
-    return res.status(404).json({ error: 'Assignment not found or unauthorized' });
-  }
+  if (!assignment) throw new NotFoundError('Assignment');
 
   logger.info(`Assignment ${assignmentId} marked as busy by carrier ${carrierId}`);
 
@@ -239,30 +218,23 @@ export const updateCarrierAvailability = asyncHandler(async (req, res) => {
   const isAdmin = ['admin', 'operations_manager', 'superadmin'].includes(req.user?.role);
 
   if (!isAuthenticatedCarrier && !isAdmin) {
-    return res.status(403).json({ error: 'Carrier identity verification required to update availability' });
+    throw new AuthorizationError('Carrier identity verification required to update availability');
   }
 
   // If a carrier webhook is calling, ensure the code in the URL matches their identity
   if (isAuthenticatedCarrier && req.authenticatedCarrier.code && req.authenticatedCarrier.code !== code) {
-    return res.status(403).json({ error: 'Carrier can only update their own availability' });
+    throw new AuthorizationError('Carrier can only update their own availability');
   }
 
-  if (!code) {
-    return res.status(400).json({ error: 'Carrier code required' });
-  }
-
-  if (!status || !['available', 'busy', 'offline'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status. Must be: available, busy, or offline' });
-  }
+  // status and code are validated upstream (route middleware + URL path constraint)
 
   // Update carrier status and get pending assignments if becoming available
   if (status === 'available') {
     const result = await carrierAssignmentService.notifyCarrierOfPendingAssignments(code);
     return res.json(result);
   } else {
-    // Just update status
     const carrier = await CarrierRepository.findByCode(code);
-    if (!carrier) return res.status(404).json({ error: 'Carrier not found' });
+    if (!carrier) throw new NotFoundError('Carrier');
 
     await CarrierRepository.updateCarrier(carrier.id, { availability_status: status });
 

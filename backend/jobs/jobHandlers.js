@@ -7,7 +7,15 @@ import assignmentRetryService from '../services/assignmentRetryService.js';
 import carrierAssignmentService from '../services/carrierAssignmentService.js';
 import orderService from '../services/orderService.js';
 import logger from '../utils/logger.js';
-import pool from '../config/db.js';
+import returnRepo from '../repositories/ReturnRepository.js';
+import jobsRepo from '../repositories/JobsRepository.js';
+import notificationRepo from '../repositories/NotificationRepository.js';
+import inventoryRepo from '../repositories/InventoryRepository.js';
+import carrierRepo from '../repositories/CarrierRepository.js';
+import slaRepo from '../repositories/SlaRepository.js';
+import financeRepo from '../repositories/FinanceRepository.js';
+import warehouseRepo from '../repositories/WarehouseRepository.js';
+import shipmentRepo from '../repositories/ShipmentRepository.js';
 
 /**
  * SLA Monitoring Job
@@ -84,17 +92,8 @@ async function handleReturnPickupReminder(payload) {
   
   try {
     // Get returns with pickups scheduled for today or overdue
-    const result = await pool.query(
-      `SELECT r.*, u.email, u.first_name, u.last_name
-       FROM returns r
-       JOIN users u ON r.customer_id = u.id
-       WHERE r.status = 'pickup_scheduled'
-         AND r.pickup_date <= CURRENT_DATE + INTERVAL '1 day'
-         AND r.pickup_reminder_sent = false
-       ORDER BY r.pickup_date ASC`
-    );
+    const returns = await returnRepo.findPendingPickupReminders();
     
-    const returns = result.rows;
     const reminders = [];
     
     for (const returnItem of returns) {
@@ -102,10 +101,7 @@ async function handleReturnPickupReminder(payload) {
       logger.info(`📧 Sending pickup reminder for return ${returnItem.id} to ${returnItem.email}`);
       
       // Mark reminder as sent
-      await pool.query(
-        'UPDATE returns SET pickup_reminder_sent = true WHERE id = $1',
-        [returnItem.id]
-      );
+      await returnRepo.markReminderSent(returnItem.id);
       
       reminders.push(returnItem.id);
     }
@@ -174,30 +170,19 @@ async function handleDataCleanup(payload) {
     cleanupDate.setDate(cleanupDate.getDate() - retentionDays);
     
     // Clean up old job execution logs
-    const logsResult = await pool.query(
-      'DELETE FROM job_execution_logs WHERE created_at < $1',
-      [cleanupDate]
-    );
+    const deletedLogs = await jobsRepo.deleteOldLogs(cleanupDate);
     
     // Clean up old notifications
-    const notificationsResult = await pool.query(
-      'DELETE FROM notifications WHERE created_at < $1 AND is_read = true',
-      [cleanupDate]
-    );
+    const deletedNotifications = await notificationRepo.deleteOldRead(cleanupDate);
     
     // Clean up completed jobs older than retention period
-    const jobsResult = await pool.query(
-      `DELETE FROM background_jobs 
-       WHERE status = 'completed' 
-       AND completed_at < $1`,
-      [cleanupDate]
-    );
+    const deletedJobs = await jobsRepo.deleteCompletedBefore(cleanupDate);
     
     return {
       success: true,
-      deletedLogs: logsResult.rowCount,
-      deletedNotifications: notificationsResult.rowCount,
-      deletedJobs: jobsResult.rowCount,
+      deletedLogs,
+      deletedNotifications,
+      deletedJobs,
       duration: `${Date.now() - startTime}ms`,
     };
   } catch (error) {
@@ -250,28 +235,47 @@ async function handleNotificationDispatch(payload) {
 }
 
 /**
- * Inventory Sync Job
- * Syncs inventory data with external systems
+ * Inventory Sync Job (cron-triggered)
+ * Reconciles available_quantity = MAX(0, quantity - reserved_quantity) for all
+ * inventory rows in the given warehouse, correcting any drift caused by failed
+ * transactions or partial updates.  Also resets low_stock_threshold alerts for
+ * items whose quantity has dropped below the threshold.
  */
 async function handleInventorySync(payload) {
   const startTime = Date.now();
   const { warehouseId, source } = payload;
-  
+
   try {
-    // TODO: Implement actual inventory sync logic
-    logger.info('🔄 Syncing inventory', { warehouseId, source });
-    
-    // Simulate sync
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    logger.info('🔄 Running inventory reconciliation', { warehouseId, source });
+
+    // 1. Fix any available_quantity drift: available = MAX(0, quantity - reserved)
+    const driftRows = await inventoryRepo.reconcileDrift(warehouseId || null);
+    const driftFixed = driftRows.length;
+
+    // 2. Snapshot total SKU count and aggregate quantities for the warehouse
+    const stats = await inventoryRepo.getInventorySyncStats(warehouseId || null);
+
+    logger.info('✅ Inventory reconciliation complete', {
+      warehouseId,
+      driftFixed,
+      distinctSkus: stats.distinct_skus,
+      totalUnits: stats.total_units,
+      lowStockSkus: stats.low_stock_skus,
+    });
+
     return {
       success: true,
       warehouseId,
-      itemsSynced: 150, // Mock data
+      driftFixed,
+      distinctSkus: parseInt(stats.distinct_skus),
+      totalUnits: parseInt(stats.total_units),
+      totalReserved: parseInt(stats.total_reserved),
+      totalAvailable: parseInt(stats.total_available),
+      lowStockSkus: parseInt(stats.low_stock_skus),
       duration: `${Date.now() - startTime}ms`,
     };
   } catch (error) {
-    logger.error('Inventory sync job failed:', error);
+    logger.error('Inventory sync job failed:', { error });
     throw error;
   }
 }
@@ -280,50 +284,74 @@ async function handleInventorySync(payload) {
 
 async function generateCarrierPerformanceReport(parameters) {
   const { carrierId, startDate, endDate } = parameters;
-  
-  // TODO: Implement actual report generation
-  logger.info('Generating carrier performance report', { carrierId, startDate, endDate });
-  
+
+  const rows = await carrierRepo.getPerformanceReport(carrierId, startDate, endDate);
+
+  logger.info('Generated carrier performance report', {
+    carrierId, startDate, endDate, rows: rows.length
+  });
+
   return {
     id: `report-${Date.now()}`,
     type: 'carrier_performance',
     generatedAt: new Date().toISOString(),
+    parameters,
+    rows,
+    rowCount: rows.length,
   };
 }
 
 async function generateSLAComplianceReport(parameters) {
   const { startDate, endDate } = parameters;
-  
-  logger.info('Generating SLA compliance report', { startDate, endDate });
-  
+
+  const rows = await slaRepo.getComplianceReport(startDate || '1900-01-01', endDate || 'now()');
+
+  logger.info('Generated SLA compliance report', { startDate, endDate, rows: rows.length });
+
   return {
     id: `report-${Date.now()}`,
     type: 'sla_compliance',
     generatedAt: new Date().toISOString(),
+    parameters,
+    rows,
+    rowCount: rows.length,
   };
 }
 
 async function generateFinancialSummaryReport(parameters) {
   const { startDate, endDate } = parameters;
-  
-  logger.info('Generating financial summary report', { startDate, endDate });
-  
+
+  const [invoices, refunds] = await Promise.all([
+    financeRepo.getInvoiceStatsByDateRange(startDate || '1900-01-01', endDate || 'now()'),
+    returnRepo.getRefundStats(startDate || '1900-01-01', endDate || 'now()'),
+  ]);
+
+  logger.info('Generated financial summary report', { startDate, endDate });
+
   return {
     id: `report-${Date.now()}`,
     type: 'financial_summary',
     generatedAt: new Date().toISOString(),
+    parameters,
+    invoices,
+    refunds,
   };
 }
 
 async function generateInventorySnapshotReport(parameters) {
   const { warehouseId } = parameters;
-  
-  logger.info('Generating inventory snapshot report', { warehouseId });
-  
+
+  const rows = await warehouseRepo.getInventorySnapshotReport(warehouseId);
+
+  logger.info('Generated inventory snapshot report', { warehouseId, rows: rows.length });
+
   return {
     id: `report-${Date.now()}`,
     type: 'inventory_snapshot',
     generatedAt: new Date().toISOString(),
+    parameters,
+    rows,
+    rowCount: rows.length,
   };
 }
 
@@ -398,12 +426,9 @@ async function handleUpdateTracking(payload) {
     logger.info(`Updating tracking for ${tracking_number}: ${status}`);
     
     // Find shipment by tracking number
-    const shipmentResult = await pool.query(
-      'SELECT id FROM shipments WHERE tracking_number = $1',
-      [tracking_number]
-    );
+    const shipment = await shipmentRepo.findByTrackingNumber(tracking_number);
 
-    if (shipmentResult.rows.length === 0) {
+    if (!shipment) {
       logger.warn(`Shipment not found for tracking number: ${tracking_number}`);
       return { success: false, reason: 'shipment_not_found' };
     }
@@ -420,7 +445,7 @@ async function handleUpdateTracking(payload) {
     };
 
     await shipmentTrackingService.updateShipmentTracking(
-      shipmentResult.rows[0].id,
+      shipment.id,
       trackingEvent
     );
     
@@ -428,7 +453,7 @@ async function handleUpdateTracking(payload) {
     
     return {
       success: true,
-      shipmentId: shipmentResult.rows[0].id,
+      shipmentId: shipment.id,
       status,
       duration: `${Date.now() - startTime}ms`
     };
@@ -451,64 +476,47 @@ async function handleSyncInventory(payload) {
     logger.info(`Syncing inventory for warehouse ${warehouse_id}: ${items?.length || 0} items`);
     
     // Look up warehouse UUID by code (warehouse_id might be a code like "WH-001")
-    const warehouseResult = await pool.query(
-      'SELECT id FROM warehouses WHERE code = $1 OR id::text = $1 LIMIT 1',
-      [warehouse_id]
-    );
+    let warehouse = await warehouseRepo.findByCode(warehouse_id);
     
     let actualWarehouseId = warehouse_id;
     
     // If warehouse doesn't exist, create it with basic info
-    if (warehouseResult.rows.length === 0) {
+    if (!warehouse) {
       logger.warn(`Warehouse ${warehouse_id} not found, creating placeholder`);
       try {
-        const newWarehouse = await pool.query(
-          `INSERT INTO warehouses (code, name, address, is_active, created_at)
-           VALUES ($1, $2, $3, true, NOW())
-           ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
-           RETURNING id`,
-          [
-            warehouse_id,
-            `Warehouse ${warehouse_id}`,
-            JSON.stringify({ street: 'TBD', city: 'TBD', state: 'TBD', postal_code: '00000', country: 'US' })
-          ]
+        const newWarehouse = await warehouseRepo.upsertPlaceholder(
+          warehouse_id,
+          `Warehouse ${warehouse_id}`,
+          JSON.stringify({ street: 'TBD', city: 'TBD', state: 'TBD', postal_code: '00000', country: 'US' })
         );
-        actualWarehouseId = newWarehouse.rows[0].id;
+        actualWarehouseId = newWarehouse.id;
         logger.info(`Created placeholder warehouse with ID ${actualWarehouseId}`);
       } catch (error) {
         // Race condition: another job created it, fetch it again
         if (error.code === '23505') {
-          const retryResult = await pool.query(
-            'SELECT id FROM warehouses WHERE code = $1 LIMIT 1',
-            [warehouse_id]
-          );
-          actualWarehouseId = retryResult.rows[0].id;
+          const retryWarehouse = await warehouseRepo.findByCode(warehouse_id);
+          actualWarehouseId = retryWarehouse.id;
           logger.info(`Warehouse ${warehouse_id} was created by another job, using ID ${actualWarehouseId}`);
         } else {
           throw error;
         }
       }
     } else {
-      actualWarehouseId = warehouseResult.rows[0].id;
+      actualWarehouseId = warehouse.id;
     }
     
     let updatedCount = 0;
     
     for (const item of items || []) {
-      const result = await pool.query(
-        `INSERT INTO inventory (warehouse_id, sku, product_name, quantity, bin_location, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         ON CONFLICT (warehouse_id, sku)
-         DO UPDATE SET 
-           quantity = EXCLUDED.quantity,
-           bin_location = EXCLUDED.bin_location,
-           product_name = EXCLUDED.product_name,
-           updated_at = NOW()
-         RETURNING id`,
-        [actualWarehouseId, item.sku, item.product_name, item.new_quantity, item.bin_location]
-      );
+      const inventoryItem = await inventoryRepo.createInventoryItem({
+        warehouse_id: actualWarehouseId,
+        sku: item.sku,
+        product_name: item.product_name,
+        quantity: item.new_quantity,
+        bin_location: item.bin_location
+      });
       
-      if (result.rows.length > 0) updatedCount++;
+      if (inventoryItem) updatedCount++;
     }
     
     logger.info(`✅ Inventory synced for warehouse ${warehouse_id}: ${updatedCount} items updated`);
@@ -539,31 +547,21 @@ async function handleProcessReturn(payload) {
     
     // Insert return into database
     // Carry organization_id from the webhook payload for correct tenant isolation
-    const result = await pool.query(
-      `INSERT INTO returns (
-        organization_id,
-        external_return_id, order_id, customer_name, customer_email,
-        items, refund_amount, status, created_at
-      ) VALUES ($1, $2,
-        (SELECT id FROM orders WHERE external_order_id = $3 LIMIT 1),
-        $4, $5, $6, $7, 'pending', NOW())
-      RETURNING id`,
-      [
-        organization_id || null,
-        return_id,
-        original_order_id,
-        customer.name,
-        customer.email,
-        JSON.stringify(items),
-        refund_amount
-      ]
-    );
+    const newReturn = await returnRepo.createFromWebhook({
+      organizationId: organization_id || null,
+      externalReturnId: return_id,
+      externalOrderId: original_order_id,
+      customerName: customer.name,
+      customerEmail: customer.email,
+      items: items,
+      refundAmount: refund_amount
+    });
     
-    logger.info(`✅ Return ${return_id} processed as ID ${result.rows[0].id}`);
+    logger.info(`✅ Return ${return_id} processed as ID ${newReturn.id}`);
     
     return {
       success: true,
-      returnId: result.rows[0].id,
+      returnId: newReturn.id,
       itemsCount: items?.length || 0,
       duration: `${Date.now() - startTime}ms`
     };

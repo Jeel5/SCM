@@ -1,5 +1,5 @@
 // Multi-tenant middleware - ensures data isolation per organization
-import pool from '../config/db.js';
+import userRepo from '../repositories/UserRepository.js';
 import { BusinessLogicError } from '../errors/index.js';
 
 /**
@@ -25,18 +25,15 @@ export async function injectOrgContext(req, res, next) {
     }
 
     // Get user's organization
-    const result = await pool.query(
-      'SELECT organization_id FROM users WHERE id = $1',
-      [req.user.userId]
-    );
+    const user = await userRepo.findById(req.user.userId);
 
-    if (!result.rows[0] || !result.rows[0].organization_id) {
+    if (!user || !user.organization_id) {
       throw new BusinessLogicError('User must belong to an organization');
     }
 
     req.orgContext = {
       isSuperadmin: false,
-      organizationId: result.rows[0].organization_id,
+      organizationId: user.organization_id,
       canAccessAllOrgs: false
     };
 

@@ -82,3 +82,14 @@ export const notificationPreferencesSchema = Joi.object({
     system_updates: Joi.boolean()
   })
 });
+
+export const listUsersQuerySchema = Joi.object({
+  page:      Joi.number().integer().min(1).default(1),
+  limit:     Joi.number().integer().min(1).max(100).default(20),
+  role:      Joi.string().valid(
+               'admin', 'operations_manager', 'warehouse_manager',
+               'carrier_partner', 'finance', 'customer_support'
+             ),
+  is_active: Joi.boolean(),
+  search:    Joi.string().max(200),
+});

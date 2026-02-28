@@ -1,5 +1,6 @@
 // Organization Repository - handles multi-tenant organization CRUD
 import BaseRepository from './BaseRepository.js';
+import { ValidationError } from '../errors/AppError.js';
 
 class OrganizationRepository extends BaseRepository {
   constructor() {
@@ -64,6 +65,17 @@ class OrganizationRepository extends BaseRepository {
   async findByCode(code, client = null) {
     const query = 'SELECT * FROM organizations WHERE code = $1';
     const result = await this.query(query, [code], client);
+    return result.rows[0] || null;
+  }
+
+  // Find organization by email (optionally exclude a specific org id — used in update uniqueness check)
+  async findByEmail(email, client = null, excludeId = null) {
+    const clause = excludeId ? ' AND id != $2' : '';
+    const params = excludeId ? [email, excludeId] : [email];
+    const result = await this.query(
+      `SELECT id FROM organizations WHERE email = $1${clause} LIMIT 1`,
+      params, client
+    );
     return result.rows[0] || null;
   }
 
@@ -189,7 +201,7 @@ class OrganizationRepository extends BaseRepository {
     }
 
     if (updates.length === 0) {
-      throw new Error('No fields to update');
+      throw new ValidationError('No fields to update');
     }
 
     updates.push(`updated_at = NOW()`);
@@ -229,6 +241,21 @@ class OrganizationRepository extends BaseRepository {
     `;
     const result = await this.query(query, [organizationId], client);
     return result.rows[0];
+  }
+
+  /**
+   * Find active organization by its webhook token.
+   */
+  async findByWebhookToken(token, client = null) {
+    const result = await this.query(
+      `SELECT id, name, code
+       FROM organizations
+       WHERE webhook_token = $1
+         AND is_active = true
+       LIMIT 1`,
+      [token], client
+    );
+    return result.rows[0] || null;
   }
 }
 

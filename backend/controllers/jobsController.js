@@ -1,327 +1,172 @@
 // Background jobs controller - manages job creation, monitoring, and scheduling
 import { jobsService } from '../services/jobsService.js';
-import pool from '../config/db.js';
-import logger from '../utils/logger.js';
+import jobsRepo from '../repositories/JobsRepository.js';
+import { asyncHandler, ConflictError } from '../errors/index.js';
 
 // Get all jobs with filtering
-export async function listJobs(req, res) {
-  try {
-    const { status, job_type, priority, page = 1, limit = 20 } = req.query;
-    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
-    // Cap limit to prevent runaway queries
-    const cappedLimit = Math.min(parseInt(limit) || 20, 100);
-    
-    const filters = {};
-    if (status) filters.status = status;
-    if (job_type) filters.job_type = job_type;
-    if (priority) filters.priority = parseInt(priority);
+export const listJobs = asyncHandler(async (req, res) => {
+  const { status, job_type, priority, page = 1, limit = 20 } = req.validatedQuery ?? req.query;
+  const organizationId = req.user?.organizationId;
+  // Cap limit to prevent runaway queries
+  const cappedLimit = Math.min(parseInt(limit) || 20, 100);
 
-    const result = await jobsService.getJobs(filters, parseInt(page), cappedLimit, organizationId);
-    
-    res.json({
-      success: true,
-      data: result.jobs,
-      pagination: result.pagination
-    });
-  } catch (error) {
-    logger.error('List jobs error', { error });
-    res.status(500).json({ error: 'Failed to fetch jobs' });
-  }
-}
+  const filters = {};
+  if (status) filters.status = status;
+  if (job_type) filters.job_type = job_type;
+  if (priority) filters.priority = parseInt(priority);
+
+  const result = await jobsService.getJobs(filters, parseInt(page), cappedLimit, organizationId);
+
+  res.json({ success: true, data: result.jobs, pagination: result.pagination });
+});
 
 // Get job details by ID
-export async function getJobDetails(req, res) {
-  try {
-    const { id } = req.params;
-    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
-    const job = await jobsService.getJobById(id, organizationId);
-    const logs = await jobsService.getJobLogs(id);
-    
-    res.json({
-      success: true,
-      data: {
-        ...job,
-        execution_logs: logs
-      }
-    });
-  } catch (error) {
-    logger.error('Get job details error', { error, jobId: req.params.id });
-    
-    if (error.message === 'Job not found') {
-      return res.status(404).json({ error: error.message });
-    }
-    
-    res.status(500).json({ error: 'Failed to fetch job details' });
-  }
-}
+export const getJobDetails = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.user?.organizationId;
+  const job = await jobsService.getJobById(id, organizationId);
+  const logs = await jobsService.getJobLogs(id);
+
+  res.json({ success: true, data: { ...job, execution_logs: logs } });
+});
 
 // Create a new background job
-export async function createJob(req, res) {
-  try {
-    const { job_type, payload, priority, scheduled_for } = req.body;
-    const userId = req.user?.userId;
+export const createJob = asyncHandler(async (req, res) => {
+  const { job_type, payload, priority, scheduled_for } = req.body;
+  const userId = req.user?.userId;
 
-    if (!job_type) {
-      return res.status(400).json({ error: 'job_type is required' });
-    }
+  const job = await jobsService.createJob(
+    job_type,
+    payload || {},
+    priority || 5,
+    scheduled_for,
+    userId
+  );
 
-    const job = await jobsService.createJob(
-      job_type,
-      payload || {},
-      priority || 5,
-      scheduled_for,
-      userId
-    );
-    
-    res.status(201).json({
-      success: true,
-      data: job
-    });
-  } catch (error) {
-    logger.error('Create job error', { error });
-    res.status(500).json({ error: 'Failed to create job' });
-  }
-}
+  res.status(201).json({ success: true, data: job });
+});
 
 // Retry a failed job
-export async function retryJob(req, res) {
-  try {
-    const { id } = req.params;
-    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+export const retryJob = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.user?.organizationId;
 
-    // Pre-validate: only failed/dead_letter jobs can be retried
-    const jobCheck = await jobsService.getJobById(id, organizationId);
-    const retryableStatuses = ['failed', 'dead_letter'];
-    if (!retryableStatuses.includes(jobCheck.status)) {
-      return res.status(409).json({
-        error: `Job cannot be retried in status '${jobCheck.status}'. Only failed or dead_letter jobs can be retried.`
-      });
-    }
-
-    const job = await jobsService.retryJob(id, organizationId);
-    
-    res.json({
-      success: true,
-      data: job,
-      message: 'Job queued for retry'
-    });
-  } catch (error) {
-    logger.error('Retry job error', { error, jobId: req.params.id });
-    if (error.message === 'Job not found or access denied') return res.status(404).json({ error: error.message });
-    res.status(500).json({ error: 'Failed to retry job' });
+  // Pre-validate: only failed/dead_letter jobs can be retried
+  const jobCheck = await jobsService.getJobById(id, organizationId);
+  const retryableStatuses = ['failed', 'dead_letter'];
+  if (!retryableStatuses.includes(jobCheck.status)) {
+    throw new ConflictError(
+      `Job cannot be retried in status '${jobCheck.status}'. Only failed or dead_letter jobs can be retried.`
+    );
   }
-}
+
+  const job = await jobsService.retryJob(id, organizationId);
+
+  res.json({ success: true, data: job, message: 'Job queued for retry' });
+});
 
 // Cancel a pending job
-export async function cancelJob(req, res) {
-  try {
-    const { id } = req.params;
-    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+export const cancelJob = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.user?.organizationId;
 
-    // Pre-validate: only pending/retrying jobs can be cancelled
-    const jobCheck = await jobsService.getJobById(id, organizationId);
-    const cancellableStatuses = ['pending', 'retrying'];
-    if (!cancellableStatuses.includes(jobCheck.status)) {
-      return res.status(409).json({
-        error: `Job cannot be cancelled in status '${jobCheck.status}'. Only pending or retrying jobs can be cancelled.`
-      });
-    }
-
-    const job = await jobsService.cancelJob(id, organizationId);
-    
-    res.json({
-      success: true,
-      data: job,
-      message: 'Job cancelled'
-    });
-  } catch (error) {
-    logger.error('Cancel job error', { error, jobId: req.params.id });
-    res.status(500).json({ error: 'Failed to cancel job' });
+  // Pre-validate: only pending/retrying jobs can be cancelled
+  const jobCheck = await jobsService.getJobById(id, organizationId);
+  const cancellableStatuses = ['pending', 'retrying'];
+  if (!cancellableStatuses.includes(jobCheck.status)) {
+    throw new ConflictError(
+      `Job cannot be cancelled in status '${jobCheck.status}'. Only pending or retrying jobs can be cancelled.`
+    );
   }
-}
+
+  const job = await jobsService.cancelJob(id, organizationId);
+
+  res.json({ success: true, data: job, message: 'Job cancelled' });
+});
 
 // Get job statistics
-export async function getJobStats(req, res) {
-  try {
-    const statsQuery = `
-      SELECT 
-        status,
-        COUNT(*) as count,
-        AVG(CASE 
-          WHEN completed_at IS NOT NULL AND started_at IS NOT NULL 
-          THEN EXTRACT(EPOCH FROM (completed_at - started_at))
-          ELSE NULL 
-        END) as avg_execution_time_seconds
-      FROM background_jobs
-      WHERE created_at > NOW() - INTERVAL '24 hours'
-      GROUP BY status
-    `;
-    
-    const result = await pool.query(statsQuery);
-    
-    const stats = {
-      by_status: result.rows.reduce((acc, row) => {
-        acc[row.status] = {
-          count: parseInt(row.count),
-          avg_execution_time: row.avg_execution_time_seconds ? 
-            parseFloat(row.avg_execution_time_seconds) : null
-        };
-        return acc;
-      }, {}),
-      total_24h: result.rows.reduce((sum, row) => sum + parseInt(row.count), 0)
-    };
-    
-    res.json({
-      success: true,
-      data: stats
-    });
-  } catch (error) {
-    logger.error('Get job stats error', { error });
-    res.status(500).json({ error: 'Failed to fetch job statistics' });
-  }
-}
+export const getJobStats = asyncHandler(async (req, res) => {
+  const rows = await jobsRepo.getJobStats();
+
+  const stats = {
+    by_status: rows.reduce((acc, row) => {
+      acc[row.status] = {
+        count: parseInt(row.count),
+        avg_execution_time: row.avg_execution_time_seconds
+          ? parseFloat(row.avg_execution_time_seconds)
+          : null,
+      };
+      return acc;
+    }, {}),
+    total_24h: rows.reduce((sum, row) => sum + parseInt(row.count), 0),
+  };
+
+  res.json({ success: true, data: stats });
+});
 
 // Cron schedule management
-export async function listCronSchedules(req, res) {
-  try {
-    const schedules = await jobsService.getCronSchedules();
-    
-    res.json({
-      success: true,
-      data: schedules
-    });
-  } catch (error) {
-    logger.error('List cron schedules error', { error });
-    res.status(500).json({ error: 'Failed to fetch cron schedules' });
-  }
-}
+export const listCronSchedules = asyncHandler(async (req, res) => {
+  const organizationId = req.user?.organizationId;
+  const schedules = await jobsService.getCronSchedules(organizationId);
 
-export async function createCronSchedule(req, res) {
-  try {
-    const { name, job_type, cron_expression, payload } = req.body;
+  res.json({ success: true, data: schedules });
+});
 
-    if (!name || !job_type || !cron_expression) {
-      return res.status(400).json({ 
-        error: 'name, job_type, and cron_expression are required' 
-      });
-    }
+export const createCronSchedule = asyncHandler(async (req, res) => {
+  const { name, job_type, cron_expression, payload } = req.body;
+  const organizationId = req.user?.organizationId;
 
-    const schedule = await jobsService.createCronSchedule(
-      name,
-      job_type,
-      cron_expression,
-      payload || {}
-    );
-    
-    res.status(201).json({
-      success: true,
-      data: schedule
-    });
-  } catch (error) {
-    logger.error('Create cron schedule error', { error });
-    
-    if (error.message.includes('Invalid cron expression')) {
-      return res.status(400).json({ error: error.message });
-    }
-    
-    res.status(500).json({ error: 'Failed to create cron schedule' });
-  }
-}
+  const schedule = await jobsService.createCronSchedule(
+    name,
+    job_type,
+    cron_expression,
+    payload || {},
+    organizationId
+  );
 
-export async function updateCronSchedule(req, res) {
-  try {
-    const { id } = req.params;
-    const updates = req.body;
+  res.status(201).json({ success: true, data: schedule });
+});
 
-    const schedule = await jobsService.updateCronSchedule(id, updates);
-    
-    res.json({
-      success: true,
-      data: schedule
-    });
-  } catch (error) {
-    logger.error('Update cron schedule error', { error, scheduleId: req.params.id });
-    
-    if (error.message === 'Schedule not found') {
-      return res.status(404).json({ error: error.message });
-    }
-    
-    if (error.message === 'No fields to update') {
-      return res.status(400).json({ error: error.message });
-    }
-    
-    res.status(500).json({ error: 'Failed to update cron schedule' });
-  }
-}
+export const updateCronSchedule = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  const organizationId = req.user?.organizationId;
 
-export async function deleteCronSchedule(req, res) {
-  try {
-    const { id } = req.params;
-    await jobsService.deleteCronSchedule(id);
-    
-    res.json({
-      success: true,
-      message: 'Cron schedule deleted'
-    });
-  } catch (error) {
-    logger.error('Delete cron schedule error', { error, scheduleId: req.params.id });
-    res.status(500).json({ error: 'Failed to delete cron schedule' });
-  }
-}
+  const schedule = await jobsService.updateCronSchedule(id, updates, organizationId);
+
+  res.json({ success: true, data: schedule });
+});
+
+export const deleteCronSchedule = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.user?.organizationId;
+  await jobsService.deleteCronSchedule(id, organizationId);
+
+  res.json({ success: true, message: 'Cron schedule deleted' });
+});
 
 // Dead Letter Queue Management
-export async function getDeadLetterQueue(req, res) {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
-    
-    const result = await jobsService.getDeadLetterQueue(parseInt(page), parseInt(limit), organizationId);
-    
-    res.json({
-      success: true,
-      data: result.jobs,
-      pagination: result.pagination
-    });
-  } catch (error) {
-    logger.error('Get dead letter queue error', { error });
-    res.status(500).json({ error: 'Failed to fetch dead letter queue' });
-  }
-}
+export const getDeadLetterQueue = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20 } = req.validatedQuery ?? req.query;
+  const organizationId = req.user?.organizationId;
 
-export async function retryFromDeadLetterQueue(req, res) {
-  try {
-    const { id } = req.params;
-    
-    const job = await jobsService.retryFromDeadLetterQueue(id);
-    
-    res.json({
-      success: true,
-      data: job,
-      message: 'Job moved back to queue for retry'
-    });
-  } catch (error) {
-    logger.error('Retry from DLQ error', { error, jobId: req.params.id });
-    
-    if (error.message === 'Dead letter job not found') {
-      return res.status(404).json({ error: error.message });
-    }
-    
-    res.status(500).json({ error: 'Failed to retry job from dead letter queue' });
-  }
-}
+  const result = await jobsService.getDeadLetterQueue(parseInt(page), parseInt(limit), organizationId);
 
-export async function purgeDeadLetterQueue(req, res) {
-  try {
-    const { older_than_days = 30 } = req.query;
-    
-    const deletedCount = await jobsService.purgeDeadLetterQueue(parseInt(older_than_days));
-    
-    res.json({
-      success: true,
-      message: `Purged ${deletedCount} jobs from dead letter queue`
-    });
-  } catch (error) {
-    logger.error('Purge dead letter queue error', { error });
-    res.status(500).json({ error: 'Failed to purge dead letter queue' });
-  }
-}
+  res.json({ success: true, data: result.jobs, pagination: result.pagination });
+});
+
+export const retryFromDeadLetterQueue = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  // org lookup happens inside the service via original_job_id → background_jobs
+  const job = await jobsService.retryFromDeadLetterQueue(id);
+
+  res.json({ success: true, data: job, message: 'Job moved back to queue for retry' });
+});
+
+export const purgeDeadLetterQueue = asyncHandler(async (req, res) => {
+  const { older_than_days = 30 } = req.validatedQuery ?? req.query;
+
+  const deletedCount = await jobsService.purgeDeadLetterQueue(parseInt(older_than_days));
+
+  res.json({ success: true, message: `Purged ${deletedCount} jobs from dead letter queue` });
+});

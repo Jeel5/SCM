@@ -81,6 +81,90 @@ class ShipmentRepository extends BaseRepository {
   }
 
   /**
+   * Find shipments with carrier, order and warehouse details (for list views).
+   */
+  async findShipmentsWithDetails({ page = 1, limit = 20, status = null, carrier_id = null, search = null, organizationId = undefined } = {}, client = null) {
+    const offset = (page - 1) * limit;
+    const params = [];
+    let paramCount = 1;
+
+    let query = `
+      SELECT s.*,
+        c.name  AS carrier_name,
+        c.code  AS carrier_code,
+        o.order_number,
+        w.name  AS warehouse_name,
+        COUNT(*) OVER() AS total_count
+      FROM shipments s
+      LEFT JOIN carriers  c ON s.carrier_id   = c.id
+      LEFT JOIN orders    o ON s.order_id      = o.id
+      LEFT JOIN warehouses w ON s.warehouse_id = w.id
+      WHERE 1=1
+    `;
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 's');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    if (status) {
+      query += ` AND s.status = $${paramCount++}`;
+      params.push(status);
+    }
+
+    if (carrier_id) {
+      query += ` AND s.carrier_id = $${paramCount++}`;
+      params.push(carrier_id);
+    }
+
+    if (search) {
+      query += ` AND (s.tracking_number ILIKE $${paramCount} OR o.order_number ILIKE $${paramCount})`;
+      params.push(`%${search}%`);
+      paramCount++;
+    }
+
+    query += ` ORDER BY s.created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    params.push(limit, offset);
+
+    const result = await this.query(query, params, client);
+    const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    return { shipments: result.rows, totalCount };
+  }
+
+  /**
+   * Find a single shipment with carrier, order and warehouse details.
+   */
+  async findShipmentDetails(id, organizationId = undefined, client = null) {
+    let query = `
+      SELECT s.*,
+        c.name AS carrier_name,
+        c.code AS carrier_code,
+        o.order_number,
+        w.name AS warehouse_name
+      FROM shipments s
+      LEFT JOIN carriers   c ON s.carrier_id   = c.id
+      LEFT JOIN orders     o ON s.order_id      = o.id
+      LEFT JOIN warehouses w ON s.warehouse_id  = w.id
+      WHERE s.id = $1
+    `;
+    const params = [id];
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 's');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
+    return result.rows[0] || null;
+  }
+
+  /**
    * Find shipments by order ID
    */
   async findByOrderId(orderId, organizationId = undefined, client = null) {
@@ -143,40 +227,36 @@ class ShipmentRepository extends BaseRepository {
   }
 
   /**
-   * Get shipment tracking events
+   * Get shipment tracking events from the shipment_events table.
    */
   async findTrackingEvents(shipmentId, client = null) {
     const query = `
-      SELECT * FROM shipment_tracking 
-      WHERE shipment_id = $1 
-      ORDER BY event_time DESC
+      SELECT * FROM shipment_events
+      WHERE shipment_id = $1
+      ORDER BY event_timestamp ASC
     `;
     const result = await this.query(query, [shipmentId], client);
     return result.rows;
   }
 
   /**
-   * Add tracking event
+   * Add a tracking event to shipment_events.
+   * eventData: { shipment_id, event_type, location?, description?, event_timestamp? }
    */
   async addTrackingEvent(eventData, client = null) {
-    // ON CONFLICT ensures carrier webhook retries don't duplicate an event that has
-    // already been recorded (idempotent inserts require a UNIQUE constraint on
-    // shipment_tracking(shipment_id, carrier_status, event_time)).
     const query = `
-      INSERT INTO shipment_tracking 
-      (shipment_id, status, location, event_time, description, carrier_status)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (shipment_id, carrier_status, event_time) DO NOTHING
+      INSERT INTO shipment_events
+        (shipment_id, event_type, location, description, event_timestamp)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
-    
+
     const params = [
       eventData.shipment_id,
-      eventData.status,
-      JSON.stringify(eventData.location || {}),
-      eventData.event_time || new Date(),
+      eventData.event_type,
+      eventData.location ? JSON.stringify(eventData.location) : null,
       eventData.description || null,
-      eventData.carrier_status || null
+      eventData.event_timestamp || new Date(),
     ];
 
     const result = await this.query(query, params, client);
@@ -279,6 +359,18 @@ class ShipmentRepository extends BaseRepository {
   }
 
   /**
+   * Batch-load tracking events for multiple shipments (avoids N+1 in list views).
+   */
+  async findTrackingEventsByIds(shipmentIds, client = null) {
+    if (!shipmentIds.length) return [];
+    const result = await this.query(
+      'SELECT * FROM shipment_events WHERE shipment_id = ANY($1) ORDER BY event_timestamp ASC',
+      [shipmentIds], client
+    );
+    return result.rows;
+  }
+
+  /**
    * Get carrier performance
    */
   async getCarrierPerformance(dateFrom = null, dateTo = null, organizationId = undefined, client = null) {
@@ -322,6 +414,439 @@ class ShipmentRepository extends BaseRepository {
 
     const result = await this.query(query, params, client);
     return result.rows;
+  }
+
+  /**
+   * Insert a new shipment row.
+   */
+  async createShipment(data, client = null) {
+    const result = await this.query(
+      `INSERT INTO shipments
+         (tracking_number, order_id, carrier_id, origin_address, destination_address,
+          organization_id, status, pickup_scheduled)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW() + INTERVAL '1 day')
+       RETURNING *`,
+      [
+        data.tracking_number,
+        data.order_id,
+        data.carrier_id,
+        JSON.stringify(data.origin),
+        JSON.stringify(data.destination),
+        data.organization_id || null,
+      ],
+      client
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Update the route geometry on a shipment identified by tracking_number.
+   */
+  async updateRouteGeometry(trackingNumber, organizationId, geometry, client = null) {
+    const params = [JSON.stringify(geometry), trackingNumber];
+    let clause = '';
+    if (organizationId) { clause = ' AND organization_id = $3'; params.push(organizationId); }
+    const result = await this.query(
+      `UPDATE shipments SET route_geometry = $1, updated_at = NOW()
+       WHERE tracking_number = $2${clause}
+       RETURNING *`,
+      params, client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Return timeline events for a shipment identified by tracking number.
+   */
+  async findTimelineByTrackingNumber(trackingNumber, organizationId = undefined, client = null) {
+    const params = [trackingNumber];
+    const orgClause = organizationId ? ' AND s.organization_id = $2' : '';
+    if (organizationId) params.push(organizationId);
+    const result = await this.query(
+      `SELECT se.id, se.event_type, se.location, se.description, se.event_timestamp,
+              s.tracking_number, s.status
+       FROM shipment_events se
+       JOIN shipments s ON se.shipment_id = s.id
+       WHERE s.tracking_number = $1${orgClause}
+       ORDER BY se.event_timestamp ASC`,
+      params, client
+    );
+    return result.rows;
+  }
+
+  /**
+   * Return timeline events for a shipment identified by id.
+   */
+  async findTimelineByShipmentId(shipmentId, organizationId = undefined, client = null) {
+    const params = [shipmentId];
+    const orgClause = organizationId ? ' AND s.organization_id = $2' : '';
+    if (organizationId) params.push(organizationId);
+    const result = await this.query(
+      `SELECT se.*, s.tracking_number
+       FROM shipment_events se
+       JOIN shipments s ON se.shipment_id = s.id
+       WHERE se.shipment_id = $1${orgClause}
+       ORDER BY se.event_timestamp ASC`,
+      params, client
+    );
+    return result.rows;
+  }
+
+  /**
+   * Return the on-time delivery rate (0-100) for a warehouse over the last 30 days.
+   * Used by allocationService to score warehouse SLA performance.
+   *
+   * @param {string} warehouseId
+   * @param {object|null} client
+   * @returns {Promise<{ total: number, on_time: number }>}
+   */
+  async getWarehouseOnTimeRate(warehouseId, client = null) {
+    const result = await this.query(
+      `SELECT COUNT(*) AS total,
+              COUNT(CASE WHEN delivery_actual <= delivery_scheduled THEN 1 END) AS on_time
+       FROM shipments
+       WHERE warehouse_id = $1
+         AND status = 'delivered'
+         AND created_at >= NOW() - INTERVAL '30 days'`,
+      [warehouseId], client
+    );
+    const row = result.rows[0];
+    return { total: parseInt(row.total), on_time: parseInt(row.on_time) };
+  }
+
+  /**
+   * Create a transfer shipment (internal warehouse-to-warehouse).
+   * Fetches its own sequence number from transfer_shipment_number_seq.
+   * Returns the inserted row.
+   *
+   * @param {object} data - { orderId, warehouseId, originAddress, destinationAddress,
+   *                           estimatedPickup, estimatedDelivery, notes }
+   * @param {object} client - pg transaction client (required)
+   */
+  async createTransferShipment(data, client) {
+    const seqResult = await this.query(
+      `SELECT nextval('transfer_shipment_number_seq') AS seq`,
+      [],
+      client
+    );
+    const seq = seqResult.rows[0].seq;
+
+    const result = await this.query(
+      `INSERT INTO shipments
+         (shipment_number, order_id, warehouse_id, carrier_id, status,
+          origin_address, destination_address,
+          estimated_pickup_date, estimated_delivery_date,
+          tracking_notes, created_at, updated_at)
+       VALUES ($1, $2, $3,
+               (SELECT id FROM carriers WHERE code = 'INTERNAL' LIMIT 1),
+               $4, $5, $6, $7, $8, $9, NOW(), NOW())
+       RETURNING id, shipment_number, status, estimated_delivery_date`,
+      [
+        `SHP-TRF-${seq}`,
+        data.orderId,
+        data.warehouseId,
+        'pending',
+        JSON.stringify(data.originAddress),
+        JSON.stringify(data.destinationAddress),
+        data.estimatedPickup,
+        data.estimatedDelivery,
+        data.notes || '',
+      ],
+      client
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Find a single shipment by its primary key.
+   */
+  async findById(shipmentId, client = null) {
+    const result = await this.query(
+      `SELECT * FROM shipments WHERE id = $1`,
+      [shipmentId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Insert a fully-populated shipment row (used during carrier assignment acceptance).
+   */
+  async createFullShipment(data, client = null) {
+    const result = await this.query(
+      `INSERT INTO shipments
+         (tracking_number, carrier_tracking_number, order_id, carrier_assignment_id, carrier_id,
+          warehouse_id, status, origin_address, destination_address, delivery_scheduled,
+          weight, volumetric_weight, dimensions, package_count, total_items,
+          shipping_cost, cod_amount,
+          is_fragile, is_hazardous, is_perishable, requires_cold_storage,
+          item_type, package_type, handling_instructions,
+          requires_insurance, declared_value,
+          created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW(),NOW())
+       RETURNING *`,
+      [
+        data.trackingNumber,
+        data.carrierTrackingNumber,
+        data.orderId,
+        data.carrierAssignmentId,
+        data.carrierId,
+        data.warehouseId,
+        data.status || 'pending',
+        data.originAddress,
+        data.destinationAddress,
+        data.deliveryScheduled,
+        data.weight,
+        data.volumetricWeight,
+        data.dimensions,
+        data.packageCount,
+        data.totalItems,
+        data.shippingCost,
+        data.codAmount,
+        data.isFragile,
+        data.isHazardous,
+        data.isPerishable,
+        data.requiresColdStorage,
+        data.itemType,
+        data.packageType,
+        data.handlingInstructions,
+        data.requiresInsurance,
+        data.declaredValue,
+      ],
+      client
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Update shipment status, tracking_events JSON, and current_location.
+   */
+  async updateTracking(shipmentId, newStatus, trackingEventsJson, currentLocation, client = null) {
+    const result = await this.query(
+      `UPDATE shipments
+       SET status = $1,
+           tracking_events = $2,
+           current_location = $3,
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING *`,
+      [newStatus, trackingEventsJson, currentLocation, shipmentId], client
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Insert the initial 'shipment_created' event with event_code / status / source columns.
+   */
+  async addSystemCreatedEvent(shipmentId, client = null) {
+    await this.query(
+      `INSERT INTO shipment_events
+         (shipment_id, event_type, event_code, status, description, source, event_timestamp)
+       VALUES ($1, 'shipment_created', 'CREATED', 'pending',
+               'Shipment confirmed and awaiting carrier pickup', 'system', NOW())`,
+      [shipmentId], client
+    );
+  }
+
+  // ── Methods for shipmentService (state machine + transfer orders) ────────
+
+  /**
+   * Lock shipment row for update and return current status.
+   * Used by state machine validator.
+   */
+  async lockForStatusUpdate(shipmentId, organizationId = undefined, client = null) {
+    const params = [shipmentId];
+    let sql = `SELECT status FROM shipments WHERE id = $1`;
+    if (organizationId) {
+      sql += ` AND organization_id = $2`;
+      params.push(organizationId);
+    }
+    sql += ` FOR UPDATE`;
+    const result = await this.query(sql, params, client);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Update shipment status and optional location (no org filter — caller already validated).
+   */
+  async setStatus(shipmentId, status, location = null, organizationId = undefined, client = null) {
+    const params = [status, location ? JSON.stringify(location) : null, shipmentId];
+    let sql = `UPDATE shipments SET status = $1, current_location = $2, updated_at = NOW() WHERE id = $3`;
+    if (organizationId) {
+      sql += ` AND organization_id = $4`;
+      params.push(organizationId);
+    }
+    await this.query(sql, params, client);
+  }
+
+  async addEvent(shipmentId, eventType, location = null, description = null, client = null) {
+    await this.query(
+      `INSERT INTO shipment_events (shipment_id, event_type, location, description, event_timestamp)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [shipmentId, eventType, location ? JSON.stringify(location) : null, description], client
+    );
+  }
+
+  async markDelivered(shipmentId, client = null) {
+    await this.query(
+      `UPDATE shipments SET delivery_actual = NOW() WHERE id = $1`,
+      [shipmentId], client
+    );
+  }
+
+  async findOrderForShipment(shipmentId, client = null) {
+    const result = await this.query(
+      `SELECT o.*, s.warehouse_id as from_warehouse_id
+       FROM orders o
+       JOIN shipments s ON o.id = s.order_id
+       WHERE s.id = $1`,
+      [shipmentId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  async markOrderDelivered(shipmentId, client = null) {
+    await this.query(
+      `UPDATE orders SET status = 'delivered', actual_delivery = NOW()
+       WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
+      [shipmentId], client
+    );
+  }
+
+  // ── Transfer order delivery helpers ─────────────────────────────────────
+
+  async findOrderItems(orderId, client = null) {
+    const result = await this.query(
+      `SELECT * FROM order_items WHERE order_id = $1`,
+      [orderId], client
+    );
+    return result.rows;
+  }
+
+  async findWarehouseByAddress(addressJson, client = null) {
+    const result = await this.query(
+      `SELECT id FROM warehouses WHERE address::text = $1 LIMIT 1`,
+      [JSON.stringify(addressJson)], client
+    );
+    return result.rows[0] || null;
+  }
+
+  async decrementInventoryReserved(sku, warehouseId, quantity, client = null) {
+    await this.query(
+      `UPDATE inventory SET reserved_quantity = reserved_quantity - $1, updated_at = NOW()
+       WHERE sku = $2 AND warehouse_id = $3`,
+      [quantity, sku, warehouseId], client
+    );
+  }
+
+  async decrementInventoryQuantity(sku, warehouseId, quantity, client = null) {
+    await this.query(
+      `UPDATE inventory SET quantity = quantity - $1, updated_at = NOW()
+       WHERE sku = $2 AND warehouse_id = $3`,
+      [quantity, sku, warehouseId], client
+    );
+  }
+
+  async insertTransferOutMovement(quantity, orderId, note, sku, warehouseId, client = null) {
+    await this.query(
+      `INSERT INTO stock_movements
+         (inventory_id, movement_type, quantity, reference_type, reference_id, notes, performed_by)
+       SELECT id, 'transfer_out', $1, 'transfer_order', $2, $3, 'system'
+       FROM inventory WHERE sku = $4 AND warehouse_id = $5`,
+      [quantity, orderId, note, sku, warehouseId], client
+    );
+  }
+
+  async upsertInventoryForTransfer(toWarehouseId, productId, sku, productName, quantity, client = null) {
+    await this.query(
+      `INSERT INTO inventory
+         (warehouse_id, product_id, sku, product_name, quantity, available_quantity, reserved_quantity)
+       VALUES ($1, $2, $3, $4, $5, $5, 0)
+       ON CONFLICT (warehouse_id, sku)
+       DO UPDATE SET quantity = inventory.quantity + $5,
+                     available_quantity = inventory.available_quantity + $5,
+                     updated_at = NOW()`,
+      [toWarehouseId, productId, sku, productName, quantity], client
+    );
+  }
+
+  async insertTransferInMovement(quantity, orderId, note, sku, warehouseId, client = null) {
+    await this.query(
+      `INSERT INTO stock_movements
+         (inventory_id, movement_type, quantity, reference_type, reference_id, notes, performed_by)
+       SELECT id, 'transfer_in', $1, 'transfer_order', $2, $3, 'system'
+       FROM inventory WHERE sku = $4 AND warehouse_id = $5`,
+      [quantity, orderId, note, sku, warehouseId], client
+    );
+  }
+
+  // ── confirmPickup helpers ────────────────────────────────────────────────
+
+  async findShipmentWithOrderAndCarrier(shipmentId, client = null) {
+    const result = await this.query(
+      `SELECT s.*, o.id as order_id, o.order_number, ca.carrier_id
+       FROM shipments s
+       JOIN orders o ON s.order_id = o.id
+       LEFT JOIN carrier_assignments ca ON s.carrier_assignment_id = ca.id
+       WHERE s.id = $1`,
+      [shipmentId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  async setPickedUp(shipmentId, pickupTime, gpsLocation, client = null) {
+    const result = await this.query(
+      `UPDATE shipments
+       SET status = 'in_transit',
+           pickup_actual = $1,
+           current_location = $2,
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [pickupTime, gpsLocation ? JSON.stringify(gpsLocation) : null, shipmentId], client
+    );
+    return result.rows[0];
+  }
+
+  async markOrderShipped(orderId, client = null) {
+    await this.query(
+      `UPDATE orders SET status = 'shipped', updated_at = NOW() WHERE id = $1`,
+      [orderId], client
+    );
+  }
+
+  // ── shipmentTrackingService helpers ─────────────────────────────────────
+
+  async findById(shipmentId, client = null) {
+    const result = await this.query(
+      `SELECT * FROM shipments WHERE id = $1`,
+      [shipmentId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  async findWithCarrierAndWarehouse(shipmentId, client = null) {
+    const result = await this.query(
+      `SELECT
+         s.*,
+         o.order_number, o.customer_name, o.customer_email,
+         c.code as carrier_code, c.name as carrier_name,
+         w.name as warehouse_name
+       FROM shipments s
+       JOIN orders o ON s.order_id = o.id
+       LEFT JOIN carriers c ON s.carrier_id = c.id
+       LEFT JOIN warehouses w ON s.warehouse_id = w.id
+       WHERE s.id = $1`,
+      [shipmentId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  async markOrderDeliveredByShipmentId(shipmentId, client = null) {
+    await this.query(
+      `UPDATE orders SET status = 'delivered', updated_at = NOW()
+       WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
+      [shipmentId], client
+    );
   }
 }
 

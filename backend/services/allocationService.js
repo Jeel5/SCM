@@ -1,8 +1,10 @@
 // Allocation Service - Intelligent inventory allocation across warehouses
-import pool from '../config/db.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { BusinessLogicError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
+import shipmentRepo from '../repositories/ShipmentRepository.js';
+import inventoryRepo from '../repositories/InventoryRepository.js';
+import allocationRepo from '../repositories/AllocationRepository.js';
 
 class AllocationService {
   /**
@@ -14,30 +16,22 @@ class AllocationService {
       const allocations = [];
 
       // Get active allocation rules sorted by priority
-      const rulesResult = await tx.query(
-        'SELECT * FROM allocation_rules WHERE is_active = true ORDER BY priority ASC'
-      );
-      const rules = rulesResult.rows;
+      const rules = await allocationRepo.findActiveRules(tx);
 
       for (const item of items) {
         const allocation = await this.allocateItem(item, shippingAddress, rules, tx);
         allocations.push(allocation);
 
         // Record allocation history inside the same transaction
-        await tx.query(
-          `INSERT INTO allocation_history
-          (order_id, order_item_id, warehouse_id, allocation_strategy, allocation_score, allocated_quantity, reason)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [
-            orderId,
-            item.id,
-            allocation.warehouseId,
-            allocation.strategy,
-            allocation.score,
-            item.quantity,
-            allocation.reason
-          ]
-        );
+        await allocationRepo.insertAllocationHistory({
+          orderId,
+          orderItemId: item.id,
+          warehouseId: allocation.warehouseId,
+          allocationStrategy: allocation.strategy,
+          allocationScore: allocation.score,
+          allocatedQuantity: item.quantity,
+          reason: allocation.reason
+        }, tx);
       }
 
       logEvent('InventoryAllocated', { orderId, allocationsCount: allocations.length });
@@ -49,27 +43,14 @@ class AllocationService {
    * Allocate a single item to the best warehouse
    */
   async allocateItem(item, shippingAddress, rules, tx = null) {
-    const db = tx || pool;
     // FOR UPDATE locks matching inventory rows for the duration of the transaction,
     // preventing two concurrent allocations from selecting the same warehouse stock.
-    const warehousesResult = await db.query(
-      `SELECT w.*, i.available_quantity, i.reserved_quantity,
-              w.address->>'city' as city,
-              w.address->>'state' as state
-       FROM warehouses w
-       JOIN inventory i ON i.warehouse_id = w.id
-       JOIN products p ON p.id = i.product_id
-       WHERE p.sku = $1 AND i.available_quantity >= $2 AND w.is_active = true
-       FOR UPDATE OF i SKIP LOCKED`,
-      [item.sku, item.quantity]
-    );
+    const warehouses = await allocationRepo.findWarehousesWithInventoryForSku(item.sku, item.quantity, tx);
 
-    if (warehousesResult.rows.length === 0) {
+    if (warehouses.length === 0) {
       throw new BusinessLogicError(`No warehouse has sufficient stock for SKU: ${item.sku}`);
     }
 
-    const warehouses = warehousesResult.rows;
-    
     // Score each warehouse based on allocation rules
     const scoredWarehouses = await Promise.all(
       warehouses.map(wh => this.scoreWarehouse(wh, item, shippingAddress, rules))
@@ -81,20 +62,9 @@ class AllocationService {
     );
 
     // Reserve inventory in the chosen warehouse (decrement available, increment reserved)
-    const reserveResult = await db.query(
-      `UPDATE inventory
-       SET
-         available_quantity = available_quantity - $1,
-         reserved_quantity  = reserved_quantity  + $1,
-         updated_at         = NOW()
-       WHERE warehouse_id = $2
-         AND product_id = (SELECT id FROM products WHERE sku = $3 LIMIT 1)
-         AND available_quantity >= $1
-       RETURNING id`,
-      [item.quantity, bestWarehouse.id, item.sku]
-    );
+    const reserved = await allocationRepo.reserveInventoryForWarehouse(item.quantity, bestWarehouse.id, item.sku, tx);
 
-    if (reserveResult.rows.length === 0) {
+    if (!reserved) {
       throw new BusinessLogicError(
         `Failed to reserve inventory for SKU ${item.sku} at warehouse ${bestWarehouse.name} — stock may have changed`
       );
@@ -195,21 +165,9 @@ class AllocationService {
    * Calculate SLA score based on warehouse performance
    */
   async calculateSLAScore(warehouse, shippingAddress) {
-    // Query recent shipment performance from this warehouse
-    const perfResult = await pool.query(
-      `SELECT COUNT(*) as total,
-              COUNT(CASE WHEN delivery_actual <= delivery_scheduled THEN 1 END) as on_time
-       FROM shipments
-       WHERE warehouse_id = $1 AND status = 'delivered'
-       AND created_at >= NOW() - INTERVAL '30 days'`,
-      [warehouse.id]
-    );
-
-    const perf = perfResult.rows[0];
-    if (perf.total === 0) return 75; // Default for new warehouses
-
-    const onTimeRate = (parseInt(perf.on_time) / parseInt(perf.total)) * 100;
-    return onTimeRate;
+    const { total, on_time } = await shipmentRepo.getWarehouseOnTimeRate(warehouse.id);
+    if (total === 0) return 75; // Default for new warehouses
+    return (on_time / total) * 100;
   }
 
   /**
@@ -233,21 +191,9 @@ class AllocationService {
    */
   async checkOrderSplitRequired(items) {
     for (const item of items) {
-      // Check if any single warehouse has enough stock
-      const result = await pool.query(
-        `SELECT COUNT(*) as warehouse_count
-         FROM inventory i
-         JOIN products p ON p.id = i.product_id
-         WHERE p.sku = $1 AND i.available_quantity >= $2`,
-        [item.sku, item.quantity]
-      );
-
-      if (parseInt(result.rows[0].warehouse_count) === 0) {
-        // No single warehouse has enough - split required
-        return true;
-      }
+      const count = await inventoryRepo.countWarehousesWithStock(item.sku, item.quantity);
+      if (count === 0) return true;
     }
-
     return false;
   }
 
@@ -258,18 +204,7 @@ class AllocationService {
     const splits = {};
 
     for (const item of items) {
-      // Get warehouses with any available stock for this SKU
-      const warehousesResult = await pool.query(
-        `SELECT w.*, i.available_quantity
-         FROM warehouses w
-         JOIN inventory i ON i.warehouse_id = w.id
-         JOIN products p ON p.id = i.product_id
-         WHERE p.sku = $1 AND i.available_quantity > 0 AND w.is_active = true
-         ORDER BY i.available_quantity DESC`,
-        [item.sku]
-      );
-
-      const warehouses = warehousesResult.rows;
+      const warehouses = await inventoryRepo.findWarehousesWithStockBySku(item.sku);
       let remainingQty = item.quantity;
 
       for (const warehouse of warehouses) {

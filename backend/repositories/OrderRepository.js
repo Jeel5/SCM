@@ -1,5 +1,6 @@
 // Order Repository - handles all database operations for orders and order_items
 import BaseRepository from './BaseRepository.js';
+import { AppError } from '../errors/AppError.js';
 
 class OrderRepository extends BaseRepository {
   constructor() {
@@ -130,7 +131,7 @@ class OrderRepository extends BaseRepository {
     // Fail fast if the caller forgot to pass a transaction client — two separate pool
     // queries without a transaction would leave an orphan order if items insert fails.
     if (!client) {
-      throw new Error('createOrderWithItems requires a transaction client (tx). Wrap the call in withTransaction().');
+      throw new AppError('createOrderWithItems requires a transaction client (tx). Wrap the call in withTransaction().', 500, false);
     }
     // Insert order first
     const orderKeys = Object.keys(orderData);
@@ -299,6 +300,235 @@ class OrderRepository extends BaseRepository {
 
     const result = await this.query(query, params, client);
     return result.rows[0];
+  }
+
+  /**
+   * Update order status.
+   */
+  async updateStatus(orderId, status, client = null) {
+    const result = await this.query(
+      `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
+      [status, orderId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Get the next value from the order_number_seq sequence.
+   * @param {object} client - pg transaction client
+   * @returns {string|number} sequence value
+   */
+  async nextOrderNumberSeq(client) {
+    const result = await this.query(`SELECT nextval('order_number_seq') AS seq`, [], client);
+    return result.rows[0].seq;
+  }
+
+  /**
+   * Get the next value from the transfer_order_number_seq sequence.
+   * @param {object} client - pg transaction client
+   * @returns {string|number} sequence value
+   */
+  async nextTransferOrderSeq(client) {
+    const result = await this.query(`SELECT nextval('transfer_order_number_seq') AS seq`, [], client);
+    return result.rows[0].seq;
+  }
+
+  /**
+   * Find a single order by ID (selected core columns).
+   */
+  async findById(orderId, client = null) {
+    const result = await this.query(
+      `SELECT id, customer_name, customer_email, customer_phone, priority,
+              status, shipping_address, total_amount, created_at, order_number
+       FROM orders WHERE id = $1`,
+      [orderId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Find order items joined with product shipping attributes.
+   */
+  async findOrderItemsWithProducts(orderId, client = null) {
+    const result = await this.query(
+      `SELECT oi.*, p.weight AS product_weight, p.dimensions AS product_dimensions,
+              p.is_fragile AS product_is_fragile, p.is_hazmat AS product_is_hazardous
+       FROM order_items oi
+       LEFT JOIN products p ON oi.product_id = p.id
+       WHERE oi.order_id = $1`,
+      [orderId], client
+    );
+    return result.rows;
+  }
+
+  /**
+   * Find the first warehouse associated with an order's items.
+   */
+  async findWarehouseByOrderId(orderId, client = null) {
+    const result = await this.query(
+      `SELECT w.* FROM warehouses w
+       JOIN order_items oi ON w.id = oi.warehouse_id
+       WHERE oi.order_id = $1
+       LIMIT 1`,
+      [orderId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Place an order on hold with a system note about exhausted carrier retries.
+   */
+  async putOnHold(orderId, client = null) {
+    await this.query(
+      `UPDATE orders
+       SET status = 'on_hold',
+           notes = CONCAT(COALESCE(notes, ''), '\n[SYSTEM] All carrier assignment attempts exhausted (9 carriers tried). Requires manual carrier assignment.'),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [orderId], client
+    );
+  }
+
+  /**
+   * Update order status and assigned carrier together.
+   */
+  async updateStatusAndCarrier(orderId, status, carrierId, client = null) {
+    await this.query(
+      `UPDATE orders SET status = $1, carrier_id = $2, updated_at = NOW() WHERE id = $3`,
+      [status, carrierId, orderId], client
+    );
+  }
+
+  /**
+   * Mark the order that owns a given shipment as delivered.
+   */
+  async updateDeliveredByShipmentId(shipmentId, client = null) {
+    await this.query(
+      `UPDATE orders SET status = 'delivered', updated_at = NOW()
+       WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
+      [shipmentId], client
+    );
+  }
+
+  /**
+   * Fetch an order along with its items as an aggregated array.
+   */
+  async findByIdWithAggItems(orderId, client = null) {
+    const result = await this.query(
+      `SELECT o.*, array_agg(oi.*) AS items
+       FROM orders o
+       LEFT JOIN order_items oi ON o.id = oi.order_id
+       WHERE o.id = $1
+       GROUP BY o.id`,
+      [orderId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  // ── Shipping lock management ──────────────────────────────────────────
+
+  /**
+   * Atomically acquire a shipping lock on an order.
+   * Returns true if lock acquired, false if already locked.
+   */
+  async acquireShippingLock(orderId, workerId, client = null) {
+    const result = await this.query(
+      `UPDATE orders
+       SET shipping_locked = true,
+           shipping_locked_at = NOW(),
+           shipping_locked_by = $2
+       WHERE id = $1
+         AND (shipping_locked = false OR shipping_locked IS NULL)
+       RETURNING id`,
+      [orderId, workerId], client
+    );
+    return result.rows.length > 0;
+  }
+
+  /**
+   * Release a shipping lock on an order.
+   */
+  async releaseShippingLock(orderId, client = null) {
+    await this.query(
+      `UPDATE orders
+       SET shipping_locked = false,
+           shipping_locked_at = NULL,
+           shipping_locked_by = NULL
+       WHERE id = $1`,
+      [orderId], client
+    );
+  }
+
+  /**
+   * Check if an order is shipping-locked.
+   */
+  async getShippingLockStatus(orderId, client = null) {
+    const result = await this.query(
+      `SELECT shipping_locked, shipping_locked_at, shipping_locked_by
+       FROM orders
+       WHERE id = $1`,
+      [orderId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Release stale shipping locks older than the given minutes.
+   * Uses parameterised interval (minutes * interval '1 minute') to avoid interpolation.
+   */
+  async releaseStaleLocks(olderThanMinutes, client = null) {
+    const result = await this.query(
+      `UPDATE orders
+       SET shipping_locked = false,
+           shipping_locked_at = NULL,
+           shipping_locked_by = NULL
+       WHERE shipping_locked = true
+         AND shipping_locked_at < NOW() - $1::int * INTERVAL '1 minute'
+       RETURNING id, shipping_locked_by`,
+      [olderThanMinutes], client
+    );
+    return result.rows;
+  }
+
+  // ── Quote idempotency cache ───────────────────────────────────────────
+
+  /**
+   * Check if a quote result is cached for the given idempotency key.
+   */
+  async findCachedQuote(idempotencyKey, client = null) {
+    const result = await this.query(
+      `SELECT result, created_at
+       FROM quote_idempotency_cache
+       WHERE idempotency_key = $1 AND expires_at > NOW()`,
+      [idempotencyKey], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Cache a quote result (upsert).
+   * expiryHours is parameterised to avoid SQL interpolation.
+   */
+  async cacheQuoteResult(idempotencyKey, resultJson, expiryHours, client = null) {
+    await this.query(
+      `INSERT INTO quote_idempotency_cache (idempotency_key, result, expires_at)
+       VALUES ($1, $2, NOW() + $3::int * INTERVAL '1 hour')
+       ON CONFLICT (idempotency_key)
+       DO UPDATE SET result = $2, expires_at = NOW() + $3::int * INTERVAL '1 hour'`,
+      [idempotencyKey, resultJson, expiryHours], client
+    );
+  }
+
+  /**
+   * Clean up expired idempotency cache entries.
+   */
+  async cleanExpiredQuoteCache(client = null) {
+    const result = await this.query(
+      `DELETE FROM quote_idempotency_cache
+       WHERE expires_at < NOW() - INTERVAL '1 day'`,
+      [], client
+    );
+    return result.rowCount;
   }
 }
 

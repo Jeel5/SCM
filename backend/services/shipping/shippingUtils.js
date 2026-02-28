@@ -7,6 +7,7 @@
  * - Common helper functions
  */
 
+import postalZoneRepo from '../../repositories/PostalZoneRepository.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -68,24 +69,44 @@ export function addHours(date, hours) {
  * @param {String} toPincode - Delivery pincode
  * @returns {Number} Estimated distance in km
  */
-export function estimateDistanceFromPincode(fromPincode, toPincode) {
-  // Get first 3 digits to determine zone
+export async function estimateDistanceFromPincode(fromPincode, toPincode) {
+  try {
+    // Primary path: look up both pincodes in the postal_zones table.
+    // If lat/lon are populated, use the precise Haversine formula.
+    // If only zone_codes are available, fall back to the zone_distances table.
+    const rows = await postalZoneRepo.findByPincodes([fromPincode, toPincode]);
+
+    if (rows.length === 2) {
+      const fromRow = rows.find(r => r.pincode === fromPincode);
+      const toRow   = rows.find(r => r.pincode === toPincode);
+
+      if (fromRow && toRow) {
+        // Precise path: lat/lon available
+        if (fromRow.lat && fromRow.lon && toRow.lat && toRow.lon) {
+          return calculateDistance(
+            { lat: parseFloat(fromRow.lat), lon: parseFloat(fromRow.lon) },
+            { lat: parseFloat(toRow.lat),   lon: parseFloat(toRow.lon)   }
+          );
+        }
+
+        // Zone-pair path: query zone_distances
+        if (fromRow.zone_code && toRow.zone_code) {
+          const distanceKm = await postalZoneRepo.findZoneDistance(fromRow.zone_code, toRow.zone_code);
+          if (distanceKm !== null) return distanceKm;
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('postal_zones lookup failed, using pincode approximation', { error: err.message });
+  }
+
+  // Fallback: first-3-digit pincode prefix approximation
   const fromZone = fromPincode.substring(0, 3);
-  const toZone = toPincode.substring(0, 3);
-
-  // Same zone
-  if (fromZone === toZone) {
-    return 50; // Within city/region
-  }
-
-  // Adjacent zones (simplified)
+  const toZone   = toPincode.substring(0, 3);
+  if (fromZone === toZone) return 50;
   const zoneDiff = Math.abs(parseInt(fromZone) - parseInt(toZone));
-  if (zoneDiff <= 50) {
-    return 300; // Regional
-  }
-
-  // Different regions
-  return 800; // Inter-regional
+  if (zoneDiff <= 50) return 300;
+  return 800;
 }
 
 export default {

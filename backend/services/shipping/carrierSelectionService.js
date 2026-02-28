@@ -9,20 +9,21 @@
  */
 
 import logger from '../../utils/logger.js';
+import carrierRepo from '../../repositories/CarrierRepository.js';
+import { AppError } from '../../errors/AppError.js';
 
 /**
- * Compare quotes and select the best one based on criteria
- * 
+ * Compare quotes and select the best one based on criteria.
+ * Fetches live carrier reliability scores from the DB (carriers.reliability_score)
+ * and falls back to industry-standard defaults when no DB record exists.
+ *
  * @param {Array} quotes - Array of quotes from carriers
  * @param {Object} criteria - Selection criteria
- * @param {Number} criteria.prioritizePrice - Weight for price (default 0.5)
- * @param {Number} criteria.prioritizeSpeed - Weight for speed (default 0.3)
- * @param {Number} criteria.reliabilityWeight - Weight for reliability (default 0.2)
  * @returns {Object} Best quote with scores
  */
-export function selectBestQuote(quotes, criteria = {}) {
+export async function selectBestQuote(quotes, criteria = {}) {
   if (quotes.length === 0) {
-    throw new Error('No quotes available to select from');
+    throw new AppError('No quotes available to select from', 422);
   }
 
   const {
@@ -30,6 +31,12 @@ export function selectBestQuote(quotes, criteria = {}) {
     prioritizeSpeed = 0.3,     // 30% weight to delivery speed
     reliabilityWeight = 0.2    // 20% weight to carrier reliability
   } = criteria;
+
+  // Fetch carrier reliability scores from DB in one query (by code)
+  const uniqueCodes = [...new Set(quotes.map(q => q.carrierCode).filter(Boolean))];
+  const scoresMap = uniqueCodes.length > 0
+    ? await carrierRepo.findReliabilityScoresByCode(uniqueCodes)
+    : {};
 
   // Calculate scores for each quote
   const quotesWithScores = quotes.map(quote => {
@@ -45,8 +52,11 @@ export function selectBestQuote(quotes, criteria = {}) {
     const speedScore = maxDays === minDays ? 1 :
       (maxDays - quote.estimatedDeliveryDays) / (maxDays - minDays);
 
-    // Reliability score (from historical data)
-    const reliabilityScore = getCarrierReliabilityScore(quote.carrierCode);
+    // Reliability score — from DB (live); fallback to industry defaults
+    const FALLBACK_SCORES = { DHL: 0.95, FEDEX: 0.92, BLUEDART: 0.90, DELHIVERY: 0.85 };
+    const reliabilityScore = scoresMap[quote.carrierCode]
+      ?? FALLBACK_SCORES[quote.carrierCode]
+      ?? 0.80;
 
     // Calculate weighted score
     const totalScore = 
@@ -81,23 +91,23 @@ export function selectBestQuote(quotes, criteria = {}) {
 }
 
 /**
- * Get carrier reliability score from historical data
- * In production, this would query actual performance metrics
- * 
+ * Get carrier reliability score.
+ * Queries the carriers table; falls back to industry-standard defaults.
+ * Returns a Promise — await at call site.
+ *
  * @param {String} carrierCode - Carrier code (DHL, FEDEX, etc.)
- * @returns {Number} Reliability score between 0 and 1
+ * @returns {Promise<Number>} Reliability score between 0 and 1
  */
-export function getCarrierReliabilityScore(carrierCode) {
-  // Simulated reliability scores based on industry reputation
-  const reliabilityMap = {
-    'DHL': 0.95,
-    'FEDEX': 0.92,
-    'BLUEDART': 0.90,
-    'DELHIVERY': 0.85,
-    'DEFAULT': 0.80
-  };
-
-  return reliabilityMap[carrierCode] || reliabilityMap['DEFAULT'];
+export async function getCarrierReliabilityScore(carrierCode) {
+  try {
+    const score = await carrierRepo.findReliabilityScoreByCode(carrierCode);
+    if (score !== null) return score;
+  } catch (err) {
+    logger.warn('Could not fetch carrier reliability score from DB, using fallback', { carrierCode, err: err.message });
+  }
+  // Fallback: industry-standard estimates
+  const FALLBACK = { DHL: 0.95, FEDEX: 0.92, BLUEDART: 0.90, DELHIVERY: 0.85 };
+  return FALLBACK[carrierCode] ?? 0.80;
 }
 
 export default {

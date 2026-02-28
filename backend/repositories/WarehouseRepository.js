@@ -1,5 +1,6 @@
 // Warehouse Repository - handles warehouse CRUD and statistics
 import BaseRepository from './BaseRepository.js';
+import { ValidationError } from '../errors/AppError.js';
 
 class WarehouseRepository extends BaseRepository {
   constructor() {
@@ -206,7 +207,7 @@ class WarehouseRepository extends BaseRepository {
     }
 
     if (updates.length === 0) {
-      throw new Error('No fields to update');
+      throw new ValidationError('No fields to update');
     }
 
     updates.push(`updated_at = NOW()`);
@@ -346,6 +347,128 @@ class WarehouseRepository extends BaseRepository {
     }
     query += ` ORDER BY name ASC`;
     const result = await this.query(query, params, client);
+    return result.rows;
+  }
+
+  /**
+   * Get aggregate inventory stats (count + total qty) for a single warehouse.
+   */
+  async getInventoryStats(warehouseId, client = null) {
+    const result = await this.query(
+      `SELECT COUNT(*) AS inventory_count,
+              COALESCE(SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity), 0) AS total_qty
+       FROM inventory WHERE warehouse_id = $1`,
+      [warehouseId], client
+    );
+    return result.rows[0] || { inventory_count: 0, total_qty: 0 };
+  }
+
+  /**
+   * Batch aggregate inventory stats for multiple warehouses.
+   * Returns a map of { warehouseId → { inventory_count, total_qty } }
+   */
+  async getInventoryStatsBatch(warehouseIds, client = null) {
+    if (!warehouseIds.length) return {};
+    const result = await this.query(
+      `SELECT warehouse_id,
+              COUNT(*) AS inventory_count,
+              COALESCE(SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity), 0) AS total_qty
+       FROM inventory WHERE warehouse_id = ANY($1) GROUP BY warehouse_id`,
+      [warehouseIds], client
+    );
+    return result.rows.reduce((acc, row) => {
+      acc[row.warehouse_id] = { inventory_count: parseInt(row.inventory_count), total_qty: parseInt(row.total_qty) };
+      return acc;
+    }, {});
+  }
+
+  /**
+   * Lightweight warehouse lookup returning only coordinates and basic info.
+   * Used by shipping-quote controller to resolve a warehouse_id → lat/lon origin.
+   *
+   * @param {string} id
+   * @param {object|null} client
+   * @returns {Promise<object|null>}
+   */
+  async findByIdSimple(id, client = null) {
+    const result = await this.query(
+      `SELECT id, name, address, postal_code,
+              latitude  AS lat,
+              longitude AS lon
+       FROM warehouses WHERE id = $1`,
+      [id], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Recompute and persist current_utilization for a single warehouse.
+   * Called after any inventory mutation (create / adjust / transfer).
+   * Non-fatal: errors are swallowed at the call site.
+   *
+   * @param {string} warehouseId
+   * @param {object|null} client
+   */
+  async refreshUtilization(warehouseId, client = null) {
+    await this.query(
+      `UPDATE warehouses
+       SET current_utilization = LEAST(
+         ROUND(
+           COALESCE(
+             (SELECT SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity)
+              FROM inventory
+              WHERE warehouse_id = $1),
+             0
+           ) * 100.0 / NULLIF(capacity, 0),
+           100
+         ), 2
+       ),
+       updated_at = NOW()
+       WHERE id = $1`,
+      [warehouseId], client
+    );
+  }
+
+  /**
+   * Upsert a placeholder warehouse entry by code.
+   * Used when a webhook references a warehouse that doesn't exist yet.
+   */
+  async upsertPlaceholder(code, name, address, client = null) {
+    const result = await this.query(
+      `INSERT INTO warehouses (code, name, address, is_active, created_at)
+       VALUES ($1, $2, $3, true, NOW())
+       ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
+       RETURNING id`,
+      [code, name, address], client
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Get inventory snapshot report per warehouse.
+   */
+  async getInventorySnapshotReport(warehouseId, client = null) {
+    const result = await this.query(
+      `SELECT
+         w.id AS warehouse_id,
+         w.code AS warehouse_code,
+         w.name AS warehouse_name,
+         COUNT(i.id)                              AS distinct_skus,
+         COALESCE(SUM(i.quantity), 0)             AS total_units,
+         COALESCE(SUM(i.reserved_quantity), 0)    AS reserved_units,
+         COALESCE(SUM(i.available_quantity), 0)   AS available_units,
+         COUNT(i.id) FILTER (
+           WHERE i.low_stock_threshold IS NOT NULL
+             AND i.quantity <= i.low_stock_threshold
+         ) AS low_stock_skus
+       FROM warehouses w
+       LEFT JOIN inventory i ON i.warehouse_id = w.id
+       WHERE w.is_active = true
+         AND ($1::uuid IS NULL OR w.id = $1)
+       GROUP BY w.id, w.code, w.name
+       ORDER BY w.name`,
+      [warehouseId || null], client
+    );
     return result.rows;
   }
 }

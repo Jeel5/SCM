@@ -1,5 +1,6 @@
 BELOW ARE MNY DOUBTS ASSUME I MAY NOT KNOW WHAT I AM TALKING ABOUT AND DO NOT KNOW
-THE PROPER WAY
+THE PROPER WAY ANALYZE CLEAR MY DOUBTS SOLVE MY ISSUES AND TELL ME WHAT I NEED TO
+KNOW 
 
 swallowing of api --server.js
 why logic of query in routes it should inconsistency is it supposed to be like that --carrier.js

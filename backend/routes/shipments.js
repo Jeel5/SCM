@@ -8,7 +8,7 @@ import {
   simulateTrackingUpdate,
   getTrackingTimeline
 } from '../controllers/trackingController.js';
-import { authenticate } from '../middlewares/auth.js';
+import { authenticate, optionalAuth } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
 import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { verifyWebhookSignature } from '../middlewares/webhookAuth.js';
@@ -20,13 +20,6 @@ import {
 } from '../validators/shipmentSchemas.js';
 
 const router = express.Router();
-
-// Carriers use carrier_id param instead of JWT; authenticated users get org-scoped results
-const optionalAuth = (req, res, next) => {
-  if (req.headers.authorization) return authenticate(req, res, next);
-  req.user = null;
-  next();
-};
 
 // Carrier portal — carriers filter by carrier_id param; authenticated users see org-scoped results
 router.get('/shipments', optionalAuth, validateQuery(listShipmentsQuerySchema), listShipments);
@@ -45,6 +38,10 @@ router.get('/shipments/:trackingNumber/details', authenticate, injectOrgContext,
 router.get('/shipments/:trackingNumber/timeline', authenticate, injectOrgContext, authorize('shipments:read'), getTrackingTimeline);
 router.post('/shipments/:trackingNumber/update-tracking', verifyWebhookSignature(), updateShipmentTracking);
 router.post('/shipments/:trackingNumber/calculate-route', authenticate, injectOrgContext, authorize('shipments:update'), calculateRoute);
-router.post('/shipments/:trackingNumber/simulate-update', authenticate, injectOrgContext, authorize('shipments:update'), simulateTrackingUpdate);
+// Only expose the simulate-update endpoint in non-production environments.
+// This endpoint writes fake tracking events and must never be reachable in production.
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/shipments/:trackingNumber/simulate-update', authenticate, injectOrgContext, authorize('shipments:update'), simulateTrackingUpdate);
+}
 
 export default router;

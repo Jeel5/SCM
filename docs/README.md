@@ -1,6 +1,6 @@
 # TwinChain SCM — Documentation Index
 
-> Last updated: 2026-02-22  
+> Last updated: 2026-02-27  
 > System version: 2.1.0
 
 ---
@@ -27,6 +27,12 @@
 | **ARCHITECTURE.md** | Backend architecture decisions and patterns |
 | **CODE_GUIDE.md** | Code structure, patterns and conventions |
 | **QUICK_REFERENCE.md** | Quick reference for common development tasks |
+| **PATTERNS.md** | Full pattern library: asyncHandler, repositories, org-context, error classes |
+| **ANSWERS.md** | Q&A on architectural decisions and deep-dive explanations |
+| **ARCHITECTURE_TASKS.md** | Tracked architecture improvement tasks (R1–R17+) |
+| **DATABASE_REVIEW.md** | DB architect review — schema evaluation against industry standards |
+| **DOUBTS.md** | Development questions and clarifications |
+| **STRUCTURE.md** | Codebase structure and module layout notes |
 
 ### `/demo`
 | File | Contents |
@@ -73,6 +79,11 @@
 |---|---|
 | **SUPERADMIN_GUIDE.md** | Platform superadmin operations |
 | **PRODUCTION_IMPROVEMENTS_CHECKLIST.md** | Pre-production readiness checklist |
+| **CODEBASE_AUDIT.md** | Live audit of architectural issues, inline TODOs, and production-unsafe features |
+| **REMAINING_WORK.md** | Active tracker — what's left to build/fix (Rounds R1–R17+) |
+| **PROGRESS_REPORT.md** | Project progress report and system overview |
+| **REVIEW_FINDINGS.md** | Per-file review session findings and fix record |
+| **FUTURE_WORK.md** | Out-of-scope future improvements (post-MVP, non-blocking) |
 
 ---
 

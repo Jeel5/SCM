@@ -11,15 +11,25 @@
  */
 
 import axios from 'axios';
-import db from '../../config/db.js';
+import CarrierRepository from '../../repositories/CarrierRepository.js';
 import logger from '../../utils/logger.js';
 import { calculateDistance, addDays, addHours } from './shippingUtils.js';
 import { checkCarrierRejectionReasons } from './carrierValidationService.js';
 import { storeQuotes, storeRejections } from './quoteDataService.js';
 import { decryptField } from '../../utils/cryptoUtils.js';
+import { AppError } from '../../errors/AppError.js';
 
-// Default timeout for outbound carrier API calls (10 seconds)
-const CARRIER_API_TIMEOUT_MS = parseInt(process.env.CARRIER_API_TIMEOUT_MS || '10000', 10);
+// Default timeout for outbound carrier API calls when no per-carrier value is set.
+// Individual carriers may override this via the `api_timeout_ms` column (see migration 023).
+// Hard cap: 45 000 ms — prevents misconfiguration from blocking the event loop.
+const DEFAULT_CARRIER_API_TIMEOUT_MS = parseInt(process.env.CARRIER_API_TIMEOUT_MS || '15000', 10);
+const MAX_CARRIER_API_TIMEOUT_MS = 45000;
+
+/** Resolve the effective timeout for a carrier row returned from the DB. */
+function resolveCarrierTimeout(carrier) {
+  const raw = carrier.api_timeout_ms ?? DEFAULT_CARRIER_API_TIMEOUT_MS;
+  return Math.min(raw, MAX_CARRIER_API_TIMEOUT_MS);
+}
 
 /**
  * Get shipping quotes from all active carriers after order is placed
@@ -43,18 +53,10 @@ export async function getQuotesFromAllCarriers(shipmentDetails) {
     const requiresColdStorage = items.some(item => item.requires_cold_storage);
 
     // Get all active carriers (prefer those with API endpoints for PUSH model)
-    const { rows: carriersWithAPI } = await db.query(
-      `SELECT id, name, code, api_endpoint, api_key_encrypted, is_active, availability_status
-       FROM carriers 
-       WHERE is_active = true AND api_endpoint IS NOT NULL`
-    );
+    const carriersWithAPI = await CarrierRepository.findActiveWithApiEndpoint();
 
     // Also get carriers without API (PULL model - they check carrier portal)
-    const { rows: allActiveCarriers } = await db.query(
-      `SELECT id, name, code, api_endpoint, api_key_encrypted, is_active, availability_status
-       FROM carriers 
-       WHERE is_active = true`
-    );
+    const allActiveCarriers = await CarrierRepository.findAllActive();
 
     if (allActiveCarriers.length === 0) {
       logger.warn('No active carriers in system at all - order will wait in pending state', { orderId });
@@ -196,6 +198,8 @@ export async function getQuotesFromAllCarriers(shipmentDetails) {
  */
 export async function getCarrierQuoteWithAcceptance(carrier, shipmentDetails) {
   const { origin, destination, totalWeight, hasFragileItems, requiresColdStorage } = shipmentDetails;
+  // Resolve per-carrier timeout (DB value, capped, falling back to env-var default)
+  const timeoutMs = resolveCarrierTimeout(carrier);
 
   try {
     // Carriers might reject for various reasons
@@ -211,8 +215,8 @@ export async function getCarrierQuoteWithAcceptance(carrier, shipmentDetails) {
       };
     }
 
-    // Carrier accepts - get the quote
-    const quote = await getQuoteFromCarrier(carrier, shipmentDetails);
+    // Carrier accepts - get the quote using its own timeout
+    const quote = await getQuoteFromCarrier(carrier, shipmentDetails, timeoutMs);
     
     return {
       accepted: true,
@@ -249,14 +253,10 @@ export async function getQuotesFromAllCarriersLegacy(shipmentDetails) {
     const requiresColdStorage = items.some(item => item.requires_cold_storage);
 
     // Get all active carriers
-    const { rows: carriers } = await db.query(
-      `SELECT id, name, code, api_endpoint, api_key_encrypted, is_active
-       FROM carriers 
-       WHERE is_active = true AND api_endpoint IS NOT NULL`
-    );
+    const carriers = await CarrierRepository.findActiveWithApiEndpoint();
 
     if (carriers.length === 0) {
-      throw new Error('No active carriers with API configuration found');
+      throw new AppError('No active carriers with API configuration found', 503);
     }
 
     logger.info(`Getting quotes from ${carriers.length} carriers`, {
@@ -316,30 +316,32 @@ export async function getQuotesFromAllCarriersLegacy(shipmentDetails) {
  * @param {Object} shipmentDetails - Shipment details
  * @returns {Object} Quote from carrier
  */
-export async function getQuoteFromCarrier(carrier, shipmentDetails) {
+export async function getQuoteFromCarrier(carrier, shipmentDetails, timeoutMs) {
   const { origin, destination, totalWeight, hasFragileItems, requiresColdStorage, items } = shipmentDetails;
+  // Fall back to resolved default when called directly (e.g. legacy path)
+  const effectiveTimeout = timeoutMs ?? resolveCarrierTimeout(carrier);
 
   try {
     // Different carriers have different API formats
-    // This routes to specific adapter for each carrier
+    // This routes to the carrier-specific adapter.
     
     let quote;
     
     switch (carrier.code) {
       case 'DHL':
-        quote = await getDHLQuote(carrier, shipmentDetails);
+        quote = await getDHLQuote(carrier, shipmentDetails, effectiveTimeout);
         break;
       case 'FEDEX':
-        quote = await getFedExQuote(carrier, shipmentDetails);
+        quote = await getFedExQuote(carrier, shipmentDetails, effectiveTimeout);
         break;
       case 'BLUEDART':
-        quote = await getBlueDartQuote(carrier, shipmentDetails);
+        quote = await getBlueDartQuote(carrier, shipmentDetails, effectiveTimeout);
         break;
       case 'DELHIVERY':
-        quote = await getDelhiveryQuote(carrier, shipmentDetails);
+        quote = await getDelhiveryQuote(carrier, shipmentDetails, effectiveTimeout);
         break;
       default:
-        quote = await getGenericQuote(carrier, shipmentDetails);
+        quote = await getGenericQuote(carrier, shipmentDetails, effectiveTimeout);
     }
 
     return {
@@ -354,7 +356,7 @@ export async function getQuoteFromCarrier(carrier, shipmentDetails) {
       carrier: carrier.code,
       error: error.message 
     });
-    throw new Error(`${carrier.name}: ${error.message}`);
+    throw new AppError(`${carrier.name}: ${error.message}`, 502);
   }
 }
 
@@ -362,7 +364,7 @@ export async function getQuoteFromCarrier(carrier, shipmentDetails) {
  * Get quote from DHL API
  * Handles DHL-specific API format and response structure
  */
-async function getDHLQuote(carrier, shipmentDetails) {
+async function getDHLQuote(carrier, shipmentDetails, timeoutMs) {
   const { origin, destination, totalWeight, items } = shipmentDetails;
 
   // DHL API endpoint (production would use real DHL API)
@@ -399,7 +401,7 @@ async function getDHLQuote(carrier, shipmentDetails) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: CARRIER_API_TIMEOUT_MS
+      timeout: timeoutMs   // per-carrier timeout from DB (migration 023)
     });
     */
 
@@ -422,7 +424,7 @@ async function getDHLQuote(carrier, shipmentDetails) {
       }
     };
   } catch (error) {
-    throw new Error(`DHL API error: ${error.message}`);
+    throw new AppError(`DHL API error: ${error.message}`, 502);
   }
 }
 
@@ -430,7 +432,7 @@ async function getDHLQuote(carrier, shipmentDetails) {
  * Get quote from FedEx API
  * Handles FedEx-specific API format and response structure
  */
-async function getFedExQuote(carrier, shipmentDetails) {
+async function getFedExQuote(carrier, shipmentDetails, timeoutMs) {
   const { origin, destination, totalWeight } = shipmentDetails;
 
   try {
@@ -453,7 +455,7 @@ async function getFedExQuote(carrier, shipmentDetails) {
       }
     };
   } catch (error) {
-    throw new Error(`FedEx API error: ${error.message}`);
+    throw new AppError(`FedEx API error: ${error.message}`, 502);
   }
 }
 
@@ -461,7 +463,7 @@ async function getFedExQuote(carrier, shipmentDetails) {
  * Get quote from Blue Dart API
  * Handles Blue Dart-specific API format and response structure
  */
-async function getBlueDartQuote(carrier, shipmentDetails) {
+async function getBlueDartQuote(carrier, shipmentDetails, timeoutMs) {
   const { origin, destination, totalWeight } = shipmentDetails;
 
   try {
@@ -484,7 +486,7 @@ async function getBlueDartQuote(carrier, shipmentDetails) {
       }
     };
   } catch (error) {
-    throw new Error(`Blue Dart API error: ${error.message}`);
+    throw new AppError(`Blue Dart API error: ${error.message}`, 502);
   }
 }
 
@@ -492,7 +494,7 @@ async function getBlueDartQuote(carrier, shipmentDetails) {
  * Get quote from Delhivery API
  * Handles Delhivery-specific API format and response structure
  */
-async function getDelhiveryQuote(carrier, shipmentDetails) {
+async function getDelhiveryQuote(carrier, shipmentDetails, timeoutMs) {
   const { origin, destination, totalWeight } = shipmentDetails;
 
   try {
@@ -515,7 +517,7 @@ async function getDelhiveryQuote(carrier, shipmentDetails) {
       }
     };
   } catch (error) {
-    throw new Error(`Delhivery API error: ${error.message}`);
+    throw new AppError(`Delhivery API error: ${error.message}`, 502);
   }
 }
 
@@ -523,7 +525,7 @@ async function getDelhiveryQuote(carrier, shipmentDetails) {
  * Generic quote method for carriers without specific implementation
  * Fallback for new carriers not yet implemented
  */
-async function getGenericQuote(carrier, shipmentDetails) {
+async function getGenericQuote(carrier, shipmentDetails, timeoutMs) {
   const { totalWeight } = shipmentDetails;
 
   return {

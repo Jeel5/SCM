@@ -1,595 +1,199 @@
 // Shipments Controller - handles HTTP requests for shipment tracking
-import pool from '../config/db.js';
-import logger from '../utils/logger.js';
+import shipmentRepo from '../repositories/ShipmentRepository.js';
+import orderRepo from '../repositories/OrderRepository.js';
+import shipmentService from '../services/shipmentService.js';
+import { withTransaction } from '../utils/dbTransaction.js';
+import { asyncHandler, NotFoundError } from '../errors/index.js';
+
+// ─── Shipment State Machine lives in services/shipmentService.js ───────────────────────
+// Import SHIPMENT_VALID_TRANSITIONS from there if needed in other controller functions.
 
 // Get shipments list with filters and pagination
-export async function listShipments(req, res) {
-  try {
-    // Use validatedQuery for Joi-validated params (with type coercion)
-    const queryParams = req.validatedQuery || req.query;
-    const { status, carrier_id, search, page, limit } = queryParams;
-    const offset = (page - 1) * limit;
-    
-    // Get organization context for multi-tenancy
-    const organizationId = req.orgContext?.organizationId;
-    
-    let query = `
-      SELECT s.*, c.name as carrier_name, c.code as carrier_code, o.order_number,
-             w.name as warehouse_name
-      FROM shipments s
-      LEFT JOIN carriers c ON s.carrier_id = c.id
-      LEFT JOIN orders o ON s.order_id = o.id
-      LEFT JOIN warehouses w ON s.warehouse_id = w.id
-      WHERE 1=1
-    `;
-    const params = [];
-    
-    // Multi-tenant filter: restrict to user's organization
-    if (organizationId) {
-      params.push(organizationId);
-      query += ` AND s.organization_id = $${params.length}`;
+export const listShipments = asyncHandler(async (req, res) => {
+  // Use validatedQuery for Joi-validated params (with type coercion)
+  const queryParams = req.validatedQuery || req.query;
+  const { status, carrier_id, search, page, limit } = queryParams;
+  const organizationId = req.orgContext?.organizationId;
+
+  const pageNum  = parseInt(page)  || 1;
+  const limitNum = Math.min(parseInt(limit) || 20, 100);
+
+  const { shipments: rows, totalCount } = await shipmentRepo.findShipmentsWithDetails({
+    page: pageNum, limit: limitNum, status, carrier_id, search, organizationId,
+  });
+
+  // Batch-load events for all returned shipments — avoids N+1 (T3-01)
+  const shipmentIds = rows.map(r => r.id);
+  const allEvents = await shipmentRepo.findTrackingEventsByIds(shipmentIds);
+
+  const eventsByShipment = allEvents.reduce((acc, e) => {
+    (acc[e.shipment_id] = acc[e.shipment_id] || []).push(e);
+    return acc;
+  }, {});
+
+  const shipments = rows.map(row => ({
+    id: row.id,
+    trackingNumber: row.tracking_number,
+    orderId: row.order_id,
+    orderNumber: row.order_number,
+    carrierId: row.carrier_id,
+    carrierName: row.carrier_name,
+    carrierCode: row.carrier_code,
+    warehouseId: row.warehouse_id,
+    warehouseName: row.warehouse_name,
+    status: row.status,
+    origin: row.origin_address,
+    destination: row.destination_address,
+    currentLocation: row.current_location,
+    weight: parseFloat(row.weight || 0),
+    cost: parseFloat(row.shipping_cost || 0),
+    estimatedDelivery: row.delivery_scheduled,
+    slaDeadline: row.delivery_scheduled,
+    pickupScheduled: row.pickup_scheduled,
+    pickupActual: row.pickup_actual,
+    deliveryActual: row.delivery_actual,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    events: (eventsByShipment[row.id] || []).map(e => ({
+      id: e.id,
+      shipmentId: e.shipment_id,
+      status: e.event_type,
+      location: e.location,
+      timestamp: e.event_timestamp,
+      description: e.description
+    }))
+  }));
+  
+  res.json({
+    success: true,
+    data: shipments,
+    pagination: {
+      total: totalCount,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(totalCount / limitNum)
     }
-    
-    if (status) {
-      params.push(status);
-      query += ` AND s.status = $${params.length}`;
-    }
-    
-    if (carrier_id) {
-      params.push(carrier_id);
-      query += ` AND s.carrier_id = $${params.length}`;
-    }
-    
-    if (search) {
-      params.push(`%${search}%`);
-      query += ` AND (s.tracking_number ILIKE $${params.length} OR o.order_number ILIKE $${params.length})`;
-    }
-    
-    // Count query
-    const countParams = [...params];
-    const countResult = await pool.query(
-      query.replace(/SELECT .* FROM/, 'SELECT COUNT(*) FROM').split('ORDER BY')[0],
-      countParams
-    );
-    const total = countResult.rows && countResult.rows[0] ? parseInt(countResult.rows[0].count) : 0;
-    
-    query += ` ORDER BY s.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
-    
-    const result = await pool.query(query, params);
-    
-    // Get events for each shipment
-    const shipments = await Promise.all(result.rows.map(async (row) => {
-      const eventsResult = await pool.query(
-        `SELECT * FROM shipment_events WHERE shipment_id = $1 ORDER BY event_timestamp ASC`,
-        [row.id]
-      );
-      
-      return {
-        id: row.id,
-        trackingNumber: row.tracking_number,
-        orderId: row.order_id,
-        orderNumber: row.order_number,
-        carrierId: row.carrier_id,
-        carrierName: row.carrier_name,
-        carrierCode: row.carrier_code,
-        warehouseId: row.warehouse_id,
-        warehouseName: row.warehouse_name,
-        status: row.status,
-        origin: row.origin_address,
-        destination: row.destination_address,
-        currentLocation: row.current_location,
-        weight: parseFloat(row.weight || 0),
-        cost: parseFloat(row.shipping_cost || 0),
-        estimatedDelivery: row.delivery_scheduled,
-        slaDeadline: row.delivery_scheduled,
-        pickupScheduled: row.pickup_scheduled,
-        pickupActual: row.pickup_actual,
-        deliveryActual: row.delivery_actual,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        events: eventsResult.rows.map(e => ({
-          id: e.id,
-          shipmentId: e.shipment_id,
-          status: e.event_type,
-          location: e.location,
-          timestamp: e.event_timestamp,
-          description: e.description
-        }))
-      };
-    }));
-    
-    res.json({
-      success: true,
-      data: shipments,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('List shipments error:', error);
-    res.status(500).json({ success: false, error: 'Failed to list shipments' });
-  }
-}
+  });
+});
 
 // Get single shipment
-export async function getShipment(req, res) {
-  try {
-    const { id } = req.params;
-    
-    // Get organization context for multi-tenancy
-    const organizationId = req.orgContext?.organizationId;
-    
-    let query = `SELECT s.*, c.name as carrier_name, o.order_number, w.name as warehouse_name
-       FROM shipments s
-       LEFT JOIN carriers c ON s.carrier_id = c.id
-       LEFT JOIN orders o ON s.order_id = o.id
-       LEFT JOIN warehouses w ON s.warehouse_id = w.id
-       WHERE s.id = $1`;
-    const params = [id];
-    
-    if (organizationId) {
-      params.push(organizationId);
-      query += ` AND s.organization_id = $${params.length}`;
-    }
-    
-    const result = await pool.query(query, params);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shipment not found' });
-    }
-    
-    const row = result.rows[0];
-    
-    // Get events
-    const eventsResult = await pool.query(
-      `SELECT * FROM shipment_events WHERE shipment_id = $1 ORDER BY event_timestamp ASC`,
-      [id]
-    );
-    
-    res.json({
-      success: true,
-      data: {
-        id: row.id,
-        trackingNumber: row.tracking_number,
-        orderId: row.order_id,
-        orderNumber: row.order_number,
-        carrierId: row.carrier_id,
-        carrierName: row.carrier_name,
-        status: row.status,
-        origin: row.origin_address,
-        destination: row.destination_address,
-        currentLocation: row.current_location,
-        weight: parseFloat(row.weight || 0),
-        cost: parseFloat(row.shipping_cost || 0),
-        estimatedDelivery: row.delivery_scheduled,
-        createdAt: row.created_at,
-        events: eventsResult.rows.map(e => ({
-          id: e.id,
-          status: e.event_type,
-          location: e.location,
-          timestamp: e.event_timestamp,
-          description: e.description
-        }))
-      }
-    });
-  } catch (error) {
-    console.error('Get shipment error:', error);
-    res.status(500).json({ error: 'Failed to get shipment' });
-  }
-}
+export const getShipment = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
 
-// Get shipment timeline
-export async function getShipmentTimeline(req, res) {
-  try {
-    const { id } = req.params;
-    
-    const organizationId = req.user?.organizationId;
-    const result = await pool.query(
-      `SELECT se.*, s.tracking_number
-       FROM shipment_events se
-       JOIN shipments s ON se.shipment_id = s.id
-       WHERE se.shipment_id = $1${organizationId ? ' AND s.organization_id = $2' : ''}
-       ORDER BY se.event_timestamp ASC`,
-      organizationId ? [id, organizationId] : [id]
-    );
-    
-    res.json({
-      success: true,
-      data: result.rows.map(e => ({
+  const row = await shipmentRepo.findShipmentDetails(id, organizationId);
+  if (!row) throw new NotFoundError('Shipment');
+
+  const eventsResult = await shipmentRepo.findTrackingEvents(id);
+
+  res.json({
+    success: true,
+    data: {
+      id: row.id,
+      trackingNumber: row.tracking_number,
+      orderId: row.order_id,
+      orderNumber: row.order_number,
+      carrierId: row.carrier_id,
+      carrierName: row.carrier_name,
+      status: row.status,
+      origin: row.origin_address,
+      destination: row.destination_address,
+      currentLocation: row.current_location,
+      weight: parseFloat(row.weight || 0),
+      cost: parseFloat(row.shipping_cost || 0),
+      estimatedDelivery: row.delivery_scheduled,
+      createdAt: row.created_at,
+      events: eventsResult.map(e => ({
         id: e.id,
-        shipmentId: e.shipment_id,
         status: e.event_type,
         location: e.location,
         timestamp: e.event_timestamp,
         description: e.description
       }))
-    });
-  } catch (error) {
-    console.error('Get timeline error:', error);
-    res.status(500).json({ error: 'Failed to get timeline' });
-  }
-}
+    }
+  });
+});
+
+// Get shipment timeline
+export const getShipmentTimeline = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+
+  const events = await shipmentRepo.findTimelineByShipmentId(id, organizationId);
+
+  res.json({
+    success: true,
+    data: events.map(e => ({
+      id: e.id,
+      shipmentId: e.shipment_id,
+      status: e.event_type,
+      location: e.location,
+      timestamp: e.event_timestamp,
+      description: e.description
+    }))
+  });
+});
 
 // Create shipment
-export async function createShipment(req, res) {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
-    
-    const { order_id, carrier_id, carrier_name, origin, destination } = req.body;
-    
-    // Get order details
-    const orderResult = await client.query(
-      `SELECT o.*, json_agg(oi.*) as items FROM orders o
-       LEFT JOIN order_items oi ON o.id = oi.order_id
-       WHERE o.id = $1 GROUP BY o.id`,
-      [order_id]
+export const createShipment = asyncHandler(async (req, res) => {
+  const { order_id, carrier_id, origin, destination } = req.body;
+  // Inject org context so the shipment is scoped to the creating org (T1-03)
+  const organizationId = req.orgContext?.organizationId;
+
+  const shipment = await withTransaction(async (tx) => {
+    const order = await orderRepo.findOrderWithItems(order_id, undefined, tx);
+    if (!order) throw new NotFoundError('Order');
+
+    const trackingNumber = req.body.tracking_number
+      || `TRK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+    const row = await shipmentRepo.createShipment(
+      { tracking_number: trackingNumber, order_id, carrier_id, origin, destination, organization_id: organizationId },
+      tx
     );
-    
-    if (orderResult.rows.length === 0) {
-      throw new Error('Order not found');
-    }
-    
-    const order = orderResult.rows[0];
-    const trackingNumber = req.body.tracking_number || `TRK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    
-    const shipmentResult = await client.query(
-      `INSERT INTO shipments (tracking_number, order_id, carrier_id, 
-                             origin_address, destination_address, status, pickup_scheduled)
-       VALUES ($1, $2, $3, $4, $5, 'pending', NOW() + INTERVAL '1 day') RETURNING *`,
-      [trackingNumber, order_id, carrier_id, 
-       JSON.stringify(origin), JSON.stringify(destination)]
+
+    await shipmentRepo.addTrackingEvent(
+      { shipment_id: row.id, event_type: 'created', description: 'Shipment created and pickup scheduled' },
+      tx
     );
-    
-    const shipment = shipmentResult.rows[0];
-    
-    // Create initial event
-    await client.query(
-      `INSERT INTO shipment_events (shipment_id, event_type, description, event_timestamp)
-       VALUES ($1, 'created', 'Shipment created and pickup scheduled', NOW())`,
-      [shipment.id]
-    );
-    
-    // Update order status
-    await client.query(
-      `UPDATE orders SET status = 'shipped', updated_at = NOW() WHERE id = $1`,
-      [order_id]
-    );
-    
-    await client.query('COMMIT');
-    
-    res.status(201).json({
-      success: true,
-      message: 'Shipment created',
-      data: { ...shipment, trackingNumber: shipment.tracking_number }
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Create shipment error:', error);
-    res.status(500).json({ error: error.message || 'Failed to create shipment' });
-  } finally {
-    client.release();
-  }
-}
+
+    await orderRepo.updateStatus(order_id, 'shipped', tx);
+
+    return row;
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Shipment created',
+    data: { ...shipment, trackingNumber: shipment.tracking_number }
+  });
+});
 
 // Update shipment status
-export async function updateShipmentStatus(req, res) {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
-    
-    const { id } = req.params;
-    const { status, location, notes } = req.body;
-    
-    await client.query(
-      `UPDATE shipments SET status = $1, current_location = $2, updated_at = NOW() WHERE id = $3`,
-      [status, location ? JSON.stringify(location) : null, id]
-    );
-    
-    await client.query(
-      `INSERT INTO shipment_events (shipment_id, event_type, location, description, event_timestamp)
-       VALUES ($1, $2, $3, $4, NOW())`,
-      [id, status, location ? JSON.stringify(location) : null, notes]
-    );
-    
-    if (status === 'delivered') {
-      await client.query(
-        `UPDATE shipments SET delivery_actual = NOW() WHERE id = $1`,
-        [id]
-      );
-      
-      // Get order details to check if it's a transfer order
-      const orderResult = await client.query(
-        `SELECT o.*, s.warehouse_id as from_warehouse_id
-         FROM orders o
-         JOIN shipments s ON o.id = s.order_id
-         WHERE s.id = $1`,
-        [id]
-      );
-      
-      const order = orderResult.rows[0];
-      
-      if (order && order.order_type === 'transfer') {
-        // TRANSFER ORDER DELIVERY - Auto-execute inventory transfer
-        logger.info('Transfer order delivered - executing inventory transfer', {
-          orderId: order.id,
-          orderNumber: order.order_number,
-          shipmentId: id
-        });
-        
-        // Get order items
-        const itemsResult = await client.query(
-          `SELECT * FROM order_items WHERE order_id = $1`,
-          [order.id]
-        );
-        
-        // Parse shipping address to get destination warehouse_id
-        // Format in notes: "Transfer: SourceWH → DestWH"
-        // Or we can parse from shipping_address JSON
-        const shippingAddress = typeof order.shipping_address === 'string' 
-          ? JSON.parse(order.shipping_address) 
-          : order.shipping_address;
-        
-        // Find destination warehouse by address match (safer: store in order metadata)
-        // For now, extract from order notes which has format: "TRANSFER ORDER\nReason: ...\n..."
-        // Better approach: Get from shipping_address or add to_warehouse_id to orders table
-        
-        // WORKAROUND: Query destination warehouse from shipping address
-        const destWarehouseResult = await client.query(
-          `SELECT id FROM warehouses WHERE address::text = $1 LIMIT 1`,
-          [JSON.stringify(shippingAddress)]
-        );
-        
-        if (destWarehouseResult.rows.length === 0) {
-          logger.error('Could not find destination warehouse for transfer order', {
-            orderId: order.id,
-            shippingAddress
-          });
-          throw new Error('Destination warehouse not found for transfer order');
-        }
-        
-        const toWarehouseId = destWarehouseResult.rows[0].id;
-        const fromWarehouseId = order.warehouse_id;
-        
-        // Execute inventory transfer for each item
-        for (const item of itemsResult.rows) {
-          // 1. Release reserved stock from source warehouse
-          await client.query(
-            `UPDATE inventory 
-             SET reserved_quantity = reserved_quantity - $1,
-                 updated_at = NOW()
-             WHERE sku = $2 AND warehouse_id = $3`,
-            [item.quantity, item.sku, fromWarehouseId]
-          );
-          
-          // 2. Deduct from source warehouse total
-          await client.query(
-            `UPDATE inventory 
-             SET quantity = quantity - $1,
-                 updated_at = NOW()
-             WHERE sku = $2 AND warehouse_id = $3`,
-            [item.quantity, item.sku, fromWarehouseId]
-          );
-          
-          // 3. Record movement at source (outbound)
-          await client.query(
-            `INSERT INTO stock_movements 
-             (inventory_id, movement_type, quantity, reference_type, reference_id, notes, performed_by)
-             SELECT id, 'transfer_out', $1, 'transfer_order', $2, $3, 'system'
-             FROM inventory 
-             WHERE sku = $4 AND warehouse_id = $5`,
-            [
-              item.quantity,
-              order.id,
-              `Transfer to warehouse ${toWarehouseId} - Shipment ${id}`,
-              item.sku,
-              fromWarehouseId
-            ]
-          );
-          
-          // 4. Add to destination warehouse (upsert)
-          await client.query(
-            `INSERT INTO inventory 
-             (warehouse_id, product_id, sku, product_name, quantity, available_quantity, reserved_quantity)
-             VALUES ($1, $2, $3, $4, $5, $5, 0)
-             ON CONFLICT (warehouse_id, sku) 
-             DO UPDATE SET 
-               quantity = inventory.quantity + $5,
-               available_quantity = inventory.available_quantity + $5,
-               updated_at = NOW()`,
-            [toWarehouseId, item.product_id, item.sku, item.product_name, item.quantity]
-          );
-          
-          // 5. Record movement at destination (inbound)
-          await client.query(
-            `INSERT INTO stock_movements 
-             (inventory_id, movement_type, quantity, reference_type, reference_id, notes, performed_by)
-             SELECT id, 'transfer_in', $1, 'transfer_order', $2, $3, 'system'
-             FROM inventory 
-             WHERE sku = $4 AND warehouse_id = $5`,
-            [
-              item.quantity,
-              order.id,
-              `Transfer from warehouse ${fromWarehouseId} - Shipment ${id}`,
-              item.sku,
-              toWarehouseId
-            ]
-          );
-        }
-        
-        logger.info('Inventory transfer completed', {
-          orderId: order.id,
-          fromWarehouse: fromWarehouseId,
-          toWarehouse: toWarehouseId,
-          itemCount: itemsResult.rows.length
-        });
-      }
-      
-      await client.query(
-        `UPDATE orders SET status = 'delivered', actual_delivery = NOW() 
-         WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
-        [id]
-      );
-    }
-    
-    await client.query('COMMIT');
-    res.json({ success: true, message: 'Shipment updated' });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Update shipment error:', error);
-    logger.error('Failed to update shipment status', { error: error.message, shipmentId: id });
-    res.status(500).json({ error: 'Failed to update shipment' });
-  } finally {
-    client.release();
-  }
-}
+export const updateShipmentStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status, location, notes } = req.body;
+  const organizationId = req.orgContext?.organizationId;
+
+  await shipmentService.updateStatus(id, status, location, notes, organizationId);
+  res.json({ success: true, message: 'Shipment updated' });
+});
 
 /**
  * Carrier confirms pickup - Method A: Carrier-Only Control
  * Only carrier can mark shipment as in_transit
  * SLA timer starts from this timestamp
  */
-export async function confirmPickup(req, res) {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
-    
-    const { id } = req.params;
-    const { 
-      pickupTimestamp,
-      driverName, 
-      vehicleNumber,
-      pickupProofUrl,
-      gpsLocation,
-      notes 
-    } = req.body;
+export const confirmPickup = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const requestedCarrierId = req.authenticatedCarrier?.id || req.user?.carrier_id || req.body.carrierId;
 
-    // Verify shipment exists and carrier owns it
-    const shipmentResult = await client.query(
-      `SELECT s.*, o.id as order_id, o.order_number, ca.carrier_id
-       FROM shipments s
-       JOIN orders o ON s.order_id = o.id
-       LEFT JOIN carrier_assignments ca ON s.carrier_assignment_id = ca.id
-       WHERE s.id = $1`,
-      [id]
-    );
+  const data = await shipmentService.confirmPickup(id, req.body, requestedCarrierId);
 
-    if (shipmentResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Shipment not found' });
-    }
-
-    const shipment = shipmentResult.rows[0];
-
-    // Verify carrier authorization
-    // Priority: 1) Webhook auth 2) JWT auth 3) Body param
-    const requestedCarrierId = req.authenticatedCarrier?.id || req.user?.carrier_id || req.body.carrierId;
-    if (shipment.carrier_id !== requestedCarrierId) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Unauthorized: You do not own this shipment' });
-    }
-
-    // Check if already picked up
-    if (shipment.status !== 'pending') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ 
-        error: `Shipment already ${shipment.status}. Cannot confirm pickup.` 
-      });
-    }
-
-    const actualPickupTime = pickupTimestamp ? new Date(pickupTimestamp) : new Date();
-
-    // Update shipment status to in_transit
-    // SLA timer starts from this timestamp
-    const updateResult = await client.query(
-      `UPDATE shipments 
-       SET status = 'in_transit',
-           pickup_actual = $1,
-           current_location = $2,
-           updated_at = NOW()
-       WHERE id = $3
-       RETURNING *`,
-      [
-        actualPickupTime,
-        gpsLocation ? JSON.stringify(gpsLocation) : null,
-        id
-      ]
-    );
-
-    const updatedShipment = updateResult.rows[0];
-
-    // Create tracking event with proof
-    // Note: shipment_events table structure: id, shipment_id, event_type, location, description, event_timestamp, created_at
-    const eventDescription = [
-      notes || `Package picked up by ${driverName || 'driver'}`,
-      driverName ? `Driver: ${driverName}` : null,
-      vehicleNumber ? `Vehicle: ${vehicleNumber}` : null,
-      pickupProofUrl ? `Proof: ${pickupProofUrl}` : null
-    ].filter(Boolean).join(' | ');
-
-    await client.query(
-      `INSERT INTO shipment_events 
-       (shipment_id, event_type, location, description, event_timestamp)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        id,
-        'picked_up',
-        gpsLocation ? JSON.stringify(gpsLocation) : null,
-        eventDescription,
-        actualPickupTime
-      ]
-    );
-
-    // Update order status to 'shipped'
-    // SLA for order starts from carrier's pickup confirmation
-    await client.query(
-      `UPDATE orders 
-       SET status = 'shipped', 
-           updated_at = NOW()
-       WHERE id = $1`,
-      [shipment.order_id]
-    );
-
-    await client.query('COMMIT');
-
-    logger.info('Carrier confirmed pickup', {
-      shipmentId: id,
-      trackingNumber: shipment.tracking_number,
-      carrierId: shipment.carrier_id,
-      orderId: shipment.order_id,
-      pickupTime: actualPickupTime,
-      driverName,
-      vehicleNumber
-    });
-
-    res.json({
-      success: true,
-      message: 'Pickup confirmed. Shipment is now in transit.',
-      data: {
-        shipmentId: updatedShipment.id,
-        trackingNumber: updatedShipment.tracking_number,
-        status: updatedShipment.status,
-        pickupActual: updatedShipment.pickup_actual,
-        orderNumber: shipment.order_number,
-        orderStatus: 'shipped'
-      }
-    });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    logger.error('Confirm pickup error:', error);
-    res.status(500).json({ 
-      error: 'Failed to confirm pickup',
-      details: error.message 
-    });
-  } finally {
-    client.release();
-  }
-}
+  res.json({
+    success: true,
+    message: 'Pickup confirmed. Shipment is now in transit.',
+    data,
+  });
+});
 

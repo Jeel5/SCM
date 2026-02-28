@@ -1,5 +1,5 @@
 // SLA Monitoring Service - Automated breach detection and penalty calculation
-import pool from '../config/db.js';
+import slaRepository from '../repositories/SlaRepository.js';
 import { logEvent } from '../utils/logger.js';
 
 class SLAService {
@@ -11,24 +11,9 @@ class SLAService {
     const violations = [];
 
     // Get all active shipments that haven't been delivered
-    const shipmentsResult = await pool.query(
-      `SELECT s.*, sp.id as policy_id, sp.delivery_hours, sp.penalty_per_hour,
-              sp.name as policy_name
-       FROM shipments s
-       JOIN orders o ON o.id = s.order_id
-       JOIN sla_policies sp ON (
-         sp.service_type = o.priority 
-         AND sp.is_active = true
-       )
-       WHERE s.status NOT IN ('delivered', 'returned', 'cancelled')
-       AND s.delivery_scheduled < NOW()
-       AND NOT EXISTS (
-         SELECT 1 FROM sla_violations sv 
-         WHERE sv.shipment_id = s.id AND sv.status = 'open'
-       )`
-    );
+    const shipments = await slaRepository.findActiveShipmentsForMonitoring();
 
-    for (const shipment of shipmentsResult.rows) {
+    for (const shipment of shipments) {
       const violation = await this.detectViolation(shipment);
       if (violation) {
         violations.push(violation);
@@ -63,22 +48,16 @@ class SLAService {
     );
 
     // Create SLA violation record
-    const result = await pool.query(
-      `INSERT INTO sla_violations 
-      (shipment_id, sla_policy_id, promised_delivery, delay_hours, penalty_amount, reason, status, detected_at, detection_method)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
-      RETURNING *`,
-      [
-        shipment.id,
-        shipment.policy_id,
-        scheduledDelivery,
-        delayHours.toFixed(2),
-        penalty,
-        'Late delivery',
-        'open',
-        'automated'
-      ]
-    );
+    const violation = await slaRepository.createViolation({
+      shipmentId: shipment.id,
+      slaPolicyId: shipment.policy_id,
+      promisedDelivery: scheduledDelivery,
+      delayHours: delayHours.toFixed(2),
+      penaltyAmount: penalty,
+      reason: 'Late delivery',
+      status: 'open',
+      detectionMethod: 'automated',
+    });
 
     logEvent('SLAViolationCreated', {
       shipmentId: shipment.id,
@@ -87,7 +66,7 @@ class SLAService {
       penalty
     });
 
-    return result.rows[0];
+    return violation;
   }
 
   /**
@@ -110,19 +89,7 @@ class SLAService {
    */
   async calculateCarrierPerformance(carrierId, periodStart, periodEnd) {
     // Get shipment statistics
-    const statsResult = await pool.query(
-      `SELECT 
-        COUNT(*) as total_shipments,
-        COUNT(CASE WHEN status = 'delivered' AND delivery_actual <= delivery_scheduled THEN 1 END) as on_time,
-        COUNT(CASE WHEN status = 'delivered' AND delivery_actual > delivery_scheduled THEN 1 END) as late,
-        COUNT(CASE WHEN status = 'failed_delivery' THEN 1 END) as failed
-       FROM shipments
-       WHERE carrier_id = $1
-       AND created_at >= $2 AND created_at < $3`,
-      [carrierId, periodStart, periodEnd]
-    );
-
-    const stats = statsResult.rows[0];
+    const stats = await slaRepository.findCarrierShipmentStats(carrierId, periodStart, periodEnd);
     const total = parseInt(stats.total_shipments);
 
     if (total === 0) {
@@ -141,16 +108,7 @@ class SLAService {
     const failurePenalty = failureRate * 5; // 5 points per 1% failure rate
 
     // Get SLA violations count
-    const violationsResult = await pool.query(
-      `SELECT COUNT(*) as violation_count, COALESCE(SUM(penalty_amount), 0) as total_penalties
-       FROM sla_violations sv
-       JOIN shipments s ON s.id = sv.shipment_id
-       WHERE s.carrier_id = $1
-       AND sv.created_at >= $2 AND sv.created_at < $3`,
-      [carrierId, periodStart, periodEnd]
-    );
-
-    const violations = violationsResult.rows[0];
+    const violations = await slaRepository.findCarrierViolationStats(carrierId, periodStart, periodEnd);
     const violationCount = parseInt(violations.violation_count);
     const violationRate = (violationCount / total) * 100;
     const violationPenalty = violationRate * 3; // 3 points per 1% violation rate
@@ -163,37 +121,19 @@ class SLAService {
     const reliabilityScore = performanceScore / 100;
 
     // Store metrics
-    await pool.query(
-      `INSERT INTO carrier_performance_metrics 
-      (carrier_id, period_start, period_end, total_shipments, on_time_deliveries, 
-       late_deliveries, failed_deliveries, sla_violations, total_penalties, 
-       performance_score, reliability_score)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      ON CONFLICT (carrier_id, period_start, period_end)
-      DO UPDATE SET
-        total_shipments = EXCLUDED.total_shipments,
-        on_time_deliveries = EXCLUDED.on_time_deliveries,
-        late_deliveries = EXCLUDED.late_deliveries,
-        failed_deliveries = EXCLUDED.failed_deliveries,
-        sla_violations = EXCLUDED.sla_violations,
-        total_penalties = EXCLUDED.total_penalties,
-        performance_score = EXCLUDED.performance_score,
-        reliability_score = EXCLUDED.reliability_score,
-        calculated_at = NOW()`,
-      [
-        carrierId,
-        periodStart,
-        periodEnd,
-        total,
-        onTime,
-        late,
-        failed,
-        violationCount,
-        violations.total_penalties,
-        performanceScore.toFixed(2),
-        reliabilityScore.toFixed(2)
-      ]
-    );
+    await slaRepository.upsertCarrierPerformanceMetrics({
+      carrierId,
+      periodStart,
+      periodEnd,
+      totalShipments: total,
+      onTime,
+      late,
+      failed,
+      violationCount,
+      totalPenalties: violations.total_penalties,
+      performanceScore: performanceScore.toFixed(2),
+      reliabilityScore: reliabilityScore.toFixed(2),
+    });
 
     logEvent('CarrierPerformanceCalculated', {
       carrierId,
@@ -218,42 +158,26 @@ class SLAService {
    * Apply penalty to invoice
    */
   async applyPenalty(violationId, approvedBy) {
-    const result = await pool.query(
-      `UPDATE sla_violations
-       SET penalty_applied = true,
-           penalty_calculated_at = NOW(),
-           penalty_approved_by = $1
-       WHERE id = $2
-       RETURNING *`,
-      [approvedBy, violationId]
-    );
+    const row = await slaRepository.applyViolationPenalty(violationId, approvedBy);
 
-    if (result.rows.length > 0) {
+    if (row) {
       logEvent('PenaltyApplied', {
         violationId,
-        amount: result.rows[0].penalty_amount,
+        amount: row.penalty_amount,
         approvedBy
       });
     }
 
-    return result.rows[0];
+    return row;
   }
 
   /**
    * Waive penalty with reason
    */
   async waivePenalty(violationId, reason, waivedBy) {
-    const result = await pool.query(
-      `UPDATE sla_violations
-       SET status = 'waived',
-           waiver_reason = $1,
-           resolved_at = NOW()
-       WHERE id = $2
-       RETURNING *`,
-      [reason, violationId]
-    );
+    const row = await slaRepository.waiveViolationPenalty(violationId, reason);
 
-    if (result.rows.length > 0) {
+    if (row) {
       logEvent('PenaltyWaived', {
         violationId,
         reason,
@@ -261,23 +185,14 @@ class SLAService {
       });
     }
 
-    return result.rows[0];
+    return row;
   }
 
   /**
    * Resolve SLA violation
    */
   async resolveViolation(violationId, resolution) {
-    const result = await pool.query(
-      `UPDATE sla_violations
-       SET status = 'resolved',
-           resolved_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      [violationId]
-    );
-
-    return result.rows[0];
+    return slaRepository.resolveViolation(violationId);
   }
 
   /**

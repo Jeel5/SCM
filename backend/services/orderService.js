@@ -1,10 +1,11 @@
 import OrderRepository from '../repositories/OrderRepository.js';
 import InventoryRepository from '../repositories/InventoryRepository.js';
 import WarehouseRepository from '../repositories/WarehouseRepository.js';
+import CarrierRepository from '../repositories/CarrierRepository.js';
+import ShipmentRepository from '../repositories/ShipmentRepository.js';
 import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index.js';
 import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
-import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 
 // ─── Order State Machine ────────────────────────────────────────────────────
@@ -76,8 +77,7 @@ class OrderService {
         if (!generatedOrderNumber) {
           const now = new Date();
           const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-          const seqResult = await tx.query("SELECT nextval('order_number_seq') AS seq");
-          const seqPart = seqResult.rows[0].seq;
+          const seqPart = await OrderRepository.nextOrderNumberSeq(tx);
           generatedOrderNumber = `ORD-${datePart}-${seqPart}`;
         }
 
@@ -176,25 +176,16 @@ class OrderService {
           const serviceType = order.priority || 'standard';
           
           // Find eligible carriers (only available ones)
-          const carriersResult = await tx.query(
-            `SELECT id, code, name, contact_email, service_type, is_active, availability_status
-             FROM carriers 
-             WHERE is_active = true 
-             AND availability_status = 'available'
-             AND (service_type = $1 OR service_type = 'all')
-             ORDER BY reliability_score DESC
-             LIMIT 3`,
-            [serviceType]
-          );
+          const eligibleCarriers = await CarrierRepository.findEligibleCarriers(serviceType, 3, tx);
 
-          if (carriersResult.rows.length === 0) {
+          if (eligibleCarriers.length === 0) {
             logger.warn(`No available carriers for new order. Order will remain in pending_carrier_assignment.`, { orderId: order.id, serviceType });
             // Don't throw error - let retry service handle this
             // Order stays in pending_carrier_assignment status
           } else {
 
           // Create carrier assignments within same transaction
-          for (const carrier of carriersResult.rows) {
+          for (const carrier of eligibleCarriers) {
             const expiresAt = new Date();
             expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minute window per batch
 
@@ -213,28 +204,23 @@ class OrderService {
 
             const idempotencyKey = `${order.id}-carrier-${carrier.id}-${Date.now()}`;
 
-            const assignmentResult = await tx.query(
-              `INSERT INTO carrier_assignments 
-               (order_id, carrier_id, service_type, status, pickup_address, delivery_address,
-                estimated_pickup, estimated_delivery, request_payload, expires_at, idempotency_key)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-               RETURNING id, carrier_id, order_id, status, created_at`,
-              [
-                order.id,
-                carrier.id,
+            const assignment = await CarrierRepository.createCarrierAssignment(
+              {
+                orderId: order.id,
+                carrierId: carrier.id,
                 serviceType,
-                'pending',
-                order.shipping_address,
-                order.shipping_address,
-                new Date(Date.now() + 2 * 60 * 60 * 1000),
-                new Date(Date.now() + 24 * 60 * 60 * 1000),
-                JSON.stringify(requestPayload),
+                status: 'pending',
+                pickupAddress: order.shipping_address,
+                deliveryAddress: order.shipping_address,
+                estimatedPickup: new Date(Date.now() + 2 * 60 * 60 * 1000),
+                estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                requestPayload,
                 expiresAt,
-                idempotencyKey
-              ]
+                idempotencyKey,
+              },
+              tx
             );
 
-            const assignment = assignmentResult.rows[0];
             assignments.push(assignment);
             carriersToNotify.push({ assignment, carrier, requestPayload });
 
@@ -247,10 +233,7 @@ class OrderService {
           }
 
           // Update order status to pending_carrier_assignment
-          await tx.query(
-            'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
-            ['pending_carrier_assignment', order.id]
-          );
+          await OrderRepository.updateStatus(order.id, 'pending_carrier_assignment', tx);
           }
         }
 
@@ -458,8 +441,7 @@ class OrderService {
           0
         );
 
-        const trnSeqResult = await tx.query("SELECT nextval('transfer_order_number_seq') AS seq");
-        const trnSeq = trnSeqResult.rows[0].seq;
+        const trnSeq = await OrderRepository.nextTransferOrderSeq(tx);
 
         const orderData = {
           order_number: `TRF-${trnSeq}`,
@@ -547,30 +529,18 @@ class OrderService {
           deliveryDate.setDate(deliveryDate.getDate() + 3); // 3 days (standard)
         }
 
-        const shipmentResult = await tx.query(
-          `INSERT INTO shipments 
-           (shipment_number, order_id, warehouse_id, carrier_id, status, 
-            origin_address, destination_address, 
-            estimated_pickup_date, estimated_delivery_date,
-            tracking_notes, created_at, updated_at)
-           VALUES ($1, $2, $3, 
-                   (SELECT id FROM carriers WHERE code = 'INTERNAL' LIMIT 1), 
-                   $4, $5, $6, $7, $8, $9, NOW(), NOW())
-           RETURNING id, shipment_number, status, estimated_delivery_date`,
-          [
-            `SHP-TRF-${(await tx.query("SELECT nextval('transfer_shipment_number_seq') AS seq")).rows[0].seq}`,
-            order.id,
-            transferData.from_warehouse_id,
-            'pending',
-            JSON.stringify(fromWarehouse.address),
-            JSON.stringify(toWarehouse.address),
-            pickupDate,
-            transferData.expected_delivery_date || deliveryDate,
-            `Transfer from ${fromWarehouse.warehouse_name} to ${toWarehouse.warehouse_name}`
-          ]
+        const shipment = await ShipmentRepository.createTransferShipment(
+          {
+            orderId: order.id,
+            warehouseId: transferData.from_warehouse_id,
+            originAddress: fromWarehouse.address,
+            destinationAddress: toWarehouse.address,
+            estimatedPickup: pickupDate,
+            estimatedDelivery: transferData.expected_delivery_date || deliveryDate,
+            notes: `Transfer from ${fromWarehouse.warehouse_name} to ${toWarehouse.warehouse_name}`,
+          },
+          tx
         );
-
-        const shipment = shipmentResult.rows[0];
 
         // Log event
         logger.info('Transfer order created', {

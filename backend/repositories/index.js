@@ -1,4 +1,5 @@
 // Centralized export for all repositories
+export { default as NotificationRepository } from './NotificationRepository.js';
 export { default as OrderRepository } from './OrderRepository.js';
 export { default as InventoryRepository } from './InventoryRepository.js';
 export { default as ShipmentRepository } from './ShipmentRepository.js';
@@ -6,4 +7,16 @@ export { default as UserRepository } from './UserRepository.js';
 export { default as ReturnRepository } from './ReturnRepository.js';
 export { default as WarehouseRepository } from './WarehouseRepository.js';
 export { default as CarrierRepository } from './CarrierRepository.js';
+export { default as FinanceRepository } from './FinanceRepository.js';
+export { default as AnalyticsRepository } from './AnalyticsRepository.js';
+export { default as DashboardRepository } from './DashboardRepository.js';
+export { default as JobsRepository } from './JobsRepository.js';
+export { default as SlaRepository } from './SlaRepository.js';
+export { default as CompaniesRepository } from './CompaniesRepository.js';
+export { default as ProductRepository } from './ProductRepository.js';
+export { default as PostalZoneRepository } from './PostalZoneRepository.js';
+export { default as AllocationRepository } from './AllocationRepository.js';
+export { default as ExceptionRepository } from './ExceptionRepository.js';
+export { default as WarehouseOpsRepository } from './WarehouseOpsRepository.js';
+export { default as AlertRepository } from './AlertRepository.js';
 export { default as BaseRepository } from './BaseRepository.js';

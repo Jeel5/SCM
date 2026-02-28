@@ -1,11 +1,12 @@
 // Inventory Controller — thin HTTP layer. All business logic + SQL is in
 // InventoryRepository and (for transaction ops) in the service layer.
 import InventoryRepository from '../repositories/InventoryRepository.js';
+import ProductRepository from '../repositories/ProductRepository.js';
+import WarehouseRepository from '../repositories/WarehouseRepository.js';
 import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
-import pool from '../config/db.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SKU GENERATION
@@ -32,12 +33,8 @@ async function generateUniqueSKU(organizationId, productName) {
     const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
     const sku = `${prefix}-${month}-${rand}`;
 
-    const { rows } = await pool.query(
-      'SELECT 1 FROM inventory WHERE organization_id IS NOT DISTINCT FROM $1 AND sku = $2 LIMIT 1',
-      [organizationId || null, sku]
-    );
-
-    if (rows.length === 0) return sku;
+    const exists = await InventoryRepository.skuExists(sku, organizationId);
+    if (!exists) return sku;
   }
 
   // Fallback: timestamp-based to guarantee uniqueness
@@ -100,25 +97,8 @@ function formatInventoryItem(row) {
  */
 async function refreshWarehouseUtilization(warehouseId, client = null) {
   if (!warehouseId) return;
-  const db = client || pool;
   try {
-    await db.query(
-      `UPDATE warehouses
-       SET current_utilization = LEAST(
-         ROUND(
-           COALESCE(
-             (SELECT SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity)
-              FROM inventory
-              WHERE warehouse_id = $1),
-             0
-           ) * 100.0 / NULLIF(capacity, 0),
-           100
-         ), 2
-       ),
-       updated_at = NOW()
-       WHERE id = $1`,
-      [warehouseId]
-    );
+    await WarehouseRepository.refreshUtilization(warehouseId, client);
   } catch (err) {
     // Non-fatal — log but don't break the request
     logger.warn('Failed to refresh warehouse utilization', { warehouseId, error: err.message });
@@ -243,14 +223,10 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
 
   // ── If product_id supplied, pull sku + name from products table ──
   if (resolvedProductId) {
-    const { rows } = await pool.query(
-      `SELECT sku, name FROM products WHERE id = $1 LIMIT 1`,
-      [resolvedProductId]
-    );
-    if (rows.length > 0) {
-      // Only set if not already provided by the caller
-      if (!inventoryFields.sku) inventoryFields.sku = rows[0].sku;
-      if (!inventoryFields.product_name) inventoryFields.product_name = rows[0].name;
+    const product = await ProductRepository.findById(resolvedProductId);
+    if (product) {
+      if (!inventoryFields.sku) inventoryFields.sku = product.sku;
+      if (!inventoryFields.product_name) inventoryFields.product_name = product.name;
     }
   }
 
@@ -258,23 +234,17 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
   if (!resolvedProductId && product_name) {
     const sku = await generateUniqueSKU(orgId, product_name);
 
-    const productResult = await pool.query(
-      `INSERT INTO products (
-         organization_id, sku, name, category,
-         unit_price, currency, is_active
-       ) VALUES ($1,$2,$3,$4,$5,'INR',true)
-       ON CONFLICT (organization_id, sku) DO NOTHING
-       RETURNING id`,
-      [
-        orgId,
-        sku,
-        product_name.trim(),
-        category || null,
-        unit_price || null
-      ]
-    );
+    const product = await ProductRepository.create({
+      organization_id: orgId,
+      sku,
+      name: product_name.trim(),
+      category: category || null,
+      unit_price: unit_price || null,
+      currency: 'INR',
+      is_active: true,
+    });
 
-    resolvedProductId = productResult.rows[0]?.id || null;
+    resolvedProductId = product?.id || null;
 
     // Denormalized copy on inventory row
     inventoryFields.sku = sku;
@@ -481,13 +451,7 @@ export const transferInventory = asyncHandler(async (req, res) => {
   // TASK-R9-025: return data from transaction callback; send res.json AFTER commit
   const txResult = await withTransaction(async (tx) => {
     // Lock source inventory row to prevent concurrent transfers causing oversell
-    const lockResult = await tx.query(
-      `SELECT * FROM inventory
-       WHERE sku = $1 AND warehouse_id = $2
-       FOR UPDATE`,
-      [sku, from_warehouse_id]
-    );
-    const source = lockResult.rows[0];
+    const source = await InventoryRepository.lockBySku(sku, from_warehouse_id, tx);
     if (!source) throw new NotFoundError(`SKU ${sku} in source warehouse`);
 
     if (source.available_quantity < quantity) {

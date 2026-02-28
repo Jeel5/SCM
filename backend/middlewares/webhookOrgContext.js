@@ -16,7 +16,7 @@
  * and prevents unknown callers from flooding the jobs queue.
  */
 
-import pool from '../config/db.js';
+import organizationRepo from '../repositories/OrganizationRepository.js';
 import logger from '../utils/logger.js';
 
 export async function resolveWebhookOrg(req, res, next) {
@@ -30,16 +30,9 @@ export async function resolveWebhookOrg(req, res, next) {
   }
 
   try {
-    const result = await pool.query(
-      `SELECT id, name, code
-       FROM organizations
-       WHERE webhook_token = $1
-         AND is_active = true
-       LIMIT 1`,
-      [orgToken]
-    );
+    const org = await organizationRepo.findByWebhookToken(orgToken);
 
-    if (result.rows.length === 0) {
+    if (!org) {
       logger.warn(`Webhook: invalid/unknown org token`, {
         path: req.path,
         ip: req.ip,
@@ -50,8 +43,6 @@ export async function resolveWebhookOrg(req, res, next) {
         message: 'Invalid webhook token'
       });
     }
-
-    const org = result.rows[0];
 
     // Attach org info so controller can stamp organization_id on the record
     req.webhookOrganizationId = org.id;

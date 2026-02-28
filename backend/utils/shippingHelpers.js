@@ -9,7 +9,9 @@
  * - Response time tracking
  */
 
-import db from '../config/db.js';
+import orderRepo from '../repositories/OrderRepository.js';
+import postalZoneRepo from '../repositories/PostalZoneRepository.js';
+import carrierRepo from '../repositories/CarrierRepository.js';
 import logger from '../utils/logger.js';
 import crypto from 'crypto';
 
@@ -32,19 +34,14 @@ export class IdempotencyManager {
    */
   static async checkIdempotency(idempotencyKey) {
     try {
-      const result = await db.query(
-        `SELECT result, created_at 
-         FROM quote_idempotency_cache 
-         WHERE idempotency_key = $1 AND expires_at > NOW()`,
-        [idempotencyKey]
-      );
+      const cached = await orderRepo.findCachedQuote(idempotencyKey);
 
-      if (result.rows.length > 0) {
+      if (cached) {
         logger.info('Idempotency key found - returning cached result', { idempotencyKey });
         return {
           cached: true,
-          result: JSON.parse(result.rows[0].result),
-          cachedAt: result.rows[0].created_at
+          result: JSON.parse(cached.result),
+          cachedAt: cached.created_at
         };
       }
 
@@ -60,13 +57,7 @@ export class IdempotencyManager {
    */
   static async cacheResult(idempotencyKey, result, expiryHours = 1) {
     try {
-      await db.query(
-        `INSERT INTO quote_idempotency_cache (idempotency_key, result, expires_at)
-         VALUES ($1, $2, NOW() + INTERVAL '${expiryHours} hours')
-         ON CONFLICT (idempotency_key) 
-         DO UPDATE SET result = $2, expires_at = NOW() + INTERVAL '${expiryHours} hours'`,
-        [idempotencyKey, JSON.stringify(result)]
-      );
+      await orderRepo.cacheQuoteResult(idempotencyKey, JSON.stringify(result), expiryHours);
 
       logger.info('Cached result for idempotency', { idempotencyKey, expiresIn: `${expiryHours}h` });
     } catch (error) {
@@ -80,16 +71,11 @@ export class IdempotencyManager {
    */
   static async cleanExpiredCache() {
     try {
-      const result = await db.query(
-        `DELETE FROM quote_idempotency_cache 
-         WHERE expires_at < NOW() - INTERVAL '1 day'`
-      );
+      const deletedCount = await orderRepo.cleanExpiredQuoteCache();
 
-      logger.info('Cleaned expired idempotency cache entries', { 
-        deletedCount: result.rowCount 
-      });
+      logger.info('Cleaned expired idempotency cache entries', { deletedCount });
 
-      return result.rowCount;
+      return deletedCount;
     } catch (error) {
       logger.error('Error cleaning cache', { error: error.message });
       throw error;
@@ -108,19 +94,9 @@ export class ShippingLockManager {
    */
   static async acquireLock(orderId, workerId = 'default') {
     try {
-      // Use atomic UPDATE to acquire lock
-      const result = await db.query(
-        `UPDATE orders 
-         SET shipping_locked = true,
-             shipping_locked_at = NOW(),
-             shipping_locked_by = $2
-         WHERE id = $1 
-           AND (shipping_locked = false OR shipping_locked IS NULL)
-         RETURNING id`,
-        [orderId, workerId]
-      );
+      const locked = await orderRepo.acquireShippingLock(orderId, workerId);
 
-      if (result.rows.length > 0) {
+      if (locked) {
         logger.info('Acquired shipping lock', { orderId, workerId });
         return true;
       } else {
@@ -138,14 +114,7 @@ export class ShippingLockManager {
    */
   static async releaseLock(orderId) {
     try {
-      await db.query(
-        `UPDATE orders 
-         SET shipping_locked = false,
-             shipping_locked_at = NULL,
-             shipping_locked_by = NULL
-         WHERE id = $1`,
-        [orderId]
-      );
+      await orderRepo.releaseShippingLock(orderId);
 
       logger.info('Released shipping lock', { orderId });
     } catch (error) {
@@ -159,18 +128,12 @@ export class ShippingLockManager {
    */
   static async isLocked(orderId) {
     try {
-      const result = await db.query(
-        `SELECT shipping_locked, shipping_locked_at, shipping_locked_by
-         FROM orders
-         WHERE id = $1`,
-        [orderId]
-      );
+      const row = await orderRepo.getShippingLockStatus(orderId);
 
-      if (result.rows.length === 0) {
+      if (!row) {
         return { locked: false, reason: 'order_not_found' };
       }
 
-      const row = result.rows[0];
       return {
         locked: row.shipping_locked || false,
         lockedAt: row.shipping_locked_at,
@@ -188,118 +151,19 @@ export class ShippingLockManager {
    */
   static async releaseStaleLocks(olderThanMinutes = 30) {
     try {
-      const result = await db.query(
-        `UPDATE orders
-         SET shipping_locked = false,
-             shipping_locked_at = NULL,
-             shipping_locked_by = NULL
-         WHERE shipping_locked = true
-           AND shipping_locked_at < NOW() - INTERVAL '${olderThanMinutes} minutes'
-         RETURNING id, shipping_locked_by`
-      );
+      const released = await orderRepo.releaseStaleLocks(olderThanMinutes);
 
-      if (result.rowCount > 0) {
+      if (released.length > 0) {
         logger.warn('Released stale shipping locks', { 
-          count: result.rowCount,
-          locks: result.rows 
+          count: released.length,
+          locks: released 
         });
       }
 
-      return result.rowCount;
+      return released.length;
     } catch (error) {
       logger.error('Error releasing stale locks', { error: error.message });
       throw error;
-    }
-  }
-}
-
-/**
- * Carrier Capacity Management
- */
-export class CapacityManager {
-  /**
-   * Reserve capacity with carrier
-   */
-  static async reserveCapacity(carrierId, orderId) {
-    try {
-      // Check if carrier has capacity
-      const carrier = await db.query(
-        `SELECT id, current_load, max_capacity FROM carriers WHERE id = $1`,
-        [carrierId]
-      );
-
-      if (carrier.rows.length === 0) {
-        throw new Error('Carrier not found');
-      }
-
-      const { current_load, max_capacity } = carrier.rows[0];
-
-      // Check capacity limit
-      if (max_capacity && current_load >= max_capacity) {
-        logger.warn('Carrier at full capacity', { carrierId, current_load, max_capacity });
-        return { reserved: false, reason: 'at_capacity' };
-      }
-
-      // Increment load atomically
-      await db.query(
-        `UPDATE carriers 
-         SET current_load = COALESCE(current_load, 0) + 1,
-             updated_at = NOW()
-         WHERE id = $1`,
-        [carrierId]
-      );
-
-      logger.info('Reserved carrier capacity', { carrierId, orderId });
-
-      // Log capacity snapshot
-      await this.logCapacitySnapshot(carrierId);
-
-      return { reserved: true };
-    } catch (error) {
-      logger.error('Error reserving capacity', { error: error.message, carrierId });
-      throw error;
-    }
-  }
-
-  /**
-   * Release capacity when order cancelled
-   */
-  static async releaseCapacity(carrierId, orderId) {
-    try {
-      await db.query(
-        `UPDATE carriers 
-         SET current_load = GREATEST(COALESCE(current_load, 0) - 1, 0),
-             updated_at = NOW()
-         WHERE id = $1`,
-        [carrierId]
-      );
-
-      logger.info('Released carrier capacity', { carrierId, orderId });
-    } catch (error) {
-      logger.error('Error releasing capacity', { error: error.message, carrierId });
-      // Don't throw - releasing capacity failure shouldn't block cancellation
-    }
-  }
-
-  /**
-   * Log capacity snapshot for analytics
-   */
-  static async logCapacitySnapshot(carrierId) {
-    try {
-      await db.query(
-        `INSERT INTO carrier_capacity_log (carrier_id, capacity_snapshot, max_capacity, utilization_percent)
-         SELECT id, current_load, max_capacity, 
-                CASE WHEN max_capacity > 0 
-                     THEN (current_load::DECIMAL / max_capacity * 100)
-                     ELSE NULL 
-                END
-         FROM carriers
-         WHERE id = $1`,
-        [carrierId]
-      );
-    } catch (error) {
-      logger.error('Error logging capacity', { error: error.message, carrierId });
-      // Don't throw - logging failure shouldn't block operations
     }
   }
 }
@@ -312,23 +176,61 @@ export class ConfidenceCalculator {
    * Calculate confidence score for estimate (0.0 to 1.0)
    * Higher confidence = estimate closer to actual cost
    */
-  static calculate({ fromPincode, toPincode, weightKg, hasHistoricalData = false }) {
+  static async calculate({ fromPincode, toPincode, weightKg, hasHistoricalData = false }) {
     let confidence = 0.50; // Base confidence
+    let sameZone = false;
+    let zoneBucket = null; // 'same' | 'adjacent' | 'moderate' | 'long'
 
-    // Zone proximity (same zone = higher confidence)
-    const fromZone = fromPincode.substring(0, 3);
-    const toZone = toPincode.substring(0, 3);
-    const zoneDiff = Math.abs(parseInt(fromZone) - parseInt(toZone));
+    try {
+      // Attempt DB lookup for precise zone/distance data
+      const zones = await postalZoneRepo.findByPincodes([fromPincode, toPincode]);
 
-    if (zoneDiff === 0) {
-      confidence += 0.45; // Same zone: +45% (total ~95%)
-    } else if (zoneDiff < 50) {
-      confidence += 0.35; // Adjacent: +35% (total ~85%)
-    } else if (zoneDiff < 150) {
-      confidence += 0.20; // Moderate distance: +20% (total ~70%)
-    } else {
-      confidence += 0.10; // Long distance: +10% (total ~60%)
+      if (zones.length === 2) {
+        const fromRow = zones.find(r => r.pincode === fromPincode);
+        const toRow   = zones.find(r => r.pincode === toPincode);
+
+        if (fromRow && toRow) {
+          if (fromRow.zone_code === toRow.zone_code) {
+            sameZone = true;
+          } else if (fromRow.zone_code && toRow.zone_code) {
+            const distanceKm = await postalZoneRepo.findZoneDistance(fromRow.zone_code, toRow.zone_code);
+            if (distanceKm !== null) {
+              zoneBucket = distanceKm < 100 ? 'same' : distanceKm < 300 ? 'adjacent' : distanceKm < 600 ? 'moderate' : 'long';
+            }
+          } else if (fromRow.lat && fromRow.lon && toRow.lat && toRow.lon) {
+            // Fall back to Haversine when only coordinates are available
+            const R = 6371;
+            const φ1 = parseFloat(fromRow.lat) * Math.PI / 180;
+            const φ2 = parseFloat(toRow.lat)   * Math.PI / 180;
+            const Δφ = (parseFloat(toRow.lat)  - parseFloat(fromRow.lat)) * Math.PI / 180;
+            const Δλ = (parseFloat(toRow.lon)  - parseFloat(fromRow.lon)) * Math.PI / 180;
+            const a  = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
+            const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            zoneBucket = km < 100 ? 'same' : km < 300 ? 'adjacent' : km < 600 ? 'moderate' : 'long';
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('ConfidenceCalculator: postal_zones lookup failed, using approximation', { error: err.message });
     }
+
+    // Fall back to prefix approximation when DB had no usable data
+    if (!sameZone && zoneBucket === null) {
+      const fromPrefix = fromPincode.substring(0, 3);
+      const toPrefix   = toPincode.substring(0, 3);
+      if (fromPrefix === toPrefix) {
+        sameZone = true;
+      } else {
+        const diff = Math.abs(parseInt(fromPrefix) - parseInt(toPrefix));
+        zoneBucket = diff === 0 ? 'same' : diff < 50 ? 'adjacent' : diff < 150 ? 'moderate' : 'long';
+      }
+    }
+
+    const bucket = sameZone ? 'same' : zoneBucket;
+    if (bucket === 'same')          confidence += 0.45; // Same zone: +45%
+    else if (bucket === 'adjacent') confidence += 0.35; // Adjacent: +35%
+    else if (bucket === 'moderate') confidence += 0.20; // Moderate: +20%
+    else                            confidence += 0.10; // Long distance: +10%
 
     // Weight (standard weights have better estimates)
     if (weightKg > 0 && weightKg <= 2) {
@@ -460,12 +362,7 @@ export class SelectionReasonTracker {
    */
   static async recordReason(orderId, carrierId, reason) {
     try {
-      await db.query(
-        `UPDATE carrier_quotes
-         SET selection_reason = $1
-         WHERE order_id = $2 AND carrier_id = $3`,
-        [reason, orderId, carrierId]
-      );
+      await carrierRepo.updateQuoteSelectionReason(orderId, carrierId, reason);
 
       logger.info('Recorded selection reason', { orderId, carrierId, reason });
     } catch (error) {
@@ -478,7 +375,6 @@ export class SelectionReasonTracker {
 export default {
   IdempotencyManager,
   ShippingLockManager,
-  CapacityManager,
   ConfidenceCalculator,
   ResponseTimeTracker,
   SelectionReasonTracker

@@ -7,7 +7,7 @@
  * - Handle data persistence without business logic
  */
 
-import db from '../../config/db.js';
+import CarrierRepository from '../../repositories/CarrierRepository.js';
 import logger from '../../utils/logger.js';
 import { withTransaction } from '../../utils/dbTransaction.js';
 
@@ -19,25 +19,18 @@ import { withTransaction } from '../../utils/dbTransaction.js';
  */
 export async function storeQuotes(quotes, orderId) {
   try {
-    const insertPromises = quotes.map(quote => 
-      db.query(
-        `INSERT INTO carrier_quotes 
-         (order_id, carrier_id, quoted_price, currency, estimated_delivery_days, 
-          estimated_delivery_date, service_type, valid_until, breakdown, is_selected)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)
-         RETURNING id`,
-        [
-          orderId,
-          quote.carrierId,
-          quote.quotedPrice,
-          quote.currency,
-          quote.estimatedDeliveryDays,
-          quote.estimatedDeliveryDate,
-          quote.serviceType,
-          quote.validUntil,
-          JSON.stringify(quote.breakdown)
-        ]
-      )
+    const insertPromises = quotes.map(quote =>
+      CarrierRepository.createQuote({
+        orderId,
+        carrierId: quote.carrierId,
+        quotedPrice: quote.quotedPrice,
+        currency: quote.currency,
+        estimatedDeliveryDays: quote.estimatedDeliveryDays,
+        estimatedDeliveryDate: quote.estimatedDeliveryDate,
+        serviceType: quote.serviceType,
+        validUntil: quote.validUntil,
+        breakdown: quote.breakdown,
+      })
     );
 
     await Promise.all(insertPromises);
@@ -57,18 +50,13 @@ export async function storeQuotes(quotes, orderId) {
 export async function storeRejections(rejections, orderId) {
   try {
     const insertPromises = rejections.map(rejection =>
-      db.query(
-        `INSERT INTO carrier_rejections 
-         (order_id, carrier_name, carrier_code, reason, message, rejected_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [
-          orderId,
-          rejection.carrierName,
-          rejection.carrierCode,
-          rejection.reason,
-          rejection.message
-        ]
-      )
+      CarrierRepository.createRejection({
+        orderId,
+        carrierName: rejection.carrierName,
+        carrierCode: rejection.carrierCode,
+        reason: rejection.reason,
+        message: rejection.message,
+      })
     );
 
     await Promise.all(insertPromises);
@@ -91,16 +79,10 @@ export async function markQuoteAsSelected(quoteId, orderId) {
   // quotes are selected (or none), breaking carrier assignment logic (TASK-R12-019).
   await withTransaction(async (tx) => {
     // Unmark any previously selected quotes for this order
-    await tx.query(
-      'UPDATE carrier_quotes SET is_selected = false WHERE order_id = $1',
-      [orderId]
-    );
+    await CarrierRepository.deselectAllQuotesForOrder(orderId, tx);
 
     // Mark the new quote as selected
-    await tx.query(
-      'UPDATE carrier_quotes SET is_selected = true WHERE id = $1',
-      [quoteId]
-    );
+    await CarrierRepository.selectQuoteById(quoteId, tx);
   });
 
   logger.info(`Marked quote ${quoteId} as selected for order ${orderId}`);

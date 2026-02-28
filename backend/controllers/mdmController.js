@@ -1,8 +1,9 @@
 // Master Data Management (MDM) Controller
 // Handles warehouses, carriers, products, SLA policies, and rate cards.
-import pool from '../config/db.js';
 import WarehouseRepository from '../repositories/WarehouseRepository.js';
 import CarrierRepository from '../repositories/CarrierRepository.js';
+import SlaRepository from '../repositories/SlaRepository.js';
+import ProductRepository from '../repositories/ProductRepository.js';
 import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
@@ -33,19 +34,10 @@ export const listWarehouses = asyncHandler(async (req, res) => {
   let warehouseQtys = {};
 
   if (warehouseIds.length > 0) {
-    const inventoryStatsResult = await pool.query(
-      `SELECT warehouse_id,
-              COUNT(*) AS inventory_count,
-              COALESCE(SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity), 0) AS total_qty
-       FROM inventory
-       WHERE warehouse_id = ANY($1)
-       GROUP BY warehouse_id`,
-      [warehouseIds]
-    );
-
-    inventoryStatsResult.rows.forEach(row => {
-      inventoryCounts[row.warehouse_id] = parseInt(row.inventory_count);
-      warehouseQtys[row.warehouse_id] = parseInt(row.total_qty);
+    const statsByWarehouse = await WarehouseRepository.getInventoryStatsBatch(warehouseIds);
+    Object.entries(statsByWarehouse).forEach(([wId, st]) => {
+      inventoryCounts[wId] = st.inventory_count;
+      warehouseQtys[wId]   = st.total_qty;
     });
   }
 
@@ -103,16 +95,9 @@ export const getWarehouse = asyncHandler(async (req, res) => {
   }
 
   // Get inventory count and total quantity for dynamic utilization
-  const inventoryStatsResult = await pool.query(
-    `SELECT COUNT(*) AS inventory_count,
-            COALESCE(SUM(available_quantity + reserved_quantity + damaged_quantity + in_transit_quantity), 0) AS total_qty
-     FROM inventory
-     WHERE warehouse_id = $1`,
-    [id]
-  );
-
-  const inventoryCount = parseInt(inventoryStatsResult.rows[0]?.inventory_count) || 0;
-  const totalQty = parseInt(inventoryStatsResult.rows[0]?.total_qty) || 0;
+  const warehouseStats = await WarehouseRepository.getInventoryStats(id);
+  const inventoryCount = warehouseStats.inventory_count;
+  const totalQty       = warehouseStats.total_qty;
   const capacity = warehouse.capacity || 0;
   const utilizationPercentage = capacity > 0 ? Math.min(parseFloat(((totalQty / capacity) * 100).toFixed(1)), 100) : 0;
 
@@ -484,52 +469,29 @@ export const getCarrierRateCards = asyncHandler(async (req, res) => {
 // GET /products
 export const listProducts = asyncHandler(async (req, res) => {
   const { category, is_active, search, page = 1, limit = 50 } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const limitNum  = parseInt(limit);
+  const offset    = (parseInt(page) - 1) * limitNum;
   const organizationId = req.orgContext?.organizationId;
 
-  let query = `
-    SELECT p.*, COUNT(*) OVER() AS total_count
-    FROM products p
-    WHERE 1=1
-  `;
-  const params = [];
-  let paramCount = 1;
+  const rows = await ProductRepository.findProducts({
+    organizationId,
+    search,
+    category,
+    is_active: is_active !== undefined ? is_active === 'true' : undefined,
+    limit: limitNum,
+    offset,
+  });
 
-  if (organizationId) {
-    query += ` AND (p.organization_id = $${paramCount++} OR p.organization_id IS NULL)`;
-    params.push(organizationId);
-  }
-
-  if (category) {
-    query += ` AND p.category = $${paramCount++}`;
-    params.push(category);
-  }
-
-  if (is_active !== undefined) {
-    query += ` AND p.is_active = $${paramCount++}`;
-    params.push(is_active === 'true');
-  }
-
-  if (search) {
-    query += ` AND (p.name ILIKE $${paramCount} OR p.sku ILIKE $${paramCount})`;
-    params.push(`%${search}%`);
-    paramCount++;
-  }
-
-  query += ` ORDER BY p.name ASC LIMIT $${paramCount++} OFFSET $${paramCount}`;
-  params.push(parseInt(limit), offset);
-
-  const result = await pool.query(query, params);
-  const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+  const totalCount = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
 
   res.json({
     success: true,
-    data: result.rows,
+    data: rows,
     pagination: {
       page: parseInt(page),
-      limit: parseInt(limit),
+      limit: limitNum,
       total: totalCount,
-      totalPages: Math.ceil(totalCount / parseInt(limit))
+      totalPages: Math.ceil(totalCount / limitNum)
     }
   });
 });
@@ -559,51 +521,28 @@ export const createProduct = asyncHandler(async (req, res) => {
     for (let attempt = 0; attempt < 5; attempt++) {
       const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
       const candidate = `${prefix}-${month}-${rand}`;
-      const { rows } = await pool.query(
-        `SELECT 1 FROM products
-         WHERE sku = $1 AND (organization_id = $2 OR organization_id IS NULL) LIMIT 1`,
-        [candidate, organizationId || null]
-      );
-      if (rows.length === 0) { sku = candidate; break; }
+      const collision = await ProductRepository.findBySku(candidate, organizationId);
+      if (!collision) { sku = candidate; break; }
     }
     // Guaranteed-unique fallback
     if (!sku) sku = `${prefix}-${Date.now()}`;
   }
 
   // Check SKU uniqueness within org
-  const existing = await pool.query(
-    `SELECT id FROM products WHERE sku = $1 AND (organization_id = $2 OR organization_id IS NULL) LIMIT 1`,
-    [sku, organizationId || null]
-  );
-  if (existing.rows.length > 0) {
-    throw new BusinessLogicError(`Product SKU '${sku}' already exists`);
-  }
+  const existing = await ProductRepository.findBySku(sku, organizationId);
+  if (existing) throw new BusinessLogicError(`Product SKU '${sku}' already exists`);
 
-  const result = await pool.query(
-    `INSERT INTO products (
-       organization_id, sku, name, category, description, weight, dimensions,
-       unit_price, cost_price, currency,
-       is_fragile, requires_cold_storage, is_hazmat, is_perishable,
-       item_type, package_type, handling_instructions,
-       requires_insurance, declared_value, attributes, is_active
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,true) RETURNING *`,
-    [
-      organizationId || null,
-      sku, name, category || null, description || null,
-      weight || null,
-      dimensions ? JSON.stringify(dimensions) : null,
-      unit_price || null, cost_price || null, currency || 'INR',
-      is_fragile || false, requires_cold_storage || false,
-      is_hazmat || false, is_perishable || false,
-      item_type || 'general', package_type || 'box',
-      handling_instructions || null,
-      requires_insurance || false, declared_value || null,
-      attributes ? JSON.stringify(attributes) : null,
-    ]
-  );
+  const product = await ProductRepository.create({
+    organization_id: organizationId,
+    sku, name, category, description, weight, dimensions,
+    unit_price, cost_price, currency,
+    is_fragile, requires_cold_storage, is_hazmat, is_perishable,
+    item_type, package_type, handling_instructions,
+    requires_insurance, declared_value, attributes,
+  });
 
-  logger.info('Product created', { productId: result.rows[0].id, sku, userId: req.user?.userId });
-  res.status(201).json({ success: true, data: result.rows[0] });
+  logger.info('Product created', { productId: product.id, sku, userId: req.user?.userId });
+  res.status(201).json({ success: true, data: product });
 });
 
 // PUT /products/:id
@@ -612,96 +551,28 @@ export const updateProduct = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
 
   // Confirm product exists and belongs to org
-  const existing = await pool.query(
-    `SELECT id FROM products WHERE id = $1 AND (organization_id = $2 OR organization_id IS NULL) LIMIT 1`,
-    [id, organizationId || null]
-  );
-  if (existing.rows.length === 0) throw new NotFoundError('Product');
+  const existing = await ProductRepository.findById(id, organizationId);
+  if (!existing) throw new NotFoundError('Product');
 
-  const {
-    name, category, description, weight, dimensions,
-    unit_price, cost_price, currency,
-    is_fragile, requires_cold_storage, is_hazmat, is_perishable, is_active,
-    item_type, package_type, handling_instructions,
-    requires_insurance, declared_value,
-    attributes, images
-  } = req.body;
-
-  const result = await pool.query(
-    `UPDATE products SET
-       name                  = COALESCE($1, name),
-       category              = COALESCE($2, category),
-       description           = COALESCE($3, description),
-       weight                = COALESCE($4, weight),
-       dimensions            = COALESCE($5, dimensions),
-       unit_price            = COALESCE($6, unit_price),
-       cost_price            = COALESCE($7, cost_price),
-       currency              = COALESCE($8, currency),
-       is_fragile            = COALESCE($9, is_fragile),
-       requires_cold_storage = COALESCE($10, requires_cold_storage),
-       is_hazmat             = COALESCE($11, is_hazmat),
-       is_perishable         = COALESCE($12, is_perishable),
-       is_active             = COALESCE($13, is_active),
-       item_type             = COALESCE($14, item_type),
-       package_type          = COALESCE($15, package_type),
-       handling_instructions = COALESCE($16, handling_instructions),
-       requires_insurance    = COALESCE($17, requires_insurance),
-       declared_value        = COALESCE($18, declared_value),
-       attributes            = COALESCE($19, attributes),
-       images                = COALESCE($20, images),
-       updated_at            = NOW()
-     WHERE id = $21
-     RETURNING *`,
-    [
-      name || null,
-      category || null,
-      description || null,
-      weight !== undefined ? weight : null,
-      dimensions ? JSON.stringify(dimensions) : null,
-      unit_price !== undefined ? unit_price : null,
-      cost_price !== undefined ? cost_price : null,
-      currency || null,
-      is_fragile !== undefined ? is_fragile : null,
-      requires_cold_storage !== undefined ? requires_cold_storage : null,
-      is_hazmat !== undefined ? is_hazmat : null,
-      is_perishable !== undefined ? is_perishable : null,
-      is_active !== undefined ? is_active : null,
-      item_type || null,
-      package_type || null,
-      handling_instructions || null,
-      requires_insurance !== undefined ? requires_insurance : null,
-      declared_value !== undefined ? declared_value : null,
-      attributes ? JSON.stringify(attributes) : null,
-      images ? JSON.stringify(images) : null,
-      id
-    ]
-  );
-
+  const updated = await ProductRepository.update(id, req.body);
   logger.info('Product updated', { productId: id, userId: req.user?.userId });
-  res.json({ success: true, data: result.rows[0] });
+  res.json({ success: true, data: updated });
 });
 
-// DELETE /products/:id  (soft delete — sets is_active = false)
+// DELETE /products/:id  (hard delete — caller must remove stock first)
 export const deleteProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const organizationId = req.orgContext?.organizationId;
 
-  const existing = await pool.query(
-    `SELECT id FROM products WHERE id = $1 AND (organization_id = $2 OR organization_id IS NULL) LIMIT 1`,
-    [id, organizationId || null]
-  );
-  if (existing.rows.length === 0) throw new NotFoundError('Product');
+  const existing = await ProductRepository.findById(id, organizationId);
+  if (!existing) throw new NotFoundError('Product');
 
   // Check if product is used in open inventory
-  const inUse = await pool.query(
-    `SELECT COUNT(*) AS cnt FROM inventory WHERE product_id = $1 AND quantity > 0 LIMIT 1`,
-    [id]
-  );
-  if (parseInt(inUse.rows[0]?.cnt) > 0) {
+  if (await ProductRepository.isInUse(id)) {
     throw new BusinessLogicError('Cannot delete product with active inventory. Remove stock first.');
   }
 
-  await pool.query(`DELETE FROM products WHERE id = $1`, [id]);
+  await ProductRepository.delete(id);
 
   logger.info('Product deleted', { productId: id, userId: req.user?.userId });
   res.json({ success: true, message: 'Product deleted successfully' });
@@ -714,21 +585,9 @@ export const deleteProduct = asyncHandler(async (req, res) => {
 // GET /sla-policies
 export const listSlaPolicies = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
-  const params = [];
-  let paramCount = 1;
+  const rows = await SlaRepository.findActivePolicies(organizationId);
 
-  let query = `SELECT * FROM sla_policies WHERE is_active = true`;
-
-  if (organizationId) {
-    query += ` AND (organization_id = $${paramCount++} OR organization_id IS NULL)`;
-    params.push(organizationId);
-  }
-
-  query += ` ORDER BY priority ASC, name ASC`;
-
-  const result = await pool.query(query, params);
-
-  const policies = result.rows.map(p => ({
+  const policies = rows.map(p => ({
     id: p.id,
     name: p.name,
     serviceType: p.service_type,

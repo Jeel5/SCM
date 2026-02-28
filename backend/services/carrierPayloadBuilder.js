@@ -6,7 +6,7 @@
  */
 
 import deliveryChargeService from './deliveryChargeService.js';
-import pool from '../config/db.js';
+import carrierRepo from '../repositories/CarrierRepository.js';
 import logger from '../utils/logger.js';
 
 class CarrierPayloadBuilder {
@@ -201,17 +201,8 @@ class CarrierPayloadBuilder {
   async getWarehouseDetails(warehouse) {
     if (warehouse && warehouse.id) {
       try {
-        const result = await pool.query(
-          `SELECT id, code, name, address, address_line1, address_line2, city, state, 
-                  postal_code, country, latitude, longitude, contact_person, contact_phone
-           FROM warehouses 
-           WHERE id = $1`,
-          [warehouse.id]
-        );
-        
-        if (result.rows.length > 0) {
-          return result.rows[0];
-        }
+        const row = await carrierRepo.findWarehouseById(warehouse.id);
+        if (row) return row;
       } catch (error) {
         logger.warn('Could not fetch warehouse details', { error: error.message });
       }

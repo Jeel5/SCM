@@ -1,313 +1,158 @@
 // SLA Controller - handles service level agreements, ETAs, and violations
-import pool from '../config/db.js';
+import slaRepo from '../repositories/SlaRepository.js';
+import logger from '../utils/logger.js';
+import { asyncHandler, NotFoundError } from '../errors/index.js';
 
 // Get list of active SLA policies
-export async function listSlaPolicies(req, res) {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM sla_policies WHERE is_active = true ORDER BY name ASC'
-    );
-    
-    const policies = result.rows.map(p => ({
-      id: p.id,
-      name: p.name,
-      serviceType: p.service_type,
-      region: p.origin_region || 'All Regions',
-      targetDeliveryHours: p.delivery_hours,
-      warningThresholdHours: Math.floor(p.delivery_hours * 0.8),
-      penaltyAmount: parseFloat(p.penalty_per_hour) || 10,
-      penaltyType: 'fixed',
-      isActive: p.is_active,
-      createdAt: p.created_at
-    }));
-    
-    res.json({ success: true, data: policies });
-  } catch (error) {
-    console.error('List SLA policies error:', error);
-    res.status(500).json({ error: 'Failed to list SLA policies' });
-  }
-}
+export const listSlaPolicies = asyncHandler(async (req, res) => {
+  const organizationId = req.orgContext?.organizationId;
+  const rows = await slaRepo.findActivePolicies(organizationId);
 
-export async function getEta(req, res) {
-  try {
-    const { shipmentId } = req.params;
-    const organizationId = req.user?.organizationId;
-    
-    const result = await pool.query(
-      `SELECT ep.*, s.tracking_number FROM eta_predictions ep
-       JOIN shipments s ON ep.shipment_id = s.id
-       WHERE ep.shipment_id = $1${organizationId ? ' AND s.organization_id = $2' : ''}
-       ORDER BY ep.predicted_at DESC LIMIT 1`,
-      organizationId ? [shipmentId, organizationId] : [shipmentId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'ETA not found' });
+  const policies = rows.map(p => ({
+    id: p.id,
+    name: p.name,
+    serviceType: p.service_type,
+    region: p.origin_region || 'All Regions',
+    targetDeliveryHours: p.delivery_hours,
+    warningThresholdHours: Math.floor(p.delivery_hours * 0.8),
+    penaltyAmount: parseFloat(p.penalty_per_hour) || 10,
+    penaltyType: 'fixed',
+    isActive: p.is_active,
+    createdAt: p.created_at
+  }));
+
+  res.json({ success: true, data: policies });
+});
+
+export const getEta = asyncHandler(async (req, res) => {
+  const { shipmentId } = req.params;
+  // Use injectOrgContext result — consistent with all other handlers (T3-06)
+  const organizationId = req.orgContext?.organizationId;
+
+  const eta = await slaRepo.findLatestEta(shipmentId, organizationId);
+
+  if (!eta) throw new NotFoundError('ETA');
+
+  res.json({
+    success: true,
+    data: {
+      shipmentId: eta.shipment_id,
+      trackingNumber: eta.tracking_number,
+      predictedEta: eta.predicted_eta,
+      confidenceScore: parseFloat(eta.confidence_score),
+      factors: eta.factors,
+      mlModel: eta.ml_model,
+      predictedAt: eta.predicted_at
     }
-    
-    const eta = result.rows[0];
-    res.json({
-      success: true,
-      data: {
-        shipmentId: eta.shipment_id,
-        trackingNumber: eta.tracking_number,
-        predictedEta: eta.predicted_eta,
-        confidenceScore: parseFloat(eta.confidence_score),
-        factors: eta.factors,
-        mlModel: eta.ml_model,
-        predictedAt: eta.predicted_at
-      }
-    });
-  } catch (error) {
-    console.error('Get ETA error:', error);
-    res.status(500).json({ error: 'Failed to get ETA' });
-  }
-}
+  });
+});
 
-export async function getSlaViolations(req, res) {
-  try {
-    const { page = 1, limit = 20, status } = req.query;
-    const offset = (page - 1) * limit;
-    const organizationId = req.user?.organizationId;
-    
-    let query = `
-      SELECT sv.*, s.tracking_number, sp.name as policy_name
-      FROM sla_violations sv
-      JOIN shipments s ON sv.shipment_id = s.id
-      JOIN sla_policies sp ON sv.sla_policy_id = sp.id
-      WHERE 1=1
-    `;
-    const params = [];
+export const getSlaViolations = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, status } = req.validatedQuery || req.query;
+  const pageNum  = parseInt(page)  || 1;
+  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  // Use injectOrgContext result — consistent with all other handlers (T3-06)
+  const organizationId = req.orgContext?.organizationId;
 
-    if (organizationId) {
-      params.push(organizationId);
-      query += ` AND sv.organization_id = $${params.length}`;
+  const { rows, total } = await slaRepo.findViolations({
+    organizationId, status, page: pageNum, limit: limitNum,
+  });
+
+  res.json({
+    success: true,
+    data: rows.map(v => ({
+      id: v.id,
+      shipmentId: v.shipment_id,
+      trackingNumber: v.tracking_number,
+      policyId: v.sla_policy_id,
+      policyName: v.policy_name,
+      status: v.status,
+      violationReason: v.reason,
+      penaltyAmount: parseFloat(v.penalty_amount),
+      violatedAt: v.violated_at,
+      resolvedAt: v.resolved_at
+    })),
+    pagination: { page: pageNum, limit: limitNum, total }
+  });
+});
+
+export const getSlaDashboard = asyncHandler(async (req, res) => {
+  // Use injectOrgContext result — consistent with all other handlers (T3-06)
+  const organizationId = req.orgContext?.organizationId;
+
+  const { compliance, violations, carriers } = await slaRepo.getSlaDashboard(organizationId);
+
+  const onTimeRate = compliance.total_shipments > 0
+    ? (parseInt(compliance.on_time) / parseInt(compliance.total_shipments) * 100).toFixed(1)
+    : 100;
+
+  res.json({
+    success: true,
+    data: {
+      overallCompliance: parseFloat(onTimeRate),
+      totalShipments: parseInt(compliance.total_shipments),
+      onTimeDeliveries: parseInt(compliance.on_time),
+      violations: violations.reduce((acc, v) => {
+        acc[v.status] = parseInt(v.count);
+        return acc;
+      }, { pending: 0, resolved: 0, waived: 0 }),
+      topCarriers: carriers.map(c => ({
+        name: c.name,
+        reliabilityScore: parseFloat(c.reliability_score),
+        shipmentCount: parseInt(c.shipment_count)
+      }))
     }
-    
-    if (status) {
-      params.push(status);
-      query += ` AND sv.status = $${params.length}`;
-    }
-    
-    params.push(parseInt(limit) || 20, offset);
-    query += ` ORDER BY sv.violated_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+  });
+});
 
-    const result = await pool.query(query, params);
+export const listExceptions = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, severity, status } = req.validatedQuery || req.query;
+  const pageNum  = parseInt(page)  || 1;
+  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const organizationId = req.orgContext?.organizationId;
 
-    let countQuery = 'SELECT COUNT(*) FROM sla_violations WHERE 1=1';
-    const countParams = [];
-    if (organizationId) {
-      countParams.push(organizationId);
-      countQuery += ` AND organization_id = $${countParams.length}`;
-    }
-    if (status) {
-      countParams.push(status);
-      countQuery += ` AND status = $${countParams.length}`;
-    }
-    const countResult = await pool.query(countQuery, countParams);
-    
-    res.json({
-      success: true,
-      data: result.rows.map(v => ({
-        id: v.id,
-        shipmentId: v.shipment_id,
-        trackingNumber: v.tracking_number,
-        policyId: v.sla_policy_id,
-        policyName: v.policy_name,
-        status: v.status,
-        violationReason: v.reason,
-        penaltyAmount: parseFloat(v.penalty_amount),
-        violatedAt: v.violated_at,
-        resolvedAt: v.resolved_at
-      })),
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].count)
-      }
-    });
-  } catch (error) {
-    console.error('Get SLA violations error:', error);
-    res.status(500).json({ error: 'Failed to get SLA violations' });
-  }
-}
+  const { rows, total } = await slaRepo.findExceptions({
+    organizationId, severity, status, page: pageNum, limit: limitNum,
+  });
 
-export async function getSlaDashboard(req, res) {
-  try {
-    const organizationId = req.user?.organizationId;
-    const orgParam = organizationId ? ' AND organization_id = $1' : '';
-    const orgArgs = organizationId ? [organizationId] : [];
+  res.json({
+    success: true,
+    data: rows.map(e => ({
+      id: e.id,
+      shipmentId: e.shipment_id,
+      trackingNumber: e.tracking_number,
+      orderNumber: e.order_number,
+      exceptionType: e.exception_type,
+      severity: e.severity,
+      description: e.description,
+      status: e.status,
+      resolution: e.resolution,
+      createdAt: e.created_at,
+      resolvedAt: e.resolved_at
+    })),
+    pagination: { page: pageNum, limit: limitNum, total }
+  });
+});
 
-    // Get overall SLA compliance rate
-    const complianceResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_shipments,
-        COUNT(CASE WHEN s.delivery_actual <= s.delivery_scheduled THEN 1 END) as on_time
-      FROM shipments s
-      WHERE s.status = 'delivered'
-        AND s.created_at >= NOW() - INTERVAL '30 days'${organizationId ? ' AND s.organization_id = $1' : ''}
-    `, orgArgs);
-    
-    const compliance = complianceResult.rows[0];
-    const onTimeRate = compliance.total_shipments > 0 
-      ? (parseInt(compliance.on_time) / parseInt(compliance.total_shipments) * 100).toFixed(1)
-      : 100;
-    
-    // Get violations by status
-    const violationsResult = await pool.query(`
-      SELECT status, COUNT(*) as count
-      FROM sla_violations
-      WHERE violated_at >= NOW() - INTERVAL '30 days'${orgParam}
-      GROUP BY status
-    `, orgArgs);
-    
-    // Get carrier performance
-    const carrierResult = await pool.query(`
-      SELECT c.name, c.reliability_score,
-             COUNT(s.id) as shipment_count
-      FROM carriers c
-      LEFT JOIN shipments s ON s.carrier_id = c.id 
-        AND s.created_at >= NOW() - INTERVAL '30 days'
-      WHERE c.is_active = true
-      GROUP BY c.id, c.name, c.reliability_score
-      ORDER BY c.reliability_score DESC
-      LIMIT 5
-    `);
-    
-    res.json({
-      success: true,
-      data: {
-        overallCompliance: parseFloat(onTimeRate),
-        totalShipments: parseInt(compliance.total_shipments),
-        onTimeDeliveries: parseInt(compliance.on_time),
-        violations: violationsResult.rows.reduce((acc, v) => {
-          acc[v.status] = parseInt(v.count);
-          return acc;
-        }, { pending: 0, resolved: 0, waived: 0 }),
-        topCarriers: carrierResult.rows.map(c => ({
-          name: c.name,
-          reliabilityScore: parseFloat(c.reliability_score),
-          shipmentCount: parseInt(c.shipment_count)
-        }))
-      }
-    });
-  } catch (error) {
-    console.error('Get SLA dashboard error:', error);
-    res.status(500).json({ error: 'Failed to get SLA dashboard' });
-  }
-}
+export const createException = asyncHandler(async (req, res) => {
+  const { shipmentId, exceptionType, severity, description } = req.body;
+  const organizationId = req.orgContext?.organizationId;
 
-export async function listExceptions(req, res) {
-  try {
-    const { page = 1, limit = 20, severity, status } = req.query;
-    const pageNumber = parseInt(page) || 1;
-    const limitNumber = parseInt(limit) || 20;
-    const offset = (pageNumber - 1) * limitNumber;
-    const organizationId = req.orgContext?.organizationId;
-    
-    let query = `
-      SELECT e.*, s.tracking_number, o.order_number
-      FROM exceptions e
-      LEFT JOIN shipments s ON e.shipment_id = s.id
-      LEFT JOIN orders o ON e.order_id = o.id
-      WHERE 1=1
-    `;
-    let countQuery = 'SELECT COUNT(*) FROM exceptions e WHERE 1=1';
-    const params = [];
-    
-    // Multi-tenant filter: org users only see their org's exceptions
-    if (organizationId) {
-      params.push(organizationId);
-      query      += ` AND e.organization_id = $${params.length}`;
-      countQuery += ` AND e.organization_id = $${params.length}`;
-    }
-    
-    if (severity) {
-      params.push(severity);
-      query += ` AND e.severity = $${params.length}`;
-      countQuery += ` AND e.severity = $${params.length}`;
-    }
-    
-    if (status) {
-      params.push(status);
-      query += ` AND e.status = $${params.length}`;
-      countQuery += ` AND e.status = $${params.length}`;
-    }
-    
-    // Snapshot filter params before appending pagination so countQuery receives
-    // only the filter placeholders it was built with (TASK-R11-015).
-    const countParams = [...params];
-    params.push(limitNumber, offset);
-    query += ` ORDER BY e.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+  const row = await slaRepo.createException({ organizationId, shipmentId, exceptionType, severity, description });
 
-    const result = await pool.query(query, params);
-    const countResult = await pool.query(countQuery, countParams);
-    const total = countResult.rows[0] ? parseInt(countResult.rows[0].count) : 0;
-    
-    res.json({
-      success: true,
-      data: result.rows.map(e => ({
-        id: e.id,
-        shipmentId: e.shipment_id,
-        trackingNumber: e.tracking_number,
-        orderNumber: e.order_number,
-        exceptionType: e.exception_type,
-        severity: e.severity,
-        description: e.description,
-        status: e.status,
-        resolution: e.resolution,
-        createdAt: e.created_at,
-        resolvedAt: e.resolved_at
-      })),
-      pagination: {
-        page: pageNumber,
-        limit: limitNumber,
-        total
-      }
-    });
-  } catch (error) {
-    console.error('List exceptions error:', error);
-    res.status(500).json({ error: 'Failed to list exceptions' });
-  }
-}
+  res.status(201).json({ success: true, data: row });
+});
 
-export async function createException(req, res) {
-  try {
-    const { shipmentId, exceptionType, severity, description } = req.body;
-    const organizationId = req.orgContext?.organizationId;
-    
-    const result = await pool.query(
-      `INSERT INTO exceptions (organization_id, shipment_id, exception_type, severity, description)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [organizationId || null, shipmentId, exceptionType, severity, description]
-    );
-    
-    res.status(201).json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('Create exception error:', error);
-    res.status(500).json({ error: 'Failed to create exception' });
-  }
-}
+export const resolveException = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { resolution } = req.body;
+  // Use injectOrgContext result — consistent with all other handlers (T3-06)
+  const organizationId = req.orgContext?.organizationId;
 
-export async function resolveException(req, res) {
-  try {
-    const { id } = req.params;
-    const { resolution } = req.body;
-    
-    const organizationId = req.user?.organizationId;
-    const result = await pool.query(
-      `UPDATE exceptions SET status = 'resolved', resolution = $1, resolved_at = NOW()
-       WHERE id = $2${organizationId ? ' AND organization_id = $3' : ''} RETURNING *`,
-      organizationId ? [resolution, id, organizationId] : [resolution, id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Exception not found' });
-    }
-    
-    res.json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('Resolve exception error:', error);
-    res.status(500).json({ error: 'Failed to resolve exception' });
-  }
-}
+  const row = await slaRepo.resolveException(id, resolution, organizationId);
+
+  if (!row) throw new NotFoundError('Exception');
+
+  res.json({ success: true, data: row });
+});
+

@@ -31,14 +31,22 @@ router.post('/:orgToken/tracking', resolveWebhookOrg, webhooksController.handleT
 router.post('/:orgToken/rates', resolveWebhookOrg, webhooksController.handleRatesWebhook);
 
 // ── Legacy / demo routes (organization_id = null) ─────────────────────────────
-// These remain for the demo site and backward compatibility.
-// In production, clients MUST use the org-scoped token URLs above.
-router.post('/orders', webhooksController.handleOrderWebhook);
-router.post('/tracking', webhooksController.handleTrackingWebhook);
-router.post('/inventory', webhooksController.handleInventoryWebhook);
-router.post('/returns', webhooksController.handleReturnWebhook);
-router.post('/rates', webhooksController.handleRatesWebhook);
-router.post('/generic', webhooksController.handleGenericWebhook);
+// Blocked by default. Set ALLOW_LEGACY_WEBHOOKS=true (env) only for local demo.
+// Production deployments MUST use org-scoped token URLs above.
+const legacyWebhookGuard = (_req, res, next) => {
+  if (process.env.ALLOW_LEGACY_WEBHOOKS === 'true') return next();
+  return res.status(410).json({
+    success: false,
+    message: 'Deprecated endpoint. Use the org-scoped URL: POST /api/webhooks/:orgToken/<event>'
+  });
+};
+
+router.post('/orders',    legacyWebhookGuard, webhooksController.handleOrderWebhook);
+router.post('/tracking',  legacyWebhookGuard, webhooksController.handleTrackingWebhook);
+router.post('/inventory', legacyWebhookGuard, webhooksController.handleInventoryWebhook);
+router.post('/returns',   legacyWebhookGuard, webhooksController.handleReturnWebhook);
+router.post('/rates',     legacyWebhookGuard, webhooksController.handleRatesWebhook);
+router.post('/generic',   legacyWebhookGuard, webhooksController.handleGenericWebhook);
 
 // ── Management endpoints (require auth) ───────────────────────────────────────
 

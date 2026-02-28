@@ -1,336 +1,162 @@
 // Returns Controller - handles HTTP requests for product returns
-import pool from '../config/db.js';
+import returnRepo from '../repositories/ReturnRepository.js';
+import returnsService from '../services/returnsService.js';
 import { withTransaction } from '../utils/dbTransaction.js';
-
-// ─── Return State Machine ───────────────────────────────────────────────────
-const RETURN_VALID_TRANSITIONS = {
-  requested:  ['approved', 'rejected'],
-  approved:   ['received', 'cancelled'],
-  received:   ['inspecting'],
-  inspecting: ['inspected', 'rejected'],
-  inspected:  ['completed', 'refunded'],
-  completed:  [],  // terminal
-  refunded:   [],  // terminal
-  rejected:   [],  // terminal
-  cancelled:  [],  // terminal
-};
+import logger from '../utils/logger.js';
+import { asyncHandler, NotFoundError, AppError, ValidationError } from '../errors/index.js';
 
 // Get returns list with filters and pagination
-export async function listReturns(req, res) {
-  try {
-    // Use validatedQuery for Joi-validated params (with type coercion)
-    const queryParams = req.validatedQuery || req.query;
-    const { page, limit, status, reason } = queryParams;
-    const offset = (page - 1) * limit;
-    
-    // Get organization context for multi-tenancy
-    const organizationId = req.orgContext?.organizationId;
-    
-    let query = `
-      SELECT r.*, o.order_number, p.name as product_name, p.sku, ri.product_id
-      FROM returns r
-      JOIN orders o ON r.order_id = o.id
-      LEFT JOIN return_items ri ON ri.return_id = r.id
-      LEFT JOIN products p ON ri.product_id = p.id
-      WHERE 1=1
-    `;
-    const params = [];
-    
-    // Multi-tenant filter: restrict to user's organization
-    if (organizationId) {
-      params.push(organizationId);
-      query += ` AND r.organization_id = $${params.length}`;
-    }
-    
-    if (status) {
-      params.push(status);
-      query += ` AND r.status = $${params.length}`;
-    }
-    
-    if (reason) {
-      params.push(reason);
-      query += ` AND r.reason = $${params.length}`;
-    }
-    
-    // Count rows: wrap the WHERE expression as a subquery to avoid a fragile
-    // .replace() regex that breaks on multi-line SELECTs / CTEs (TASK-R10-012).
-    const countResult = await pool.query(
-      `SELECT COUNT(*) FROM (${query}) AS _cnt`,
-      params
-    );
+export const listReturns = asyncHandler(async (req, res) => {
+  const queryParams = req.validatedQuery || req.query;
+  const { page = 1, limit = 20, status, reason } = queryParams;
+  const organizationId = req.orgContext?.organizationId;
 
-    // Parameterize LIMIT/OFFSET — string interpolation is a SQL-injection vector.
-    params.push(parseInt(limit) || 20, offset);
-    query += ` ORDER BY r.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+  const { returns, totalCount } = await returnRepo.findReturnsWithDetails({
+    page:  parseInt(page)  || 1,
+    limit: Math.min(parseInt(limit) || 20, 100),
+    status:  status  || null,
+    reason:  reason  || null,
+    organizationId,
+  });
 
-    const result = await pool.query(query, params);
-    
-    res.json({
-      success: true,
-      data: result.rows.map(r => ({
-        id: r.id,
-        rmaNumber: r.rma_number,
-        orderId: r.order_id,
-        orderNumber: r.order_number,
-        productId: r.product_id,
-        productName: r.product_name,
-        sku: r.sku,
-        quantity: r.quantity,
-        reason: r.reason,
-        status: r.status,
-        refundAmount: parseFloat(r.refund_amount),
-        restockFee: parseFloat(r.restock_fee),
-        returnTrackingNumber: r.return_tracking_number,
-        notes: r.notes,
-        createdAt: r.created_at,
-        processedAt: r.processed_at,
-        completedAt: r.completed_at
+  res.json({
+    success: true,
+    data: returns.map(r => ({
+      id: r.id,
+      rmaNumber: r.rma_number,
+      orderId: r.order_id,
+      orderNumber: r.order_number,
+      quantity: r.quantity,
+      reason: r.reason,
+      status: r.status,
+      refundAmount: parseFloat(r.refund_amount || 0),
+      restockFee: parseFloat(r.restock_fee || 0),
+      returnTrackingNumber: r.return_tracking_number,
+      notes: r.notes,
+      createdAt: r.created_at,
+      processedAt: r.processed_at,
+      completedAt: r.completed_at,
+    })),
+    pagination: {
+      page: parseInt(page),
+      limit: Math.min(parseInt(limit) || 20, 100),
+      total: totalCount,
+    },
+  });
+});
+
+export const getReturn = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+
+  const ret = await returnRepo.findReturnDetails(id, organizationId);
+  if (!ret) throw new NotFoundError('Return');
+
+  res.json({
+    success: true,
+    data: {
+      id: ret.id,
+      rmaNumber: ret.rma_number,
+      orderId: ret.order_id,
+      orderNumber: ret.order_number,
+      quantity: ret.quantity,
+      reason: ret.reason,
+      status: ret.status,
+      refundAmount: parseFloat(ret.refund_amount || 0),
+      restockFee: parseFloat(ret.restock_fee || 0),
+      returnTrackingNumber: ret.return_tracking_number,
+      notes: ret.notes,
+      customerAddress: ret.customer_address,
+      items: ret.items || [],
+      createdAt: ret.created_at,
+      processedAt: ret.processed_at,
+      completedAt: ret.completed_at,
+    },
+  });
+});
+
+export const createReturn = asyncHandler(async (req, res) => {
+  const { order_id, items, reason, reason_details, customer_email, refund_amount } = req.body;
+
+  if (!items || items.length === 0) {
+    throw new ValidationError('At least one return item is required');
+  }
+
+  const rmaNumber = `RMA-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const organizationId = req.orgContext?.organizationId;
+
+  const returnRecord = await withTransaction(async (tx) => {
+    return await returnRepo.createReturnWithItems(
+      {
+        rma_number:    rmaNumber,
+        order_id,
+        reason,
+        reason_detail: reason_details ?? null,
+        customer_email,
+        refund_amount:  refund_amount ?? null,
+        organization_id: organizationId,
+      },
+      items.map(item => ({
+        product_id:   item.product_id,
+        sku:          item.sku          || null,
+        product_name: item.product_name || null,
+        quantity:     item.quantity,
+        condition:    item.condition    || null,
+        reason,
       })),
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].count)
-      }
-    });
-  } catch (error) {
-    console.error('List returns error:', error);
-    res.status(500).json({ error: 'Failed to list returns' });
-  }
-}
-
-export async function getReturn(req, res) {
-  try {
-    const { id } = req.params;
-    
-    // Get organization context for multi-tenancy
-    const organizationId = req.orgContext?.organizationId;
-    
-    let query = `
-      SELECT r.*, o.order_number, p.name as product_name, p.sku,
-             o.shipping_address as customer_address
-      FROM returns r
-      JOIN orders o ON r.order_id = o.id
-      LEFT JOIN products p ON r.product_id = p.id
-      WHERE r.id = $1
-    `;
-    const params = [id];
-    
-    if (organizationId) {
-      params.push(organizationId);
-      query += ` AND r.organization_id = $${params.length}`;
-    }
-    
-    const result = await pool.query(query, params);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Return not found' });
-    }
-    
-    const r = result.rows[0];
-    res.json({
-      success: true,
-      data: {
-        id: r.id,
-        rmaNumber: r.rma_number,
-        orderId: r.order_id,
-        orderNumber: r.order_number,
-        productId: r.product_id,
-        productName: r.product_name,
-        sku: r.sku,
-        quantity: r.quantity,
-        reason: r.reason,
-        status: r.status,
-        refundAmount: parseFloat(r.refund_amount),
-        restockFee: parseFloat(r.restock_fee),
-        returnTrackingNumber: r.return_tracking_number,
-        notes: r.notes,
-        customerAddress: r.customer_address,
-        createdAt: r.created_at,
-        processedAt: r.processed_at,
-        completedAt: r.completed_at
-      }
-    });
-  } catch (error) {
-    console.error('Get return error:', error);
-    res.status(500).json({ error: 'Failed to get return' });
-  }
-}
-
-export async function createReturn(req, res) {
-  try {
-    const { order_id, items, reason, reason_details, customer_email, refund_amount } = req.body;
-
-    if (!items || items.length === 0) {
-      return res.status(400).json({ error: 'At least one return item is required' });
-    }
-
-    // Generate RMA number
-    const rmaNumber = `RMA-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-    // Get organization context for multi-tenancy
-    const organizationId = req.orgContext?.organizationId;
-
-    const returnRecord = await withTransaction(async (tx) => {
-      // Insert the returns record using only schema-correct columns
-      const returnResult = await tx.query(
-        `INSERT INTO returns (rma_number, order_id, reason, reason_detail, customer_email, refund_amount, organization_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [rmaNumber, order_id, reason, reason_details ?? null, customer_email, refund_amount ?? null, organizationId]
-      );
-
-      const returnRow = returnResult.rows[0];
-
-      // Insert every item into return_items (previously only first item was saved)
-      for (const item of items) {
-        await tx.query(
-          `INSERT INTO return_items (return_id, product_id, quantity, reason, reason_detail)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [returnRow.id, item.product_id, item.quantity, reason, reason_details ?? null]
-        );
-      }
-
-      return returnRow;
-    });
-
-    res.status(201).json({ success: true, data: returnRecord });
-  } catch (error) {
-    console.error('Create return error:', error);
-    res.status(500).json({ error: 'Failed to create return' });
-  }
-}
-
-export async function updateReturn(req, res) {
-  try {
-    const { id } = req.params;
-    const { status, inspection_notes, refund_amount, refund_method } = req.body;
-    
-    // ── State machine validation ────────────────────────────────────────────
-    if (status) {
-      const organizationId = req.user?.organizationId;
-      const currentResult = await pool.query(
-        `SELECT status FROM returns WHERE id = $1${organizationId ? ' AND organization_id = $2' : ''} LIMIT 1`,
-        organizationId ? [id, organizationId] : [id]
-      );
-      if (currentResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Return not found' });
-      }
-      const currentStatus = currentResult.rows[0].status;
-      const allowed = RETURN_VALID_TRANSITIONS[currentStatus];
-      if (allowed === undefined) {
-        return res.status(409).json({ error: `Unknown current return status: '${currentStatus}'` });
-      }
-      if (!allowed.includes(status)) {
-        return res.status(409).json({
-          error: `Invalid status transition: '${currentStatus}' → '${status}'. Allowed: ${allowed.length ? allowed.join(', ') : '(none — terminal state)'}`
-        });
-      }
-    }
-    // ───────────────────────────────────────────────────────────────────────
-
-    let updateFields = [];
-    const params = [id];
-    let paramIndex = 2;
-    
-    if (status) {
-      updateFields.push(`status = $${paramIndex++}`);
-      params.push(status);
-      
-      if (status === 'processing') {
-        updateFields.push(`processed_at = NOW()`);
-      } else if (status === 'completed' || status === 'refunded') {
-        updateFields.push(`completed_at = NOW()`);
-      }
-    }
-    
-    if (refund_amount !== undefined) {
-      updateFields.push(`refund_amount = $${paramIndex++}`);
-      params.push(refund_amount);
-    }
-    
-    if (refund_method) {
-      updateFields.push(`refund_method = $${paramIndex++}`);
-      params.push(refund_method);
-    }
-    
-    if (inspection_notes) {
-      updateFields.push(`notes = $${paramIndex++}`);
-      params.push(inspection_notes);
-    }
-    
-    if (updateFields.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-    
-    const organizationId = req.user?.organizationId;
-    if (organizationId) params.push(organizationId);
-    const result = await pool.query(
-      `UPDATE returns SET ${updateFields.join(', ')}, updated_at = NOW()
-       WHERE id = $1${organizationId ? ` AND organization_id = $${params.length}` : ''} RETURNING *`,
-      params
+      tx
     );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Return not found' });
-    }
-    
-    res.json({ success: true, data: result.rows[0] });
-  } catch (error) {
-    console.error('Update return error:', error);
-    res.status(500).json({ error: 'Failed to update return' });
-  }
-}
+  });
 
-export async function getReturnStats(req, res) {
-  try {
-    const organizationId = req.user?.organizationId;
-    const orgParam = organizationId ? ' AND organization_id = $1' : '';
-    const orgArgs = organizationId ? [organizationId] : [];
+  res.status(201).json({ success: true, data: returnRecord });
+});
 
-    const statsResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_returns,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
-        COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
-        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected,
-        COALESCE(SUM(refund_amount), 0) as total_refunds,
-        COALESCE(SUM(restock_fee), 0) as total_restock_fees
-      FROM returns
-      WHERE created_at >= NOW() - INTERVAL '30 days'${orgParam}
-    `, orgArgs);
-    
-    const reasonsResult = await pool.query(`
-      SELECT reason, COUNT(*) as count
-      FROM returns
-      WHERE created_at >= NOW() - INTERVAL '30 days'${orgParam}
-      GROUP BY reason
-      ORDER BY count DESC
-    `, orgArgs);
-    
-    const stats = statsResult.rows[0];
-    
-    res.json({
-      success: true,
-      data: {
-        totalReturns: parseInt(stats.total_returns),
-        byStatus: {
-          pending: parseInt(stats.pending),
-          approved: parseInt(stats.approved),
-          processing: parseInt(stats.processing),
-          completed: parseInt(stats.completed),
-          rejected: parseInt(stats.rejected)
-        },
-        totalRefunds: parseFloat(stats.total_refunds),
-        totalRestockFees: parseFloat(stats.total_restock_fees),
-        byReason: reasonsResult.rows.map(r => ({
-          reason: r.reason,
-          count: parseInt(r.count)
-        }))
-      }
-    });
-  } catch (error) {
-    console.error('Get return stats error:', error);
-    res.status(500).json({ error: 'Failed to get return stats' });
+export const updateReturn = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status, inspection_notes, refund_amount, refund_method } = req.body;
+  const organizationId = req.orgContext?.organizationId;
+
+  // ── State machine validation ────────────────────────────────────────────
+  if (status) {
+    const current = await returnRepo.findById(id, organizationId);
+    if (!current) throw new NotFoundError('Return');
+    returnsService.validateTransition(current.status, status);
   }
-}
+  // ───────────────────────────────────────────────────────────────────────
+
+  if (!status && refund_amount === undefined && !refund_method && !inspection_notes) {
+    throw new ValidationError('No fields to update');
+  }
+
+  const updated = await returnRepo.updateStatus(id, status, organizationId, {
+    notes: inspection_notes,
+    refund_amount,
+    refund_method,
+  });
+
+  if (!updated) throw new NotFoundError('Return');
+  res.json({ success: true, data: updated });
+});
+
+export const getReturnStats = asyncHandler(async (req, res) => {
+  const organizationId = req.orgContext?.organizationId;
+
+  const { stats, reasons } = await returnRepo.getLast30DayStats(organizationId);
+
+  res.json({
+    success: true,
+    data: {
+      totalReturns: parseInt(stats.total_returns),
+      byStatus: {
+        pending:    parseInt(stats.pending),
+        approved:   parseInt(stats.approved),
+        processing: parseInt(stats.processing),
+        completed:  parseInt(stats.completed),
+        rejected:   parseInt(stats.rejected),
+      },
+      totalRefunds:     parseFloat(stats.total_refunds),
+      totalRestockFees: parseFloat(stats.total_restock_fees),
+      byReason: reasons.map(r => ({ reason: r.reason, count: parseInt(r.count) })),
+    },
+  });
+});

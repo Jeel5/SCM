@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import { jobsService } from '../services/jobsService.js';
+import { asyncHandler, ValidationError, NotFoundError } from '../errors/index.js';
 
 /**
  * Webhook Controller
@@ -9,8 +10,7 @@ import { jobsService } from '../services/jobsService.js';
 /**
  * Handle order webhooks from e-commerce platforms
  */
-export const handleOrderWebhook = async (req, res, next) => {
-  try {
+export const handleOrderWebhook = asyncHandler(async (req, res) => {
     let { event_type, source, data, timestamp, event_id } = req.body;
 
     // Support bare-payload format (no envelope) — demo portal and direct integrations
@@ -32,10 +32,7 @@ export const handleOrderWebhook = async (req, res, next) => {
     // Validate webhook payload
     if (!event_type || !source || !data) {
       logger.warn('Invalid webhook payload', { body: req.body });
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid webhook payload. Expected: { event_type, source, data } or a bare order object with customer_name/items.'
-      });
+      throw new ValidationError('Invalid webhook payload. Expected: { event_type, source, data } or a bare order object with customer_name/items.');
     }
 
     // Process based on source platform
@@ -84,27 +81,18 @@ export const handleOrderWebhook = async (req, res, next) => {
       message: 'Webhook received and queued for processing',
       job_id: job.id
     });
-
-  } catch (error) {
-    logger.error('Error handling order webhook:', error);
-    next(error);
-  }
-};
+});
 
 /**
  * Handle carrier tracking webhooks
  */
-export const handleTrackingWebhook = async (req, res, next) => {
-  try {
+export const handleTrackingWebhook = asyncHandler(async (req, res) => {
     const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`🚚 Received tracking webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.tracking_number) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid tracking webhook payload'
-      });
+      throw new ValidationError('Invalid tracking webhook payload');
     }
 
     // Idempotency: use event_id or (tracking_number + carrier_status)
@@ -139,27 +127,18 @@ export const handleTrackingWebhook = async (req, res, next) => {
       message: 'Tracking update received',
       job_id: job.id
     });
-
-  } catch (error) {
-    logger.error('Error handling tracking webhook:', error);
-    next(error);
-  }
-};
+});
 
 /**
  * Handle warehouse inventory webhooks
  */
-export const handleInventoryWebhook = async (req, res, next) => {
-  try {
+export const handleInventoryWebhook = asyncHandler(async (req, res) => {
     const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`📊 Received inventory webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.warehouse_id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid inventory webhook payload'
-      });
+      throw new ValidationError('Invalid inventory webhook payload');
     }
 
     const idempotencyKey = event_id ? `inventory-${event_id}` : null;
@@ -191,27 +170,18 @@ export const handleInventoryWebhook = async (req, res, next) => {
       job_id: job.id,
       items_updated: data.items?.length || 0
     });
-
-  } catch (error) {
-    logger.error('Error handling inventory webhook:', error);
-    next(error);
-  }
-};
+});
 
 /**
  * Handle return request webhooks
  */
-export const handleReturnWebhook = async (req, res, next) => {
-  try {
+export const handleReturnWebhook = asyncHandler(async (req, res) => {
     const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`↩️  Received return webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.return_id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid return webhook payload'
-      });
+      throw new ValidationError('Invalid return webhook payload');
     }
 
     const idempotencyKey = event_id
@@ -246,27 +216,18 @@ export const handleReturnWebhook = async (req, res, next) => {
       job_id: job.id,
       return_id: data.return_id
     });
-
-  } catch (error) {
-    logger.error('Error handling return webhook:', error);
-    next(error);
-  }
-};
+});
 
 /**
  * Handle carrier rate response webhooks
  */
-export const handleRatesWebhook = async (req, res, next) => {
-  try {
+export const handleRatesWebhook = asyncHandler(async (req, res) => {
     const { event_type, source, data, timestamp, event_id } = req.body;
 
     logger.info(`💰 Received rates webhook: ${event_type} from ${source}`);
 
     if (!event_type || !source || !data || !data.request_id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid rates webhook payload'
-      });
+      throw new ValidationError('Invalid rates webhook payload');
     }
 
     const idempotencyKey = event_id
@@ -298,18 +259,12 @@ export const handleRatesWebhook = async (req, res, next) => {
       job_id: job.id,
       rates_count: data.rates?.length || 0
     });
-
-  } catch (error) {
-    logger.error('Error handling rates webhook:', error);
-    next(error);
-  }
-};
+});
 
 /**
  * Generic webhook handler (for testing/debugging)
  */
-export const handleGenericWebhook = async (req, res, next) => {
-  try {
+export const handleGenericWebhook = asyncHandler(async (req, res) => {
     const payload = req.body;
     const headers = req.headers;
 
@@ -327,28 +282,17 @@ export const handleGenericWebhook = async (req, res, next) => {
       message: 'Generic webhook received',
       received_at: new Date().toISOString()
     });
-
-  } catch (error) {
-    logger.error('Error handling generic webhook:', error);
-    next(error);
-  }
-};
+});
 
 /**
  * Get webhook delivery status (check if job was processed)
  */
-export const getWebhookStatus = async (req, res, next) => {
-  try {
+export const getWebhookStatus = asyncHandler(async (req, res) => {
     const { jobId } = req.params;
 
     const job = await jobsService.getJobById(jobId);
 
-    if (!job) {
-      return res.status(404).json({
-        success: false,
-        message: 'Job not found'
-      });
-    }
+    if (!job) throw new NotFoundError('Job');
 
     res.json({
       success: true,
@@ -364,12 +308,7 @@ export const getWebhookStatus = async (req, res, next) => {
         error: job.error
       }
     });
-
-  } catch (error) {
-    logger.error('Error getting webhook status:', error);
-    next(error);
-  }
-};
+});
 
 // ==================== HELPER FUNCTIONS ====================
 

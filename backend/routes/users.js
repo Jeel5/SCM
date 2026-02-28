@@ -10,14 +10,15 @@ import {
 import { authenticate } from '../middlewares/auth.js';
 import { authorize, requireRoles, ROLES } from '../middlewares/rbac.js';
 import { injectOrgContext } from '../middlewares/multiTenant.js';
-import { validateRequest } from '../validators/index.js';
+import { validateRequest, validateQuery } from '../validators/index.js';
 import { 
   loginUserSchema, 
   updateProfileSchema, 
   changePasswordSchema,
   notificationPreferencesSchema,
   createOrgUserSchema,
-  updateOrgUserSchema
+  updateOrgUserSchema,
+  listUsersQuerySchema
 } from '../validators/userSchemas.js';
 
 const router = express.Router();
@@ -41,7 +42,7 @@ router.get('/settings/sessions', authenticate, getActiveSessions);
 router.delete('/settings/sessions/:sessionId', authenticate, revokeSession);
 
 // Admin-only routes
-router.get('/users', authenticate, injectOrgContext, requireRoles(ROLES.ADMIN, ROLES.OPERATIONS), listUsers);
+router.get('/users', authenticate, injectOrgContext, requireRoles(ROLES.ADMIN, ROLES.OPERATIONS), validateQuery(listUsersQuerySchema), listUsers);
 router.get('/roles', authenticate, requireRoles(ROLES.ADMIN), listRoles);
 
 // Org user management (admin only, org-scoped)

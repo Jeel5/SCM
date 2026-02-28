@@ -4,7 +4,7 @@
  * Same pattern used by: Stripe, Shopify, GitHub, Twilio
  */
 import crypto from 'crypto';
-import pool from '../config/db.js';
+import carrierRepo from '../repositories/CarrierRepository.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -91,14 +91,9 @@ export function verifyWebhookSignature(options = {}) {
       }
 
       // Get carrier's webhook secret from database
-      const carrierResult = await pool.query(
-        `SELECT id, code, name, webhook_secret, webhook_enabled, ip_whitelist
-         FROM carriers 
-         WHERE id = $1`,
-        [carrierId]
-      );
+      const carrier = await carrierRepo.findByIdWithWebhookConfig(carrierId);
 
-      if (carrierResult.rows.length === 0) {
+      if (!carrier) {
         logger.warn('Webhook authentication failed: Unknown carrier', { ...logData, carrierId });
         
         if (logAllAttempts) {
@@ -115,8 +110,6 @@ export function verifyWebhookSignature(options = {}) {
           message: 'Unknown carrier'
         });
       }
-
-      const carrier = carrierResult.rows[0];
 
       // Check if webhooks are enabled for this carrier
       if (!carrier.webhook_enabled) {
@@ -272,31 +265,24 @@ export function verifyWebhookSignature(options = {}) {
  */
 async function logWebhookAttempt(req, data) {
   try {
-    await pool.query(
-      `INSERT INTO webhook_logs 
-       (carrier_id, endpoint, method, request_signature, request_timestamp,
-        signature_valid, ip_address, user_agent, payload, headers,
-        response_status, error_message, processing_time_ms)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [
-        data.carrierId || null,
-        req.path,
-        req.method,
-        req.headers['x-webhook-signature'] || req.headers['x-signature'] || null,
-        req.headers['x-webhook-timestamp'] || req.headers['x-timestamp'] || null,
-        data.signatureValid,
-        req.ip,
-        req.headers['user-agent'] || null,
-        JSON.stringify(req.body),
-        JSON.stringify({
-          'content-type': req.headers['content-type'],
-          'x-carrier-id': req.headers['x-carrier-id']
-        }),
-        data.responseStatus,
-        data.errorMessage || null,
-        data.processingTimeMs || null
-      ]
-    );
+    await carrierRepo.logWebhookAttempt({
+      carrierId: data.carrierId || null,
+      endpoint: req.path,
+      method: req.method,
+      requestSignature: req.headers['x-webhook-signature'] || req.headers['x-signature'] || null,
+      requestTimestamp: req.headers['x-webhook-timestamp'] || req.headers['x-timestamp'] || null,
+      signatureValid: data.signatureValid,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'] || null,
+      payload: JSON.stringify(req.body),
+      headers: JSON.stringify({
+        'content-type': req.headers['content-type'],
+        'x-carrier-id': req.headers['x-carrier-id']
+      }),
+      responseStatus: data.responseStatus,
+      errorMessage: data.errorMessage || null,
+      processingTimeMs: data.processingTimeMs || null
+    });
   } catch (error) {
     logger.error('Failed to log webhook attempt', { error: error.message });
     // Don't throw - logging failure shouldn't break webhook processing

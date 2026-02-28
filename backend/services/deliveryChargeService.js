@@ -9,8 +9,8 @@
  * - Carrier-specific rates
  */
 
-import pool from '../config/db.js';
 import logger from '../utils/logger.js';
+import carrierRepo from '../repositories/CarrierRepository.js';
 
 class DeliveryChargeService {
   /**
@@ -161,19 +161,13 @@ class DeliveryChargeService {
   async getBaseRate(carrierId, zone, serviceType) {
     try {
       // Try to get rate from rate_cards table
-      const result = await pool.query(
-        `SELECT base_rate, rate_per_kg, fuel_surcharge_percent, min_charge_amount
-         FROM rate_cards
-         WHERE carrier_id = $1 AND service_type = $2
-         LIMIT 1`,
-        [carrierId, serviceType]
-      );
+      const row = await carrierRepo.findRateByServiceType(carrierId, serviceType);
 
-      if (result.rows.length > 0) {
+      if (row) {
         return {
-          ratePerKg: parseFloat(result.rows[0].rate_per_kg),
-          fuelSurchargePercent: parseFloat(result.rows[0].fuel_surcharge_percent || 0.12),
-          minChargeAmount: parseFloat(result.rows[0].min_charge_amount || 50)
+          ratePerKg: parseFloat(row.rate_per_kg),
+          fuelSurchargePercent: parseFloat(row.fuel_surcharge_percent || 0.12),
+          minChargeAmount: parseFloat(row.min_charge_amount || 50)
         };
       }
     } catch (error) {

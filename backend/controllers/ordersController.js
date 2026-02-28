@@ -119,7 +119,7 @@ export const createOrder = asyncHandler(async (req, res) => {
   // For demo/unauthenticated requests this will be null (org-less demo order)
   const orderData = {
     ...req.body,
-    organization_id: req.user?.organizationId || req.orgContext?.organizationId || null
+    organization_id: req.orgContext?.organizationId ?? null
   };
   
   const order = await orderService.createOrder(orderData, requestCarrierAssignment);
@@ -151,7 +151,7 @@ export const createOrder = asyncHandler(async (req, res) => {
  * - Partial delivery → partial transfer
  */
 export const createTransferOrder = asyncHandler(async (req, res) => {
-  const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId;
   const order = await orderService.createTransferOrder(req.body, organizationId);
   
   res.status(201).json({ 
@@ -165,7 +165,7 @@ export const createTransferOrder = asyncHandler(async (req, res) => {
 export const updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  const organizationId = req.user?.organizationId || req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId;
 
   // Validate status against whitelist before delegating to service (TASK-R10-003)
   if (!status || !VALID_ORDER_STATUSES.includes(status)) {

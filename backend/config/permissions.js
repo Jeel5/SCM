@@ -15,6 +15,7 @@ export const ALL_PERMISSIONS = [
   'orders.create',
   'orders.update',
   'shipments.view',
+  'shipments.create',   // create new shipments
   'shipments.update',
   'inventory.view',
   'inventory.update',
@@ -25,12 +26,18 @@ export const ALL_PERMISSIONS = [
   'carriers.manage',     // create + update + delete carriers
   'inventory.manage',    // create warehouse inventory entries
   'exceptions.view',
+  'exceptions.create',   // raise new exceptions
   'exceptions.update',
   'returns.view',
+  'returns.create',      // initiate a return
   'returns.update',
   'sla.view',
   'finance.view',
   'analytics.view',
+  'jobs.view',          // view background jobs and cron schedules
+  'jobs.create',        // create / trigger jobs
+  'jobs.update',        // cancel / retry jobs
+  'jobs.delete',        // delete cron schedules / purge DLQ
   'settings.personal',
   'settings.organization',
 ];
@@ -52,14 +59,15 @@ export const ROLE_PERMISSIONS = {
   operations_manager: [
     'dashboard.view',
     'orders.view', 'orders.create', 'orders.update',
-    'shipments.view', 'shipments.update',
+    'shipments.view', 'shipments.create', 'shipments.update',
     'inventory.view', 'inventory.update', 'inventory.manage',
     'warehouses.view', 'warehouses.manage',
     'carriers.view', 'carriers.manage',
-    'exceptions.view', 'exceptions.update',
-    'returns.view', 'returns.update',
+    'exceptions.view', 'exceptions.create', 'exceptions.update',
+    'returns.view', 'returns.create', 'returns.update',
     'sla.view',
     'analytics.view',
+    'jobs.view', 'jobs.create', 'jobs.update', 'jobs.delete',
     'settings.personal',
   ],
 
@@ -68,7 +76,7 @@ export const ROLE_PERMISSIONS = {
     'shipments.view',
     'inventory.view', 'inventory.update',
     'warehouses.view',
-    'returns.view', 'returns.update',
+    'returns.view', 'returns.create', 'returns.update',
     'exceptions.view', 'exceptions.update',
     'settings.personal',
   ],
@@ -76,7 +84,7 @@ export const ROLE_PERMISSIONS = {
   carrier_partner: [
     'dashboard.view',
     'shipments.view', 'shipments.update',
-    'exceptions.view', 'exceptions.update',
+    'exceptions.view', 'exceptions.create', 'exceptions.update',
     'returns.view',
     'settings.personal',
   ],

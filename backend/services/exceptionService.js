@@ -1,7 +1,8 @@
 // Exception Management Service - Priority handling and escalation
-import pool from '../config/db.js';
+import { withTransaction } from '../utils/dbTransaction.js';
 import { NotFoundError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
+import exceptionRepo from '../repositories/ExceptionRepository.js';
 
 class ExceptionService {
   /**
@@ -23,25 +24,16 @@ class ExceptionService {
     // Calculate estimated resolution time
     const estimatedResolution = this.calculateEstimatedResolution(severity, exceptionType);
 
-    const result = await pool.query(
-      `INSERT INTO exceptions 
-      (shipment_id, order_id, exception_type, description, severity, 
-       status, priority, assigned_to, estimated_resolution_time)
-      VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8)
-      RETURNING *`,
-      [
-        shipmentId,
-        orderId,
-        exceptionType,
-        description,
-        severity,
-        priority,
-        assignedTo,
-        estimatedResolution
-      ]
-    );
-
-    const exception = result.rows[0];
+    const exception = await exceptionRepo.create({
+      shipmentId,
+      orderId,
+      exceptionType,
+      description,
+      severity,
+      priority,
+      assignedTo,
+      estimatedResolutionTime: estimatedResolution
+    });
 
     logEvent('ExceptionCreated', {
       exceptionId: exception.id,
@@ -108,18 +100,9 @@ class ExceptionService {
    * Escalate exception to higher level
    */
   async escalateException(exceptionId, escalationLevel, reason, escalatedTo = null) {
-    const result = await pool.query(
-      `UPDATE exceptions
-       SET escalation_level = $1,
-           escalated_at = NOW(),
-           escalated_to = $2,
-           priority = GREATEST(1, priority - 2)
-       WHERE id = $3
-       RETURNING *`,
-      [escalationLevel, escalatedTo, exceptionId]
-    );
+    const result = await exceptionRepo.escalate(exceptionId, escalationLevel, escalatedTo);
 
-    if (result.rows.length === 0) {
+    if (!result) {
       throw new NotFoundError('Exception not found');
     }
 
@@ -130,7 +113,7 @@ class ExceptionService {
       escalatedTo
     });
 
-    return result.rows[0];
+    return result;
   }
 
   /**
@@ -139,18 +122,11 @@ class ExceptionService {
    */
   async autoEscalateOverdueExceptions() {
     // Find exceptions that are past their estimated resolution time
-    const overdueResult = await pool.query(
-      `SELECT *
-       FROM exceptions
-       WHERE status IN ('open', 'investigating')
-       AND estimated_resolution_time < NOW()
-       AND escalation_level < 3
-       ORDER BY priority ASC, created_at ASC`
-    );
+    const overdueResult = await exceptionRepo.findOverdue();
 
     const escalated = [];
 
-    for (const exception of overdueResult.rows) {
+    for (const exception of overdueResult) {
       const newLevel = exception.escalation_level + 1;
       
       try {
@@ -179,16 +155,9 @@ class ExceptionService {
    * Assign or reassign exception to user
    */
   async assignException(exceptionId, userId) {
-    const result = await pool.query(
-      `UPDATE exceptions
-       SET assigned_to = $1,
-           status = CASE WHEN status = 'open' THEN 'investigating' ELSE status END
-       WHERE id = $2
-       RETURNING *`,
-      [userId, exceptionId]
-    );
+    const result = await exceptionRepo.assign(exceptionId, userId);
 
-    if (result.rows.length === 0) {
+    if (!result) {
       throw new NotFoundError('Exception not found');
     }
 
@@ -197,35 +166,22 @@ class ExceptionService {
       assignedTo: userId
     });
 
-    return result.rows[0];
+    return result;
   }
 
   /**
    * Resolve exception with root cause and resolution
    */
   async resolveException(exceptionId, resolution, resolutionNotes, rootCause, resolvedBy) {
-    const client = await pool.connect();
+    return withTransaction(async (tx) => {
 
-    try {
-      await client.query('BEGIN');
+      const result = await exceptionRepo.resolve(exceptionId, { resolution, resolutionNotes, rootCause }, tx);
 
-      const result = await client.query(
-        `UPDATE exceptions
-         SET status = 'resolved',
-             resolution = $1,
-             resolution_notes = $2,
-             root_cause = $3,
-             resolved_at = NOW()
-         WHERE id = $4
-         RETURNING *`,
-        [resolution, resolutionNotes, rootCause, exceptionId]
-      );
-
-      if (result.rows.length === 0) {
+      if (!result) {
         throw new NotFoundError('Exception not found');
       }
 
-      const exception = result.rows[0];
+      const exception = result;
 
       // If resolution is 'reship', create new shipment
       if (resolution === 'reship' && exception.order_id) {
@@ -245,7 +201,6 @@ class ExceptionService {
         });
       }
 
-      await client.query('COMMIT');
 
       logEvent('ExceptionResolved', {
         exceptionId,
@@ -256,103 +211,21 @@ class ExceptionService {
 
       return exception;
 
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
    * Get exception statistics by type and severity
    */
   async getExceptionStatistics(startDate, endDate, organizationId = undefined) {
-    const orgFilter = organizationId ? ' AND organization_id = $3' : '';
-    const extraArgs = organizationId ? [organizationId] : [];
-    // Overall statistics
-    const overallResult = await pool.query(
-      `SELECT 
-        COUNT(*) as total_exceptions,
-        COUNT(CASE WHEN status = 'open' THEN 1 END) as open,
-        COUNT(CASE WHEN status = 'investigating' THEN 1 END) as investigating,
-        COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved,
-        COUNT(CASE WHEN status = 'escalated' THEN 1 END) as escalated,
-        AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_resolution_hours
-       FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2${orgFilter}`,
-      [startDate, endDate, ...extraArgs]
-    );
-
-    // By severity
-    const severityResult = await pool.query(
-      `SELECT severity, COUNT(*) as count
-       FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2${orgFilter}
-       GROUP BY severity
-       ORDER BY 
-         CASE severity 
-           WHEN 'critical' THEN 1 
-           WHEN 'high' THEN 2 
-           WHEN 'medium' THEN 3 
-           WHEN 'low' THEN 4 
-         END`,
-      [startDate, endDate, ...extraArgs]
-    );
-
-    // By type
-    const typeResult = await pool.query(
-      `SELECT exception_type, COUNT(*) as count,
-              AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_resolution_hours
-       FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2${orgFilter}
-       GROUP BY exception_type
-       ORDER BY count DESC`,
-      [startDate, endDate, ...extraArgs]
-    );
-
-    // By root cause
-    const rootCauseResult = await pool.query(
-      `SELECT root_cause, COUNT(*) as count
-       FROM exceptions
-       WHERE created_at >= $1 AND created_at < $2${orgFilter}
-       AND root_cause IS NOT NULL
-       GROUP BY root_cause
-       ORDER BY count DESC
-       LIMIT 10`,
-      [startDate, endDate, ...extraArgs]
-    );
-
-    return {
-      overall: overallResult.rows[0],
-      bySeverity: severityResult.rows,
-      byType: typeResult.rows,
-      byRootCause: rootCauseResult.rows
-    };
+    return exceptionRepo.getStatistics(startDate, endDate, organizationId);
   }
 
   /**
    * Get high priority exceptions requiring immediate attention
    */
   async getHighPriorityExceptions(organizationId = undefined) {
-    const result = await pool.query(
-      `SELECT e.*, 
-              s.tracking_number,
-              o.order_number,
-              u.name as assigned_to_name
-       FROM exceptions e
-       LEFT JOIN shipments s ON s.id = e.shipment_id
-       LEFT JOIN orders o ON o.id = e.order_id
-       LEFT JOIN users u ON u.id = e.assigned_to
-       WHERE e.status IN ('open', 'investigating')
-       AND (e.priority <= 3 OR e.severity = 'critical')
-       ${organizationId ? 'AND e.organization_id = $1' : ''}
-       ORDER BY e.priority ASC, e.created_at ASC
-       LIMIT 20`,
-      organizationId ? [organizationId] : []
-    );
-
-    return result.rows;
+    return exceptionRepo.findHighPriority(organizationId);
   }
 
   /**
@@ -361,21 +234,11 @@ class ExceptionService {
    */
   async autoDetectDelayExceptions() {
     // Find shipments that are significantly delayed but no exception exists
-    const delayedResult = await pool.query(
-      `SELECT s.*
-       FROM shipments s
-       WHERE s.status NOT IN ('delivered', 'returned', 'cancelled')
-       AND s.delivery_scheduled < NOW() - INTERVAL '24 hours'
-       AND NOT EXISTS (
-         SELECT 1 FROM exceptions e 
-         WHERE e.shipment_id = s.id AND e.exception_type = 'delay'
-       )
-       LIMIT 50`
-    );
+    const delayedResult = await exceptionRepo.findDelayedShipmentsWithoutException();
 
     const createdExceptions = [];
 
-    for (const shipment of delayedResult.rows) {
+    for (const shipment of delayedResult) {
       const now = new Date();
       const scheduled = new Date(shipment.delivery_scheduled);
       const delayHours = (now - scheduled) / (1000 * 60 * 60);

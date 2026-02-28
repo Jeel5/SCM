@@ -132,11 +132,11 @@ class CarrierRateService {
 
   /**
    * Select the best quote from available quotes
-   * Delegates to carrierSelectionService
+   * Delegates to carrierSelectionService (async — queries carrier reliability from DB)
    */
-  selectBestQuote(quotes, criteria = {}) {
+  async selectBestQuote(quotes, criteria = {}) {
     try {
-      return carrierSelectionService.selectBestQuote(quotes, criteria);
+      return await carrierSelectionService.selectBestQuote(quotes, criteria);
     } catch (error) {
       logger.error('Error in selectBestQuote', { error: error.message });
       throw error;
@@ -144,10 +144,9 @@ class CarrierRateService {
   }
 
   /**
-   * Get carrier reliability score
-   * Delegates to carrierSelectionService
+   * Get carrier reliability score (async — queries DB with fallback to defaults)
    */
-  getCarrierReliabilityScore(carrierCode) {
+  async getCarrierReliabilityScore(carrierCode) {
     return carrierSelectionService.getCarrierReliabilityScore(carrierCode);
   }
 
@@ -179,7 +178,7 @@ class CarrierRateService {
    * Estimate distance from pincode (simplified zone-based)
    * Delegates to shippingUtils
    */
-  estimateDistanceFromPincode(fromPincode, toPincode) {
+  async estimateDistanceFromPincode(fromPincode, toPincode) {
     return shippingUtils.estimateDistanceFromPincode(fromPincode, toPincode);
   }
 }

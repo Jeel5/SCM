@@ -1,9 +1,22 @@
 // Organization Controller - handles multi-tenant organization management
-import pool from '../config/db.js';
 import bcrypt from 'bcrypt';
 import OrganizationRepository from '../repositories/OrganizationRepository.js';
+import userRepo from '../repositories/UserRepository.js';
+import { withTransaction } from '../utils/dbTransaction.js';
 import { asyncHandler } from '../errors/errorHandler.js';
-import { NotFoundError, BusinessLogicError } from '../errors/index.js';
+import { NotFoundError, BusinessLogicError, AuthorizationError, ValidationError } from '../errors/index.js';
+import logger from '../utils/logger.js';
+
+// Password must be ≥8 chars with at least one uppercase, one digit, one symbol
+const PASSWORD_STRENGTH_RE = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()?!_\-+=])/;
+
+// Defense-in-depth superadmin check — applied inside every mutation handler
+// so that a misconfigured route cannot bypass it (T1-05)
+const assertSuperadmin = (req) => {
+  if (req.user?.role !== 'superadmin') {
+    throw new AuthorizationError('Superadmin access required');
+  }
+};
 
 // ========== ORGANIZATIONS (Superadmin only) ==========
 
@@ -97,26 +110,21 @@ export const getOrganization = asyncHandler(async (req, res) => {
 
 // Create organization (with admin user)
 export const createOrganization = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);  // T1-05
   const value = req.body;
-  const client = await pool.connect();
 
-  try {
-    await client.query('BEGIN');
-
+  const result = await withTransaction(async (tx) => {
     // Check if code already exists (if provided)
     if (value.code) {
-      const existingOrg = await OrganizationRepository.findByCode(value.code, client);
+      const existingOrg = await OrganizationRepository.findByCode(value.code, tx);
       if (existingOrg) {
         throw new BusinessLogicError(`Organization code '${value.code}' already exists`);
       }
     }
 
     // Check if email already exists
-    const emailCheck = await client.query(
-      'SELECT id FROM organizations WHERE email = $1',
-      [value.email]
-    );
-    if (emailCheck.rows.length > 0) {
+    const emailOrg = await OrganizationRepository.findByEmail(value.email, tx);
+    if (emailOrg) {
       throw new BusinessLogicError(`Organization with email '${value.email}' already exists`);
     }
 
@@ -137,79 +145,84 @@ export const createOrganization = asyncHandler(async (req, res) => {
       logo_url: value.logo_url,
       subscription_tier: value.subscription_tier,
       is_active: value.is_active
-    }, client);
+    }, tx);
 
     // Create admin user for the organization
     const adminData = value.admin_user;
-    
+
     // Check if admin email already exists
-    const userEmailCheck = await client.query(
-      'SELECT id FROM users WHERE email = $1',
-      [adminData.email]
-    );
-    if (userEmailCheck.rows.length > 0) {
+    const existingUser = await userRepo.findByEmail(adminData.email, undefined, tx);
+    if (existingUser) {
       throw new BusinessLogicError(`User with email '${adminData.email}' already exists`);
+    }
+
+    // Validate password strength before hashing (T2-01)
+    if (!adminData.password || adminData.password.length < 8 || !PASSWORD_STRENGTH_RE.test(adminData.password)) {
+      throw new ValidationError(
+        'Admin password must be ≥8 characters and contain at least one uppercase letter, one digit, and one symbol (e.g. ! @ # $ % & *)'
+      );
     }
 
     // Hash password
     const passwordHash = await bcrypt.hash(adminData.password, 10);
 
     // Create admin user
-    const userQuery = `
-      INSERT INTO users (
-        organization_id, email, password_hash, name, role, phone, is_active
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING id, email, name, role
-    `;
-    const userResult = await client.query(userQuery, [
-      organization.id,
-      adminData.email,
-      passwordHash,
-      adminData.name,
-      'admin',
-      adminData.phone || null,
-      true
-    ]);
+    const adminUser = await userRepo.createUser({
+      organization_id: organization.id,
+      email: adminData.email,
+      password_hash: passwordHash,
+      name: adminData.name,
+      role: 'admin',
+      phone: adminData.phone || null,
+      is_active: true,
+    }, tx);
 
-    await client.query('COMMIT');
+    return { organization, adminUser };
+  });
 
-    const transformed = {
-      id: organization.id,
-      code: organization.code,
-      name: organization.name,
-      email: organization.email,
-      phone: organization.phone,
-      website: organization.website,
-      address: organization.address,
-      city: organization.city,
-      state: organization.state,
-      country: organization.country,
-      postalCode: organization.postal_code,
-      timezone: organization.timezone,
-      currency: organization.currency,
-      logoUrl: organization.logo_url,
-      subscriptionTier: organization.subscription_tier,
-      isActive: organization.is_active,
-      createdAt: organization.created_at,
-      adminUser: {
-        id: userResult.rows[0].id,
-        email: userResult.rows[0].email,
-        name: userResult.rows[0].name,
-        role: userResult.rows[0].role
-      }
-    };
+  // Audit log (T2-02)
+  logger.info('Organization created', {
+    action: 'organization.create',
+    orgId: result.organization.id,
+    orgCode: result.organization.code,
+    actorId: req.user?.userId,
+    actorEmail: req.user?.email,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
 
-    res.status(201).json({ success: true, data: transformed });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  const transformed = {
+    id: result.organization.id,
+    code: result.organization.code,
+    name: result.organization.name,
+    email: result.organization.email,
+    phone: result.organization.phone,
+    website: result.organization.website,
+    address: result.organization.address,
+    city: result.organization.city,
+    state: result.organization.state,
+    country: result.organization.country,
+    postalCode: result.organization.postal_code,
+    timezone: result.organization.timezone,
+    currency: result.organization.currency,
+    logoUrl: result.organization.logo_url,
+    subscriptionTier: result.organization.subscription_tier,
+    isActive: result.organization.is_active,
+    createdAt: result.organization.created_at,
+    adminUser: {
+      id: result.adminUser.id,
+      email: result.adminUser.email,
+      name: result.adminUser.name,
+      role: result.adminUser.role
+    }
+  };
+
+  res.status(201).json({ success: true, data: transformed });
 });
 
 // Update organization
 export const updateOrganization = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);  // T1-05
   const { id } = req.params;
   const value = req.body;
 
@@ -221,16 +234,24 @@ export const updateOrganization = asyncHandler(async (req, res) => {
 
   // Check if email is being updated and already exists
   if (value.email && value.email !== existing.email) {
-    const emailCheck = await pool.query(
-      'SELECT id FROM organizations WHERE email = $1 AND id != $2',
-      [value.email, id]
-    );
-    if (emailCheck.rows.length > 0) {
+    const emailConflict = await OrganizationRepository.findByEmail(value.email, null, id);
+    if (emailConflict) {
       throw new BusinessLogicError(`Organization with email '${value.email}' already exists`);
     }
   }
 
   const updated = await OrganizationRepository.updateOrganization(id, value);
+
+  // Audit log (T2-02)
+  logger.info('Organization updated', {
+    action: 'organization.update',
+    orgId: id,
+    actorId: req.user?.userId,
+    actorEmail: req.user?.email,
+    ip: req.ip,
+    changes: Object.keys(value),
+    timestamp: new Date().toISOString()
+  });
 
   const transformed = {
     id: updated.id,
@@ -258,6 +279,7 @@ export const updateOrganization = asyncHandler(async (req, res) => {
 
 // Delete organization (soft delete)
 export const deleteOrganization = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);  // T1-05
   const { id } = req.params;
 
   const organization = await OrganizationRepository.findById(id);
@@ -266,6 +288,16 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
   }
 
   await OrganizationRepository.deleteOrganization(id);
+
+  // Audit log (T2-02)
+  logger.info('Organization deleted (soft)', {
+    action: 'organization.delete',
+    orgId: id,
+    actorId: req.user?.userId,
+    actorEmail: req.user?.email,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
 
   res.json({ success: true, message: 'Organization deactivated successfully' });
 });

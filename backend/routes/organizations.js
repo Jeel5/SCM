@@ -1,6 +1,7 @@
 // Organization routes (superadmin only)
 import express from 'express';
-import { authenticate, authorize } from '../middlewares/auth.js';
+import { authenticate } from '../middlewares/auth.js';
+import { authorize } from '../middlewares/rbac.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import {
   createOrganizationSchema,

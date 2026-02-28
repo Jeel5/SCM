@@ -1,7 +1,8 @@
-import pool from '../config/db.js';
 import axios from 'axios';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
+import { NotFoundError } from '../errors/AppError.js';
+import shipmentRepo from '../repositories/ShipmentRepository.js';
 
 const OSRM_URL = process.env.OSRM_API_URL || 'http://router.project-osrm.org';
 
@@ -56,16 +57,9 @@ class ShipmentTrackingService {
     try {
       const result = await withTransaction(async (tx) => {
         // Get current shipment
-        const shipmentResult = await tx.query(
-          'SELECT * FROM shipments WHERE id = $1',
-          [shipmentId]
-        );
+        const shipment = await shipmentRepo.findById(shipmentId, tx);
+        if (!shipment) throw new NotFoundError('Shipment');
 
-        if (shipmentResult.rows.length === 0) {
-          throw new Error('Shipment not found');
-        }
-
-        const shipment = shipmentResult.rows[0];
         const trackingEvents = JSON.parse(shipment.tracking_events || '[]');
 
         // Add new event with timestamp
@@ -105,41 +99,25 @@ class ShipmentTrackingService {
         }
 
         // Update shipment
-        const updateResult = await tx.query(
-          `UPDATE shipments 
-           SET status = $1,
-               tracking_events = $2,
-               current_location = $3,
-               updated_at = NOW()
-           WHERE id = $4
-           RETURNING *`,
-          [newStatus, JSON.stringify(trackingEvents), currentLocation, shipmentId]
+        const updatedShipment = await shipmentRepo.updateTracking(
+          shipmentId, newStatus, JSON.stringify(trackingEvents), currentLocation, tx
         );
 
         // Create shipment event record
-        await tx.query(
-          `INSERT INTO shipment_events 
-           (shipment_id, event_type, location, description, event_timestamp)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [
-            shipmentId,
-            trackingEvent.eventType,
-            trackingEvent.location ? JSON.stringify(trackingEvent.location) : null,
-            trackingEvent.description || '',
-            new Date(trackingEvent.timestamp || Date.now())
-          ]
-        );
+        await shipmentRepo.addTrackingEvent({
+          shipment_id: shipmentId,
+          event_type: trackingEvent.eventType,
+          location: trackingEvent.location || null,
+          description: trackingEvent.description || '',
+          event_timestamp: new Date(trackingEvent.timestamp || Date.now())
+        }, tx);
 
         // If delivered, update order status
         if (newStatus === 'delivered') {
-          await tx.query(
-            `UPDATE orders SET status = 'delivered', updated_at = NOW()
-             WHERE id = (SELECT order_id FROM shipments WHERE id = $1)`,
-            [shipmentId]
-          );
+          await shipmentRepo.markOrderDeliveredByShipmentId(shipmentId, tx);
         }
 
-        return updateResult.rows[0];
+        return updatedShipment;
       });
 
       logger.info('Shipment tracking updated', { shipmentId, status: result.status });
@@ -159,25 +137,8 @@ class ShipmentTrackingService {
    */
   async getShipmentDetails(shipmentId) {
     try {
-      const result = await pool.query(
-        `SELECT 
-          s.*,
-          o.order_number, o.customer_name, o.customer_email,
-          c.code as carrier_code, c.name as carrier_name,
-          w.name as warehouse_name
-         FROM shipments s
-         JOIN orders o ON s.order_id = o.id
-         LEFT JOIN carriers c ON s.carrier_id = c.id
-         LEFT JOIN warehouses w ON s.warehouse_id = w.id
-         WHERE s.id = $1`,
-        [shipmentId]
-      );
-
-      if (result.rows.length === 0) {
-        return null;
-      }
-
-      const row = result.rows[0];
+      const row = await shipmentRepo.findWithCarrierAndWarehouse(shipmentId);
+      if (!row) return null;
 
       return {
         id: row.id,

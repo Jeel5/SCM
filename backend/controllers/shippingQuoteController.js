@@ -1,8 +1,10 @@
 import carrierRateService from '../services/carrierRateService.js';
 import * as estimateService from '../services/shipping/estimateService.js';
-import { AppError } from '../errors/index.js';
+import { AppError, asyncHandler, NotFoundError } from '../errors/index.js';
 import logger from '../utils/logger.js';
-import db from '../config/db.js';
+import WarehouseRepository from '../repositories/WarehouseRepository.js';
+import CarrierRepository from '../repositories/CarrierRepository.js';
+import OrderRepository from '../repositories/OrderRepository.js';
 
 /**
  * Get quick shipping estimate for e-commerce checkout
@@ -14,8 +16,7 @@ import db from '../config/db.js';
  * Body: { origin, destination, weightKg, dimensions, serviceType }
  * OR legacy: { fromPincode, toPincode, weightKg, serviceType }
  */
-export const getQuickEstimate = async (req, res, next) => {
-  try {
+export const getQuickEstimate = asyncHandler(async (req, res) => {
     const { 
       origin,          // {lat, lon, postalCode} or {warehouse_id}
       destination,     // {lat, lon, postalCode, address}
@@ -70,19 +71,12 @@ export const getQuickEstimate = async (req, res, next) => {
     // Fetch origin warehouse details if warehouse_id provided
     let originCoords = origin;
     if (origin?.warehouse_id) {
-      const warehouseResult = await db.query(
-        `SELECT id, name, address, postal_code, 
-                latitude as lat, longitude as lon
-         FROM warehouses 
-         WHERE id = $1`,
-        [origin.warehouse_id]
-      );
-      
-      if (warehouseResult.rows.length === 0) {
+      const warehouse = await WarehouseRepository.findByIdSimple(origin.warehouse_id);
+
+      if (!warehouse) {
         throw new AppError('Warehouse not found', 404);
       }
-      
-      const warehouse = warehouseResult.rows[0];
+
       originCoords = {
         lat: warehouse.lat,
         lon: warehouse.lon,
@@ -116,11 +110,7 @@ export const getQuickEstimate = async (req, res, next) => {
       data: estimate,
       message: 'Estimate calculated using OSRM routing engine. Final cost determined after carrier confirmation.'
     });
-
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
 /**
  * Get shipping quotes from all carriers after order is placed
@@ -128,8 +118,7 @@ export const getQuickEstimate = async (req, res, next) => {
  * Sends to all carriers, collects accept/reject responses
  * POST /api/shipping/quotes
  */
-export const getShippingQuotes = async (req, res, next) => {
-  try {
+export const getShippingQuotes = asyncHandler(async (req, res) => {
     const { origin, destination, items, orderId } = req.body;
 
     // Validate required fields
@@ -207,7 +196,7 @@ export const getShippingQuotes = async (req, res, next) => {
     }
 
     // Select best quote from accepted ones
-    const bestQuote = carrierRateService.selectBestQuote(acceptedQuotes);
+    const bestQuote = await carrierRateService.selectBestQuote(acceptedQuotes);
 
     logger.info('Quotes collected successfully', {
       orderId,
@@ -233,17 +222,13 @@ export const getShippingQuotes = async (req, res, next) => {
       },
       message: `Received ${acceptedQuotes.length} quotes from carriers. ${rejectedCarriers.length} carriers unavailable.`
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
 /**
  * DEPRECATED: Old endpoint - use getShippingQuotes instead
  * POST /api/shipping/quotes/legacy
  */
-export const getShippingQuotesLegacy = async (req, res, next) => {
-  try {
+export const getShippingQuotesLegacy = asyncHandler(async (req, res) => {
     const { origin, destination, items, orderId } = req.body;
 
     // Validate required fields
@@ -285,7 +270,7 @@ export const getShippingQuotesLegacy = async (req, res, next) => {
     }
 
     // Select best quote based on default criteria
-    const bestQuote = carrierRateService.selectBestQuote(quotes);
+    const bestQuote = await carrierRateService.selectBestQuote(quotes);
 
     res.json({
       success: true,
@@ -295,17 +280,13 @@ export const getShippingQuotesLegacy = async (req, res, next) => {
         totalQuotes: quotes.length
       }
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
 /**
  * Get shipping quotes with custom selection criteria
  * POST /api/shipping/quotes/custom
  */
-export const getShippingQuotesWithCriteria = async (req, res, next) => {
-  try {
+export const getShippingQuotesWithCriteria = asyncHandler(async (req, res) => {
     const { origin, destination, items, orderId, criteria } = req.body;
 
     // Validate required fields
@@ -332,7 +313,7 @@ export const getShippingQuotesWithCriteria = async (req, res, next) => {
     }
 
     // Select best quote based on custom criteria
-    const bestQuote = carrierRateService.selectBestQuote(quotes, criteria);
+    const bestQuote = await carrierRateService.selectBestQuote(quotes, criteria);
 
     res.json({
       success: true,
@@ -343,17 +324,13 @@ export const getShippingQuotesWithCriteria = async (req, res, next) => {
         criteria: criteria || 'default'
       }
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
 /**
  * Get quote from a specific carrier
  * POST /api/shipping/quotes/:carrierId
  */
-export const getQuoteFromCarrier = async (req, res, next) => {
-  try {
+export const getQuoteFromCarrier = asyncHandler(async (req, res) => {
     const { carrierId } = req.params;
     const { origin, destination, items, orderId } = req.body;
 
@@ -365,16 +342,11 @@ export const getQuoteFromCarrier = async (req, res, next) => {
     logger.info(`Getting quote from carrier ${carrierId}`);
 
     // Get carrier from database
-    const { rows } = await db.query(
-      'SELECT * FROM carriers WHERE id = $1 AND is_active = true',
-      [carrierId]
-    );
+    const carrier = await CarrierRepository.findActiveById(carrierId);
 
-    if (rows.length === 0) {
+    if (!carrier) {
       throw new AppError('Carrier not found or inactive', 404);
     }
-
-    const carrier = rows[0];
 
     // Calculate shipment details
     const totalWeight = items.reduce((sum, item) => sum + (item.weight || 0), 0);
@@ -399,17 +371,13 @@ export const getQuoteFromCarrier = async (req, res, next) => {
       success: true,
       data: quote
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
 /**
  * Select a specific quote for an order
  * POST /api/shipping/quotes/:quoteId/select
  */
-export const selectQuote = async (req, res, next) => {
-  try {
+export const selectQuote = asyncHandler(async (req, res) => {
     const { quoteId } = req.params;
     const { orderId } = req.body;
 
@@ -430,17 +398,13 @@ export const selectQuote = async (req, res, next) => {
         orderId
       }
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
 /**
  * Get quotes for an order
  * GET /api/shipping/quotes/order/:orderId
  */
-export const getQuotesForOrder = async (req, res, next) => {
-  try {
+export const getQuotesForOrder = asyncHandler(async (req, res) => {
     const { orderId } = req.params;
     const organizationId = req.orgContext?.organizationId;
 
@@ -448,26 +412,12 @@ export const getQuotesForOrder = async (req, res, next) => {
 
     // Verify order belongs to caller's org
     if (organizationId) {
-      const orderCheck = await db.query(
-        'SELECT id FROM orders WHERE id = $1 AND organization_id = $2',
-        [orderId, organizationId]
-      );
-      if (orderCheck.rows.length === 0) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
+      const order = await OrderRepository.findOrderWithItems(orderId, organizationId);
+      if (!order) throw new NotFoundError('Order');
     }
 
-    const { rows } = await db.query(
-      `SELECT cq.*, c.name as carrier_name, c.code as carrier_code
-       FROM carrier_quotes cq
-       JOIN carriers c ON cq.carrier_id = c.id
-       WHERE cq.order_id = $1
-       ORDER BY cq.created_at DESC`,
-      [orderId]
-    );
-
-    const selectedQuote = rows.find(q => q.is_selected);
-    const allQuotes = rows;
+    const allQuotes = await CarrierRepository.findQuotesByOrder(orderId);
+    const selectedQuote = allQuotes.find(q => q.is_selected);
 
     res.json({
       success: true,
@@ -477,7 +427,4 @@ export const getQuotesForOrder = async (req, res, next) => {
         totalQuotes: allQuotes.length
       }
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});

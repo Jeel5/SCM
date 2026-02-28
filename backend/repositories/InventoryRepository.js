@@ -1,6 +1,7 @@
 // Inventory Repository - handles stock levels, reservations, and movements
 // All SQL queries for the inventory and stock_movements tables live here.
 import BaseRepository from './BaseRepository.js';
+import { ValidationError } from '../errors/AppError.js';
 
 class InventoryRepository extends BaseRepository {
   constructor() {
@@ -311,7 +312,7 @@ class InventoryRepository extends BaseRepository {
       }
     }
 
-    if (setClauses.length === 0) throw new Error('No valid fields to update');
+    if (setClauses.length === 0) throw new ValidationError('No valid fields to update');
     setClauses.push(`updated_at = NOW()`);
     params.push(id);
 
@@ -518,6 +519,117 @@ class InventoryRepository extends BaseRepository {
 
     const result = await this.query(query, params, client);
     return result.rows;
+  }
+
+  /**
+   * Acquire an advisory SELECT … FOR UPDATE lock on an inventory row by SKU + warehouse.
+   * Must be called inside a transaction (pass the `tx` client).
+   */
+  async lockBySku(sku, warehouseId, client) {
+    const result = await this.query(
+      `SELECT * FROM inventory WHERE sku = $1 AND warehouse_id = $2 FOR UPDATE`,
+      [sku, warehouseId], client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Check whether a SKU already exists (for uniqueness validation before insert).
+   * Scoped to an organisation when organizationId is provided.
+   *
+   * @param {string} sku
+   * @param {string|null} organizationId  - pass null for global/system scope
+   * @param {object|null} client
+   * @returns {Promise<boolean>}
+   */
+  async skuExists(sku, organizationId, client = null) {
+    const result = await this.query(
+      'SELECT 1 FROM inventory WHERE organization_id IS NOT DISTINCT FROM $1 AND sku = $2 LIMIT 1',
+      [organizationId || null, sku], client
+    );
+    return result.rows.length > 0;
+  }
+
+  /**
+   * Count how many warehouses have at least `minQty` available of a given SKU.
+   * Used by allocationService to decide whether a split is needed.
+   *
+   * @param {string} sku
+   * @param {number} minQty
+   * @param {object|null} client
+   * @returns {Promise<number>}
+   */
+  async countWarehousesWithStock(sku, minQty, client = null) {
+    const result = await this.query(
+      `SELECT COUNT(*) AS warehouse_count
+       FROM inventory i
+       JOIN products p ON p.id = i.product_id
+       WHERE p.sku = $1 AND i.available_quantity >= $2`,
+      [sku, minQty], client
+    );
+    return parseInt(result.rows[0].warehouse_count);
+  }
+
+  /**
+   * Return all active warehouses that hold any available stock for a SKU,
+   * sorted descending by available quantity.
+   * Used by allocationService for order-split allocation.
+   *
+   * @param {string} sku
+   * @param {object|null} client
+   * @returns {Promise<Array>}  rows with warehouse fields + available_quantity
+   */
+  async findWarehousesWithStockBySku(sku, client = null) {
+    const result = await this.query(
+      `SELECT w.*, i.available_quantity
+       FROM warehouses w
+       JOIN inventory i ON i.warehouse_id = w.id
+       JOIN products p  ON p.id = i.product_id
+       WHERE p.sku = $1
+         AND i.available_quantity > 0
+         AND w.is_active = true
+       ORDER BY i.available_quantity DESC`,
+      [sku], client
+    );
+    return result.rows;
+  }
+
+  /**
+   * Reconcile available_quantity drift across inventory rows.
+   * Sets available = MAX(0, quantity - reserved_quantity) wherever they diverge.
+   */
+  async reconcileDrift(warehouseId, client = null) {
+    const result = await this.query(
+      `UPDATE inventory
+       SET available_quantity = GREATEST(0, quantity - reserved_quantity),
+           updated_at = NOW()
+       WHERE ($1::uuid IS NULL OR warehouse_id = $1)
+         AND available_quantity <> GREATEST(0, quantity - reserved_quantity)
+       RETURNING id`,
+      [warehouseId || null], client
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get aggregate inventory statistics for a warehouse (or all warehouses).
+   */
+  async getInventorySyncStats(warehouseId, client = null) {
+    const result = await this.query(
+      `SELECT
+         COUNT(*)                           AS distinct_skus,
+         COALESCE(SUM(quantity), 0)         AS total_units,
+         COALESCE(SUM(reserved_quantity),0) AS total_reserved,
+         COALESCE(SUM(available_quantity),0) AS total_available,
+         COUNT(*) FILTER (
+           WHERE low_stock_threshold IS NOT NULL
+             AND quantity <= low_stock_threshold
+         ) AS low_stock_skus
+       FROM inventory
+       WHERE ($1::uuid IS NULL OR warehouse_id = $1)`,
+      [warehouseId || null], client
+    );
+    return result.rows[0];
   }
 }
 

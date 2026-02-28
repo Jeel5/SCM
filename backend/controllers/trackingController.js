@@ -1,6 +1,6 @@
-import pool from '../config/db.js';
+import shipmentRepo from '../repositories/ShipmentRepository.js';
 import shipmentTrackingService from '../services/shipmentTrackingService.js';
-import logger from '../utils/logger.js';
+import { asyncHandler, NotFoundError, AppError, AuthorizationError } from '../errors/index.js';
 
 // ========== SHIPMENT TRACKING ==========
 
@@ -8,223 +8,147 @@ import logger from '../utils/logger.js';
  * Get shipment details with tracking history
  * GET /api/shipments/{trackingNumber}/details
  */
-export async function getShipmentDetails(req, res) {
-  try {
-    const { trackingNumber } = req.params;
-    const organizationId = req.orgContext?.organizationId;
+export const getShipmentDetails = asyncHandler(async (req, res) => {
+  const { trackingNumber } = req.params;
+  const organizationId = req.orgContext?.organizationId;
 
-    // Find shipment by tracking number
-    const result = await pool.query(
-      `SELECT id FROM shipments WHERE tracking_number = $1${organizationId ? ' AND organization_id = $2' : ''}`,
-      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
-    );
+  // Find shipment by tracking number
+  const shipment = await shipmentRepo.findByTrackingNumber(trackingNumber, organizationId);
+  if (!shipment) throw new NotFoundError('Shipment');
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shipment not found' });
-    }
+  const shipmentDetails = await shipmentTrackingService.getShipmentDetails(shipment.id);
 
-    const shipmentDetails = await shipmentTrackingService.getShipmentDetails(
-      result.rows[0].id
-    );
-
-    res.json({ success: true, data: shipmentDetails });
-  } catch (error) {
-    logger.error('Get shipment details error:', error);
-    res.status(500).json({ error: 'Failed to get shipment details' });
-  }
-}
+  res.json({ success: true, data: shipmentDetails });
+});
 
 /**
  * Update shipment with tracking event (from carrier webhook)
  * POST /api/shipments/{trackingNumber}/update-tracking
  */
-export async function updateShipmentTracking(req, res) {
-  try {
-    const { trackingNumber } = req.params;
-    const { eventType, location, description } = req.body;
+export const updateShipmentTracking = asyncHandler(async (req, res) => {
+  const { trackingNumber } = req.params;
+  const { eventType, location, description } = req.body;
 
-    if (!eventType) {
-      return res.status(400).json({ error: 'eventType required' });
-    }
+  if (!eventType) throw new AppError('eventType required', 400);
 
-    // Find shipment by tracking number
-    const result = await pool.query(
-      'SELECT id, carrier_id FROM shipments WHERE tracking_number = $1',
-      [trackingNumber]
-    );
+  // Find shipment by tracking number
+  const shipment = await shipmentRepo.findByTrackingNumber(trackingNumber);
+  if (!shipment) throw new NotFoundError('Shipment');
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shipment not found' });
-    }
-
-    // Verify the authenticated carrier owns this shipment (prevent fake delivery injection)
-    const authenticatedCarrierId = req.authenticatedCarrier?.id;
-    if (authenticatedCarrierId && result.rows[0].carrier_id !== authenticatedCarrierId) {
-      logger.warn('Carrier identity mismatch on tracking update', {
-        trackingNumber,
-        shipmentCarrierId: result.rows[0].carrier_id,
-        authenticatedCarrierId
-      });
-      return res.status(403).json({ error: 'Carrier not authorized to update this shipment' });
-    }
-
-    const shipmentId = result.rows[0].id;
-
-    const trackingEvent = {
-      eventType,
-      location: location || null,
-      description: description || ''
-    };
-
-    const updatedShipment = await shipmentTrackingService.updateShipmentTracking(
-      shipmentId,
-      trackingEvent
-    );
-
-    res.json({
-      success: true,
-      data: {
-        trackingNumber,
-        status: updatedShipment.status,
-        currentLocation: updatedShipment.current_location,
-        message: 'Tracking updated successfully'
-      }
-    });
-  } catch (error) {
-    logger.error('Update shipment tracking error:', error);
-    res.status(500).json({ error: 'Failed to update tracking' });
+  // Verify the authenticated carrier owns this shipment (prevent fake delivery injection)
+  const authenticatedCarrierId = req.authenticatedCarrier?.id;
+  if (authenticatedCarrierId && shipment.carrier_id !== authenticatedCarrierId) {
+    throw new AuthorizationError('Carrier not authorized to update this shipment');
   }
-}
+
+  const shipmentId = shipment.id;
+
+  const trackingEvent = {
+    eventType,
+    location: location || null,
+    description: description || ''
+  };
+
+  const updatedShipment = await shipmentTrackingService.updateShipmentTracking(
+    shipmentId,
+    trackingEvent
+  );
+
+  res.json({
+    success: true,
+    data: {
+      trackingNumber,
+      status: updatedShipment.status,
+      currentLocation: updatedShipment.current_location,
+      message: 'Tracking updated successfully'
+    }
+  });
+});
 
 /**
  * Calculate and update route for shipment
  * POST /api/shipments/{trackingNumber}/calculate-route
  */
-export async function calculateRoute(req, res) {
-  try {
-    const { trackingNumber } = req.params;
-    const organizationId = req.orgContext?.organizationId;
+export const calculateRoute = asyncHandler(async (req, res) => {
+  const { trackingNumber } = req.params;
+  const organizationId = req.orgContext?.organizationId;
 
-    // Get shipment
-    const result = await pool.query(
-      `SELECT id, origin_address, destination_address FROM shipments 
-       WHERE tracking_number = $1${organizationId ? ' AND organization_id = $2' : ''}`,
-      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
-    );
+  // Get shipment
+  const shipment = await shipmentRepo.findByTrackingNumber(trackingNumber, organizationId);
+  if (!shipment) throw new NotFoundError('Shipment');
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shipment not found' });
+  const route = await shipmentTrackingService.calculateRoute(
+    shipment.origin_address,
+    shipment.destination_address
+  );
+
+  if (!route) throw new AppError('Could not calculate route', 400);
+
+  // Update shipment with route geometry
+  await shipmentRepo.updateRouteGeometry(trackingNumber, organizationId, route.geometry);
+
+  res.json({
+    success: true,
+    data: {
+      trackingNumber,
+      route: {
+        distance: route.distance,
+        duration: route.duration,
+        geometry: route.geometry
+      },
+      message: 'Route calculated successfully'
     }
-
-    const shipment = result.rows[0];
-    const route = await shipmentTrackingService.calculateRoute(
-      shipment.origin_address,
-      shipment.destination_address
-    );
-
-    if (!route) {
-      return res.status(400).json({ error: 'Could not calculate route' });
-    }
-
-    // Update shipment with route geometry
-    const updateResult = await pool.query(
-      `UPDATE shipments 
-       SET route_geometry = $1, updated_at = NOW()
-       WHERE tracking_number = $2${organizationId ? ' AND organization_id = $3' : ''}
-       RETURNING *`,
-      organizationId ? [JSON.stringify(route.geometry), trackingNumber, organizationId] : [JSON.stringify(route.geometry), trackingNumber]
-    );
-
-    res.json({
-      success: true,
-      data: {
-        trackingNumber,
-        route: {
-          distance: route.distance,
-          duration: route.duration,
-          geometry: route.geometry
-        },
-        message: 'Route calculated successfully'
-      }
-    });
-  } catch (error) {
-    logger.error('Calculate route error:', error);
-    res.status(500).json({ error: 'Failed to calculate route' });
-  }
-}
+  });
+});
 
 /**
  * Simulate tracking update (for testing/demonstration)
  * POST /api/shipments/{trackingNumber}/simulate-update
  */
-export async function simulateTrackingUpdate(req, res) {
-  try {
-    const { trackingNumber } = req.params;
-    const { status, location, description } = req.body;
-    const organizationId = req.orgContext?.organizationId;
+export const simulateTrackingUpdate = asyncHandler(async (req, res) => {
+  const { trackingNumber } = req.params;
+  const { status, location, description } = req.body;
+  const organizationId = req.orgContext?.organizationId;
 
-    // Find shipment
-    const result = await pool.query(
-      `SELECT id FROM shipments WHERE tracking_number = $1${organizationId ? ' AND organization_id = $2' : ''}`,
-      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
-    );
+  // Find shipment
+  const shipment = await shipmentRepo.findByTrackingNumber(trackingNumber, organizationId);
+  if (!shipment) throw new NotFoundError('Shipment');
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shipment not found' });
+  const updatedShipment = await shipmentTrackingService.simulateCarrierUpdate(
+    shipment.id,
+    status,
+    location,
+    description
+  );
+
+  res.json({
+    success: true,
+    data: {
+      trackingNumber,
+      status: updatedShipment.status,
+      currentLocation: updatedShipment.current_location,
+      message: 'Tracking simulated successfully'
     }
-
-    const updatedShipment = await shipmentTrackingService.simulateCarrierUpdate(
-      result.rows[0].id,
-      status,
-      location,
-      description
-    );
-
-    res.json({
-      success: true,
-      data: {
-        trackingNumber,
-        status: updatedShipment.status,
-        currentLocation: updatedShipment.current_location,
-        message: 'Tracking simulated successfully'
-      }
-    });
-  } catch (error) {
-    logger.error('Simulate tracking update error:', error);
-    res.status(500).json({ error: 'Failed to simulate tracking' });
-  }
-}
+  });
+});
 
 /**
  * Get shipment tracking events timeline
  * GET /api/shipments/{trackingNumber}/timeline
  */
-export async function getTrackingTimeline(req, res) {
-  try {
-    const { trackingNumber } = req.params;
-    const organizationId = req.orgContext?.organizationId;
+export const getTrackingTimeline = asyncHandler(async (req, res) => {
+  const { trackingNumber } = req.params;
+  const organizationId = req.orgContext?.organizationId;
 
-    const result = await pool.query(
-      `SELECT se.id, se.event_type, se.location, se.description, se.event_timestamp,
-              s.tracking_number, s.status
-       FROM shipment_events se
-       JOIN shipments s ON se.shipment_id = s.id
-       WHERE s.tracking_number = $1${organizationId ? ' AND s.organization_id = $2' : ''}
-       ORDER BY se.event_timestamp ASC`,
-      organizationId ? [trackingNumber, organizationId] : [trackingNumber]
-    );
+  const events = await shipmentRepo.findTimelineByTrackingNumber(trackingNumber, organizationId);
 
-    const events = result.rows.map(row => ({
-      id: row.id,
-      eventType: row.event_type,
-      location: row.location,
-      description: row.description,
-      timestamp: row.event_timestamp
-    }));
+  const mappedEvents = events.map(row => ({
+    id: row.id,
+    eventType: row.event_type,
+    location: row.location,
+    description: row.description,
+    timestamp: row.event_timestamp
+  }));
 
-    res.json({ success: true, data: events });
-  } catch (error) {
-    logger.error('Get tracking timeline error:', error);
-    res.status(500).json({ error: 'Failed to get tracking timeline' });
-  }
-}
+  res.json({ success: true, data: mappedEvents });
+});

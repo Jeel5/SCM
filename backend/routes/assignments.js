@@ -13,6 +13,14 @@ import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
 import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { verifyWebhookSignature } from '../middlewares/webhookAuth.js';
+import { validateRequest, validateQuery } from '../validators/index.js';
+import {
+  acceptAssignmentSchema,
+  rejectAssignmentSchema,
+  busyAssignmentSchema,
+  updateCarrierAvailabilitySchema,
+  pendingAssignmentsQuerySchema
+} from '../validators/assignmentSchemas.js';
 
 const router = express.Router();
 
@@ -25,10 +33,10 @@ router.post('/orders/:orderId/request-carriers', authenticate, injectOrgContext,
 router.get('/orders/:orderId/assignments', authenticate, injectOrgContext, authorize('shipments:read'), getOrderAssignments);
 
 // Carrier notifies availability (HMAC — called from carrier system)
-router.post('/carriers/:code/availability', verifyWebhookSignature(), updateCarrierAvailability);
+router.post('/carriers/:code/availability', verifyWebhookSignature(), validateRequest(updateCarrierAvailabilitySchema), updateCarrierAvailability);
 
 // Carrier portal - get pending assignments (carrier-facing, no JWT — carriers identify by carrierId param)
-router.get('/carriers/assignments/pending', getPendingAssignments);
+router.get('/carriers/assignments/pending', validateQuery(pendingAssignmentsQuerySchema), getPendingAssignments);
 
 // Get assignment details
 router.get('/assignments/:assignmentId', authenticate, injectOrgContext, authorize('shipments:read'), getAssignmentDetails);
@@ -36,12 +44,12 @@ router.get('/assignments/:assignmentId', authenticate, injectOrgContext, authori
 // ========== WEBHOOK-PROTECTED CARRIER ENDPOINTS (HMAC Authenticated) ==========
 
 // Accept assignment - Protected with HMAC signature verification
-router.post('/assignments/:assignmentId/accept', verifyWebhookSignature(), acceptAssignment);
+router.post('/assignments/:assignmentId/accept', verifyWebhookSignature(), validateRequest(acceptAssignmentSchema), acceptAssignment);
 
 // Reject assignment - Protected with HMAC signature verification
-router.post('/assignments/:assignmentId/reject', verifyWebhookSignature(), rejectAssignment);
+router.post('/assignments/:assignmentId/reject', verifyWebhookSignature(), validateRequest(rejectAssignmentSchema), rejectAssignment);
 
 // Mark assignment as busy - Protected with HMAC signature verification
-router.post('/assignments/:assignmentId/busy', verifyWebhookSignature(), markAsBusy);
+router.post('/assignments/:assignmentId/busy', verifyWebhookSignature(), validateRequest(busyAssignmentSchema), markAsBusy);
 
 export default router;
