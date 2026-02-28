@@ -167,7 +167,7 @@ class AnalyticsRepository extends BaseRepository {
       LEFT JOIN sla_violations sv ON sv.shipment_id = s.id
       LEFT JOIN returns r ON r.order_id = o.id AND r.status = 'refunded'
       WHERE o.created_at >= ${intClause}
-      ${orgClause}
+      ${orgClause.replace('organization_id', 'o.organization_id')}
     `, baseArgs);
   }
 

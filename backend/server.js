@@ -61,22 +61,14 @@ app.use(
 	})
 );
 
-// Capture raw body for HMAC webhook signature verification (TASK-R2-002).
-// This must run BEFORE express.json() so the Buffer is available as req.rawBody.
-// Routes that need HMAC (e.g. /api/shipments/:id/update-tracking) read req.rawBody
-// instead of re-serialising the parsed JSON, which would alter key order.
-app.use((req, res, next) => {
-  let data = '';
-  req.setEncoding('utf8');
-  req.on('data', chunk => { data += chunk; });
-  req.on('end', () => {
-    req.rawBody = data;
-    next();
-  });
-});
-
-// Parse JSON and URL-encoded request bodies
-app.use(express.json());
+// Parse JSON bodies and capture raw body for HMAC webhook signature verification.
+// The verify callback stores the raw Buffer as req.rawBody so webhook routes can
+// validate HMAC signatures without re-serialising (which would alter key order).
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Request tracking and logging middleware

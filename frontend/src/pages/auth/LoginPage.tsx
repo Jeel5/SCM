@@ -66,8 +66,9 @@ export function LoginPage() {
         navigate('/dashboard');
       }
     } catch (err: unknown) {
-      const errorMessage = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Login failed. Please check your credentials.';
-      setError(errorMessage);
+      const errData = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
+      const errorMessage = errData?.error || errData?.message || 'Login failed. Please check your credentials.';
+      setError(typeof errorMessage === 'string' ? errorMessage : 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }

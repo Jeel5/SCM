@@ -6,9 +6,9 @@ class UserRepository extends BaseRepository {
     super('users');
   }
 
-  // Find user by username
+  // Find user by name
   async findByUsername(username, client = null) {
-    const query = `SELECT * FROM users WHERE username = $1`;
+    const query = `SELECT * FROM users WHERE name = $1`;
     const result = await this.query(query, [username], client);
     return result.rows[0] || null;
   }
@@ -33,7 +33,7 @@ class UserRepository extends BaseRepository {
     
     let query = `
       SELECT 
-        id, username, email, full_name, role, department, 
+        id, name, email, role, 
         phone, is_active, last_login, created_at, updated_at,
         COUNT(*) OVER() as total_count
       FROM users
@@ -61,9 +61,8 @@ class UserRepository extends BaseRepository {
 
     if (search) {
       query += ` AND (
-        username ILIKE $${paramCount} OR
-        email ILIKE $${paramCount} OR
-        full_name ILIKE $${paramCount}
+        name ILIKE $${paramCount} OR
+        email ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
       paramCount++;
@@ -89,7 +88,7 @@ class UserRepository extends BaseRepository {
       UPDATE users
       SET last_login = NOW()
       WHERE id = $1
-      RETURNING id, username, email, full_name, role, last_login
+      RETURNING id, name, email, role, last_login
     `;
     const result = await this.query(query, [userId], client);
     return result.rows[0];
@@ -103,7 +102,7 @@ class UserRepository extends BaseRepository {
       UPDATE users
       SET password_hash = $1, updated_at = NOW()
       WHERE id = $2
-      RETURNING id, username, email
+      RETURNING id, name, email
     `;
     const result = await this.query(query, [hashedPassword, userId], client);
     return result.rows[0];
@@ -129,7 +128,7 @@ class UserRepository extends BaseRepository {
       }
     }
 
-    query += ` RETURNING id, username, email, is_active`;
+    query += ` RETURNING id, name, email, is_active`;
     const result = await this.query(query, params, client);
     return result.rows[0];
   }
@@ -154,7 +153,7 @@ class UserRepository extends BaseRepository {
       }
     }
 
-    query += ` RETURNING id, username, email, is_active`;
+    query += ` RETURNING id, name, email, is_active`;
     const result = await this.query(query, params, client);
     return result.rows[0];
   }
@@ -197,7 +196,7 @@ class UserRepository extends BaseRepository {
    */
   async findByRole(role, organizationId = undefined, client = null) {
     let query = `
-      SELECT id, username, email, full_name, role, department, is_active
+      SELECT id, name, email, role, is_active
       FROM users 
       WHERE role = $1 AND is_active = true
     `;
@@ -212,7 +211,7 @@ class UserRepository extends BaseRepository {
       }
     }
 
-    query += ` ORDER BY full_name`;
+    query += ` ORDER BY name`;
     const result = await this.query(query, params, client);
     return result.rows;
   }
@@ -237,7 +236,7 @@ class UserRepository extends BaseRepository {
       }
     }
 
-    query += ` RETURNING id, username, email, full_name, role`;
+    query += ` RETURNING id, name, email, role`;
     const result = await this.query(query, params, client);
     return result.rows[0];
   }
@@ -542,7 +541,7 @@ class UserRepository extends BaseRepository {
       `UPDATE users
        SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
        WHERE id = $${values.length}
-       RETURNING id, username, email, name, phone, company, avatar, role,
+       RETURNING id, email, name, phone, avatar, role,
                  pending_email, created_at, updated_at`,
       values, client
     );
@@ -554,7 +553,7 @@ class UserRepository extends BaseRepository {
    */
   async getProfileById(userId, client = null) {
     const result = await this.query(
-      `SELECT id, username, email, name, phone, company, avatar, role,
+      `SELECT id, email, name, phone, avatar, role,
               pending_email, created_at, updated_at
        FROM users WHERE id = $1`,
       [userId], client
@@ -578,7 +577,7 @@ class UserRepository extends BaseRepository {
            updated_at           = CURRENT_TIMESTAMP
        WHERE email_change_token = $1
          AND email_change_expires > $2
-       RETURNING id, username, email, name, role`,
+       RETURNING id, email, name, role`,
       [token, now], client
     );
     return result.rows[0] || null;
