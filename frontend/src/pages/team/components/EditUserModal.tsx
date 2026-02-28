@@ -57,7 +57,7 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
 
     setIsSubmitting(true);
     try {
-      await put(`/api/users/${user.id}`, {
+      await put(`/users/${user.id}`, {
         name: form.name,
         role: form.role,
         is_active: form.is_active === 'true',

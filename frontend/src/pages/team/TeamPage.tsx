@@ -83,7 +83,7 @@ export function TeamPage() {
       if (filterStatus !== 'all') params.is_active = filterStatus === 'active';
 
       const res = await get<{ success: boolean; data: OrgUser[]; total: number }>(
-        '/api/users',
+        '/users',
         params
       );
       setUsers(res.data);
@@ -101,7 +101,7 @@ export function TeamPage() {
 
   const handleDeactivate = async (user: OrgUser) => {
     try {
-      await del(`/api/users/${user.id}`);
+      await del(`/users/${user.id}`);
       toast.success('Deactivated', `${user.name} has been deactivated`);
       fetchUsers();
     } catch {

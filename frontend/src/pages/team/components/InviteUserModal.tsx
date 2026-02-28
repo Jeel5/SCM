@@ -63,7 +63,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
 
     setIsSubmitting(true);
     try {
-      await post('/api/users', form);
+      await post('/users', form);
       toast.success('User Added', `${form.name} has been added to your team`);
       onSuccess();
       handleClose();
