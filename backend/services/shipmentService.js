@@ -122,7 +122,6 @@ class ShipmentService {
         vehicleNumber,
       });
 
-      const updatedShipment = updateResult;
       return {
         shipmentId:    updatedShipment.id,
         trackingNumber: updatedShipment.tracking_number,

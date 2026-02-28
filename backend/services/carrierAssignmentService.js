@@ -50,8 +50,6 @@ class CarrierAssignmentService {
         const serviceType = order.priority || 'standard'; // standard, express, bulk
         const carriers = await carrierAssignmentRepo.findAvailableCarriers(serviceType, tx);
         const carriersResult = { rows: carriers }; // kept for compat with code below
-          [serviceType]
-        );
 
         if (carriersResult.rows.length === 0) {
           logger.warn(`No available carriers for order ${orderId}. Will retry when carriers become available.`, { serviceType, triedCount });
@@ -225,7 +223,6 @@ class CarrierAssignmentService {
       
       // Update carrier availability status
       await carrierAssignmentRepo.setCarrierAvailable(carrier.id);
-      );
       
       // Get all pending assignments for this carrier
       const assignments = await this.getPendingAssignments(carrier.id, { status: 'pending' });
