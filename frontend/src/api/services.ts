@@ -35,7 +35,10 @@ export const authApi = {
   },
 
   async logout(): Promise<ApiResponse<null>> {
-    return post('/auth/logout');
+    const refreshToken = localStorage.getItem('refreshToken');
+    const result = await post<ApiResponse<null>>('/auth/logout', { refreshToken });
+    localStorage.removeItem('refreshToken');
+    return result;
   },
 };
 
@@ -447,32 +450,70 @@ export const exceptionsApi = {
 };
 
 // ==================== DASHBOARD & ANALYTICS ====================
+
+// Cached warehouse activity from latest getDashboardStats call
+let _warehouseActivityCache: Record<string, { inbound: number; outbound: number }> = {};
+// Cached order trend from latest getDashboardStats call
+let _ordersTrendCache: ChartDataPoint[] = [];
+// Cached topProducts from latest getDashboardStats call
+let _topProductsCache: Array<{ name: string; sku: string; unitsSold: number; revenue: number }> = [];
+
 export const dashboardApi = {
-  async getDashboardStats(): Promise<ApiResponse<DashboardMetrics>> {
-    const response = await get<{ success: boolean; data: { orders?: { total: number; totalValue: number }; shipments?: { inTransit: number; onTimeRate: number }; returns?: { pending: number }; exceptions?: { active: number } } }>('/dashboard/stats');
-    // Transform backend response to match frontend DashboardMetrics type
+  async getDashboardStats(period = '30d'): Promise<ApiResponse<DashboardMetrics>> {
+    const response = await get<{ success: boolean; data: {
+      orders?: { total: number; totalValue: number; pending: number; processing: number; shipped: number; delivered: number; cancelled: number; returned: number; change: number; revenueChange: number };
+      shipments?: { inTransit: number; onTimeRate: number; total: number; delivered: number; avgDeliveryDays: number; change: number; onTimeRateChange: number; avgDeliveryChange: number };
+      returns?: { pending: number; change: number };
+      exceptions?: { active: number; change: number };
+      ordersTrend?: Array<{ date: string; count: number; value: number }>;
+      warehouseActivity?: Record<string, { inbound: number; outbound: number }>;
+      topProducts?: Array<{ name: string; sku: string; unitsSold: number; revenue: number }>;
+    } }>('/dashboard/stats', { period });
     const data = response.data || {};
+
+    // Cache warehouse activity and orders trend for other APIs to use
+    _warehouseActivityCache = data.warehouseActivity || {};
+    _ordersTrendCache = (data.ordersTrend || []).map(r => ({ date: r.date, value: r.count }));
+    _topProductsCache = data.topProducts || [];
+
     return {
       data: {
         totalOrders: data.orders?.total || 0,
-        ordersChange: 0,
+        ordersChange: data.orders?.change ?? 0,
         activeShipments: data.shipments?.inTransit || 0,
-        shipmentsChange: 0,
+        shipmentsChange: data.shipments?.change ?? 0,
         deliveryRate: data.shipments?.onTimeRate || 0,
-        deliveryRateChange: 0,
+        deliveryRateChange: data.shipments?.onTimeRateChange ?? 0,
         slaCompliance: data.shipments?.onTimeRate || 0,
-        slaComplianceChange: 0,
+        slaComplianceChange: data.shipments?.onTimeRateChange ?? 0,
         pendingReturns: data.returns?.pending || 0,
-        returnsChange: 0,
+        returnsChange: data.returns?.change ?? 0,
         activeExceptions: data.exceptions?.active || 0,
-        exceptionsChange: 0,
+        exceptionsChange: data.exceptions?.change ?? 0,
         revenue: data.orders?.totalValue || 0,
-        revenueChange: 0,
-        avgDeliveryTime: 2.5,
-        avgDeliveryTimeChange: 0,
+        revenueChange: data.orders?.revenueChange ?? 0,
+        avgDeliveryTime: data.shipments?.avgDeliveryDays || 0,
+        avgDeliveryTimeChange: data.shipments?.avgDeliveryChange ?? 0,
+        // Extended data for richer dashboard
+        ordersPending: data.orders?.pending || 0,
+        ordersProcessing: data.orders?.processing || 0,
+        ordersShipped: data.orders?.shipped || 0,
+        ordersDelivered: data.orders?.delivered || 0,
+        ordersCancelled: data.orders?.cancelled || 0,
+        ordersReturned: data.orders?.returned || 0,
       } as DashboardMetrics,
       success: true,
     };
+  },
+
+  /** Returns cached orders trend from last getDashboardStats call */
+  async getOrdersChart(_days = 30): Promise<ApiResponse<ChartDataPoint[]>> {
+    return { data: _ordersTrendCache, success: true };
+  },
+
+  /** Returns cached top products from last getDashboardStats call */
+  getTopProducts(): Array<{ name: string; sku: string; unitsSold: number; revenue: number }> {
+    return _topProductsCache;
   },
 
   async getAnalytics(period = '30d'): Promise<ApiResponse<{
@@ -483,15 +524,6 @@ export const dashboardApi = {
   }>> {
     const response = await get<{ success: boolean; data: unknown }>('/analytics', { period });
     return { data: response.data as never, success: true };
-  },
-
-  async getOrdersChart(days = 30): Promise<ApiResponse<ChartDataPoint[]>> {
-    const response = await get<{ success: boolean; data: { ordersOverTime: Array<{ date: string; count: number }> } }>('/analytics', { period: `${days}d` });
-    const chartData = response.data.ordersOverTime?.map((item: ChartDataPoint | { date: string; count: number }) => ({
-      date: item.date,
-      value: 'count' in item ? item.count : item.value,
-    })) || [];
-    return { data: chartData, success: true };
   },
 
   async getCarrierPerformance(): Promise<ApiResponse<CarrierPerformance[]>> {
@@ -518,8 +550,8 @@ export const dashboardApi = {
       capacity: wh.capacity || 0,
       used: Math.floor((wh.capacity || 0) * ((wh.currentUtilization || 0) / 100)),
       utilizationRate: Number(wh.currentUtilization) || 0,
-      inboundToday: Math.floor(Math.random() * 200) + 50,
-      outboundToday: Math.floor(Math.random() * 250) + 60,
+      inboundToday: _warehouseActivityCache[wh.id]?.inbound ?? 0,
+      outboundToday: _warehouseActivityCache[wh.id]?.outbound ?? 0,
     }));
     return { data: utilization, success: true };
   },

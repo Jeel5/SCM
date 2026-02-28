@@ -1,4 +1,4 @@
-import axios, { type AxiosError, type AxiosResponse } from 'axios';
+import axios, { type AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores';
 import { toast } from '@/stores/toastStore';
 import type { ApiError } from '@/types';
@@ -26,15 +26,81 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// --------------- Silent Token Refresh ---------------
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: unknown) => void;
+}> = [];
+
+function processQueue(error: unknown, token: string | null) {
+  failedQueue.forEach((p) => {
+    if (error) p.reject(error);
+    else p.resolve(token!);
+  });
+  failedQueue = [];
+}
+
+function forceLogout() {
+  useAuthStore.getState().logout();
+  localStorage.removeItem('refreshToken');
+  toast.error('Session Expired', 'Please log in again');
+  window.location.href = '/login';
+}
+
 // Response interceptor for handling errors
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError<ApiError>) => {
-    // Handle authentication errors
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
-      toast.error('Session Expired', 'Please log in again');
-      window.location.href = '/login';
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // ---- 401: attempt a silent refresh before logging out ----
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      // Don't retry the refresh endpoint itself
+      if (originalRequest.url?.includes('/auth/refresh')) {
+        forceLogout();
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        // Another refresh is already in-flight — queue this request
+        return new Promise<string>((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((newToken) => {
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return api(originalRequest);
+        }).catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+      if (!storedRefreshToken) {
+        isRefreshing = false;
+        forceLogout();
+        return Promise.reject(error);
+      }
+
+      try {
+        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+          refreshToken: storedRefreshToken,
+        });
+
+        const newAccessToken: string = data.data.accessToken;
+        useAuthStore.getState().setAccessToken(newAccessToken);
+
+        processQueue(null, newAccessToken);
+
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        forceLogout();
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
     }
     
     // Handle authorization errors

@@ -453,6 +453,13 @@ export interface DashboardMetrics {
   revenueChange: number;
   avgDeliveryTime: number;
   avgDeliveryTimeChange: number;
+  // Order status breakdown
+  ordersPending?: number;
+  ordersProcessing?: number;
+  ordersShipped?: number;
+  ordersDelivered?: number;
+  ordersCancelled?: number;
+  ordersReturned?: number;
 }
 
 export interface ChartDataPoint {

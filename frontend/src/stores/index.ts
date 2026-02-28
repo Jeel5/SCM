@@ -28,8 +28,10 @@ export const useAuthStore = create<AuthStore>()(
       setLoading: (isLoading) => set({ isLoading }),
       login: (user, accessToken) =>
         set({ user, accessToken, isAuthenticated: true, isLoading: false }),
-      logout: () =>
-        set({ user: null, accessToken: null, isAuthenticated: false }),
+      logout: () => {
+        localStorage.removeItem('refreshToken');
+        set({ user: null, accessToken: null, isAuthenticated: false });
+      },
       updateUser: (updates) =>
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null,

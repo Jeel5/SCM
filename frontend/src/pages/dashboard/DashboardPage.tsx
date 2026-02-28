@@ -8,6 +8,8 @@ import {
   RotateCcw,
   DollarSign,
   Clock,
+  RefreshCw,
+  Calendar,
 } from 'lucide-react';
 import { Button, MetricCardSkeleton } from '@/components/ui';
 import { formatCurrency, formatNumber, formatPercentage, formatDate } from '@/lib/utils';
@@ -17,7 +19,10 @@ import { RecentShipments } from './components/RecentShipments';
 import { CarrierPerformanceChart } from './components/CarrierPerformanceChart';
 import { OrdersTrendChart } from './components/OrdersTrendChart';
 import { WarehouseUtilizationChart } from './components/WarehouseUtilizationChart';
+import { OrderStatusChart } from './components/OrderStatusChart';
+import { TopProductsTable } from './components/TopProductsTable';
 import { useDashboard } from './hooks/useDashboard';
+import type { DashboardPeriod } from './hooks/useDashboard';
 import { SuperAdminDashboard } from '@/pages/super-admin';
 
 export function DashboardPage() {
@@ -34,8 +39,15 @@ export function DashboardPage() {
     shipments,
     carrierPerformance,
     warehouseUtilization,
+    topProducts,
     isLoading,
+    period,
+    setPeriod,
+    periodLabels,
+    refetch,
   } = useDashboard();
+
+  const periodOptions = Object.entries(periodLabels) as [DashboardPeriod, string][];
 
   return (
     <div className="p-6 space-y-6">
@@ -50,11 +62,34 @@ export function DashboardPage() {
             Welcome back, {user?.name?.split(' ')[0]} 👋
           </h1>
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
-            Here's what's happening with your logistics today.
+            Here's what's happening with your logistics.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<Clock className="h-4 w-4" />}>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Period selector */}
+          <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+            {periodOptions.map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setPeriod(key)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+                  period === key
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={refetch}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 transition-colors"
+            title="Refresh dashboard"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <Button variant="outline" size="sm" leftIcon={<Calendar className="h-4 w-4" />}>
             {formatDate(new Date(), 'MMM dd, yyyy')}
           </Button>
         </div>
@@ -132,13 +167,21 @@ export function DashboardPage() {
         ) : null}
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <OrdersTrendChart data={ordersChart} />
-        <CarrierPerformanceChart data={carrierPerformance} />
+      {/* Charts Row 1: Orders Trend + Order Status Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <OrdersTrendChart data={ordersChart} />
+        </div>
+        <OrderStatusChart metrics={metrics} />
       </div>
 
-      {/* Bottom Row */}
+      {/* Charts Row 2: Carrier Performance + Top Products */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <CarrierPerformanceChart data={carrierPerformance} />
+        <TopProductsTable data={topProducts} />
+      </div>
+
+      {/* Bottom Row: Recent Shipments + Warehouse */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <RecentShipments shipments={shipments} />

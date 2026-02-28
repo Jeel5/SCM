@@ -1,11 +1,14 @@
-import { Package } from 'lucide-react';
+import { Package, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import {
-  PieChart,
-  Pie,
-  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   TooltipProps,
+  Legend,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui';
 import type { WarehouseUtilization } from '@/types';
@@ -14,20 +17,35 @@ export interface WarehouseUtilizationChartProps {
   data: WarehouseUtilization[];
 }
 
-const COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B'];
-
-// Custom Tooltip Component
-const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
   if (active && payload && payload.length) {
+    const wh = payload[0]?.payload;
     return (
-      <div className="bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-          {payload[0].payload.warehouseName}
-        </p>
-        <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
-          {Number(payload[0].value).toFixed(1)}%
-        </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Utilization</p>
+      <div className="bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 min-w-45">
+        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">{label}</p>
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Capacity</span>
+            <span className="font-medium text-gray-900 dark:text-white">{wh?.capacity?.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Used</span>
+            <span className="font-medium text-blue-600">{wh?.used?.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Utilization</span>
+            <span className="font-bold text-blue-600">{wh?.utilizationRate?.toFixed(1)}%</span>
+          </div>
+          <hr className="border-gray-200 dark:border-gray-700" />
+          <div className="flex justify-between text-sm">
+            <span className="text-emerald-600 flex items-center gap-1"><ArrowDownToLine className="h-3 w-3" /> Inbound</span>
+            <span className="font-medium">{wh?.inbound?.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-orange-500 flex items-center gap-1"><ArrowUpFromLine className="h-3 w-3" /> Outbound</span>
+            <span className="font-medium">{wh?.outbound?.toLocaleString()}</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -35,13 +53,21 @@ const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
 };
 
 export function WarehouseUtilizationChart({ data }: WarehouseUtilizationChartProps) {
-  // Cast data for Recharts compatibility
-  const chartData = data as unknown as Array<Record<string, unknown>>;
+  const chartData = data.map(wh => ({
+    name: wh.warehouseName.length > 12 ? wh.warehouseName.slice(0, 12) + '…' : wh.warehouseName,
+    fullName: wh.warehouseName,
+    used: wh.used,
+    available: Math.max((wh.capacity || 0) - wh.used, 0),
+    capacity: wh.capacity || 0,
+    utilizationRate: wh.utilizationRate,
+    inbound: wh.inboundToday,
+    outbound: wh.outboundToday,
+  }));
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle subtitle="Capacity usage">Warehouse Utilization</CardTitle>
+        <CardTitle subtitle="Capacity & activity">Warehouse Overview</CardTitle>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
@@ -54,42 +80,51 @@ export function WarehouseUtilizationChart({ data }: WarehouseUtilizationChartPro
           </div>
         ) : (
           <>
-        <div className="flex items-center justify-center mb-4">
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="utilizationRate"
-                nameKey="warehouseName"
-              >
-                {data.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="space-y-2">
-          {data.map((warehouse, index) => (
-            <div key={warehouse.warehouseId} className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div
-                  className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: COLORS[index % COLORS.length] }}
+            {/* Stacked bar chart: used vs available capacity */}
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={chartData} layout="vertical" barSize={18}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-gray-200 dark:stroke-gray-700" />
+                <XAxis type="number" tick={{ fontSize: 11, fill: 'currentColor' }} className="text-gray-500" />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={90}
+                  tick={{ fontSize: 12, fill: 'currentColor' }}
+                  className="text-gray-700 dark:text-gray-200"
                 />
-                <span className="text-sm text-gray-600 dark:text-gray-300 truncate">{warehouse.warehouseName.split(' ')[0]}</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-white">{(warehouse.utilizationRate || 0).toFixed(0)}%</span>
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(59,130,246,0.06)' }} />
+                <Legend
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{ fontSize: 12 }}
+                />
+                <Bar dataKey="used" stackId="cap" fill="#3B82F6" name="Used" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="available" stackId="cap" fill="#E5E7EB" name="Available" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+
+            {/* Inbound / Outbound summary per warehouse */}
+            <div className="mt-4 space-y-2">
+              {data.map(wh => (
+                <div key={wh.warehouseId} className="flex items-center justify-between px-1">
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300 truncate max-w-[40%]">
+                    {wh.warehouseName}
+                  </span>
+                  <div className="flex items-center gap-4">
+                    <span className="flex items-center gap-1 text-xs text-emerald-600" title="Inbound units">
+                      <ArrowDownToLine className="h-3 w-3" /> {wh.inboundToday.toLocaleString()}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs text-orange-500" title="Outbound units">
+                      <ArrowUpFromLine className="h-3 w-3" /> {wh.outboundToday.toLocaleString()}
+                    </span>
+                    <span className="text-xs font-bold text-gray-900 dark:text-white w-10 text-right">
+                      {wh.utilizationRate.toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        </>
+          </>
         )}
       </CardContent>
     </Card>

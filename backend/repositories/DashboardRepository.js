@@ -189,6 +189,30 @@ class DashboardRepository extends BaseRepository {
     );
     return result.rows;
   }
+
+  /**
+   * Per-warehouse inbound / outbound counts from stock_movements within the period.
+   * Falls back to shipment-based counts if stock_movements is empty.
+   */
+  async getWarehouseActivity(organizationId = null, days = 30, client = null) {
+    // stock_movements has no organization_id — filter through warehouses table
+    const { orgClause, args, intIdx } = this._buildParams(organizationId, days, 'w');
+    const result = await this.query(
+      `SELECT
+         sm.warehouse_id,
+         w.name AS warehouse_name,
+         COUNT(*) FILTER (WHERE sm.movement_type IN ('inbound','transfer_in','add'))  AS inbound_count,
+         COUNT(*) FILTER (WHERE sm.movement_type IN ('outbound','transfer_out','remove')) AS outbound_count,
+         COALESCE(SUM(sm.quantity) FILTER (WHERE sm.movement_type IN ('inbound','transfer_in','add')),  0) AS inbound_units,
+         COALESCE(SUM(sm.quantity) FILTER (WHERE sm.movement_type IN ('outbound','transfer_out','remove')), 0) AS outbound_units
+       FROM stock_movements sm
+       JOIN warehouses w ON w.id = sm.warehouse_id
+       WHERE sm.created_at >= NOW() - $${intIdx}::INTERVAL${orgClause}
+       GROUP BY sm.warehouse_id, w.name`,
+      args, client
+    );
+    return result.rows;
+  }
 }
 
 export default new DashboardRepository();
