@@ -67,7 +67,7 @@ export function AboutPage() {
               to="/login"
               className="px-6 py-3 bg-gray-900 hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 text-white font-semibold rounded-xl transition-all"
             >
-              LOGIN
+              Login
             </Link>
             <a
               href="#scope"
@@ -150,7 +150,7 @@ export function AboutPage() {
                 to="/login"
                 className="px-6 py-3 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 font-medium rounded-xl transition-all text-center"
               >
-                LOGIN
+                Login
               </Link>
             </div>
           </div>
