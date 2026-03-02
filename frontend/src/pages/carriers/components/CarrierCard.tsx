@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Truck, Eye, Edit, MoreHorizontal } from 'lucide-react';
+import { Truck, Eye, Edit, Trash2, MoreHorizontal } from 'lucide-react';
 import { Badge, Progress, Dropdown } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
 import type { Carrier } from '@/types';
@@ -9,11 +9,15 @@ import { RatingStars } from './RatingStars';
 export function CarrierCard({
   carrier,
   onViewDetails,
+  onEdit,
+  onDelete,
   index,
   totalInRow = 3,
 }: {
   carrier: Carrier;
   onViewDetails: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
   index?: number;
   totalInRow?: number;
 }) {
@@ -64,9 +68,12 @@ export function CarrierCard({
             items={[
               { label: 'View Details', value: 'view', icon: <Eye className="h-4 w-4" /> },
               { label: 'Edit', value: 'edit', icon: <Edit className="h-4 w-4" /> },
+              { label: 'Delete', value: 'delete', icon: <Trash2 className="h-4 w-4" /> },
             ]}
             onSelect={(value) => {
               if (value === 'view') onViewDetails();
+              if (value === 'edit') onEdit?.();
+              if (value === 'delete') onDelete?.();
               setIsDropdownOpen(false);
             }}
             onOpenChange={setIsDropdownOpen}

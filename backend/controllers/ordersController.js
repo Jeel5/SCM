@@ -1,5 +1,6 @@
 import orderService from '../services/orderService.js';
 import { asyncHandler, AppError } from '../errors/index.js';
+import { emitToOrg } from '../sockets/emitter.js';
 
 // Orders Controller - handles HTTP requests and delegates to service layer
 
@@ -123,7 +124,9 @@ export const createOrder = asyncHandler(async (req, res) => {
   };
   
   const order = await orderService.createOrder(orderData, requestCarrierAssignment);
-  
+
+  emitToOrg(req.orgContext?.organizationId, 'order:created', order);
+
   res.status(201).json({ 
     success: true, 
     message: 'Order created successfully', 
@@ -167,19 +170,22 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
   const organizationId = req.orgContext?.organizationId;
 
-  // Validate status against whitelist before delegating to service (TASK-R10-003)
-  if (!status || !VALID_ORDER_STATUSES.includes(status)) {
-    throw new AppError(
-      `Invalid status '${status}'. Valid values: ${VALID_ORDER_STATUSES.join(', ')}`,
-      400
-    );
+  // Status value is already validated by Joi (updateOrderStatusSchema).
+  // State-machine transition validity is enforced by orderService.updateOrderStatus().
+  // No redundant whitelist check here — single source of truth in the service.
+  if (!status) {
+    throw new ValidationError('Status is required');
   }
 
+  logger.info('Order status update requested', { orderId: id, newStatus: status, organizationId });
+
   const order = await orderService.updateOrderStatus(id, status, organizationId);
-  
+
+  emitToOrg(organizationId, 'order:updated', { id: order.id, status: order.status, orderNumber: order.order_number });
+
   res.json({ 
     success: true, 
-    message: 'Order status updated', 
+    message: `Order status updated to '${status}'`, 
     data: order 
   });
 });

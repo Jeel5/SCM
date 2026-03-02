@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { slaApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -10,7 +10,10 @@ export function useSLA(page: number, pageSize: number) {
   const [totalViolations, setTotalViolations] = useState(0);
   const [dashboardData, setDashboardData] = useState<SLADashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -67,7 +70,7 @@ export function useSLA(page: number, pageSize: number) {
     };
 
     fetchData();
-  }, [page, pageSize, useMockApi]);
+  }, [page, pageSize, useMockApi, refreshKey]);
 
-  return { policies, violations, totalViolations, dashboardData, isLoading };
+  return { policies, violations, totalViolations, dashboardData, isLoading, refetch };
 }

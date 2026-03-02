@@ -7,11 +7,9 @@ interface AuthStore {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  accessToken: string | null;
   setUser: (user: User | null) => void;
-  setAccessToken: (token: string | null) => void;
   setLoading: (loading: boolean) => void;
-  login: (user: User, token: string) => void;
+  login: (user: User) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
 }
@@ -22,15 +20,12 @@ export const useAuthStore = create<AuthStore>()(
       user: null,
       isAuthenticated: false,
       isLoading: false,
-      accessToken: null,
       setUser: (user) => set({ user, isAuthenticated: !!user }),
-      setAccessToken: (accessToken) => set({ accessToken }),
       setLoading: (isLoading) => set({ isLoading }),
-      login: (user, accessToken) =>
-        set({ user, accessToken, isAuthenticated: true, isLoading: false }),
+      login: (user) =>
+        set({ user, isAuthenticated: true, isLoading: false }),
       logout: () => {
-        localStorage.removeItem('refreshToken');
-        set({ user: null, accessToken: null, isAuthenticated: false });
+        set({ user: null, isAuthenticated: false });
       },
       updateUser: (updates) =>
         set((state) => ({
@@ -41,7 +36,6 @@ export const useAuthStore = create<AuthStore>()(
       name: 'auth-storage',
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

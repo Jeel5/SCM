@@ -23,7 +23,6 @@ export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  accessToken: string | null;
 }
 
 // Order Types
@@ -148,7 +147,7 @@ export interface Warehouse {
   id: string;
   code: string;
   name: string;
-  type: 'fulfillment' | 'distribution' | 'cross_dock' | 'cold_storage';
+  type: 'standard' | 'fulfillment' | 'distribution' | 'cold_storage' | 'hazmat' | 'bonded_customs' | 'returns_center';
   address: Address;
   capacity: number;
   currentUtilization: number;
@@ -160,7 +159,6 @@ export interface Warehouse {
     lng: number;
   };
   status: 'active' | 'inactive' | 'maintenance';
-  managerId?: string;
   contactEmail: string;
   contactPhone: string;
   operatingHours: {
@@ -168,12 +166,20 @@ export interface Warehouse {
     close: string;
     timezone: string;
   };
+  // SCM operational fields
+  gstin: string | null;
+  hasColdStorage: boolean;
+  temperatureMinCelsius: number | null;
+  temperatureMaxCelsius: number | null;
+  customsBondedWarehouse: boolean;
+  certifications: string[];
   createdAt: string;
 }
 
 // Inventory Types
 export interface InventoryItem {
   id: string;
+  organizationId: string | null;
   productId: string | null;
   productName: string | null;
   sku: string | null;
@@ -186,9 +192,7 @@ export interface InventoryItem {
   damagedQuantity: number;
   inTransitQuantity: number;
   productCategory: string | null;
-  unitPrice: number | null;
-  binLocation: string | null;
-  zone: string | null;
+  unitCost: number | null;
   reorderPoint: number | null;
   maxStockLevel: number | null;
   isLowStock: boolean;
@@ -206,7 +210,6 @@ export interface ProductDimensions {
   unit?: string;
 }
 
-export type ProductItemType = 'general' | 'fragile' | 'hazardous' | 'perishable' | 'electronics' | 'documents' | 'valuable';
 export type ProductPackageType = 'envelope' | 'box' | 'tube' | 'pallet' | 'crate' | 'bag' | 'custom';
 
 export interface Product {
@@ -216,10 +219,13 @@ export interface Product {
   name: string;
   description: string | null;
   category: string | null;
+  brand: string | null;
   weight: number | null;
   dimensions: ProductDimensions | null;
-  unitPrice: number | null;
+  // Pricing
+  sellingPrice: number | null;
   costPrice: number | null;
+  mrp: number | null;
   currency: string;
   // Handling flags
   isFragile: boolean;
@@ -227,18 +233,29 @@ export interface Product {
   isHazmat: boolean;
   isPerishable: boolean;
   // Classification & shipping
-  itemType: ProductItemType | null;
   packageType: ProductPackageType | null;
   handlingInstructions: string | null;
-  // Insurance
+  // Insurance & compliance
   requiresInsurance: boolean;
-  declaredValue: number | null;
+  // India GST / Customs
+  hsnCode: string | null;
+  gstRate: number | null;
+  countryOfOrigin: string | null;
+  // Barcodes (dual system)
+  manufacturerBarcode: string | null;
+  internalBarcode: string;
+  // Warranty & shelf life
+  warrantyPeriodDays: number;
+  shelfLifeDays: number | null;
+  // Supplier
+  supplierId: string | null;
+  // Flexible metadata
+  tags: string[];
+  attributes: Record<string, unknown> | null;
   // Computed
   volumetricWeight: number | null;
   // Status
   isActive: boolean;
-  attributes: Record<string, unknown> | null;
-  images: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -292,13 +309,20 @@ export interface SLAPolicy {
   id: string;
   name: string;
   serviceType: string;
+  carrierId?: string | null;
+  carrierName?: string | null;
+  originZoneType?: string | null;
+  destinationZoneType?: string | null;
+  /** Legacy label combining zone info; kept for display convenience */
   region: string;
-  carrierId?: string;
   targetDeliveryHours: number;
+  warningThresholdPercent: number;
   warningThresholdHours: number;
   penaltyAmount: number;
+  maxPenaltyAmount?: number | null;
   penaltyType: 'fixed' | 'percentage';
   isActive: boolean;
+  priority: number;
   createdAt: string;
 }
 
@@ -311,12 +335,13 @@ export interface SLAViolation {
   expectedDelivery: string;
   actualDelivery?: string;
   delayHours: number;
-  status: 'pending' | 'acknowledged' | 'resolved' | 'waived';
+  status: 'open' | 'acknowledged' | 'investigating' | 'resolved' | 'waived' | 'disputed';
   penaltyAmount: number;
-  carrierId: string;
-  carrierName: string;
+  carrierId?: string;
+  carrierName?: string;
   rootCause?: string;
   notes?: string;
+  violatedAt?: string;
   createdAt: string;
   resolvedAt?: string;
 }
@@ -360,26 +385,30 @@ export interface Return {
   rmaNumber: string;
   orderId: string;
   orderNumber: string;
-  customerId: string;
+  customerId?: string;
   customerName: string;
+  customerEmail?: string;
   status: ReturnStatus;
   reason: ReturnReason;
-  type: 'refund' | 'exchange' | 'store_credit';
-  reasonDetails?: string;
+  type?: 'refund' | 'exchange' | 'store_credit';
+  reasonDetail?: string;
   notes?: string;
   items: ReturnItem[];
-  pickupAddress: Address;
-  warehouseId: string;
+  pickupAddress?: Address;
+  warehouseId?: string;
   shipmentId?: string;
   trackingNumber?: string;
   refundAmount?: number;
+  restockingFee?: number;
   refundStatus?: 'pending' | 'processed' | 'failed';
   qualityCheckResult?: 'pass' | 'fail' | 'partial';
   qualityCheckNotes?: string;
-  requestedAt: string;
+  requestedAt?: string;
   createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
+  updatedAt?: string;
+  approvedAt?: string;
+  receivedAt?: string;
+  resolvedAt?: string;
 }
 
 export interface ReturnItem {
@@ -396,17 +425,20 @@ export interface ReturnItem {
 export type ExceptionType =
   | 'delay'
   | 'damage'
-  | 'lost'
-  | 'wrong_address'
-  | 'customer_unavailable'
+  | 'lost_shipment'
+  | 'address_issue'
   | 'carrier_issue'
-  | 'weather'
+  | 'inventory_issue'
+  | 'sla_breach'
+  | 'delivery_failed'
+  | 'customer_not_available'
   | 'other';
 
 export type ExceptionSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export type ExceptionStatus =
   | 'open'
+  | 'acknowledged'
   | 'investigating'
   | 'pending_resolution'
   | 'resolved'
@@ -417,7 +449,9 @@ export interface Exception {
   id: string;
   ticketNumber: string;
   shipmentId: string;
+  trackingNumber?: string;
   orderId: string;
+  orderNumber?: string;
   type: ExceptionType;
   severity: ExceptionSeverity;
   status: ExceptionStatus;

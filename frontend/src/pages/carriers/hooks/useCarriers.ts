@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { carriersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -7,7 +7,10 @@ import type { Carrier } from '@/types';
 export function useCarriers() {
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchCarriers = async () => {
@@ -26,7 +29,7 @@ export function useCarriers() {
     };
 
     fetchCarriers();
-  }, []);
+  }, [useMockApi, refreshKey]);
 
-  return { carriers, isLoading };
+  return { carriers, isLoading, refetch };
 }

@@ -41,8 +41,6 @@ class InventoryRepository extends BaseRepository {
         i.reserved_quantity,
         i.damaged_quantity,
         i.in_transit_quantity,
-        i.bin_location,
-        i.zone,
         i.reorder_point,
         i.max_stock_level,
         i.last_stock_check,
@@ -52,8 +50,8 @@ class InventoryRepository extends BaseRepository {
         w.code       AS warehouse_code,
         p.name       AS product_display_name,
         p.category   AS product_category,
-        p.unit_price AS unit_price,
         p.weight     AS product_weight,
+        i.unit_cost,
         COUNT(*) OVER() AS total_count
       FROM inventory i
       JOIN warehouses w ON i.warehouse_id = w.id
@@ -114,8 +112,7 @@ class InventoryRepository extends BaseRepository {
         w.name       AS warehouse_name,
         w.code       AS warehouse_code,
         p.name       AS product_display_name,
-        p.category   AS product_category,
-        p.unit_price AS unit_price
+        p.category   AS product_category
       FROM inventory i
       JOIN warehouses w ON i.warehouse_id = w.id
       LEFT JOIN products p ON i.product_id = p.id
@@ -214,7 +211,7 @@ class InventoryRepository extends BaseRepository {
         COALESCE(SUM(i.damaged_quantity), 0)::int                 AS total_damaged,
         COUNT(*) FILTER (WHERE i.available_quantity <= COALESCE(i.reorder_point, 0) AND i.available_quantity > 0)::int AS low_stock_items,
         COUNT(*) FILTER (WHERE i.available_quantity = 0)::int     AS out_of_stock_items,
-        COALESCE(SUM(i.quantity * COALESCE(p.unit_price, 0)), 0)::numeric AS total_inventory_value
+        COALESCE(SUM(i.quantity * COALESCE(NULLIF(i.unit_cost, 0), p.selling_price, 0)), 0)::numeric AS total_inventory_value
       FROM inventory i
       LEFT JOIN products p ON i.product_id = p.id
       WHERE 1=1
@@ -256,16 +253,17 @@ class InventoryRepository extends BaseRepository {
       INSERT INTO inventory (
         organization_id, warehouse_id, product_id, sku, product_name,
         quantity, available_quantity, reserved_quantity,
-        bin_location, zone, reorder_point, max_stock_level, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+        reorder_point, max_stock_level,
+        unit_cost, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
       ON CONFLICT (warehouse_id, sku) WHERE sku IS NOT NULL
       DO UPDATE SET
         quantity           = EXCLUDED.quantity,
         available_quantity = EXCLUDED.available_quantity,
         reserved_quantity  = EXCLUDED.reserved_quantity,
-        bin_location       = COALESCE(EXCLUDED.bin_location, inventory.bin_location),
         reorder_point      = COALESCE(EXCLUDED.reorder_point, inventory.reorder_point),
         max_stock_level    = COALESCE(EXCLUDED.max_stock_level, inventory.max_stock_level),
+        unit_cost          = COALESCE(EXCLUDED.unit_cost, inventory.unit_cost),
         updated_at         = NOW()
       RETURNING *
     `;
@@ -279,10 +277,9 @@ class InventoryRepository extends BaseRepository {
       data.quantity || 0,
       available,
       data.reserved_quantity || 0,
-      data.bin_location || null,
-      data.zone || null,
       data.reorder_point || null,
-      data.max_stock_level || null
+      data.max_stock_level || null,
+      data.unit_cost != null ? data.unit_cost : null
     ];
 
     const result = await this.query(query, params, client);
@@ -296,9 +293,8 @@ class InventoryRepository extends BaseRepository {
     const ALLOWED = [
       'quantity', 'available_quantity', 'reserved_quantity',
       'damaged_quantity', 'in_transit_quantity',
-      'bin_location', 'zone',
       'reorder_point', 'max_stock_level',
-      'last_stock_check'
+      'last_stock_check', 'unit_cost'
     ];
 
     const setClauses = [];
@@ -451,9 +447,9 @@ class InventoryRepository extends BaseRepository {
         warehouse_id, product_id, inventory_id,
         movement_type, quantity,
         reference_type, reference_id,
-        notes, batch_number, created_by,
+        notes, batch_number, created_by, performed_by,
         created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
       RETURNING *
     `;
 
@@ -467,7 +463,8 @@ class InventoryRepository extends BaseRepository {
       movementData.reference_id   || null,
       movementData.notes          || null,
       movementData.batch_number   || null,
-      movementData.created_by     || null
+      movementData.created_by     || null,
+      movementData.performed_by   || null
     ];
 
     const result = await this.query(query, params, client);

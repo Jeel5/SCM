@@ -1,5 +1,5 @@
-import { Truck, CheckCircle2, XCircle, AlertTriangle, Clock, Phone, Mail, Globe } from 'lucide-react';
-import { Modal, Badge } from '@/components/ui';
+import { Truck, CheckCircle2, XCircle, AlertTriangle, Clock, Phone, Mail, Globe, Edit, Trash2 } from 'lucide-react';
+import { Modal, Badge, Button } from '@/components/ui';
 import { formatNumber } from '@/lib/utils';
 import type { Carrier } from '@/types';
 import { RatingStars } from './RatingStars';
@@ -8,10 +8,14 @@ export function CarrierDetailsModal({
   carrier,
   isOpen,
   onClose,
+  onEdit,
+  onDelete,
 }: {
   carrier: Carrier | null;
   isOpen: boolean;
   onClose: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   if (!carrier) return null;
 
@@ -87,11 +91,13 @@ export function CarrierDetailsModal({
         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Available Services</h4>
           <div className="flex flex-wrap gap-2">
-            {carrier.services.map((service) => (
+            {(carrier.services ?? []).length > 0 ? (carrier.services ?? []).map((service) => (
               <Badge key={service} variant="info" className="capitalize">
                 {service.replace('_', ' ')}
               </Badge>
-            ))}
+            )) : (
+              <span className="text-sm text-gray-400">No services listed</span>
+            )}
           </div>
         </div>
 
@@ -127,6 +133,20 @@ export function CarrierDetailsModal({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 pt-2">
+          {onEdit && (
+            <Button variant="outline" leftIcon={<Edit className="h-4 w-4" />} onClick={onEdit} className="flex-1">
+              Edit Carrier
+            </Button>
+          )}
+          {onDelete && (
+            <Button variant="destructive" leftIcon={<Trash2 className="h-4 w-4" />} onClick={onDelete} className="flex-1">
+              Deactivate
+            </Button>
+          )}
         </div>
       </div>
     </Modal>

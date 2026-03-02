@@ -27,7 +27,7 @@ export function OrdersPage() {
   const { success } = useToast();
 
   const pageSize = 10;
-  const { orders, totalOrders, isLoading } = useOrders(page, pageSize);
+  const { orders, totalOrders, isLoading, refetch } = useOrders(page, pageSize);
 
   const handleExport = () => {
     const exportData = filteredOrders.map(order => ({
@@ -196,13 +196,12 @@ export function OrdersPage() {
           setSelectedOrder(null);
         }}
         onUpdate={() => {
-          // A simple way to trigger a re-fetch is to quickly toggle the page state, 
-          // or we can reload the window. But the cleaner way is to export a refresh fn from useOrders 
-          // Since useOrders doesn't expose refresh yet, we can do a forced reload or state reset
-          window.location.reload();
+          setIsDetailsOpen(false);
+          setSelectedOrder(null);
+          refetch();
         }}
       />
-      <CreateOrderModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateOrderModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={refetch} />
     </div>
   );
 }

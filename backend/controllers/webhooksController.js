@@ -1,6 +1,9 @@
 import logger from '../utils/logger.js';
 import { jobsService } from '../services/jobsService.js';
 import { asyncHandler, ValidationError, NotFoundError } from '../errors/index.js';
+import ProductRepository from '../repositories/ProductRepository.js';
+import InventoryRepository from '../repositories/InventoryRepository.js';
+// ProductRepository and InventoryRepository are singleton instances (not classes)
 
 /**
  * Webhook Controller
@@ -386,3 +389,92 @@ function processEbayOrder(data) {
     order_date: data.creationDate
   };
 }
+
+// ─── Catalog & Stock Endpoints ────────────────────────────────────────────────
+
+/**
+ * GET /api/webhooks/:orgToken/catalog
+ *
+ * Public-facing product catalog scoped to the organization.
+ * Returns ONLY products that have available_quantity > 0 in inventory.
+ *
+ * PRODUCTION RULE: External platforms (e-commerce stores, portals) MUST call
+ * this endpoint to fetch orderable products and their SKUs before submitting
+ * order webhooks. Orders referencing SKUs not in this list will be rejected.
+ */
+export const handleCatalogWebhook = asyncHandler(async (req, res) => {
+  const orgId = req.webhookOrganizationId;
+  if (!orgId) throw new ValidationError('Invalid organization token');
+
+  const { category, limit = 200 } = req.query;
+  const parsedLimit = Math.min(parseInt(limit) || 200, 500);
+
+  const products = await ProductRepository.findAvailableProducts({
+    organizationId: orgId,
+    category: category || undefined,
+    limit: parsedLimit,
+  });
+
+  logger.info(`Catalog requested for org ${orgId}: ${products.length} products available`);
+
+  res.json({
+    success: true,
+    organization_id: orgId,
+    count: products.length,
+    products: products.map(p => ({
+      id:                 p.id,
+      sku:                p.sku,
+      name:               p.name,
+      category:           p.category,
+      description:        p.description,
+      selling_price:      p.selling_price,
+      cost_price:         p.cost_price,
+      mrp:                p.mrp,
+      currency:           p.currency || 'INR',
+      weight:             p.weight,
+      dimensions:         p.dimensions,
+      is_fragile:         p.is_fragile,
+      requires_cold_storage: p.requires_cold_storage,
+      is_hazmat:          p.is_hazmat,
+      is_perishable:      p.is_perishable,
+      package_type:       p.package_type,
+      requires_insurance: p.requires_insurance,
+      stock: {
+        available:       p.total_available,
+        reserved:        p.total_reserved,
+        warehouse_count: p.warehouse_count,
+      },
+    })),
+    _note: 'Only products with available inventory are listed. Use product.sku when placing orders via POST /:orgToken/orders.',
+  });
+});
+
+/**
+ * GET /api/webhooks/:orgToken/catalog/check-stock?sku=SKU-123&quantity=2
+ *
+ * Lightweight pre-order stock check. Returns whether a SKU has enough
+ * available inventory for the requested quantity. Use before checkout to
+ * block payment if out-of-stock.
+ */
+export const handleStockCheck = asyncHandler(async (req, res) => {
+  const orgId = req.webhookOrganizationId;
+  if (!orgId) throw new ValidationError('Invalid organization token');
+
+  const { sku, quantity = 1 } = req.query;
+  if (!sku) throw new ValidationError('sku query parameter is required');
+
+  const qty = Math.max(1, parseInt(quantity) || 1);
+  const warehouseId = await InventoryRepository.findBestWarehouseForSku(sku, orgId, qty);
+  const inStock = warehouseId !== null;
+
+  res.json({
+    success: true,
+    sku,
+    quantity_requested: qty,
+    in_stock: inStock,
+    fulfillable: inStock,
+    message: inStock
+      ? `SKU "${sku}" has sufficient stock for quantity ${qty}.`
+      : `SKU "${sku}" does not have sufficient stock for quantity ${qty}. Check /catalog for available products.`,
+  });
+});

@@ -325,6 +325,9 @@
         let currentCarrierId = null;
         let currentWebhookSecret = null;
         let carrierNames = {};
+        // Maps carrier code → { id, webhook_secret } so selectCarrier can load
+        // credentials immediately on click without waiting for a pending assignment.
+        let carrierDetails = {};
 
         // ──────────── Load carriers from real API ────────────
 
@@ -343,6 +346,8 @@
                 div.innerHTML = '';
                 carriers.forEach((c, i) => {
                     carrierNames[c.code] = c.name;
+                    // Store id + webhook_secret keyed by code for instant lookup
+                    carrierDetails[c.code] = { id: c.id, webhook_secret: c.webhookSecret };
                     const btn = document.createElement('button');
                     btn.className = 'carrier-btn' + (i === 0 ? ' active' : '');
                     btn.textContent = c.name;
@@ -407,8 +412,10 @@
 
         async function selectCarrier(evt, carrier) {
             currentCarrier = carrier;
-            currentCarrierId = null;
-            currentWebhookSecret = null;
+            // Load credentials immediately from stored carrier data — do not
+            // wait for pending assignments, which may not exist yet.
+            currentCarrierId = carrierDetails[carrier]?.id || null;
+            currentWebhookSecret = carrierDetails[carrier]?.webhook_secret || null;
 
             document.querySelectorAll('.carrier-btn').forEach(btn => btn.classList.remove('active'));
             if (evt?.currentTarget) evt.currentTarget.classList.add('active');
@@ -448,8 +455,8 @@
             try {
                 const response = await fetch(`${API_BASE}/carriers/${carrierId}`);
                 const result = await response.json();
-                if (result.success && result.data?.webhook_secret) {
-                    currentWebhookSecret = result.data.webhook_secret;
+                if (result.success && (result.data?.webhookSecret || result.data?.webhook_secret)) {
+                    currentWebhookSecret = result.data.webhookSecret || result.data.webhook_secret;
                 } else {
                     currentWebhookSecret = null;
                 }

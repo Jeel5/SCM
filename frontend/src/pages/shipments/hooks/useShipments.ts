@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { useSocketEvent } from '@/hooks/useSocket';
 import type { Shipment } from '@/types';
 
 export function useShipments(page: number, pageSize: number) {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [totalShipments, setTotalShipments] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchShipments = async () => {
@@ -29,7 +33,11 @@ export function useShipments(page: number, pageSize: number) {
     };
 
     fetchShipments();
-  }, [page, pageSize]);
+  }, [page, pageSize, useMockApi, refreshKey]);
 
-  return { shipments, totalShipments, isLoading };
+  // Real-time refetch on socket events
+  useSocketEvent('shipment:created', refetch);
+  useSocketEvent('shipment:updated', refetch);
+
+  return { shipments, totalShipments, isLoading, refetch };
 }

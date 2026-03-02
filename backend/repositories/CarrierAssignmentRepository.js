@@ -388,35 +388,40 @@ class CarrierAssignmentRepository extends BaseRepository {
     async createShipment(fields, client = null) {
         const {
             trackingNumber, carrierTrackingNumber, orderId, assignmentId, carrierId,
-            warehouseId, pickupAddress, deliveryAddress, deliveryScheduled,
+            warehouseId, pickupAddress, deliveryAddress, deliveryScheduled, pickupScheduled,
+            slaPolicyId,
             weight, volumetricWeight, dimensions, packageCount, totalItems,
             shippingCost, codAmount,
             isFragile, isHazardous, isPerishable, requiresColdStorage,
             itemType, packageType, handlingInstructions,
-            requiresInsurance, declaredValue
+            requiresInsurance, declaredValue, organizationId
         } = fields;
 
         const result = await this.query(
             `INSERT INTO shipments
              (tracking_number, carrier_tracking_number, order_id, carrier_assignment_id, carrier_id,
               warehouse_id, status, origin_address, destination_address, delivery_scheduled,
+              pickup_scheduled,
               weight, volumetric_weight, dimensions, package_count, total_items,
               shipping_cost, cod_amount,
               is_fragile, is_hazardous, is_perishable, requires_cold_storage,
               item_type, package_type, handling_instructions,
-              requires_insurance, declared_value,
+              requires_insurance, declared_value, organization_id,
+              sla_policy_id,
               created_at, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW(),NOW())
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,NOW(),NOW())
              RETURNING *`,
             [
                 trackingNumber, carrierTrackingNumber, orderId, assignmentId, carrierId,
                 warehouseId || null, 'pending',
                 pickupAddress, deliveryAddress, deliveryScheduled,
+                pickupScheduled || null,
                 weight, volumetricWeight, dimensions, packageCount, totalItems,
                 shippingCost, codAmount,
                 isFragile, isHazardous, isPerishable, requiresColdStorage,
                 itemType, packageType, handlingInstructions || null,
-                requiresInsurance, declaredValue
+                requiresInsurance, declaredValue, organizationId || null,
+                slaPolicyId || null,
             ], client
         );
         return result.rows[0];

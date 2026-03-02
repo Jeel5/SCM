@@ -38,6 +38,7 @@ const quoteItemSchema = Joi.object({
   description: Joi.string().max(500).optional().allow(''),
   quantity:    Joi.number().integer().min(1).required(),
   weightKg:    Joi.number().min(0).optional(),
+  weight:      Joi.number().min(0).optional(),  // alias for weightKg (controller uses weight)
   dimensions:  dimensionsSchema.optional(),
   value:       Joi.number().min(0).optional(), // declared value for insurance
 });

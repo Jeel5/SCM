@@ -5,16 +5,21 @@ import { logError } from '../utils/logger.js';
 
 // Development mode - include full error details and stack trace
 function sendErrorDev(err, res) {
-  res.status(err.statusCode || 500).json({
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
     success: false,
+    // Top-level message for consistent frontend access (data.message)
+    message: err.message,
     error: {
       message: err.message,
-      statusCode: err.statusCode,
+      statusCode,
       name: err.name,
       stack: err.stack,
       errors: err.errors || undefined,
       timestamp: err.timestamp || new Date().toISOString()
-    }
+    },
+    // Structured field-level details for validation errors
+    details: err.errors || undefined,
   });
 }
 
@@ -22,14 +27,17 @@ function sendErrorDev(err, res) {
 function sendErrorProd(err, res) {
   // Operational, trusted error: send details to client
   if (err.isOperational) {
-    res.status(err.statusCode || 500).json({
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
       success: false,
+      message: err.message,
       error: {
         message: err.message,
-        statusCode: err.statusCode,
+        statusCode,
         errors: err.errors || undefined,
         timestamp: err.timestamp || new Date().toISOString()
-      }
+      },
+      details: err.errors || undefined,
     });
   } 
   // Programming or unknown error: don't leak details
@@ -37,6 +45,7 @@ function sendErrorProd(err, res) {
     logError(err, { type: 'Unhandled Error', operational: false });
     res.status(500).json({
       success: false,
+      message: 'Internal server error',
       error: {
         message: 'Internal server error',
         statusCode: 500,

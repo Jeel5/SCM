@@ -3,7 +3,7 @@ import { Modal, Button, Input, Select } from '@/components/ui';
 import { carriersApi } from '@/api/services';
 import { toast } from '@/stores/toastStore';
 
-export function AddCarrierModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolean; onClose: () => void; onSuccess?: () => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     code: '',
@@ -44,8 +44,7 @@ export function AddCarrierModal({ isOpen, onClose }: { isOpen: boolean; onClose:
         services: [],
       });
       
-      // Reload page to refresh data
-      window.location.reload();
+      onSuccess?.();
     } catch (error: any) {
       toast.error('Failed to add carrier', error.message);
     } finally {

@@ -9,26 +9,6 @@ import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Generate a reasonable SKU from a product name when none was provided.
- * Format: {PREFIX}-{YYYYMM}-{RAND5}  e.g. LAPTOP-202507-K3P9Q
- */
-function generateSkuFromName(name) {
-  const prefix = (name || 'ITEM')
-    .replace(/[^A-Z0-9\s]/gi, '')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map(w => w.slice(0, 3).toUpperCase())
-    .join('')
-    .slice(0, 6) || 'ITEM';
-  const month = new Date().toISOString().slice(0, 7).replace('-', '');
-  const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
-  return `${prefix}-${month}-${rand}`;
-}
-
 // ─── Order State Machine ────────────────────────────────────────────────────
 // Defines which status transitions are legal.  An order can only move forward
 // through the pipeline (or be cancelled/held from most states).
@@ -131,55 +111,34 @@ class OrderService {
 
         // ── Product Validation & Warehouse Allocation ────────────────────────────
         // For each item:
-        //   1. Match SKU → product in products table (enrich with product data)
-        //   2. If product not found AND this is a webhook order (has external_order_id), auto-create product
-        //   3. Auto-assign warehouse if not specified (find best warehouse with stock)
-        //   4. Validate stock availability
-        const isWebhookOrder = !!orderData.external_order_id;
+        //   1. Match SKU/product_id → product in products table (MUST exist — no auto-create)
+        //   2. Auto-assign warehouse with sufficient stock (MUST have available inventory)
+        //   3. Reserve stock — order is REJECTED if stock is insufficient
+        //
+        // PRODUCTION RULE: Products must be created via the MDM API and assigned
+        // inventory in a warehouse BEFORE orders (webhook or API) can reference them.
+        // Use GET /api/webhooks/:orgToken/catalog to fetch orderable products.
         const orgId = orderData.organization_id;
         const enrichedItems = [];
 
         for (const item of orderData.items) {
           let product = null;
 
-          // 1. Resolve product by product_id or SKU
+          // 1. Resolve product by product_id or SKU — must already exist in catalog
           if (item.product_id) {
             product = await ProductRepository.findById(item.product_id, orgId, tx);
           } else if (item.sku) {
             product = await ProductRepository.findBySku(item.sku, orgId, tx);
           }
 
-          // 2. For webhook orders: auto-create product if not found
-          if (!product && isWebhookOrder) {
-            // Generate a SKU if the webhook didn't provide one
-            const productName = item.product_name || item.name || 'ITEM';
-            const autoSku = item.sku || generateSkuFromName(productName);
-            logger.info(`Auto-creating product from webhook for SKU: ${autoSku}`);
-            product = await ProductRepository.create({
-              organization_id: orgId,
-              sku: autoSku,
-              name: productName,
-              category: item.category || null,
-              weight: item.weight || null,
-              dimensions: item.dimensions || null,
-              unit_price: item.unit_price || item.price || null,
-              is_fragile: item.is_fragile || false,
-              is_hazmat: item.is_hazardous || false,
-              is_perishable: item.is_perishable || false,
-              requires_cold_storage: item.requires_cold_storage || false,
-              item_type: item.item_type || 'general',
-              package_type: item.package_type || 'box',
-              requires_insurance: item.requires_insurance || false,
-              declared_value: item.declared_value || null,
-            }, tx);
-          }
-
-          // 3. For API orders: product must exist
-          if (!product && !isWebhookOrder) {
+          // Product MUST exist — no auto-creation for any order type
+          if (!product) {
             throw new BusinessLogicError(
               item.sku
-                ? `Product with SKU "${item.sku}" not found. Create the product first or add it to inventory.`
-                : `Product not found. Each item must reference a valid product_id or SKU.`
+                ? `Product with SKU "${item.sku}" not found in catalog. ` +
+                  `Products must be created via the MDM API and assigned inventory before orders can be placed. ` +
+                  `Use GET /api/webhooks/:orgToken/catalog to list available products.`
+                : `Product not found. Each item must reference a valid product_id or SKU that exists in the catalog with available inventory.`
             );
           }
 
@@ -189,10 +148,10 @@ class OrderService {
             sku: product?.sku || item.sku,
             product_name: item.product_name || product?.name || 'Unknown',
             quantity: item.quantity,
-            unit_price: item.unit_price || parseFloat(product?.unit_price) || 0,
+            unit_price: item.unit_price || parseFloat(product?.selling_price) || 0,
             discount: item.discount || 0,
             tax: item.tax || 0,
-            total_price: item.total_price || ((item.unit_price || parseFloat(product?.unit_price) || 0) * item.quantity),
+            total_price: item.total_price || ((item.unit_price || parseFloat(product?.selling_price) || 0) * item.quantity),
             weight: item.weight || parseFloat(product?.weight) || null,
             dimensions: item.dimensions ? JSON.stringify(item.dimensions) : (product?.dimensions || null),
             is_fragile: item.is_fragile ?? product?.is_fragile ?? false,
@@ -207,7 +166,7 @@ class OrderService {
             warehouse_id: item.warehouse_id || null,
           };
 
-          // 4. Auto-assign warehouse if not specified
+          // 4. Require warehouse with available stock — no warehouse = reject order
           if (!enrichedItem.warehouse_id && orgId && enrichedItem.sku) {
             const warehouseId = await InventoryRepository.findBestWarehouseForSku(
               enrichedItem.sku, orgId, enrichedItem.quantity, tx
@@ -216,8 +175,17 @@ class OrderService {
               enrichedItem.warehouse_id = warehouseId;
               logger.debug(`Auto-assigned warehouse ${warehouseId} for SKU ${enrichedItem.sku}`);
             } else {
-              logger.warn(`No warehouse with sufficient stock for SKU ${enrichedItem.sku} (qty: ${enrichedItem.quantity})`);
+              throw new BusinessLogicError(
+                `Insufficient inventory for SKU "${enrichedItem.sku}". ` +
+                `Required quantity: ${enrichedItem.quantity}. ` +
+                `Add stock via the inventory API before placing orders for this product.`
+              );
             }
+          } else if (!enrichedItem.warehouse_id) {
+            throw new BusinessLogicError(
+              `No warehouse assigned for SKU "${enrichedItem.sku || 'unknown'}" and no organization context to look up inventory. ` +
+              `Ensure the order includes organization_id and the product has inventory assigned.`
+            );
           }
 
           enrichedItems.push(enrichedItem);
@@ -254,15 +222,10 @@ class OrderService {
             );
             
             if (!reserved) {
-              if (isWebhookOrder) {
-                // Webhook orders: don't reject — flag for attention, order continues without reservation
-                logger.warn(`Insufficient stock for SKU ${item.sku} (qty: ${item.quantity}). Order will proceed without reservation.`, { orderId: order.id });
-              } else {
-                throw new BusinessLogicError(
-                  `Insufficient stock for SKU "${item.sku}". ` +
-                  `Required: ${item.quantity}. Check available inventory and try again.`
-                );
-              }
+              throw new BusinessLogicError(
+                `Insufficient stock for SKU "${item.sku}". ` +
+                `Required: ${item.quantity}. Check available inventory and try again.`
+              );
             }
           }
         }
@@ -408,6 +371,7 @@ class OrderService {
       // shipped   → commit reservations: deduct from total quantity (stock leaves warehouse)
       if (status === 'cancelled' || status === 'shipped') {
         const items = await OrderRepository.findOrderItems(id, tx);
+        const affectedWarehouses = new Set();
         for (const item of items) {
           if (!item.warehouse_id || !item.sku) continue;
           if (status === 'cancelled') {
@@ -415,6 +379,15 @@ class OrderService {
           } else {
             // shipped: convert reservation to an actual deduction — stock permanently leaves
             await InventoryRepository.deductStock(item.sku, item.warehouse_id, item.quantity, tx);
+            affectedWarehouses.add(item.warehouse_id);
+          }
+        }
+        // Recompute utilization for every warehouse that lost stock
+        for (const wid of affectedWarehouses) {
+          try {
+            await WarehouseRepository.refreshUtilization(wid, tx);
+          } catch (e) {
+            logger.warn('refreshUtilization failed (non-fatal)', { warehouseId: wid, error: e.message });
           }
         }
       }
@@ -430,6 +403,34 @@ class OrderService {
 
       return updatedOrder;
     });
+  }
+
+  /**
+   * Deduct stock for all items in an order (call when order physically leaves warehouse).
+   * Safe to call inside an existing transaction (pass tx).
+   * If deductStock returns null for any item, the item no longer has enough reserved stock —
+   * we log a warning but continue rather than aborting the shipment.
+   */
+  async commitOrderStock(orderId, tx = null) {
+    const items = await OrderRepository.findOrderItems(orderId, tx);
+    const affectedWarehouses = new Set();
+    for (const item of items) {
+      if (!item.warehouse_id || !item.sku) continue;
+      const result = await InventoryRepository.deductStock(item.sku, item.warehouse_id, item.quantity, tx);
+      if (!result) {
+        logger.warn('deductStock returned null — possible double-deduction or insufficient qty', {
+          orderId, sku: item.sku, warehouseId: item.warehouse_id, qty: item.quantity,
+        });
+      }
+      affectedWarehouses.add(item.warehouse_id);
+    }
+    for (const wid of affectedWarehouses) {
+      try {
+        await WarehouseRepository.refreshUtilization(wid, tx);
+      } catch (e) {
+        logger.warn('refreshUtilization failed (non-fatal)', { warehouseId: wid, error: e.message });
+      }
+    }
   }
 
   // Update order details (addresses, notes, delivery dates)

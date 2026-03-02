@@ -6,7 +6,6 @@ export * from './Badge';
 export * from './Modal';
 export * from './Skeleton';
 export * from './Toast';
-export * from './ToastContainer';
 export * from './DataTable';
 export * from './Avatar';
 export * from './Dropdown';

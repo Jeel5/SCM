@@ -5,7 +5,7 @@ import { asyncHandler, ValidationError } from '../errors/index.js';
 
 // Get analytics data with time-series trends and breakdowns
 export const getAnalytics = asyncHandler(async (req, res) => {
-  const { range = 'month' } = req.query; // day, week, month, year
+  const { range = 'month' } = req.validatedQuery ?? req.query; // day, week, month, year
     
     // Map range to SQL interval
     let interval = '30 days';
@@ -142,7 +142,7 @@ export const getAnalytics = asyncHandler(async (req, res) => {
 // GET /api/analytics/export?type=orders|shipments|returns|violations&range=day|week|month|year
 // Returns a CSV file download scoped to the authenticated org.
 export const getAnalyticsExport = asyncHandler(async (req, res) => {
-  const { type = 'orders', range = 'month' } = req.query;
+  const { type = 'orders', range = 'month' } = req.validatedQuery ?? req.query;
 
   const VALID_TYPES = ['orders', 'shipments', 'returns', 'violations'];
   if (!VALID_TYPES.includes(type)) {

@@ -15,10 +15,8 @@ class WarehouseRepository extends BaseRepository {
     
     let query = `
       SELECT w.*,
-        u.name as manager_name,
         COUNT(*) OVER() as total_count
       FROM warehouses w
-      LEFT JOIN users u ON w.manager_id = u.id
       WHERE 1=1
     `;
 
@@ -67,12 +65,8 @@ class WarehouseRepository extends BaseRepository {
   // Find warehouse by ID with manager details, with optional organization filter
   async findByIdWithDetails(id, organizationId = undefined, client = null) {
     let query = `
-      SELECT w.*,
-        u.name as manager_name,
-        u.email as manager_email,
-        u.phone as manager_phone
+      SELECT w.*
       FROM warehouses w
-      LEFT JOIN users u ON w.manager_id = u.id
       WHERE w.id = $1
     `;
     const params = [id];
@@ -124,25 +118,36 @@ class WarehouseRepository extends BaseRepository {
       INSERT INTO warehouses (
         organization_id, code, name, warehouse_type,
         address, coordinates, capacity, current_utilization,
-        manager_id, contact_email, contact_phone,
-        is_active, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+        contact_email, contact_phone,
+        is_active,
+        gstin, has_cold_storage,
+        temperature_min_celsius, temperature_max_celsius,
+        customs_bonded_warehouse, certifications,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                $12, $13, $14, $15, $16, $17, NOW(), NOW())
       RETURNING *
     `;
     
     const params = [
-      warehouseData.organization_id, // From user's organization
+      warehouseData.organization_id,
       code,
       warehouseData.name,
       warehouseData.warehouse_type || 'standard',
       JSON.stringify(warehouseData.address),
       warehouseData.coordinates ? JSON.stringify(warehouseData.coordinates) : null,
       warehouseData.capacity || 10000,
-      warehouseData.current_utilization || 0,
-      warehouseData.manager_id || null,
+      0,
       warehouseData.contact_email,
       warehouseData.contact_phone || null,
-      warehouseData.is_active !== false // Default to true
+      warehouseData.is_active !== false,
+      // SCM-scoped fields
+      warehouseData.gstin || null,
+      warehouseData.has_cold_storage || false,
+      warehouseData.temperature_min_celsius != null ? warehouseData.temperature_min_celsius : null,
+      warehouseData.temperature_max_celsius != null ? warehouseData.temperature_max_celsius : null,
+      warehouseData.customs_bonded_warehouse || false,
+      warehouseData.certifications ? warehouseData.certifications : [],
     ];
 
     const result = await this.query(query, params, client);
@@ -186,11 +191,6 @@ class WarehouseRepository extends BaseRepository {
       params.push(warehouseData.current_utilization);
     }
 
-    if (warehouseData.manager_id !== undefined) {
-      updates.push(`manager_id = $${paramCount++}`);
-      params.push(warehouseData.manager_id);
-    }
-
     if (warehouseData.contact_email !== undefined) {
       updates.push(`contact_email = $${paramCount++}`);
       params.push(warehouseData.contact_email);
@@ -204,6 +204,36 @@ class WarehouseRepository extends BaseRepository {
     if (warehouseData.is_active !== undefined) {
       updates.push(`is_active = $${paramCount++}`);
       params.push(warehouseData.is_active);
+    }
+
+    if (warehouseData.gstin !== undefined) {
+      updates.push(`gstin = $${paramCount++}`);
+      params.push(warehouseData.gstin || null);
+    }
+
+    if (warehouseData.has_cold_storage !== undefined) {
+      updates.push(`has_cold_storage = $${paramCount++}`);
+      params.push(warehouseData.has_cold_storage);
+    }
+
+    if (warehouseData.temperature_min_celsius !== undefined) {
+      updates.push(`temperature_min_celsius = $${paramCount++}`);
+      params.push(warehouseData.temperature_min_celsius);
+    }
+
+    if (warehouseData.temperature_max_celsius !== undefined) {
+      updates.push(`temperature_max_celsius = $${paramCount++}`);
+      params.push(warehouseData.temperature_max_celsius);
+    }
+
+    if (warehouseData.customs_bonded_warehouse !== undefined) {
+      updates.push(`customs_bonded_warehouse = $${paramCount++}`);
+      params.push(warehouseData.customs_bonded_warehouse);
+    }
+
+    if (warehouseData.certifications !== undefined) {
+      updates.push(`certifications = $${paramCount++}`);
+      params.push(warehouseData.certifications);
     }
 
     if (updates.length === 0) {

@@ -29,6 +29,13 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
     contact_email: initialData?.contactEmail || '',
     contact_phone: initialData?.contactPhone || '',
     is_active: initialData ? initialData.status === 'active' : true,
+    // SCM operational fields
+    gstin: initialData?.gstin || '',
+    has_cold_storage: initialData?.hasColdStorage || false,
+    temperature_min_celsius: initialData?.temperatureMinCelsius?.toString() || '',
+    temperature_max_celsius: initialData?.temperatureMaxCelsius?.toString() || '',
+    customs_bonded_warehouse: initialData?.customsBondedWarehouse || false,
+    certifications: initialData?.certifications?.join(', ') || '',
   });
 
   // Effect removed as updating initialData dynamically without warning is tricky, we can just use key to remount the modal or set state on open.
@@ -40,7 +47,7 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
     try {
       const payload: Partial<Warehouse> & Record<string, any> = {
         name: formData.name,
-        warehouse_type: formData.warehouse_type, // keep as backend expects
+        warehouse_type: formData.warehouse_type,
         address: {
           street: formData.street,
           city: formData.city,
@@ -56,6 +63,15 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
         contact_email: formData.contact_email,
         contact_phone: formData.contact_phone || null,
         is_active: formData.is_active,
+        // SCM operational fields
+        gstin: formData.gstin || null,
+        has_cold_storage: formData.has_cold_storage,
+        temperature_min_celsius: formData.temperature_min_celsius ? parseFloat(formData.temperature_min_celsius) : null,
+        temperature_max_celsius: formData.temperature_max_celsius ? parseFloat(formData.temperature_max_celsius) : null,
+        customs_bonded_warehouse: formData.customs_bonded_warehouse,
+        certifications: formData.certifications
+          ? formData.certifications.split(',').map(c => c.trim()).filter(Boolean)
+          : [],
       };
 
       if (initialData) {
@@ -82,6 +98,12 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
           contact_email: '',
           contact_phone: '',
           is_active: true,
+          gstin: '',
+          has_cold_storage: false,
+          temperature_min_celsius: '',
+          temperature_max_celsius: '',
+          customs_bonded_warehouse: false,
+          certifications: '',
         });
       }
 
@@ -99,7 +121,7 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={initialData ? "Edit Warehouse" : "Add New Warehouse"} size="3xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={initialData ? "Edit Warehouse" : "Add New Warehouse"} size="4xl">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           label="Warehouse Name"
@@ -109,18 +131,31 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
           required
         />
 
-        <Select
-          label="Warehouse Type"
-          value={formData.warehouse_type}
-          onChange={(e) => handleChange('warehouse_type', e.target.value)}
-          options={[
-            { value: 'standard', label: 'Standard' },
-            { value: 'cold_storage', label: 'Cold Storage' },
-            { value: 'hazmat', label: 'Hazmat' },
-            { value: 'distribution', label: 'Distribution' },
-            { value: 'fulfillment', label: 'Fulfillment' },
-          ]}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <Select
+            label="Warehouse Type"
+            value={formData.warehouse_type}
+            onChange={(e) => handleChange('warehouse_type', e.target.value)}
+            options={[
+              { value: 'standard', label: 'Standard' },
+              { value: 'cold_storage', label: 'Cold Storage' },
+              { value: 'hazmat', label: 'Hazmat' },
+              { value: 'distribution', label: 'Distribution' },
+              { value: 'fulfillment', label: 'Fulfillment Center' },
+              { value: 'bonded_customs', label: 'Bonded Customs' },
+              { value: 'returns_center', label: 'Returns Center' },
+            ]}
+          />
+          <Select
+            label="Status"
+            value={formData.is_active ? 'active' : 'inactive'}
+            onChange={(e) => handleChange('is_active', e.target.value === 'active')}
+            options={[
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+            ]}
+          />
+        </div>
 
         <div className="space-y-3">
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Address</h4>
@@ -182,14 +217,62 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
             value={formData.capacity}
             onChange={(e) => handleChange('capacity', e.target.value)}
           />
-          <Select
-            label="Status"
-            value={formData.is_active ? 'active' : 'inactive'}
-            onChange={(e) => handleChange('is_active', e.target.value === 'active')}
-            options={[
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
+          <Input
+            label="GSTIN"
+            placeholder="27AABCU9603R1ZX"
+            value={formData.gstin}
+            onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
+            maxLength={15}
+          />
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Cold Storage &amp; Compliance</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+              <input
+                type="checkbox"
+                id="has_cold_storage"
+                checked={formData.has_cold_storage}
+                onChange={(e) => handleChange('has_cold_storage', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+              />
+              <label htmlFor="has_cold_storage" className="text-sm font-medium text-gray-700 dark:text-gray-300">Has Cold Storage</label>
+            </div>
+            <div className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+              <input
+                type="checkbox"
+                id="customs_bonded"
+                checked={formData.customs_bonded_warehouse}
+                onChange={(e) => handleChange('customs_bonded_warehouse', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+              />
+              <label htmlFor="customs_bonded" className="text-sm font-medium text-gray-700 dark:text-gray-300">Customs Bonded Warehouse</label>
+            </div>
+          </div>
+          {formData.has_cold_storage && (
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Min Temperature (°C)"
+                type="number"
+                placeholder="-25"
+                value={formData.temperature_min_celsius}
+                onChange={(e) => handleChange('temperature_min_celsius', e.target.value)}
+              />
+              <Input
+                label="Max Temperature (°C)"
+                type="number"
+                placeholder="4"
+                value={formData.temperature_max_celsius}
+                onChange={(e) => handleChange('temperature_max_celsius', e.target.value)}
+              />
+            </div>
+          )}
+          <Input
+            label="Certifications (comma-separated)"
+            placeholder="ISO 9001, FSSAI, Customs Bonded"
+            value={formData.certifications}
+            onChange={(e) => handleChange('certifications', e.target.value)}
           />
         </div>
 

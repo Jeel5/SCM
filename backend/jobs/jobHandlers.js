@@ -368,15 +368,48 @@ async function handleProcessOrder(payload) {
     logger.info(`Processing order from ${source}` +
       (organization_id ? ` (org: ${organization_id})` : ' (no org)'));
 
+    // ── Normalise payload ───────────────────────────────────────────────────
+    // Different platforms send customer data differently.
+    // Support both flat (customer_name) and nested (customer.name) shapes.
+    if (!order) throw new Error('Webhook job payload is missing the "order" object');
+
+    const customerName  = order.customer_name  || order.customer?.name  || null;
+    const customerEmail = order.customer_email || order.customer?.email || null;
+    const customerPhone = order.customer_phone || order.customer?.phone || order.customer?.mobile || null;
+
+    // ── Validate required fields before touching the DB ─────────────────────
+    if (!customerName) {
+      throw new Error(
+        'Webhook order missing required field: customer_name (or customer.name). ' +
+        'The platform sending this webhook must include the customer\'s name.'
+      );
+    }
+    if (!order.items || order.items.length === 0) {
+      throw new Error('Webhook order must have at least one item');
+    }
+    if (!organization_id) {
+      throw new Error(
+        'Webhook order missing organization_id — ensure the webhook URL includes a valid org token.'
+      );
+    }
+    for (const item of order.items) {
+      if (!item.sku && !item.product_id) {
+        throw new Error(
+          `Webhook order item "${item.name || item.product_name || 'unknown'}" is missing both sku and product_id. ` +
+          `Use GET /api/webhooks/:orgToken/catalog to fetch valid product SKUs before placing orders.`
+        );
+      }
+    }
+
     // Normalize webhook payload fields to match orderService.createOrder expectations.
-    // Webhook senders use different field names (name/price vs product_name/unit_price).
+    // Support: { price, unit_price }, { name, product_name }, { weight, unit_weight }
     const orderData = {
       organization_id:   organization_id || null,
       external_order_id: order.external_order_id || `${source || 'webhook'}-${Date.now()}`,
       platform:          order.platform || source || 'webhook',
-      customer_name:     order.customer_name,
-      customer_email:    order.customer_email || null,
-      customer_phone:    order.customer_phone || null,
+      customer_name:     customerName,
+      customer_email:    customerEmail,
+      customer_phone:    customerPhone,
       priority:          order.priority || 'standard',
       total_amount:      order.total_amount || 0,
       tax_amount:        order.tax_amount   || 0,
@@ -387,6 +420,7 @@ async function handleProcessOrder(payload) {
       items: (order.items || []).map(item => ({
         product_name: item.product_name || item.name || 'Unknown',
         sku:          item.sku          || null,
+        product_id:   item.product_id   || null,
         quantity:     parseInt(item.quantity)  || 1,
         unit_price:   parseFloat(item.unit_price ?? item.price ?? 0),
         weight:       parseFloat(item.weight   ?? item.unit_weight ?? 0.5),
@@ -517,7 +551,6 @@ async function handleSyncInventory(payload) {
         sku: item.sku,
         product_name: item.product_name,
         quantity: item.new_quantity,
-        bin_location: item.bin_location
       });
       
       if (inventoryItem) updatedCount++;

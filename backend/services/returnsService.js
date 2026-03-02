@@ -1,21 +1,29 @@
 // Returns Service - Pickup scheduling, RMA workflow, and refund processing
 import { NotFoundError, BusinessLogicError, AppError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
+import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import returnRepo from '../repositories/ReturnRepository.js';
 
 // ─── Return State Machine ──────────────────────────────────────────────────────────────────
 // Single source of truth for valid return status transitions.
 export const RETURN_VALID_TRANSITIONS = {
-  requested:  ['approved', 'rejected'],
-  approved:   ['received', 'cancelled'],
-  received:   ['inspecting'],
-  inspecting: ['inspected', 'rejected'],
-  inspected:  ['completed', 'refunded'],
-  completed:  [],  // terminal
-  refunded:   [],  // terminal
-  rejected:   [],  // terminal
-  cancelled:  [],  // terminal
+  requested:          ['approved', 'rejected'],
+  approved:           ['received', 'rejected'],
+  received:           ['inspecting'],
+  inspecting:         ['inspection_passed', 'inspection_failed', 'rejected'],
+  inspection_passed:  ['refunded', 'restocked'],
+  inspection_failed:  ['rejected'],
+  refunded:           [],  // terminal
+  restocked:          [],  // terminal
+  rejected:           [],  // terminal
+  cancelled:          [],  // terminal
+  // Legacy mappings (keep for any existing records)
+  inspected:          ['refunded', 'restocked'],
+  completed:          [],
+  pickup_scheduled:   ['picked_up', 'rejected'],
+  picked_up:          ['in_transit', 'received'],
+  in_transit:         ['received'],
 };
 
 class ReturnsService {
@@ -26,9 +34,15 @@ class ReturnsService {
   validateTransition(currentStatus, newStatus) {
     const allowed = RETURN_VALID_TRANSITIONS[currentStatus];
     if (allowed === undefined) {
+      logger.error('Unknown return status encountered in state machine', { currentStatus, newStatus });
       throw new AppError(`Unknown return status: '${currentStatus}'`, 409);
     }
     if (!allowed.includes(newStatus)) {
+      logger.warn('Invalid return status transition attempted', {
+        currentStatus,
+        newStatus,
+        allowedTransitions: allowed,
+      });
       throw new AppError(
         `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: ${
           allowed.length ? allowed.join(', ') : '(none — terminal state)'
@@ -36,6 +50,7 @@ class ReturnsService {
         409
       );
     }
+    logger.debug('Return status transition validated', { currentStatus, newStatus });
   }
   /**
    * Schedule pickup for return

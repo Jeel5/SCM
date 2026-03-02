@@ -59,9 +59,7 @@ export function LoginPage() {
       const response = await authApi.login(email, password);
       
       if (response.success) {
-        login(response.data.user, response.data.accessToken);
-        // Store refresh token in localStorage
-        localStorage.setItem('refreshToken', response.data.refreshToken);
+        login(response.data.user);
         localStorage.removeItem('useMockApi'); // Clear mock flag for real API
         navigate('/dashboard');
       }
@@ -84,8 +82,7 @@ export function LoginPage() {
       const response = await mockApi.login('admin@twinchain.in', 'demo');
       
       if (response.success) {
-        login(response.data.user, response.data.accessToken);
-        localStorage.setItem('refreshToken', response.data.refreshToken);
+        login(response.data.user);
         localStorage.setItem('useMockApi', 'true'); // Flag to use mock data
         navigate('/dashboard');
       }

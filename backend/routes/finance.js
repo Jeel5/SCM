@@ -2,7 +2,6 @@
 import express from 'express';
 import { authenticate } from '../middlewares/auth.js';
 import { requirePermission } from '../middlewares/rbac.js';
-import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import {
   listInvoicesQuerySchema,
@@ -29,20 +28,20 @@ import {
 const router = express.Router();
 
 // Invoices
-router.get('/finance/invoices', authenticate, injectOrgContext, requirePermission('finance.view'), validateQuery(listInvoicesQuerySchema), getInvoices);
-router.get('/finance/invoices/:id', authenticate, injectOrgContext, requirePermission('finance.view'), getInvoiceById);
-router.post('/finance/invoices', authenticate, injectOrgContext, requirePermission('settings.organization'), validateRequest(createInvoiceSchema), createInvoice);
-router.patch('/finance/invoices/:id', authenticate, injectOrgContext, requirePermission('settings.organization'), validateRequest(updateInvoiceSchema), updateInvoice);
+router.get('/finance/invoices', authenticate, requirePermission('finance.view'), validateQuery(listInvoicesQuerySchema), getInvoices);
+router.get('/finance/invoices/:id', authenticate, requirePermission('finance.view'), getInvoiceById);
+router.post('/finance/invoices', authenticate, requirePermission('settings.organization'), validateRequest(createInvoiceSchema), createInvoice);
+router.patch('/finance/invoices/:id', authenticate, requirePermission('settings.organization'), validateRequest(updateInvoiceSchema), updateInvoice);
 
 // Refunds
-router.get('/finance/refunds', authenticate, injectOrgContext, requirePermission('finance.view'), validateQuery(listRefundsQuerySchema), getRefunds);
-router.post('/finance/refunds/:id/process', authenticate, injectOrgContext, requirePermission('settings.organization'), validateRequest(processRefundSchema), processRefund);
+router.get('/finance/refunds', authenticate, requirePermission('finance.view'), validateQuery(listRefundsQuerySchema), getRefunds);
+router.post('/finance/refunds/:id/process', authenticate, requirePermission('settings.organization'), validateRequest(processRefundSchema), processRefund);
 
 // Disputes
-router.get('/finance/disputes', authenticate, injectOrgContext, requirePermission('finance.view'), validateQuery(listDisputesQuerySchema), getDisputes);
-router.post('/finance/disputes/:id/resolve', authenticate, injectOrgContext, requirePermission('settings.organization'), validateRequest(resolveDisputeSchema), resolveDispute);
+router.get('/finance/disputes', authenticate, requirePermission('finance.view'), validateQuery(listDisputesQuerySchema), getDisputes);
+router.post('/finance/disputes/:id/resolve', authenticate, requirePermission('settings.organization'), validateRequest(resolveDisputeSchema), resolveDispute);
 
 // Summary
-router.get('/finance/summary', authenticate, injectOrgContext, requirePermission('finance.view'), validateQuery(financialSummaryQuerySchema), getFinancialSummary);
+router.get('/finance/summary', authenticate, requirePermission('finance.view'), validateQuery(financialSummaryQuerySchema), getFinancialSummary);
 
 export default router;

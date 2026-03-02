@@ -2,7 +2,7 @@
 //
 // Jobs and cron schedules are system-level resources managed by admin /
 // operations_manager roles — they are not scoped to a single organisation.
-// Dashboard and analytics are org-scoped and use injectOrgContext.
+// Dashboard and analytics are org-scoped (req.orgContext set by authenticate).
 import express from 'express';
 import { 
   listJobs, 
@@ -23,7 +23,6 @@ import { getDashboardStats } from '../controllers/dashboardController.js';
 import { getAnalytics, getAnalyticsExport } from '../controllers/analyticsController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
-import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import {
   listJobsQuerySchema,
@@ -31,6 +30,8 @@ import {
   createJobSchema,
   createCronScheduleSchema,
   updateCronScheduleSchema,
+  analyticsQuerySchema,
+  analyticsExportQuerySchema,
 } from '../validators/jobSchemas.js';
 
 const router = express.Router();
@@ -54,9 +55,9 @@ router.get('/dead-letter-queue', authenticate, authorize('jobs:read'), validateQ
 router.post('/dead-letter-queue/:id/retry', authenticate, authorize('jobs:update'), retryFromDeadLetterQueue);
 router.delete('/dead-letter-queue/purge', authenticate, authorize('jobs:delete'), purgeDeadLetterQueue);
 
-// Dashboard & Analytics — org-scoped data; injectOrgContext supplies req.orgContext
-router.get('/dashboard/stats', authenticate, injectOrgContext, authorize('dashboard:read'), getDashboardStats);
-router.get('/analytics', authenticate, injectOrgContext, authorize('analytics:read'), getAnalytics);
-router.get('/analytics/export', authenticate, injectOrgContext, authorize('analytics:read'), getAnalyticsExport);
+// Dashboard & Analytics — org-scoped data; req.orgContext is set by authenticate()
+router.get('/dashboard/stats', authenticate, authorize('dashboard:read'), getDashboardStats);
+router.get('/analytics', authenticate, authorize('analytics:read'), validateQuery(analyticsQuerySchema), getAnalytics);
+router.get('/analytics/export', authenticate, authorize('analytics:read'), validateQuery(analyticsExportQuerySchema), getAnalyticsExport);
 
 export default router;

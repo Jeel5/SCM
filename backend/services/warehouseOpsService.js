@@ -3,6 +3,7 @@ import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import warehouseOpsRepo from '../repositories/WarehouseOpsRepository.js';
+import orderService from './orderService.js';
 
 class WarehouseOpsService {
   /**
@@ -181,6 +182,8 @@ class WarehouseOpsService {
       // Update order status
       await warehouseOpsRepo.updateOrderStatus(orderId, 'shipped', tx);
 
+      // Deduct stock from inventory and refresh warehouse utilization
+      await orderService.commitOrderStock(orderId, tx);
 
       logEvent('OrderShipped', {
         orderId,

@@ -3,35 +3,28 @@ import Joi from 'joi';
 
 /**
  * Schema: POST /inventory
- * Create a new inventory record for a product in a warehouse.
+ * Create a new inventory record for an existing product in a warehouse.
+ * A product MUST already exist in the catalog before adding it to inventory.
  */
 export const createInventorySchema = Joi.object({
   warehouse_id: Joi.string().uuid().required(),
-  product_id: Joi.string().uuid().optional().allow('', null),
-  // Product catalog fields (used to create a product record if no product_id)
-  product_name: Joi.string().min(1).max(255).optional().allow('', null),
-  category: Joi.string().max(100).optional().allow('', null),
-  unit_price: Joi.number().min(0).optional().allow(null),
+  product_id: Joi.string().uuid().required(),
+  unit_cost: Joi.number().min(0).optional().allow(null),
   // Inventory-specific fields
   quantity: Joi.number().integer().min(0).required(),
   // reserved_quantity is system-controlled only — clients must not set it directly
-  bin_location: Joi.string().max(50).optional().allow('', null),
-  zone: Joi.string().max(50).optional().allow('', null),
   reorder_point: Joi.number().integer().min(0).optional().allow(null),
   max_stock_level: Joi.number().integer().min(0).optional().allow(null)
-}); // SKU is auto-generated on backend if not supplied
-// XOR: exactly one of product_id or product_name must be supplied
-// (enforced at the service layer since Joi alone cannot do clean XOR on optional fields)
+});
 
 /**
  * Schema: PUT /inventory/:id
  * Update non-critical fields (does NOT replace special ops like reserve/release).
  */
 export const updateInventorySchema = Joi.object({
-  bin_location: Joi.string().max(50).optional().allow('', null),
-  zone: Joi.string().max(50).optional().allow('', null),
   reorder_point: Joi.number().integer().min(0).optional().allow(null),
-  max_stock_level: Joi.number().integer().min(0).optional().allow(null)
+  max_stock_level: Joi.number().integer().min(0).optional().allow(null),
+  unit_cost: Joi.number().min(0).optional().allow(null)
 }).min(1);
 
 /**

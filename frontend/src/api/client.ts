@@ -11,39 +11,28 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // Send cookies on every request (access token is an httpOnly cookie)
+  withCredentials: true,
   timeout: 30000,
 });
-
-// Request interceptor for adding auth token
-api.interceptors.request.use(
-  (config) => {
-    const token = useAuthStore.getState().accessToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 // --------------- Silent Token Refresh ---------------
 let isRefreshing = false;
 let failedQueue: Array<{
-  resolve: (token: string) => void;
+  resolve: () => void;
   reject: (error: unknown) => void;
 }> = [];
 
-function processQueue(error: unknown, token: string | null) {
+function processQueue(error: unknown) {
   failedQueue.forEach((p) => {
     if (error) p.reject(error);
-    else p.resolve(token!);
+    else p.resolve();
   });
   failedQueue = [];
 }
 
 function forceLogout() {
   useAuthStore.getState().logout();
-  localStorage.removeItem('refreshToken');
   toast.error('Session Expired', 'Please log in again');
   window.location.href = '/login';
 }
@@ -64,10 +53,10 @@ api.interceptors.response.use(
 
       if (isRefreshing) {
         // Another refresh is already in-flight — queue this request
-        return new Promise<string>((resolve, reject) => {
+        return new Promise<void>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
-        }).then((newToken) => {
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        }).then(() => {
+          // Cookie is already updated by the refresh — just retry
           return api(originalRequest);
         }).catch((err) => Promise.reject(err));
       }
@@ -75,27 +64,14 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const storedRefreshToken = localStorage.getItem('refreshToken');
-      if (!storedRefreshToken) {
-        isRefreshing = false;
-        forceLogout();
-        return Promise.reject(error);
-      }
-
       try {
-        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken: storedRefreshToken,
-        });
-
-        const newAccessToken: string = data.data.accessToken;
-        useAuthStore.getState().setAccessToken(newAccessToken);
-
-        processQueue(null, newAccessToken);
-
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        // POST to refresh — browser auto-sends the refreshToken httpOnly cookie
+        await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
+        // Backend has now set a new accessToken cookie in the response
+        processQueue(null);
         return api(originalRequest);
       } catch (refreshError) {
-        processQueue(refreshError, null);
+        processQueue(refreshError);
         forceLogout();
         return Promise.reject(refreshError);
       } finally {
@@ -103,29 +79,66 @@ api.interceptors.response.use(
       }
     }
     
+    // ---- Unified error message extraction ----
+    // Backend sends message in two possible locations:
+    //   1. data.message (unified format / validator middleware)
+    //   2. data.error.message (legacy global error handler)
+    // Also data.details[] for field-level validation errors.
+    const data = error.response?.data as Record<string, unknown> | undefined;
+    const extractMessage = (): string => {
+      if (data?.message && typeof data.message === 'string') return data.message;
+      if (data?.error && typeof data.error === 'object' && (data.error as Record<string, unknown>).message) {
+        return (data.error as Record<string, unknown>).message as string;
+      }
+      return '';
+    };
+
+    const extractDetails = (): string => {
+      if (Array.isArray(data?.details) && data.details.length > 0) {
+        return data.details
+          .map((d: Record<string, unknown>) => d.message || d.field)
+          .filter(Boolean)
+          .join('; ');
+      }
+      return '';
+    };
+
+    const serverMessage = extractMessage();
+    const fieldDetails = extractDetails();
+    
     // Handle authorization errors
     if (error.response?.status === 403) {
-      toast.error('Access Denied', 'You don\'t have permission to perform this action');
+      toast.error('Access Denied', serverMessage || 'You don\'t have permission to perform this action');
     }
     
     // Handle not found errors
-    if (error.response?.status === 404) {
-      toast.error('Not Found', error.response.data?.message || 'The requested resource was not found');
+    else if (error.response?.status === 404) {
+      toast.error('Not Found', serverMessage || 'The requested resource was not found');
+    }
+    
+    // Handle conflict errors (state machine violations, duplicates)
+    else if (error.response?.status === 409) {
+      toast.error('Conflict', serverMessage || 'This action conflicts with the current state');
     }
     
     // Handle validation errors
-    if (error.response?.status === 400 || error.response?.status === 422) {
-      const message = error.response.data?.message || 'Invalid request data';
-      toast.error('Validation Error', message);
+    else if (error.response?.status === 400 || error.response?.status === 422) {
+      const detail = fieldDetails ? `${serverMessage}. ${fieldDetails}` : serverMessage;
+      toast.error('Validation Error', detail || 'Invalid request data');
+    }
+    
+    // Handle rate limiting
+    else if (error.response?.status === 429) {
+      toast.error('Too Many Requests', serverMessage || 'Please slow down and try again later');
     }
     
     // Handle server errors
-    if (error.response?.status && error.response.status >= 500) {
-      toast.error('Server Error', 'Something went wrong on our end. Please try again later.');
+    else if (error.response?.status && error.response.status >= 500) {
+      toast.error('Server Error', serverMessage || 'Something went wrong on our end. Please try again later.');
     }
     
     // Handle network errors
-    if (!error.response) {
+    else if (!error.response) {
       toast.error('Network Error', 'Unable to connect to server. Please check your connection.');
     }
     

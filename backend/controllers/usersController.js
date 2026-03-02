@@ -7,6 +7,14 @@ import { ORG_ASSIGNABLE_ROLES } from '../config/roles.js';
 import logger from '../utils/logger.js';
 import { asyncHandler, ValidationError, AuthenticationError, AuthorizationError, NotFoundError, ConflictError } from '../errors/index.js';
 
+// HttpOnly cookie options — tokens are NOT accessible from JS
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  path: '/',
+};
+
 // Login - verifies credentials and returns JWT tokens
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
@@ -33,29 +41,32 @@ export const login = asyncHandler(async (req, res) => {
   // Store refresh token for revocation support
   await userRepo.createSession(user.id, refreshToken, req.ip, req.headers['user-agent']);
 
-  res.json({
-    success: true,
-    data: {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        organizationId: user.organization_id,
-        avatar: user.avatar,
-        lastLogin: user.last_login,
-        createdAt: user.created_at
-      },
-      accessToken,
-      refreshToken
-    }
-  });
+  // Set tokens as httpOnly cookies — not accessible from JavaScript
+  res
+    .cookie('accessToken', accessToken, { ...COOKIE_OPTS, maxAge: 15 * 60 * 1000 })
+    .cookie('refreshToken', refreshToken, { ...COOKIE_OPTS, maxAge: 7 * 24 * 60 * 60 * 1000 })
+    .json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          organizationId: user.organization_id,
+          avatar: user.avatar,
+          lastLogin: user.last_login,
+          createdAt: user.created_at
+        }
+      }
+    });
 });
 
 // Refresh token
 export const refreshToken = asyncHandler(async (req, res) => {
-  const { refreshToken: token } = req.body;
-  
+  // Read refresh token from httpOnly cookie
+  const token = req.cookies?.refreshToken;
+
   if (!token) throw new ValidationError('Refresh token required');
   
   const decoded = verifyRefreshToken(token);
@@ -74,7 +85,10 @@ export const refreshToken = asyncHandler(async (req, res) => {
   // Update session last_active timestamp
   await userRepo.updateSessionActivity(token);
 
-  res.json({ success: true, data: { accessToken: newAccessToken } });
+  // Issue new access token cookie
+  res
+    .cookie('accessToken', newAccessToken, { ...COOKIE_OPTS, maxAge: 15 * 60 * 1000 })
+    .json({ success: true });
 });
 
 // Get current user profile
@@ -87,6 +101,7 @@ export const getProfile = asyncHandler(async (req, res) => {
       id: user.id,
       email: user.email,
       name: user.name,
+      phone: user.phone || null,
       role: user.role,
       organizationId: user.organization_id,
       avatar: user.avatar,
@@ -137,7 +152,7 @@ export const listRoles = asyncHandler(async (req, res) => {
 
 // Logout (client-side token removal, but we can log it)
 export const logout = asyncHandler(async (req, res) => {
-  const { refreshToken: token } = req.body;
+  const token = req.cookies?.refreshToken;
 
   // Best-effort: revoke + audit — errors must not prevent the 200 response
   try {
@@ -145,7 +160,11 @@ export const logout = asyncHandler(async (req, res) => {
     if (req.user) await userRepo.insertAuditLog(req.user.userId, 'logout', 'user');
   } catch { /* deliberately silenced — logout succeeds regardless of session storage errors */ }
 
-  res.json({ success: true, data: null });
+  // Clear both cookies
+  res
+    .clearCookie('accessToken', COOKIE_OPTS)
+    .clearCookie('refreshToken', COOKIE_OPTS)
+    .json({ success: true, data: null });
 });
 
 // Update user profile (name, company, phone, avatar)
@@ -232,14 +251,57 @@ export const updateNotificationPreferences = asyncHandler(async (req, res) => {
 });
 
 // Get active sessions
+/**
+ * Derive a human-readable device label from a raw user-agent string.
+ */
+function parseDeviceName(ua) {
+  if (!ua) return 'Unknown Device';
+  if (/Mobile|Android|iPhone|iPad/i.test(ua)) {
+    if (/iPhone/i.test(ua)) return 'iPhone';
+    if (/iPad/i.test(ua)) return 'iPad';
+    if (/Android/i.test(ua)) return 'Android Device';
+    return 'Mobile Device';
+  }
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /OPR\/|Opera/.test(ua) ? 'Opera'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari'
+    : null;
+  const os = /Windows/.test(ua) ? 'Windows'
+    : /Macintosh|Mac OS X/.test(ua) ? 'macOS'
+    : /Linux/.test(ua) ? 'Linux'
+    : null;
+  if (browser && os) return `${browser} on ${os}`;
+  if (browser) return browser;
+  return 'Unknown Device';
+}
+
 export const getActiveSessions = asyncHandler(async (req, res) => {
   const userId = req.user.userId;
   const sessions = await settingsService.getActiveSessions(userId);
-  
+
+  const mapped = sessions.map((s) => ({
+    id: s.id,
+    device: s.device_name || parseDeviceName(s.user_agent),
+    ip: s.ip_address || 'Unknown IP',
+    lastActive: s.last_active,
+    current: false,          // sessions are anonymous — can't identify caller's refresh token
+  }));
+
   res.json({
     success: true,
-    data: sessions
+    data: mapped
   });
+});
+
+// Revoke ALL sessions for the current user (except the current one, best-effort)
+export const revokeAllSessions = asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  await userRepo.revokeAllActiveSessionsReturning(userId);
+  await userRepo.insertAuditLog(userId, 'sessions_revoked_all', 'user', userId);
+  logger.info('All sessions revoked', { userId });
+  res.json({ success: true, message: 'All sessions revoked' });
 });
 
 // Revoke session

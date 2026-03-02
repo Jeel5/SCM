@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { returnsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -9,6 +9,9 @@ export function useReturns(page: number, pageSize: number) {
   const [totalReturns, setTotalReturns] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const { useMockApi } = useApiMode();
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchReturns = async () => {
@@ -29,7 +32,7 @@ export function useReturns(page: number, pageSize: number) {
     };
 
     fetchReturns();
-  }, [page, pageSize]);
+  }, [page, pageSize, refreshKey]);
 
-  return { returns, totalReturns, isLoading };
+  return { returns, totalReturns, isLoading, refetch };
 }

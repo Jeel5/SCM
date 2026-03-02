@@ -420,11 +420,14 @@ class ShipmentRepository extends BaseRepository {
    * Insert a new shipment row.
    */
   async createShipment(data, client = null) {
+    const pickupScheduled = data.pickup_scheduled
+      || new Date(Date.now() + 4 * 3_600_000); // default: 4 h from now
+
     const result = await this.query(
       `INSERT INTO shipments
          (tracking_number, order_id, carrier_id, origin_address, destination_address,
-          organization_id, status, pickup_scheduled)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW() + INTERVAL '1 day')
+          organization_id, status, pickup_scheduled, delivery_scheduled, sla_policy_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9)
        RETURNING *`,
       [
         data.tracking_number,
@@ -433,6 +436,9 @@ class ShipmentRepository extends BaseRepository {
         JSON.stringify(data.origin),
         JSON.stringify(data.destination),
         data.organization_id || null,
+        pickupScheduled,
+        data.delivery_scheduled || null,
+        data.sla_policy_id     || null,
       ],
       client
     );

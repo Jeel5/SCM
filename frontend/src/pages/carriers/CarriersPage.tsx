@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Truck, Star, Clock, Package, Plus, Eye } from 'lucide-react';
+import { Truck, Star, Clock, Package, Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { Card, Button, Badge, Progress, DataTable, Tabs, PermissionGate } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
 import type { Carrier } from '@/types';
@@ -8,16 +8,39 @@ import { RatingStars } from './components/RatingStars';
 import { CarrierCard } from './components/CarrierCard';
 import { CarrierDetailsModal } from './components/CarrierDetailsModal';
 import { AddCarrierModal } from './components/AddCarrierModal';
+import { EditCarrierModal } from './components/EditCarrierModal';
 import { useCarriers } from './hooks/useCarriers';
+import { carriersApi } from '@/api/services';
+import { toast } from '@/stores/toastStore';
 
 // Main Carriers Page
 export function CarriersPage() {
-  const { carriers, isLoading } = useCarriers();
+  const { carriers, isLoading, refetch } = useCarriers();
   const [selectedCarrier, setSelectedCarrier] = useState<Carrier | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [activeTab, setActiveTab] = useState('all');
+
+  const handleEdit = (carrier: Carrier) => {
+    setSelectedCarrier(carrier);
+    setIsDetailsOpen(false);
+    setIsEditOpen(true);
+  };
+
+  const handleDelete = async (carrier: Carrier) => {
+    if (!confirm(`Are you sure you want to deactivate "${carrier.name}"? This carrier will no longer be available for new shipments.`)) return;
+    try {
+      await carriersApi.deleteCarrier(carrier.id);
+      toast.success('Carrier deactivated successfully');
+      setIsDetailsOpen(false);
+      setSelectedCarrier(null);
+      refetch();
+    } catch (error: any) {
+      toast.error('Failed to deactivate carrier', error.message);
+    }
+  };
 
   const tabs = [
     { id: 'all', label: 'All Carriers', count: carriers.length },
@@ -94,18 +117,41 @@ export function CarriersPage() {
     {
       key: 'actions',
       header: '',
-      width: '60px',
+      width: '120px',
       render: (carrier: Carrier) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setSelectedCarrier(carrier);
-            setIsDetailsOpen(true);
-          }}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-        >
-          <Eye className="h-4 w-4 text-gray-500" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedCarrier(carrier);
+              setIsDetailsOpen(true);
+            }}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="View Details"
+          >
+            <Eye className="h-4 w-4 text-gray-500" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEdit(carrier);
+            }}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="Edit"
+          >
+            <Edit className="h-4 w-4 text-gray-500" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(carrier);
+            }}
+            className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            title="Deactivate"
+          >
+            <Trash2 className="h-4 w-4 text-red-500" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -228,6 +274,8 @@ export function CarriersPage() {
                     setSelectedCarrier(carrier);
                     setIsDetailsOpen(true);
                   }}
+                  onEdit={() => handleEdit(carrier)}
+                  onDelete={() => handleDelete(carrier)}
                 />
               ))}
           </div>
@@ -260,9 +308,21 @@ export function CarriersPage() {
           setIsDetailsOpen(false);
           setSelectedCarrier(null);
         }}
+        onEdit={() => selectedCarrier && handleEdit(selectedCarrier)}
+        onDelete={() => selectedCarrier && handleDelete(selectedCarrier)}
       />
 
-      <AddCarrierModal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} />
+      <AddCarrierModal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} onSuccess={refetch} />
+
+      <EditCarrierModal
+        isOpen={isEditOpen}
+        onClose={() => {
+          setIsEditOpen(false);
+          setSelectedCarrier(null);
+        }}
+        onSuccess={refetch}
+        carrier={selectedCarrier}
+      />
     </div>
   );
 }

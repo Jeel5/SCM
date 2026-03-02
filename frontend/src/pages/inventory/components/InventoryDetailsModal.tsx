@@ -1,4 +1,4 @@
-import { Boxes, AlertTriangle, Edit, ArrowUpDown, MapPin } from 'lucide-react';
+import { Boxes, AlertTriangle, Edit, ArrowUpDown } from 'lucide-react';
 import { Modal, Button, Progress } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import type { InventoryItem } from '@/types';
@@ -16,13 +16,12 @@ export function InventoryDetailsModal({ item, isOpen, onClose, onAdjustStock, on
 
   const max = item.maxStockLevel ?? 0;
   const stockPercentage = max > 0 ? Math.min((item.quantity / max) * 100, 100) : 0;
-  const location = [item.zone, item.binLocation].filter(Boolean).join(' · ') || '—';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Inventory Details" size="lg">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="flex items-start justify-between p-4 bg-linear-to-r from-indigo-50 to-purple-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center gap-4">
             <div className="h-16 w-16 rounded-xl bg-white dark:bg-gray-900 flex items-center justify-center shadow-sm">
               <Boxes className="h-8 w-8 text-indigo-600 dark:text-indigo-300" />
@@ -70,26 +69,20 @@ export function InventoryDetailsModal({ item, isOpen, onClose, onAdjustStock, on
         {/* Details Grid */}
         <div className="grid grid-cols-2 gap-4">
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Unit Price</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Unit Cost</p>
             <p className="text-xl font-semibold text-gray-900 dark:text-white">
-              {item.unitPrice != null ? formatCurrency(item.unitPrice) : '—'}
+              {item.unitCost != null ? formatCurrency(item.unitCost) : '—'}
             </p>
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">Total Value</p>
             <p className="text-xl font-semibold text-gray-900 dark:text-white">
-              {item.unitPrice != null ? formatCurrency(item.quantity * item.unitPrice) : '—'}
+              {item.unitCost != null ? formatCurrency(item.quantity * item.unitCost) : '—'}
             </p>
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">Warehouse</p>
             <p className="text-lg font-semibold text-gray-900 dark:text-white">{item.warehouseName || '—'}</p>
-          </div>
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-            <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
-              <MapPin className="h-3 w-3" /> Location
-            </p>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">{location}</p>
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">Reserved</p>

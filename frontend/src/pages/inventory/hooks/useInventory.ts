@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { inventoryApi, warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -11,7 +11,10 @@ export function useInventory(page: number, pageSize: number) {
   const [stats, setStats] = useState<any>(null);
   const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -49,7 +52,7 @@ export function useInventory(page: number, pageSize: number) {
     };
 
     fetchData();
-  }, [page, pageSize, useMockApi]);
+  }, [page, pageSize, useMockApi, refreshKey]);
 
-  return { inventory, warehouses, totalItems, stats, lowStockList: lowStockItems, isLoading };
+  return { inventory, warehouses, totalItems, stats, lowStockList: lowStockItems, isLoading, refetch };
 }

@@ -44,6 +44,19 @@ const dimensionsSchema = Joi.object({
   unit: Joi.string().valid('cm', 'in').default('cm')
 });
 
+const newProductFields = {
+  manufacturer_barcode: Joi.string().max(100).optional(),
+  hsn_code: Joi.string().max(20).optional(),
+  gst_rate: Joi.number().min(0).max(100).optional(),
+  brand: Joi.string().max(255).optional(),
+  country_of_origin: Joi.string().max(100).optional(),
+  warranty_period_days: Joi.number().integer().min(0).optional(),
+  shelf_life_days: Joi.number().integer().min(0).allow(null).optional(),
+  tags: Joi.array().items(Joi.string().max(50)).optional(),
+  supplier_id: Joi.string().uuid().allow(null).optional(),
+  mrp: Joi.number().min(0).optional(),
+};
+
 export const createProductSchema = Joi.object({
   sku: Joi.string().max(100).optional(),
   name: Joi.string().min(1).max(255).required(),
@@ -51,19 +64,18 @@ export const createProductSchema = Joi.object({
   description: Joi.string().max(2000).optional(),
   weight: Joi.number().min(0).optional(),
   dimensions: dimensionsSchema.optional(),
-  unit_price: Joi.number().min(0).optional(),
+  selling_price: Joi.number().min(0).optional(),
   cost_price: Joi.number().min(0).optional(),
   currency: Joi.string().length(3).uppercase().default('INR'),
   is_fragile: Joi.boolean().optional(),
   requires_cold_storage: Joi.boolean().optional(),
   is_hazmat: Joi.boolean().optional(),
   is_perishable: Joi.boolean().optional(),
-  item_type: Joi.string().valid('general', 'electronics', 'clothing', 'food', 'furniture', 'other').optional(),
   package_type: Joi.string().valid('box', 'envelope', 'tube', 'pallet', 'custom').optional(),
   handling_instructions: Joi.string().max(1000).optional(),
   requires_insurance: Joi.boolean().optional(),
-  declared_value: Joi.number().min(0).optional(),
-  attributes: Joi.object().optional()
+  attributes: Joi.object().optional(),
+  ...newProductFields,
 });
 
 export const updateProductSchema = Joi.object({
@@ -72,7 +84,7 @@ export const updateProductSchema = Joi.object({
   description: Joi.string().max(2000).optional(),
   weight: Joi.number().min(0).optional(),
   dimensions: dimensionsSchema.optional(),
-  unit_price: Joi.number().min(0).optional(),
+  selling_price: Joi.number().min(0).optional(),
   cost_price: Joi.number().min(0).optional(),
   currency: Joi.string().length(3).uppercase().optional(),
   is_fragile: Joi.boolean().optional(),
@@ -80,11 +92,9 @@ export const updateProductSchema = Joi.object({
   is_hazmat: Joi.boolean().optional(),
   is_perishable: Joi.boolean().optional(),
   is_active: Joi.boolean().optional(),
-  item_type: Joi.string().valid('general', 'electronics', 'clothing', 'food', 'furniture', 'other').optional(),
   package_type: Joi.string().valid('box', 'envelope', 'tube', 'pallet', 'custom').optional(),
   handling_instructions: Joi.string().max(1000).optional(),
   requires_insurance: Joi.boolean().optional(),
-  declared_value: Joi.number().min(0).optional(),
   attributes: Joi.object().optional(),
-  images: Joi.array().items(Joi.string().uri()).optional()
+  ...newProductFields,
 });

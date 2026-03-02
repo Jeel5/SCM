@@ -40,8 +40,8 @@ class ReturnRepository extends BaseRepository {
 
     if (search) {
       query += ` AND (
-        r.return_number ILIKE $${paramCount} OR
-        r.requested_by ILIKE $${paramCount} OR
+        r.rma_number ILIKE $${paramCount} OR
+        r.customer_name ILIKE $${paramCount} OR
         r.customer_email ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
@@ -157,7 +157,7 @@ class ReturnRepository extends BaseRepository {
     let paramCount = 2;
 
     if (additionalData.notes) {
-      updates.push(`notes = $${paramCount++}`);
+      updates.push(`quality_check_notes = $${paramCount++}`);
       params.push(additionalData.notes);
     }
 
@@ -166,15 +166,10 @@ class ReturnRepository extends BaseRepository {
       params.push(additionalData.refund_amount);
     }
 
-    if (additionalData.refund_method) {
-      updates.push(`refund_method = $${paramCount++}`);
-      params.push(additionalData.refund_method);
-    }
-
-    if (status === 'processing') {
-      updates.push('processed_at = NOW()');
+    if (status === 'approved') {
+      updates.push('approved_at = NOW()');
     } else if (status === 'completed' || status === 'refunded') {
-      updates.push('completed_at = NOW()');
+      updates.push('resolved_at = NOW()');
     }
 
     params.push(returnId);
@@ -251,8 +246,8 @@ class ReturnRepository extends BaseRepository {
           json_build_object(
             'id',           ri.id,
             'product_id',   ri.product_id,
-            'product_name', p.name,
-            'sku',          p.sku,
+            'product_name', COALESCE(p.name, ri.product_name),
+            'sku',          COALESCE(p.sku, ri.sku),
             'quantity',     ri.quantity,
             'condition',    ri.condition,
             'reason',       ri.reason
@@ -419,7 +414,7 @@ class ReturnRepository extends BaseRepository {
            COUNT(*) FILTER (WHERE status = 'completed')  AS completed,
            COUNT(*) FILTER (WHERE status = 'rejected')   AS rejected,
            COALESCE(SUM(refund_amount), 0)                AS total_refunds,
-           COALESCE(SUM(restock_fee),   0)                AS total_restock_fees
+           COALESCE(SUM(restocking_fee),   0)            AS total_restock_fees
          FROM returns
          WHERE created_at >= NOW() - INTERVAL '30 days'${orgClause}`,
         orgArgs, client
@@ -492,7 +487,7 @@ class ReturnRepository extends BaseRepository {
     const res = await this.query(
       `UPDATE returns
        SET quality_check_result = $1,
-           inspection_notes     = $2,
+           quality_check_notes  = $2,
            status               = 'inspected'
        WHERE id = $3
        RETURNING *`,
@@ -635,9 +630,9 @@ class ReturnRepository extends BaseRepository {
   async rejectReturn(returnId, reason, client = null) {
     const res = await this.query(
       `UPDATE returns
-       SET status           = 'rejected',
-           inspection_notes = $1,
-           resolved_at      = NOW()
+       SET status              = 'rejected',
+           quality_check_notes = $1,
+           resolved_at         = NOW()
        WHERE id = $2
        RETURNING *`,
       [reason, returnId],

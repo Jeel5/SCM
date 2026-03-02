@@ -2,26 +2,71 @@
 import slaRepo from '../repositories/SlaRepository.js';
 import logger from '../utils/logger.js';
 import { asyncHandler, NotFoundError } from '../errors/index.js';
+import { emitToOrg } from '../sockets/emitter.js';
+
+// Map a sla_policies DB row to the API response shape
+function mapPolicy(p) {
+  return {
+    id:                      p.id,
+    name:                    p.name,
+    serviceType:             p.service_type,
+    carrierId:               p.carrier_id || null,
+    carrierName:             p.carrier_name || null,
+    originZoneType:          p.origin_zone_type || null,
+    destinationZoneType:     p.destination_zone_type || null,
+    // keep legacy 'region' field as a human-readable label
+    region:                  p.origin_region || p.origin_zone_type || 'All Regions',
+    targetDeliveryHours:     p.delivery_hours,
+    warningThresholdPercent: p.warning_threshold_percent ?? 80,
+    warningThresholdHours:   Math.floor(p.delivery_hours * ((p.warning_threshold_percent ?? 80) / 100)),
+    penaltyAmount:           parseFloat(p.penalty_per_hour) || 0,
+    maxPenaltyAmount:        p.max_penalty_amount ? parseFloat(p.max_penalty_amount) : null,
+    penaltyType:             p.penalty_type || 'fixed',
+    isActive:                p.is_active,
+    priority:                p.priority,
+    createdAt:               p.created_at,
+  };
+}
 
 // Get list of active SLA policies
 export const listSlaPolicies = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
   const rows = await slaRepo.findActivePolicies(organizationId);
+  res.json({ success: true, data: rows.map(mapPolicy) });
+});
 
-  const policies = rows.map(p => ({
-    id: p.id,
-    name: p.name,
-    serviceType: p.service_type,
-    region: p.origin_region || 'All Regions',
-    targetDeliveryHours: p.delivery_hours,
-    warningThresholdHours: Math.floor(p.delivery_hours * 0.8),
-    penaltyAmount: parseFloat(p.penalty_per_hour) || 10,
-    penaltyType: 'fixed',
-    isActive: p.is_active,
-    createdAt: p.created_at
-  }));
+// Create a new SLA policy
+export const createSlaPolicy = asyncHandler(async (req, res) => {
+  const organizationId = req.orgContext?.organizationId;
+  const data = req.body;
 
-  res.json({ success: true, data: policies });
+  const row = await slaRepo.createPolicy({ organizationId, ...data });
+  logger.info('SLA policy created', { policyId: row.id, name: row.name, userId: req.user?.userId });
+  res.status(201).json({ success: true, data: mapPolicy(row) });
+});
+
+// Update an existing SLA policy
+export const updateSlaPolicy = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+  const data = req.body;
+
+  const row = await slaRepo.updatePolicy(id, data, organizationId);
+  if (!row) throw new NotFoundError('SLA Policy');
+
+  logger.info('SLA policy updated', { policyId: id, userId: req.user?.userId });
+  res.json({ success: true, data: mapPolicy(row) });
+});
+
+// Deactivate (soft-delete) an SLA policy
+export const deactivateSlaPolicy = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+
+  const row = await slaRepo.deactivatePolicy(id, organizationId);
+  if (!row) throw new NotFoundError('SLA Policy');
+
+  res.json({ success: true, message: 'Policy deactivated' });
 });
 
 export const getEta = asyncHandler(async (req, res) => {
@@ -38,11 +83,11 @@ export const getEta = asyncHandler(async (req, res) => {
     data: {
       shipmentId: eta.shipment_id,
       trackingNumber: eta.tracking_number,
-      predictedEta: eta.predicted_eta,
-      confidenceScore: parseFloat(eta.confidence_score),
+      predictedEta: eta.predicted_delivery,
+      confidenceScore: parseFloat(eta.confidence_score || 0),
       factors: eta.factors,
-      mlModel: eta.ml_model,
-      predictedAt: eta.predicted_at
+      mlModel: eta.model_version,
+      predictedAt: eta.created_at
     }
   });
 });
@@ -66,11 +111,17 @@ export const getSlaViolations = asyncHandler(async (req, res) => {
       trackingNumber: v.tracking_number,
       policyId: v.sla_policy_id,
       policyName: v.policy_name,
+      expectedDelivery: v.promised_delivery,
+      actualDelivery: v.actual_delivery,
+      delayHours: parseFloat(v.delay_hours),
       status: v.status,
-      violationReason: v.reason,
       penaltyAmount: parseFloat(v.penalty_amount),
+      carrierId: v.carrier_id,
+      rootCause: v.reason,
+      notes: v.notes,
       violatedAt: v.violated_at,
-      resolvedAt: v.resolved_at
+      resolvedAt: v.resolved_at,
+      createdAt: v.created_at,
     })),
     pagination: { page: pageNum, limit: limitNum, total }
   });
@@ -93,7 +144,9 @@ export const getSlaDashboard = asyncHandler(async (req, res) => {
       totalShipments: parseInt(compliance.total_shipments),
       onTimeDeliveries: parseInt(compliance.on_time),
       violations: violations.reduce((acc, v) => {
-        acc[v.status] = parseInt(v.count);
+        // Map DB status 'open' to 'pending' to match frontend type key
+        const key = v.status === 'open' ? 'pending' : v.status;
+        acc[key] = parseInt(v.count);
         return acc;
       }, { pending: 0, resolved: 0, waived: 0 }),
       topCarriers: carriers.map(c => ({
@@ -121,13 +174,20 @@ export const listExceptions = asyncHandler(async (req, res) => {
       id: e.id,
       shipmentId: e.shipment_id,
       trackingNumber: e.tracking_number,
+      orderId: e.order_id,
       orderNumber: e.order_number,
-      exceptionType: e.exception_type,
+      type: e.exception_type,
       severity: e.severity,
-      description: e.description,
       status: e.status,
+      title: e.title,
+      description: e.description,
+      rootCause: e.root_cause,
       resolution: e.resolution,
+      assignedTo: e.assigned_to,
+      slaImpact: e.sla_impacted,
+      estimatedResolutionTime: e.estimated_resolution_time,
       createdAt: e.created_at,
+      updatedAt: e.updated_at,
       resolvedAt: e.resolved_at
     })),
     pagination: { page: pageNum, limit: limitNum, total }
@@ -135,12 +195,46 @@ export const listExceptions = asyncHandler(async (req, res) => {
 });
 
 export const createException = asyncHandler(async (req, res) => {
-  const { shipmentId, exceptionType, severity, description } = req.body;
+  const { shipmentId, type: exceptionType, severity, description } = req.body;
   const organizationId = req.orgContext?.organizationId;
 
   const row = await slaRepo.createException({ organizationId, shipmentId, exceptionType, severity, description });
 
+  emitToOrg(organizationId, 'exception:created', row);
+
   res.status(201).json({ success: true, data: row });
+});
+
+export const getException = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+
+  const e = await slaRepo.findExceptionById(id, organizationId);
+  if (!e) throw new NotFoundError('Exception');
+
+  res.json({
+    success: true,
+    data: {
+      id: e.id,
+      shipmentId: e.shipment_id,
+      trackingNumber: e.tracking_number,
+      orderId: e.order_id,
+      orderNumber: e.order_number,
+      type: e.exception_type,
+      severity: e.severity,
+      status: e.status,
+      title: e.title,
+      description: e.description,
+      rootCause: e.root_cause,
+      resolution: e.resolution,
+      assignedTo: e.assigned_to,
+      slaImpact: e.sla_impacted,
+      estimatedResolutionTime: e.estimated_resolution_time,
+      createdAt: e.created_at,
+      updatedAt: e.updated_at,
+      resolvedAt: e.resolved_at,
+    }
+  });
 });
 
 export const resolveException = asyncHandler(async (req, res) => {
@@ -152,6 +246,8 @@ export const resolveException = asyncHandler(async (req, res) => {
   const row = await slaRepo.resolveException(id, resolution, organizationId);
 
   if (!row) throw new NotFoundError('Exception');
+
+  emitToOrg(organizationId, 'exception:resolved', row);
 
   res.json({ success: true, data: row });
 });

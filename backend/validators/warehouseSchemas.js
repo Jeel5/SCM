@@ -7,7 +7,10 @@ export const createWarehouseSchema = Joi.object({
     'string.pattern.base': 'Warehouse code must contain only uppercase letters, numbers, and hyphens'
   }),
   name: Joi.string().min(3).max(200).required(),
-  warehouse_type: Joi.string().valid('standard', 'cold_storage', 'hazmat', 'distribution', 'fulfillment').default('standard'),
+  warehouse_type: Joi.string().valid(
+    'standard', 'cold_storage', 'hazmat', 'distribution', 'fulfillment',
+    'bonded_customs', 'returns_center'
+  ).default('standard'),
   address: Joi.object({
     street: Joi.string().required(),
     city: Joi.string().required(),
@@ -21,19 +24,30 @@ export const createWarehouseSchema = Joi.object({
   }).optional().allow(null),
   capacity: Joi.number().integer().min(0).default(10000),
   // current_utilization is system-computed — clients must not set it directly
-  manager_id: Joi.string().uuid().optional().allow(null),
   contact_email: Joi.string().email().required(),
   contact_phone: Joi.string().pattern(/^\+?[\d\s\-()]+$/).optional().allow(null, '').messages({
     'string.pattern.base': 'Invalid phone number format'
-  })
-  // is_active defaults to true server-side on creation
+  }),
+  // SCM operational fields
+  gstin: Joi.string().length(15).uppercase().optional().allow(null, '').messages({
+    'string.length': 'GSTIN must be exactly 15 characters'
+  }),
+  has_cold_storage: Joi.boolean().default(false),
+  temperature_min_celsius: Joi.number().min(-100).max(100).optional().allow(null),
+  temperature_max_celsius: Joi.number().min(-100).max(100).optional().allow(null),
+  customs_bonded_warehouse: Joi.boolean().default(false),
+  certifications: Joi.array().items(Joi.string().max(100)).optional().default([]),
+  is_active: Joi.boolean().default(true)
   // organization_id is set from authenticated user, not from request
 });
 
 // Update warehouse schema (all fields optional)
 export const updateWarehouseSchema = Joi.object({
   name: Joi.string().min(3).max(200).optional(),
-  warehouse_type: Joi.string().valid('standard', 'cold_storage', 'hazmat', 'distribution', 'fulfillment').optional(),
+  warehouse_type: Joi.string().valid(
+    'standard', 'cold_storage', 'hazmat', 'distribution', 'fulfillment',
+    'bonded_customs', 'returns_center'
+  ).optional(),
   address: Joi.object({
     street: Joi.string().optional(),
     city: Joi.string().optional(),
@@ -47,10 +61,16 @@ export const updateWarehouseSchema = Joi.object({
   }).optional().allow(null),
   capacity: Joi.number().integer().min(0).optional(),
   // current_utilization is system-computed — remove from client updates
-  manager_id: Joi.string().uuid().optional().allow(null),
   contact_email: Joi.string().email().optional(),
   contact_phone: Joi.string().pattern(/^\+?[\d\s\-()]+$/).optional().allow(null, ''),
-  is_active: Joi.boolean().optional()
+  is_active: Joi.boolean().optional(),
+  // SCM operational fields
+  gstin: Joi.string().length(15).uppercase().optional().allow(null, ''),
+  has_cold_storage: Joi.boolean().optional(),
+  temperature_min_celsius: Joi.number().min(-100).max(100).optional().allow(null),
+  temperature_max_celsius: Joi.number().min(-100).max(100).optional().allow(null),
+  customs_bonded_warehouse: Joi.boolean().optional(),
+  certifications: Joi.array().items(Joi.string().max(100)).optional()
 }).min(1);
 
 // List warehouses query schema
@@ -58,7 +78,10 @@ export const listWarehousesQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
   is_active: Joi.boolean().optional(),
-  warehouse_type: Joi.string().valid('standard', 'cold_storage', 'hazmat', 'distribution', 'fulfillment').optional(),
+  warehouse_type: Joi.string().valid(
+    'standard', 'cold_storage', 'hazmat', 'distribution', 'fulfillment',
+    'bonded_customs', 'returns_center'
+  ).optional(),
   search: Joi.string().max(100).optional().allow('')
 });
 

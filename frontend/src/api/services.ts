@@ -22,12 +22,13 @@ import type {
 
 // ==================== AUTH ====================
 export const authApi = {
-  async login(email: string, password: string): Promise<ApiResponse<{ user: User; accessToken: string; refreshToken: string }>> {
+  async login(email: string, password: string): Promise<ApiResponse<{ user: User }>> {
     return post('/auth/login', { email, password });
   },
 
-  async refreshToken(refreshToken: string): Promise<ApiResponse<{ accessToken: string; refreshToken: string }>> {
-    return post('/auth/refresh', { refreshToken });
+  async refreshToken(): Promise<ApiResponse<null>> {
+    // Sends the refreshToken httpOnly cookie automatically via withCredentials
+    return post('/auth/refresh', {});
   },
 
   async getProfile(): Promise<ApiResponse<User>> {
@@ -35,10 +36,8 @@ export const authApi = {
   },
 
   async logout(): Promise<ApiResponse<null>> {
-    const refreshToken = localStorage.getItem('refreshToken');
-    const result = await post<ApiResponse<null>>('/auth/logout', { refreshToken });
-    localStorage.removeItem('refreshToken');
-    return result;
+    // Backend clears both httpOnly cookies (accessToken + refreshToken)
+    return post('/auth/logout', {});
   },
 };
 
@@ -277,24 +276,32 @@ function mapProduct(p: Record<string, unknown>): Product {
     name: p.name as string,
     description: (p.description as string | null) ?? null,
     category: (p.category as string | null) ?? null,
+    brand: (p.brand as string | null) ?? null,
     weight: p.weight != null ? parseFloat(p.weight as string) : null,
     dimensions: (p.dimensions as Product['dimensions']) ?? null,
-    unitPrice: p.unit_price != null ? parseFloat(p.unit_price as string) : null,
+    sellingPrice: p.selling_price != null ? parseFloat(p.selling_price as string) : null,
     costPrice: p.cost_price != null ? parseFloat(p.cost_price as string) : null,
+    mrp: p.mrp != null ? parseFloat(p.mrp as string) : null,
     currency: (p.currency as string) || 'INR',
     isFragile: Boolean(p.is_fragile),
     requiresColdStorage: Boolean(p.requires_cold_storage),
     isHazmat: Boolean(p.is_hazmat),
     isPerishable: Boolean(p.is_perishable),
-    itemType: (p.item_type as Product['itemType']) ?? null,
     packageType: (p.package_type as Product['packageType']) ?? null,
     handlingInstructions: (p.handling_instructions as string | null) ?? null,
     requiresInsurance: Boolean(p.requires_insurance),
-    declaredValue: p.declared_value != null ? parseFloat(p.declared_value as string) : null,
+    hsnCode: (p.hsn_code as string | null) ?? null,
+    gstRate: p.gst_rate != null ? parseFloat(p.gst_rate as string) : null,
+    countryOfOrigin: (p.country_of_origin as string | null) ?? null,
+    manufacturerBarcode: (p.manufacturer_barcode as string | null) ?? null,
+    internalBarcode: p.internal_barcode as string,
+    warrantyPeriodDays: p.warranty_period_days != null ? parseInt(p.warranty_period_days as string) : 0,
+    shelfLifeDays: p.shelf_life_days != null ? parseInt(p.shelf_life_days as string) : null,
+    supplierId: (p.supplier_id as string | null) ?? null,
+    tags: (p.tags as string[]) ?? [],
+    attributes: (p.attributes as Record<string, unknown> | null) ?? null,
     volumetricWeight: p.volumetric_weight != null ? parseFloat(p.volumetric_weight as string) : null,
     isActive: Boolean(p.is_active),
-    attributes: (p.attributes as Record<string, unknown> | null) ?? null,
-    images: (p.images as string[] | null) ?? null,
     createdAt: p.created_at as string,
     updatedAt: p.updated_at as string,
   };
@@ -307,23 +314,30 @@ function toSnakeProduct(data: Partial<Product>): Record<string, unknown> {
   if (data.name !== undefined)                   out.name = data.name;
   if (data.description !== undefined)            out.description = data.description;
   if (data.category !== undefined)               out.category = data.category;
+  if (data.brand !== undefined)                  out.brand = data.brand;
   if (data.weight !== undefined)                 out.weight = data.weight;
   if (data.dimensions !== undefined)             out.dimensions = data.dimensions;
-  if (data.unitPrice !== undefined)              out.unit_price = data.unitPrice;
+  if (data.sellingPrice !== undefined)           out.selling_price = data.sellingPrice;
   if (data.costPrice !== undefined)              out.cost_price = data.costPrice;
+  if (data.mrp !== undefined)                    out.mrp = data.mrp;
   if (data.currency !== undefined)               out.currency = data.currency;
   if (data.isFragile !== undefined)              out.is_fragile = data.isFragile;
   if (data.requiresColdStorage !== undefined)    out.requires_cold_storage = data.requiresColdStorage;
   if (data.isHazmat !== undefined)               out.is_hazmat = data.isHazmat;
   if (data.isPerishable !== undefined)           out.is_perishable = data.isPerishable;
-  if (data.itemType !== undefined)               out.item_type = data.itemType;
   if (data.packageType !== undefined)            out.package_type = data.packageType;
   if (data.handlingInstructions !== undefined)   out.handling_instructions = data.handlingInstructions;
   if (data.requiresInsurance !== undefined)      out.requires_insurance = data.requiresInsurance;
-  if (data.declaredValue !== undefined)          out.declared_value = data.declaredValue;
+  if (data.hsnCode !== undefined)                out.hsn_code = data.hsnCode;
+  if (data.gstRate !== undefined)                out.gst_rate = data.gstRate;
+  if (data.countryOfOrigin !== undefined)        out.country_of_origin = data.countryOfOrigin;
+  if (data.manufacturerBarcode !== undefined)    out.manufacturer_barcode = data.manufacturerBarcode;
+  if (data.warrantyPeriodDays !== undefined)     out.warranty_period_days = data.warrantyPeriodDays;
+  if (data.shelfLifeDays !== undefined)          out.shelf_life_days = data.shelfLifeDays;
+  if (data.supplierId !== undefined)             out.supplier_id = data.supplierId;
+  if (data.tags !== undefined)                   out.tags = data.tags;
   if (data.isActive !== undefined)               out.is_active = data.isActive;
   if (data.attributes !== undefined)             out.attributes = data.attributes;
-  if (data.images !== undefined)                 out.images = data.images;
   return out;
 }
 
@@ -355,6 +369,22 @@ export const carriersApi = {
   async getCarrierRates(carrierId: string): Promise<ApiResponse<unknown[]>> {
     return get(`/carriers/${carrierId}/rates`);
   },
+
+  async updateCarrier(id: string, data: Partial<Carrier>): Promise<ApiResponse<Carrier>> {
+    const backendData: Record<string, unknown> = {};
+    if (data.name !== undefined) backendData.name = data.name;
+    if (data.contactEmail !== undefined) backendData.contact_email = data.contactEmail;
+    if (data.contactPhone !== undefined) backendData.contact_phone = data.contactPhone;
+    if (data.website !== undefined) backendData.website = data.website;
+    if (data.status !== undefined) backendData.status = data.status;
+    if (data.servicesOffered !== undefined) backendData.services_offered = data.servicesOffered;
+    if (data.serviceType !== undefined) backendData.service_type = data.serviceType;
+    return put(`/carriers/${id}`, backendData);
+  },
+
+  async deleteCarrier(id: string): Promise<ApiResponse<{ message: string }>> {
+    return del(`/carriers/${id}`);
+  },
 };
 
 // ==================== SLA ====================
@@ -362,6 +392,33 @@ export const slaApi = {
   async getSLAPolicies(): Promise<ApiResponse<SLAPolicy[]>> {
     const response = await get<{ success: boolean; data: SLAPolicy[] }>('/sla/policies');
     return { data: response.data, success: true };
+  },
+
+  async createSLAPolicy(data: Omit<SLAPolicy, 'id' | 'createdAt' | 'region' | 'warningThresholdHours' | 'carrierName'>): Promise<ApiResponse<SLAPolicy>> {
+    // Map frontend SLAPolicy field names to backend schema field names
+    return post('/sla/policies', {
+      name:                    data.name,
+      serviceType:             data.serviceType,
+      carrierId:               (data as any).carrierId,
+      originZoneType:          data.originZoneType,
+      destinationZoneType:     data.destinationZoneType,
+      deliveryHours:           data.targetDeliveryHours,
+      pickupHours:             (data as any).pickupHours ?? 4,
+      penaltyPerHour:          data.penaltyAmount,
+      maxPenaltyAmount:        data.maxPenaltyAmount,
+      penaltyType:             data.penaltyType,
+      warningThresholdPercent: data.warningThresholdPercent,
+      isActive:                data.isActive,
+      priority:                data.priority,
+    });
+  },
+
+  async updateSLAPolicy(id: string, data: Partial<Omit<SLAPolicy, 'id' | 'createdAt' | 'region' | 'warningThresholdHours' | 'carrierName'>>): Promise<ApiResponse<SLAPolicy>> {
+    return put(`/sla/policies/${id}`, data);
+  },
+
+  async deactivateSLAPolicy(id: string): Promise<ApiResponse<{ message: string }>> {
+    return del(`/sla/policies/${id}`);
   },
 
   async getSLAViolations(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<SLAViolation>> {
@@ -417,6 +474,69 @@ export const returnsApi = {
 
   async getReturnStats(): Promise<ApiResponse<unknown>> {
     return get('/returns/stats');
+  },
+};
+
+// ==================== SETTINGS ====================
+export const settingsApi = {
+  async updateProfile(data: { name?: string; phone?: string; email?: string }): Promise<ApiResponse<User>> {
+    return patch('/settings/profile', data);
+  },
+
+  async changePassword(data: { current_password: string; new_password: string }): Promise<ApiResponse<null>> {
+    return post('/settings/password', data);
+  },
+
+  async getNotificationPreferences(): Promise<ApiResponse<Record<string, boolean>>> {
+    return get('/settings/notifications');
+  },
+
+  async updateNotificationPreferences(prefs: Record<string, boolean>): Promise<ApiResponse<null>> {
+    return patch('/settings/notifications', prefs);
+  },
+
+  async getActiveSessions(): Promise<ApiResponse<Array<{ id: string; device: string; ip: string; lastActive: string; current: boolean }>>> {
+    return get('/settings/sessions');
+  },
+
+  async revokeSession(sessionId: string): Promise<ApiResponse<null>> {
+    return del(`/settings/sessions/${sessionId}`);
+  },
+
+  async revokeAllSessions(): Promise<ApiResponse<null>> {
+    return del('/settings/sessions');
+  },
+};
+
+// ==================== FINANCE ====================
+export const financeApi = {
+  async getSummary(range = 'month'): Promise<ApiResponse<{
+    invoices: { total: number; outstanding: number; paid: number; total_amount: number; outstanding_amount: number };
+    refunds: { total: number; processed: number; pending: number; total_amount: number };
+    disputes: { total: number; open: number; resolved: number };
+  }>> {
+    return get('/finance/summary', { range });
+  },
+
+  async getInvoices(page = 1, limit = 20, filters?: Record<string, unknown>): Promise<{
+    data: any[];
+    pagination: { page: number; limit: number; total: number };
+  }> {
+    return get('/finance/invoices', { page, limit, ...filters });
+  },
+
+  async getRefunds(page = 1, limit = 20, filters?: Record<string, unknown>): Promise<{
+    data: any[];
+    pagination: { page: number; limit: number; total: number };
+  }> {
+    return get('/finance/refunds', { page, limit, ...filters });
+  },
+
+  async getDisputes(page = 1, limit = 20): Promise<{
+    data: any[];
+    pagination: { page: number; limit: number; total: number };
+  }> {
+    return get('/finance/disputes', { page, limit });
   },
 };
 
@@ -522,7 +642,9 @@ export const dashboardApi = {
     topProducts: unknown[];
     warehouseUtilization: WarehouseUtilization[];
   }>> {
-    const response = await get<{ success: boolean; data: unknown }>('/analytics', { period });
+    const rangeMap: Record<string, string> = { '7d': 'week', '30d': 'month', '90d': 'month', '1y': 'year' };
+    const range = rangeMap[period] || 'month';
+    const response = await get<{ success: boolean; data: unknown }>('/analytics', { range });
     return { data: response.data as never, success: true };
   },
 
@@ -559,27 +681,34 @@ export const dashboardApi = {
 
 // ==================== NOTIFICATIONS ====================
 export const notificationsApi = {
-  async getNotifications(): Promise<ApiResponse<Notification[]>> {
-    // For now, return mock notifications since we don't have a notifications table
-    const mockNotifications: Notification[] = [
-      {
-        id: 'notif-1',
-        type: 'sla',
-        title: 'SLA Monitoring Active',
-        message: 'System is monitoring SLA compliance',
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      },
-    ];
-    return { data: mockNotifications, success: true };
+  async getNotifications(filters?: { page?: number; limit?: number; isRead?: boolean; type?: string }): Promise<ApiResponse<Notification[]> & { pagination?: { unreadCount: number; totalCount: number; page: number; limit: number; totalPages: number } }> {
+    const response = await get<{ success: boolean; data: any[]; pagination: any }>('/notifications', filters as Record<string, unknown>);
+    const notifications: Notification[] = (response.data || []).map((n: any) => ({
+      id: n.id,
+      type: n.type || 'system',
+      title: n.title,
+      message: n.message,
+      isRead: n.is_read ?? n.isRead ?? false,
+      actionUrl: n.link || n.actionUrl,
+      createdAt: n.created_at || n.createdAt,
+    }));
+    return { data: notifications, success: true, pagination: response.pagination };
   },
 
-  async markNotificationRead(): Promise<ApiResponse<null>> {
-    return { data: null, success: true };
+  async getUnreadCount(): Promise<ApiResponse<{ unreadCount: number }>> {
+    return get('/notifications/unread-count');
+  },
+
+  async markNotificationRead(id: string): Promise<ApiResponse<null>> {
+    return patch(`/notifications/${id}/read`, {});
   },
 
   async markAllNotificationsRead(): Promise<ApiResponse<null>> {
-    return { data: null, success: true };
+    return patch('/notifications/read-all', {});
+  },
+
+  async deleteNotification(id: string): Promise<ApiResponse<null>> {
+    return del(`/notifications/${id}`);
   },
 };
 

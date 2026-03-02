@@ -1,4 +1,5 @@
-import { Building2, Package, Boxes } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Building2, Package, Boxes, Thermometer, ShieldCheck } from 'lucide-react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import { Modal, Badge, Progress, Button } from '@/components/ui';
 import { formatNumber } from '@/lib/utils';
@@ -44,6 +45,9 @@ export function WarehouseDetailsModal({
   onDelete?: () => void;
 }) {
   const { inventory, totalItems, isLoading } = useWarehouseInventory(warehouse?.id);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => { setConfirmDelete(false); }, [warehouse?.id]);
 
   if (!warehouse) return null;
 
@@ -122,6 +126,10 @@ export function WarehouseDetailsModal({
               <p className="text-gray-900 dark:text-white">{warehouse.address.state}</p>
             </div>
             <div>
+              <p className="text-gray-500 dark:text-gray-400">Postal Code</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.address.postalCode || '—'}</p>
+            </div>
+            <div>
               <p className="text-gray-500 dark:text-gray-400">Country</p>
               <p className="text-gray-900 dark:text-white">{warehouse.address.country}</p>
             </div>
@@ -159,17 +167,56 @@ export function WarehouseDetailsModal({
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Contact Information</h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-gray-500 dark:text-gray-400">Manager ID</p>
-              <p className="text-gray-900 dark:text-white">{warehouse.managerId || 'N/A'}</p>
-            </div>
-            <div>
-              <p className="text-gray-500 dark:text-gray-400">Phone</p>
-              <p className="text-gray-900 dark:text-white">{warehouse.contactPhone}</p>
-            </div>
-            <div className="col-span-2">
               <p className="text-gray-500 dark:text-gray-400">Email</p>
               <p className="text-gray-900 dark:text-white">{warehouse.contactEmail}</p>
             </div>
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Phone</p>
+              <p className="text-gray-900 dark:text-white">{warehouse.contactPhone || '—'}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* SCM Operational Fields */}
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Operational Details</h4>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            {warehouse.gstin && (
+              <div>
+                <p className="text-gray-500 dark:text-gray-400">GSTIN</p>
+                <p className="font-mono text-gray-900 dark:text-white">{warehouse.gstin}</p>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <Thermometer className={`h-4 w-4 ${warehouse.hasColdStorage ? 'text-blue-500' : 'text-gray-400'}`} />
+              <div>
+                <p className="text-gray-500 dark:text-gray-400">Cold Storage</p>
+                <p className="text-gray-900 dark:text-white">
+                  {warehouse.hasColdStorage
+                    ? warehouse.temperatureMinCelsius != null && warehouse.temperatureMaxCelsius != null
+                      ? `${warehouse.temperatureMinCelsius}°C to ${warehouse.temperatureMaxCelsius}°C`
+                      : 'Yes'
+                    : 'No'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className={`h-4 w-4 ${warehouse.customsBondedWarehouse ? 'text-green-500' : 'text-gray-400'}`} />
+              <div>
+                <p className="text-gray-500 dark:text-gray-400">Customs Bonded</p>
+                <p className="text-gray-900 dark:text-white">{warehouse.customsBondedWarehouse ? 'Yes' : 'No'}</p>
+              </div>
+            </div>
+            {warehouse.certifications?.length > 0 && (
+              <div className="col-span-2">
+                <p className="text-gray-500 dark:text-gray-400 mb-1">Certifications</p>
+                <div className="flex flex-wrap gap-1">
+                  {warehouse.certifications.map((cert) => (
+                    <span key={cert} className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded-full">{cert}</span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -198,7 +245,6 @@ export function WarehouseDetailsModal({
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
-                    <p className="text-xs text-gray-500">{item.binLocation || item.zone || '—'}</p>
                   </div>
                 </div>
               ))}
@@ -210,12 +256,24 @@ export function WarehouseDetailsModal({
       </div>
 
       <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
-        <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={onDelete}>
-          Delete Warehouse
-        </Button>
-        <Button variant="primary" onClick={onEdit}>
-          Edit Warehouse
-        </Button>
+        {confirmDelete ? (
+          <>
+            <span className="self-center text-sm text-gray-600 dark:text-gray-400 mr-auto">Delete <strong>{warehouse.name}</strong>? This cannot be undone.</span>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+            <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => { setConfirmDelete(false); onDelete?.(); }}>
+              Yes, Delete
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={() => setConfirmDelete(true)}>
+              Delete Warehouse
+            </Button>
+            <Button variant="primary" onClick={onEdit}>
+              Edit Warehouse
+            </Button>
+          </>
+        )}
       </div>
     </Modal>
   );

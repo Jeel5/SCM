@@ -3,8 +3,8 @@ import express from 'express';
 import { listReturns, getReturn, createReturn, updateReturn, getReturnStats } from '../controllers/returnsController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
-import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
+import { validateUUIDParams } from '../middlewares/validateParams.js';
 import { 
   createReturnSchema,
   updateReturnStatusSchema,
@@ -13,10 +13,10 @@ import {
 
 const router = express.Router();
 
-router.get('/returns', authenticate, injectOrgContext, authorize('returns:read'), validateQuery(listReturnsQuerySchema), listReturns);
-router.get('/returns/stats', authenticate, injectOrgContext, authorize('returns:read'), getReturnStats);
-router.get('/returns/:id', authenticate, injectOrgContext, authorize('returns:read'), getReturn);
-router.post('/returns', authenticate, injectOrgContext, authorize('returns:create'), validateRequest(createReturnSchema), createReturn);
-router.patch('/returns/:id', authenticate, injectOrgContext, authorize('returns:update'), validateRequest(updateReturnStatusSchema), updateReturn);
+router.get('/returns', authenticate, authorize('returns:read'), validateQuery(listReturnsQuerySchema), listReturns);
+router.get('/returns/stats', authenticate, authorize('returns:read'), getReturnStats);
+router.get('/returns/:id', authenticate, authorize('returns:read'), validateUUIDParams, getReturn);
+router.post('/returns', authenticate, authorize('returns:create'), validateRequest(createReturnSchema), createReturn);
+router.patch('/returns/:id', authenticate, authorize('returns:update'), validateUUIDParams, validateRequest(updateReturnStatusSchema), updateReturn);
 
 export default router;

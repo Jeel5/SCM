@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ordersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { useSocketEvent } from '@/hooks/useSocket';
 import type { Order } from '@/types';
 
 export function useOrders(page: number, pageSize: number) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -29,7 +33,12 @@ export function useOrders(page: number, pageSize: number) {
     };
 
     fetchOrders();
-  }, [page, pageSize, useMockApi]);
+  }, [page, pageSize, useMockApi, refreshKey]);
 
-  return { orders, totalOrders, isLoading };
+  // Refetch automatically on socket events
+  useSocketEvent('order:created', refetch);
+  useSocketEvent('order:updated', refetch);
+
+  return { orders, totalOrders, isLoading, refetch };
 }
+

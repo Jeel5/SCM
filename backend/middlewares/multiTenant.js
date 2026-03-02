@@ -1,46 +1,15 @@
 // Multi-tenant middleware - ensures data isolation per organization
-import userRepo from '../repositories/UserRepository.js';
 import { BusinessLogicError } from '../errors/index.js';
 
 /**
- * Middleware to inject organization context into requests
- * Ensures all database queries are scoped to the user's organization
- * Superadmin can optionally access all organizations
+ * @deprecated No-op. org context is now injected directly by authenticate().
+ * req.orgContext is set for every authenticated request; this middleware no
+ * longer needs to appear on any route. Kept only to avoid import errors in
+ * any code that hasn't been updated yet.
  */
-export async function injectOrgContext(req, res, next) {
-  try {
-    // Skip for unauthenticated requests
-    if (!req.user || !req.user.userId) {
-      return next();
-    }
-
-    // Superadmin can see all organizations, others are scoped to their org
-    if (req.user.role === 'superadmin') {
-      req.orgContext = {
-        isSuperadmin: true,
-        organizationId: null, // Can access all
-        canAccessAllOrgs: true
-      };
-      return next();
-    }
-
-    // Get user's organization
-    const user = await userRepo.findById(req.user.userId);
-
-    if (!user || !user.organization_id) {
-      throw new BusinessLogicError('User must belong to an organization');
-    }
-
-    req.orgContext = {
-      isSuperadmin: false,
-      organizationId: user.organization_id,
-      canAccessAllOrgs: false
-    };
-
-    next();
-  } catch (error) {
-    next(error);
-  }
+export function injectOrgContext(req, res, next) {
+  // No-op: authenticate() now sets req.orgContext inline.
+  next();
 }
 
 /**

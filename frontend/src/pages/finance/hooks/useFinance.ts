@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { financeApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 
@@ -28,6 +29,9 @@ export function useFinance() {
   const [data, setData] = useState<FinanceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { useMockApi } = useApiMode();
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -38,13 +42,41 @@ export function useFinance() {
           const response = await mockApi.getFinanceData();
           setData(response.data);
         } else {
+          // Fetch real data from backend
+          const [summaryRes, invoicesRes, refundsRes] = await Promise.all([
+            financeApi.getSummary(),
+            financeApi.getInvoices(1, 20),
+            financeApi.getRefunds(1, 20),
+          ]);
+
+          const summary = summaryRes.data;
+
           setData({
-            outstandingInvoices: 0,
-            refundsProcessed: 0,
-            disputes: 0,
-            payoutStatus: 'No payouts scheduled',
-            invoices: [],
-            refunds: [],
+            outstandingInvoices: summary?.invoices?.outstanding_amount || 0,
+            refundsProcessed: summary?.refunds?.total_amount || 0,
+            disputes: summary?.disputes?.open || 0,
+            payoutStatus: summary?.disputes?.open
+              ? `${summary.disputes.open} disputes open`
+              : 'All clear',
+            invoices: (invoicesRes.data || []).map((inv: any) => ({
+              id: inv.id,
+              invoiceNumber: inv.invoice_number,
+              carrier: inv.carrier_name || inv.carrier_id,
+              amount: parseFloat(inv.final_amount || inv.base_amount || 0),
+              status: inv.status,
+              dueDate: inv.billing_period_end
+                ? new Date(inv.billing_period_end).toLocaleDateString()
+                : 'N/A',
+            })),
+            refunds: (refundsRes.data || []).map((ref: any) => ({
+              id: ref.id,
+              orderNumber: ref.rma_number || ref.order_id,
+              amount: parseFloat(ref.refund_amount || 0),
+              status: ref.status === 'refunded' ? 'processed' : 'pending',
+              processedAt: ref.completed_at
+                ? new Date(ref.completed_at).toLocaleDateString()
+                : 'Pending',
+            })),
           });
         }
       } catch (error) {
@@ -63,7 +95,7 @@ export function useFinance() {
     };
 
     fetchData();
-  }, []);
+  }, [refreshKey]);
 
-  return { data, isLoading };
+  return { data, isLoading, refetch };
 }

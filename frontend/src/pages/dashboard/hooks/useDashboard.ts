@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { dashboardApi, shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { useSocketEvent } from '@/hooks/useSocket';
 import type { DashboardMetrics, ChartDataPoint, Shipment, CarrierPerformance, WarehouseUtilization } from '@/types';
 
 export type DashboardPeriod = '1d' | '7d' | '30d' | '90d' | '365d';
@@ -80,6 +81,16 @@ export function useDashboard() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Refresh dashboard on any real-time event that changes key metrics
+  useSocketEvent('order:created', fetchData);
+  useSocketEvent('order:updated', fetchData);
+  useSocketEvent('shipment:created', fetchData);
+  useSocketEvent('shipment:updated', fetchData);
+  useSocketEvent('exception:created', fetchData);
+  useSocketEvent('exception:resolved', fetchData);
+  useSocketEvent('return:created', fetchData);
+  useSocketEvent('inventory:low_stock', fetchData);
 
   return {
     metrics,

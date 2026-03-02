@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSocketEvent } from '@/hooks/useSocket';
 import { motion } from 'framer-motion';
 import { AlertTriangle, AlertCircle, Clock, CheckCircle2, Eye, Download, RefreshCw } from 'lucide-react';
 import { Card, Button, DataTable, StatusBadge, SeverityBadge, Tabs } from '@/components/ui';
@@ -11,10 +12,33 @@ import { useExceptions } from './hooks/useExceptions';
 export function ExceptionsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const { exceptions, totalExceptions, isLoading } = useExceptions(page, pageSize);
+  const { exceptions, totalExceptions, isLoading, refetch } = useExceptions(page, pageSize);
+
+  // Refetch on real-time exception events
+  useSocketEvent('exception:created', refetch);
+  useSocketEvent('exception:resolved', refetch);
   const [selectedException, setSelectedException] = useState<Exception | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+
+  const handleExport = async () => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const resp = await fetch(`${apiBase}/analytics/export?type=violations&range=month`, {
+        credentials: 'include',
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `exceptions-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   // Calculate stats
   const criticalCount = exceptions.filter((e) => e.severity === 'critical').length;
@@ -82,7 +106,9 @@ export function ExceptionsPage() {
       key: 'orderId',
       header: 'Order',
       render: (exception: Exception) => (
-        <span className="text-gray-700 dark:text-gray-200">{exception.orderId}</span>
+        <span className="text-gray-700 dark:text-gray-200 font-mono text-sm">
+          {exception.orderNumber || exception.orderId || '—'}
+        </span>
       ),
     },
     {
@@ -125,10 +151,10 @@ export function ExceptionsPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Monitor and resolve logistics exceptions</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={refetch}>
             Refresh
           </Button>
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
         </div>
@@ -240,6 +266,11 @@ export function ExceptionsPage() {
         exception={selectedException}
         isOpen={isDetailsOpen}
         onClose={() => {
+          setIsDetailsOpen(false);
+          setSelectedException(null);
+        }}
+        onResolved={() => {
+          refetch();
           setIsDetailsOpen(false);
           setSelectedException(null);
         }}

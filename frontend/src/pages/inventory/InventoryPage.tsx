@@ -25,7 +25,32 @@ export function InventoryPage() {
   const [activeTab, setActiveTab] = useState('all');
 
   const pageSize = 10;
-  const { inventory, warehouses, totalItems, stats, isLoading } = useInventory(page, pageSize);
+  const { inventory, warehouses, totalItems, stats, isLoading, refetch } = useInventory(page, pageSize);
+
+  const handleExport = () => {
+    if (!inventory.length) return;
+    const headers = ['SKU', 'Product Name', 'Warehouse', 'Quantity', 'Reserved', 'Available', 'Reorder Point', 'Unit Cost', 'Low Stock', 'Out of Stock'];
+    const rows = inventory.map((item) => [
+      item.sku,
+      item.productName || item.name || '',
+      item.warehouseName || '',
+      item.quantity,
+      item.reservedQuantity ?? 0,
+      item.availableQuantity ?? item.quantity - (item.reservedQuantity ?? 0),
+      item.reorderPoint ?? '',
+      item.unitCost ?? '',
+      item.isLowStock ? 'Yes' : 'No',
+      item.isOutOfStock ? 'Yes' : 'No',
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Tab badge counts and stats from backend
   const lowStockItems = stats?.lowStockItems || 0;
@@ -105,7 +130,7 @@ export function InventoryPage() {
       sortable: true,
       render: (item: InventoryItem) => (
         <span className="font-medium text-gray-900 dark:text-white">
-          {formatCurrency(item.unitPrice != null ? item.quantity * item.unitPrice : 0)}
+          {formatCurrency(item.unitCost != null ? item.quantity * item.unitCost : 0)}
         </span>
       ),
     },
@@ -141,7 +166,7 @@ export function InventoryPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Track stock levels and manage inventory across warehouses</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
           <PermissionGate permission="inventory.update">
@@ -219,9 +244,9 @@ export function InventoryPage() {
           setSelectedItem(null);
         }}
         onSuccess={() => {
-          // Re-fetch or refresh current page if needed
-          // Using window.location.reload() or triggering a fetch
-          window.location.reload();
+          setIsAdjustOpen(false);
+          setSelectedItem(null);
+          refetch();
         }}
       />
 
@@ -232,14 +257,21 @@ export function InventoryPage() {
           setIsEditOpen(false);
           setSelectedItem(null);
         }}
-        onSuccess={() => window.location.reload()}
+        onSuccess={() => {
+          setIsEditOpen(false);
+          setSelectedItem(null);
+          refetch();
+        }}
       />
 
       <AddItemModal
         isOpen={isAddOpen}
         onClose={() => setIsAddOpen(false)}
         warehouses={warehouses}
-        onSuccess={() => window.location.reload()}
+        onSuccess={() => {
+          setIsAddOpen(false);
+          refetch();
+        }}
       />
     </div>
   );

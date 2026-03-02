@@ -11,8 +11,10 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { Card, CardContent, Button, Input } from '@/components/ui';
+import { useToastContext } from '@/components/ui/Toast';
 
 export function HelpSupportPage() {
+  const toast = useToastContext();
   const quickLinks = [
     {
       title: 'Getting Started',
@@ -189,7 +191,7 @@ export function HelpSupportPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 Chat with our support team instantly
               </p>
-              <Button variant="primary" size="sm">
+              <Button variant="primary" size="sm" onClick={() => toast.info('Live Chat', 'Live chat support is coming soon.')}>
                 Start Chat
               </Button>
             </CardContent>
@@ -233,8 +235,8 @@ export function HelpSupportPage() {
               Our support team is ready to assist you with any questions or issues
             </p>
             <div className="flex items-center justify-center gap-3">
-              <Button variant="primary">Contact Support</Button>
-              <Button variant="outline">Browse Documentation</Button>
+              <Button variant="primary" onClick={() => { window.open('mailto:support@twinchain.com', '_blank'); }}>Contact Support</Button>
+              <Button variant="outline" onClick={() => toast.info('Documentation', 'Documentation portal is coming soon.')}>Browse Documentation</Button>
             </div>
           </CardContent>
         </Card>

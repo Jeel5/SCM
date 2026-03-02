@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Wifi, WifiOff, MapPin, Truck, RefreshCw } from 'lucide-react';
 import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl/maplibre';
 import type { Feature, LineString } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { cn } from '@/lib/utils';
 import { getRoute, formatDistance, formatDuration, type RouteInfo } from '@/lib/routing';
-import { useShipmentTracking } from '@/hooks/useSocket';
+import { useShipmentTracking, useSocketEvent } from '@/hooks/useSocket';
 import type { Shipment } from '@/types';
 import { shipmentsApi } from '@/api/services';
 
@@ -43,13 +43,9 @@ export function ShipmentMap({ shipment: initialShipment }: { shipment: Shipment 
   const [shipment, setShipment] = useState<Shipment>(initialShipment);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Live tracking via Socket.io
   const { isConnected, currentLocation } = useShipmentTracking(shipment.id);
-  
-  // Polling interval: 5 minutes (300000 ms)
-  const POLLING_INTERVAL = 5 * 60 * 1000;
 
   // Fetch latest shipment data
   const refreshShipmentData = useCallback(async () => {
@@ -69,25 +65,10 @@ export function ShipmentMap({ shipment: initialShipment }: { shipment: Shipment 
     }
   }, [shipment.id, shipment.status]);
 
-  // Set up auto-refresh polling
-  useEffect(() => {
-    // Clear any existing interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-
-    // Only poll for active shipments
-    if (shipment.status !== 'delivered' && shipment.status !== 'cancelled') {
-      intervalRef.current = setInterval(refreshShipmentData, POLLING_INTERVAL);
-    }
-
-    // Cleanup on unmount
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [refreshShipmentData, shipment.status]);
+  // Refresh shipment data when a socket event signals an update
+  useSocketEvent<{ id: string }>('shipment:updated', (data) => {
+    if (data?.id === shipment.id) refreshShipmentData();
+  });
   
   // Guard against null/NaN coordinates (DB may have partial or missing coordinate data)
   const toCoord = (

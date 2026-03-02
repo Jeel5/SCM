@@ -1,18 +1,45 @@
+import { useState } from 'react';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { Modal, SeverityBadge, StatusBadge, Button } from '@/components/ui';
+import { Modal, SeverityBadge, StatusBadge, Button, Input } from '@/components/ui';
 import { formatDate, cn } from '@/lib/utils';
+import { exceptionsApi } from '@/api/services';
+import { useToast } from '@/components/ui/Toast';
 import type { Exception } from '@/types';
 
 export function ExceptionDetailsModal({
   exception,
   isOpen,
   onClose,
+  onResolved,
 }: {
   exception: Exception | null;
   isOpen: boolean;
   onClose: () => void;
+  onResolved?: () => void;
 }) {
+  const [resolution, setResolution] = useState('');
+  const [isResolving, setIsResolving] = useState(false);
+  const { addToast } = useToast();
+
   if (!exception) return null;
+
+  const handleResolve = async () => {
+    if (!resolution.trim()) {
+      addToast('Please provide a resolution description', 'error');
+      return;
+    }
+    setIsResolving(true);
+    try {
+      await exceptionsApi.resolveException(exception.id, resolution);
+      addToast('Exception resolved successfully', 'success');
+      setResolution('');
+      onResolved?.();
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to resolve exception', 'error');
+    } finally {
+      setIsResolving(false);
+    }
+  };
 
   const severityColors = {
     low: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300',
@@ -75,13 +102,21 @@ export function ExceptionDetailsModal({
           </div>
         )}
 
-        {exception.status !== 'resolved' && (
-          <div className="flex items-center gap-3">
-            <Button variant="primary" className="flex-1">
+        {exception.status !== 'resolved' && exception.status !== 'closed' && (
+          <div className="space-y-3">
+            <Input
+              label="Resolution"
+              placeholder="Describe how this exception was resolved..."
+              value={resolution}
+              onChange={(e) => setResolution(e.target.value)}
+            />
+            <Button
+              variant="primary"
+              className="w-full"
+              isLoading={isResolving}
+              onClick={handleResolve}
+            >
               Mark as Resolved
-            </Button>
-            <Button variant="outline" className="flex-1">
-              Add Note
             </Button>
           </div>
         )}

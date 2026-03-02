@@ -24,6 +24,13 @@ const router = express.Router();
 // resolveWebhookOrg looks up :orgToken against organizations.webhook_token
 // and sets req.webhookOrganizationId. Returns 401 if token is invalid.
 
+// ── Catalog (read-only, no auth needed beyond org token) ─────────────────────
+// External platforms MUST call /catalog first to discover orderable products.
+// Only products with available inventory are returned.
+router.get('/:orgToken/catalog', resolveWebhookOrg, webhooksController.handleCatalogWebhook);
+router.get('/:orgToken/catalog/check-stock', resolveWebhookOrg, webhooksController.handleStockCheck);
+
+// ── Order / event webhooks (write) ────────────────────────────────────────────
 router.post('/:orgToken/orders', resolveWebhookOrg, webhooksController.handleOrderWebhook);
 router.post('/:orgToken/inventory', resolveWebhookOrg, webhooksController.handleInventoryWebhook);
 router.post('/:orgToken/returns', resolveWebhookOrg, webhooksController.handleReturnWebhook);

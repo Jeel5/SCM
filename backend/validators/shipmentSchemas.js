@@ -1,6 +1,13 @@
 // Shipment validation schemas - defines rules for shipment operations
+// IMPORTANT: Status values MUST match SHIPMENT_VALID_TRANSITIONS in services/shipmentService.js
 
 import Joi from 'joi';
+
+// All valid shipment statuses — keep in sync with shipmentService.SHIPMENT_VALID_TRANSITIONS
+const SHIPMENT_STATUSES = [
+  'pending', 'picked_up', 'in_transit', 'out_for_delivery',
+  'delivered', 'cancelled', 'exception', 'returned',
+];
 
 const locationSchema = Joi.object({
   address: Joi.string(),
@@ -16,7 +23,7 @@ export const createShipmentSchema = Joi.object({
   carrier_id: Joi.string().required(),
   carrier_name: Joi.string().min(2).max(255).required(),
   service_type: Joi.string().valid('express', 'standard', 'economy', 'overnight', 'two_day'),
-  status: Joi.string().valid('pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned'),
+  status: Joi.string().valid(...SHIPMENT_STATUSES),
   origin: locationSchema.required(),
   destination: locationSchema.required(),
   estimated_delivery: Joi.date().iso(),
@@ -32,7 +39,7 @@ export const createShipmentSchema = Joi.object({
 });
 
 export const updateShipmentStatusSchema = Joi.object({
-  status: Joi.string().valid('pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned').required(),
+  status: Joi.string().valid(...SHIPMENT_STATUSES).required(),
   location: Joi.object({
     city: Joi.string(),
     state: Joi.string(),
@@ -49,7 +56,7 @@ export const updateShipmentStatusSchema = Joi.object({
 export const listShipmentsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
-  status: Joi.string().valid('pending', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed', 'returned'),
+  status: Joi.string().valid(...SHIPMENT_STATUSES),
   carrier_id: Joi.string(),
   search: Joi.string().max(100)
 });

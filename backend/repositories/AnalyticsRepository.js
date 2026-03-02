@@ -212,7 +212,7 @@ class AnalyticsRepository extends BaseRepository {
       SELECT sv.id, sv.shipment_id, sp.name AS policy_name,
              sv.violation_type, sv.penalty_amount, sv.violated_at
       FROM sla_violations sv
-      LEFT JOIN sla_policies sp ON sv.policy_id = sp.id
+      LEFT JOIN sla_policies sp ON sv.sla_policy_id = sp.id
       WHERE sv.violated_at >= NOW() - ${intIdx}::INTERVAL
       ${orgParam ? `AND sv.organization_id = $1` : ''}
       ORDER BY sv.violated_at DESC

@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { ConflictError, AuthenticationError, ValidationError, NotFoundError } from '../errors/index.js';
 import userRepo from '../repositories/UserRepository.js';
+import logger from '../utils/logger.js';
 
 export const settingsService = {
   // Update user profile fields
@@ -54,6 +55,14 @@ export const settingsService = {
       updatedUser._emailChangeToken = pendingEmailToken;
       updatedUser._pendingEmail = pendingEmailAddress;
     }
+
+    // Audit trail
+    const changedFields = [
+      ...fields.map(f => f.split(' ')[0]),           // 'name', 'phone', etc.
+      ...(pendingEmailToken ? ['email_change_requested'] : [])
+    ];
+    await userRepo.insertAuditLog(userId, 'profile_updated', 'user', userId);
+    logger.info('Profile updated', { userId, changedFields });
 
     return updatedUser;
   },
@@ -109,7 +118,7 @@ export const settingsService = {
 
       if (jtisToRevoke.length > 0) {
         await userRepo.bulkInsertRevokedTokens(
-          jtisToRevoke.map(({ jti, expiresAt }) => [jti, userId, expiresAt]),
+          jtisToRevoke.map(({ jti, expiresAt }) => ({ jti, user_id: userId, expires_at: expiresAt })),
           tx
         );
       }

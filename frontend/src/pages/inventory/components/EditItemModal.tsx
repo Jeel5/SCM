@@ -11,18 +11,16 @@ interface EditItemModalProps {
 }
 
 interface FormState {
-  bin_location: string;
-  zone: string;
   reorder_point: string;
   max_stock_level: string;
+  unit_cost: string;
 }
 
 export function EditItemModal({ item, isOpen, onClose, onSuccess }: EditItemModalProps) {
   const [form, setForm] = useState<FormState>({
-    bin_location: '',
-    zone: '',
     reorder_point: '',
     max_stock_level: '',
+    unit_cost: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +29,9 @@ export function EditItemModal({ item, isOpen, onClose, onSuccess }: EditItemModa
   useEffect(() => {
     if (item) {
       setForm({
-        bin_location: item.binLocation ?? '',
-        zone: item.zone ?? '',
         reorder_point: item.reorderPoint != null ? String(item.reorderPoint) : '',
         max_stock_level: item.maxStockLevel != null ? String(item.maxStockLevel) : '',
+        unit_cost: item.unitCost != null ? String(item.unitCost) : '',
       });
     }
   }, [item]);
@@ -53,10 +50,6 @@ export function EditItemModal({ item, isOpen, onClose, onSuccess }: EditItemModa
     if (!item) return;
 
     const payload: Record<string, unknown> = {};
-    if (form.bin_location.trim() !== (item.binLocation ?? ''))
-      payload.bin_location = form.bin_location.trim() || null;
-    if (form.zone.trim() !== (item.zone ?? ''))
-      payload.zone = form.zone.trim() || null;
     if (form.reorder_point !== '')
       payload.reorder_point = Number(form.reorder_point);
     else if (item.reorderPoint != null)
@@ -65,6 +58,10 @@ export function EditItemModal({ item, isOpen, onClose, onSuccess }: EditItemModa
       payload.max_stock_level = Number(form.max_stock_level);
     else if (item.maxStockLevel != null)
       payload.max_stock_level = null;
+    if (form.unit_cost !== '')
+      payload.unit_cost = Number(form.unit_cost);
+    else if (item.unitCost != null)
+      payload.unit_cost = null;
 
     if (Object.keys(payload).length === 0) {
       onClose();
@@ -88,30 +85,9 @@ export function EditItemModal({ item, isOpen, onClose, onSuccess }: EditItemModa
     <Modal isOpen={isOpen} onClose={onClose} title={`Edit: ${item.productName || item.sku || 'Item'}`} size="md">
       <form onSubmit={handleSubmit} className="space-y-5">
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Update the storage location and stock threshold settings.
+          Update stock threshold settings.
           To change quantity, use <strong>Adjust Stock</strong>.
         </p>
-
-        {/* Location */}
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
-            Storage Location
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Zone"
-              placeholder="e.g. Zone A"
-              value={form.zone}
-              onChange={set('zone')}
-            />
-            <Input
-              label="Bin Location"
-              placeholder="e.g. A-03-02"
-              value={form.bin_location}
-              onChange={set('bin_location')}
-            />
-          </div>
-        </div>
 
         {/* Thresholds */}
         <div>
@@ -138,6 +114,25 @@ export function EditItemModal({ item, isOpen, onClose, onSuccess }: EditItemModa
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
             Leave blank to clear the threshold.
+          </p>
+        </div>
+
+        {/* Unit Cost */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
+            Procurement Cost
+          </p>
+          <Input
+            label="Unit Cost (₹)"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="e.g. 250.00"
+            value={form.unit_cost}
+            onChange={set('unit_cost')}
+          />
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            Cost per unit at time of procurement. Used for inventory valuation.
           </p>
         </div>
 

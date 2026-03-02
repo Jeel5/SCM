@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { exceptionsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -9,6 +9,9 @@ export function useExceptions(page: number, pageSize: number) {
   const [totalExceptions, setTotalExceptions] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const { useMockApi } = useApiMode();
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const fetchExceptions = async () => {
@@ -29,7 +32,7 @@ export function useExceptions(page: number, pageSize: number) {
     };
 
     fetchExceptions();
-  }, [page, pageSize]);
+  }, [page, pageSize, refreshKey]);
 
-  return { exceptions, totalExceptions, isLoading };
+  return { exceptions, totalExceptions, isLoading, refetch };
 }

@@ -1,12 +1,68 @@
+import { useState } from 'react';
 import { Modal, Button, Input, Select } from '@/components/ui';
+import { returnsApi } from '@/api/services';
+import { useToast } from '@/components/ui/Toast';
 
-export function CreateReturnModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export function CreateReturnModal({
+  isOpen,
+  onClose,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+}) {
+  const [orderId, setOrderId] = useState('');
+  const [returnType, setReturnType] = useState('refund');
+  const [reason, setReason] = useState('damaged');
+  const [refundAmount, setRefundAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { addToast } = useToast();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderId.trim()) {
+      addToast('Order ID is required', 'error');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await returnsApi.createReturn({
+        order_id: orderId.trim(),
+        reason,
+        reason_details: notes || undefined,
+        refund_amount: refundAmount ? parseFloat(refundAmount) : undefined,
+        items: [{ product_name: 'Return item', quantity: 1 }],
+      } as any);
+      addToast('Return request created successfully', 'success');
+      setOrderId('');
+      setReturnType('refund');
+      setReason('damaged');
+      setRefundAmount('');
+      setNotes('');
+      onSuccess?.();
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to create return', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Create Return Request" size="lg">
-      <form className="space-y-4">
-        <Input label="Order ID" placeholder="Enter order ID" required />
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <Input
+          label="Order ID"
+          placeholder="Enter order ID or order number"
+          required
+          value={orderId}
+          onChange={(e) => setOrderId(e.target.value)}
+        />
         <Select
           label="Return Type"
+          value={returnType}
+          onChange={(e) => setReturnType(e.target.value)}
           options={[
             { value: 'refund', label: 'Refund' },
             { value: 'exchange', label: 'Exchange' },
@@ -16,23 +72,36 @@ export function CreateReturnModal({ isOpen, onClose }: { isOpen: boolean; onClos
         />
         <Select
           label="Return Reason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
           options={[
             { value: 'damaged', label: 'Item Damaged' },
             { value: 'wrong_item', label: 'Wrong Item Received' },
             { value: 'not_as_described', label: 'Not as Described' },
             { value: 'changed_mind', label: 'Changed Mind' },
-            { value: 'defective', label: 'Defective Product' },
+            { value: 'quality_issue', label: 'Quality Issue' },
             { value: 'other', label: 'Other' },
           ]}
           required
         />
-        <Input label="Refund Amount" type="number" placeholder="0.00" required />
-        <Input label="Notes" placeholder="Additional information about the return" />
+        <Input
+          label="Refund Amount"
+          type="number"
+          placeholder="0.00"
+          value={refundAmount}
+          onChange={(e) => setRefundAmount(e.target.value)}
+        />
+        <Input
+          label="Notes"
+          placeholder="Additional information about the return"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
         <div className="flex items-center gap-3 pt-4">
           <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" className="flex-1">
+          <Button type="submit" variant="primary" className="flex-1" isLoading={isSubmitting}>
             Create Return
           </Button>
         </div>

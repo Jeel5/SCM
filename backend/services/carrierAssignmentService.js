@@ -3,6 +3,7 @@ import axios from 'axios';
 import { withTransaction } from '../utils/dbTransaction.js';
 import carrierPayloadBuilder from './carrierPayloadBuilder.js';
 import deliveryChargeService from './deliveryChargeService.js';
+import { matchSlaPolicyForShipment } from './slaPolicyMatchingService.js';
 import { NotFoundError, AppError, AuthorizationError } from '../errors/AppError.js';
 import carrierAssignmentRepo from '../repositories/CarrierAssignmentRepository.js';
 
@@ -353,6 +354,27 @@ class CarrierAssignmentService {
         const shipmentWeight = requestPayload.shipment?.chargeableWeight || 
                               Math.max(aggregatedData.totalWeight, aggregatedData.totalVolumetricWeight);
 
+        // Use SLA policy matching to derive delivery_scheduled.
+        // Carrier's estimatedDeliveryTime becomes a fallback only if no policy matches.
+        const slaMatch = await matchSlaPolicyForShipment({
+          organizationId: assignment.organization_id,
+          carrierId:      assignment.carrier_id,
+          originAddress:  assignment.pickup_address,
+          destinationAddress: assignment.delivery_address,
+          serviceType:    assignment.service_type || null,
+          client: tx,
+        });
+
+        // If carrier promised earlier than SLA policy, respect carrier's promise.
+        // Otherwise use SLA deadline so monitoring is accurate.
+        const carrierPromised = acceptancePayload.delivery.estimatedDeliveryTime
+          ? new Date(acceptancePayload.delivery.estimatedDeliveryTime)
+          : null;
+        const slaDeadline = slaMatch.deliveryScheduled;
+        const deliveryScheduled = (carrierPromised && carrierPromised < slaDeadline)
+          ? carrierPromised
+          : slaDeadline;
+
         const shipment = await carrierAssignmentRepo.createShipment({
           trackingNumber,
           carrierTrackingNumber: acceptancePayload.tracking.carrierReferenceId,
@@ -360,9 +382,12 @@ class CarrierAssignmentService {
           assignmentId,
           carrierId: assignment.carrier_id,
           warehouseId: null,
+          organizationId: assignment.organization_id,
           pickupAddress: assignment.pickup_address,
           deliveryAddress: assignment.delivery_address,
-          deliveryScheduled: new Date(acceptancePayload.delivery.estimatedDeliveryTime || Date.now() + 24*60*60*1000),
+          deliveryScheduled,
+          pickupScheduled: slaMatch.pickupDeadline,
+          slaPolicyId: slaMatch.policyId,
           weight: shipmentWeight,
           volumetricWeight: aggregatedData.totalVolumetricWeight,
           dimensions: aggregatedData.dimensions,

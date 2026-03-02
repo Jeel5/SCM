@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Package, Plus, Clock, ArrowRightLeft, Eye, MapPin } from 'lucide-react';
+import { Building2, Package, Plus, Clock, ArrowRightLeft, Eye, MapPin, LayoutGrid, List } from 'lucide-react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Card, Button, Badge, DataTable, Tabs, PermissionGate } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
 import type { Warehouse } from '@/types';
+import { warehousesApi } from '@/api/services';
 import { WarehouseCard } from './components/WarehouseCard';
 import { WarehouseDetailsModal } from './components/WarehouseDetailsModal';
 import { AddWarehouseModal } from './components/AddWarehouseModal';
@@ -47,13 +48,11 @@ export function WarehousesPage() {
   const [showMap, setShowMap] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this warehouse?')) return;
-
     setIsDeleting(true);
     try {
-      const { warehousesApi } = await import('@/api/services');
       await warehousesApi.deleteWarehouse(id);
       setIsDetailsOpen(false);
       setSelectedWarehouse(null);
@@ -197,6 +196,20 @@ export function WarehousesPage() {
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage warehouse locations and inventory</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode('card')}
+              className={cn('p-2 transition-colors', viewMode === 'card' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500')}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={cn('p-2 transition-colors', viewMode === 'table' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500')}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
           <Button
             variant={showMap ? 'outline' : 'secondary'}
             onClick={() => setShowMap(!showMap)}
@@ -300,23 +313,50 @@ export function WarehousesPage() {
         </Card>
       )}
 
-      {/* Data Table */}
+      {/* Card / Table View */}
       <Card padding="none">
         <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
-        <DataTable
-          columns={columns}
-          data={filteredWarehouses}
-          isLoading={isLoading}
-          searchPlaceholder="Search warehouses by name, code, or location..."
-          onRowClick={(warehouse) => {
-            setSelectedWarehouse(warehouse);
-            setIsDetailsOpen(true);
-          }}
-          emptyMessage="No warehouses found"
-          className="border-0 rounded-none"
-        />
+
+        {viewMode === 'card' ? (
+          isLoading ? (
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-48 bg-gray-100 dark:bg-gray-800 rounded-2xl animate-pulse" />
+              ))}
+            </div>
+          ) : filteredWarehouses.length === 0 ? (
+            <p className="text-center text-gray-500 dark:text-gray-400 py-12">No warehouses found</p>
+          ) : (
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredWarehouses.map((warehouse, idx) => (
+                <WarehouseCard
+                  key={warehouse.id}
+                  warehouse={warehouse}
+                  index={idx}
+                  totalInRow={3}
+                  onViewDetails={() => { setSelectedWarehouse(warehouse); setIsDetailsOpen(true); }}
+                  onEdit={() => { setSelectedWarehouse(warehouse); setIsDetailsOpen(false); setIsAddOpen(true); }}
+                  onDelete={() => { if (window.confirm(`Delete "${warehouse.name}"? This cannot be undone.`)) handleDelete(warehouse.id); }}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filteredWarehouses}
+            isLoading={isLoading}
+            searchPlaceholder="Search warehouses by name, code, or location..."
+            onRowClick={(warehouse) => {
+              setSelectedWarehouse(warehouse);
+              setIsDetailsOpen(true);
+            }}
+            emptyMessage="No warehouses found"
+            className="border-0 rounded-none"
+          />
+        )}
       </Card>
 
       {/* Modals */}
@@ -335,20 +375,15 @@ export function WarehousesPage() {
       />
 
       <AddWarehouseModal
+        key={selectedWarehouse?.id || 'new'}
         isOpen={isAddOpen}
         onClose={() => {
           setIsAddOpen(false);
-          if (selectedWarehouse) {
-            // If we were editing, optionally clear selected warehouse, or keep it to show details updated
-            // We'll clear it for simplicity on close if not successful
-          }
+          setSelectedWarehouse(null);
         }}
         onSuccess={() => {
           refetch();
-          if (selectedWarehouse) {
-            // Re-open details if we were editing?
-            setSelectedWarehouse(null);
-          }
+          setSelectedWarehouse(null);
         }}
         initialData={selectedWarehouse}
       />

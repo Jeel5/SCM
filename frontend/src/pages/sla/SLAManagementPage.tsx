@@ -1,16 +1,42 @@
 import { useState } from 'react';
+import { useSocketEvent } from '@/hooks/useSocket';
 import { motion } from 'framer-motion';
-import { Timer, AlertTriangle, CheckCircle, Clock, Download, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import { Timer, AlertTriangle, CheckCircle, Clock, Download, RefreshCw, TrendingUp, TrendingDown, Plus } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Button, Tabs, DataTable, StatusBadge, PermissionGate } from '@/components/ui';
 import { formatDate, formatPercentage } from '@/lib/utils';
 import type { SLAPolicy, SLAViolation } from '@/types';
 import { useSLA } from './hooks/useSLA';
+import { CreateSLAPolicyModal } from './components/CreateSLAPolicyModal';
 
 export function SLAManagementPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [page, setPage] = useState(1);
+  const [showCreatePolicy, setShowCreatePolicy] = useState(false);
   const pageSize = 10;
-  const { policies, violations, dashboardData, isLoading, totalViolations: violationsTotal } = useSLA(page, pageSize);
+  const { policies, violations, dashboardData, isLoading, totalViolations: violationsTotal, refetch } = useSLA(page, pageSize);
+
+  // Refetch on real-time exception events (SLA violations are driven by exceptions)
+  useSocketEvent('exception:created', refetch);
+  useSocketEvent('exception:resolved', refetch);
+
+  const handleExport = async () => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const resp = await fetch(`${apiBase}/analytics/export?type=violations&range=month`, {
+        credentials: 'include',
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sla-violations-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   // Tab badges reflect current counts
   const tabs = [
@@ -31,9 +57,15 @@ export function SLAManagementPage() {
       ),
     },
     {
-      key: 'region',
-      header: 'Region',
-      render: (policy: SLAPolicy) => <span className="text-gray-700 dark:text-gray-300">{policy.region}</span>,
+      key: 'zone',
+      header: 'Zone',
+      render: (policy: SLAPolicy) => (
+        <span className="text-gray-700 dark:text-gray-300 capitalize">
+          {policy.originZoneType && policy.destinationZoneType
+            ? `${policy.originZoneType} → ${policy.destinationZoneType}`
+            : policy.originZoneType || policy.destinationZoneType || 'All Zones'}
+        </span>
+      ),
     },
     {
       key: 'targetDeliveryHours',
@@ -99,6 +131,7 @@ export function SLAManagementPage() {
     : 0;
 
   return (
+    <>
     <div className="p-6 space-y-6">
       {/* Header */}
       <motion.div
@@ -111,14 +144,16 @@ export function SLAManagementPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Monitor service level agreements and violations</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={refetch}>
             Refresh
           </Button>
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
-          <PermissionGate permission="settings.organization">
-            <Button variant="primary">Create Policy</Button>
+          <PermissionGate permission="sla.manage">
+            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreatePolicy(true)}>
+              Create Policy
+            </Button>
           </PermissionGate>
         </div>
       </motion.div>
@@ -293,6 +328,17 @@ export function SLAManagementPage() {
         </Card>
       )}
     </div>
+
+    {/* Create Policy Modal */}
+    <CreateSLAPolicyModal
+      isOpen={showCreatePolicy}
+      onClose={() => setShowCreatePolicy(false)}
+      onCreated={() => {
+        setShowCreatePolicy(false);
+        refetch();
+      }}
+    />
+  </>
   );
 }
 

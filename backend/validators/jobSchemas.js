@@ -51,3 +51,12 @@ export const updateCronScheduleSchema = Joi.object({
   payload:         Joi.object().optional(),
   is_active:       Joi.boolean().optional(),
 }).min(1); // at least one field required
+
+export const analyticsQuerySchema = Joi.object({
+  range: Joi.string().valid('day', 'week', 'month', 'year').default('month'),
+});
+
+export const analyticsExportQuerySchema = Joi.object({
+  type:  Joi.string().valid('orders', 'shipments', 'returns', 'violations').default('orders'),
+  range: Joi.string().valid('day', 'week', 'month', 'year').default('month'),
+});

@@ -3,43 +3,11 @@
 import InventoryRepository from '../repositories/InventoryRepository.js';
 import ProductRepository from '../repositories/ProductRepository.js';
 import WarehouseRepository from '../repositories/WarehouseRepository.js';
+import { emitToOrg } from '../sockets/emitter.js';
 import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SKU GENERATION
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Generate a unique SKU scoped to the organization.
- * Format: {PREFIX}-{YYYYMM}-{RAND5}  e.g. USBCAB-202502-K3P9Q
- * Retries up to 5 times on collision.
- */
-async function generateUniqueSKU(organizationId, productName) {
-  const prefix = (productName || 'ITEM')
-    .replace(/[^A-Z0-9\s]/gi, '')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w.slice(0, 3).toUpperCase())
-    .join('')
-    .slice(0, 6) || 'ITEM';
-
-  const month = new Date().toISOString().slice(0, 7).replace('-', '');
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
-    const sku = `${prefix}-${month}-${rand}`;
-
-    const exists = await InventoryRepository.skuExists(sku, organizationId);
-    if (!exists) return sku;
-  }
-
-  // Fallback: timestamp-based to guarantee uniqueness
-  return `${prefix}-${Date.now()}`;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -60,16 +28,13 @@ function formatInventoryItem(row) {
     productName: row.product_display_name || row.product_name || null,
     sku: row.sku || null,
     productCategory: row.product_category || null,
-    unitPrice: row.unit_price ? parseFloat(row.unit_price) : null,
+    unitCost: row.unit_cost != null ? parseFloat(row.unit_cost) : null,
     // Quantities (all integers)
     quantity: parseInt(row.quantity) || 0,
     availableQuantity: parseInt(row.available_quantity) || 0,
     reservedQuantity: parseInt(row.reserved_quantity) || 0,
     damagedQuantity: parseInt(row.damaged_quantity) || 0,
     inTransitQuantity: parseInt(row.in_transit_quantity) || 0,
-    // Location
-    binLocation: row.bin_location || null,
-    zone: row.zone || null,
     // Thresholds
     reorderPoint: row.reorder_point !== null ? parseInt(row.reorder_point) : null,
     maxStockLevel: row.max_stock_level !== null ? parseInt(row.max_stock_level) : null,
@@ -209,58 +174,28 @@ export const getLowStockItems = asyncHandler(async (req, res) => {
 
 /**
  * POST /inventory
- * Combined product + inventory creation.
- * If product fields (product_name, category, unit_price) are provided without a product_id,
- * a product record is created first, then inventory is linked to it.
+ * Create a new inventory record for an existing product in a warehouse.
+ * The product MUST already exist in the catalog — inline product creation
+ * is intentionally not supported here (products require their own full form).
  * Org-scoped.
  */
 export const createInventoryItem = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
   const orgId = organizationId || req.body.organization_id || null;
-  const { product_id, product_name, category, unit_price, ...inventoryFields } = req.body;
+  const { product_id, ...inventoryFields } = req.body;
 
-  let resolvedProductId = product_id || null;
+  // ── Verify the product exists and pull canonical sku + name ──
+  const product = await ProductRepository.findById(product_id);
+  if (!product) throw new NotFoundError('Product');
 
-  // ── If product_id supplied, pull sku + name from products table ──
-  if (resolvedProductId) {
-    const product = await ProductRepository.findById(resolvedProductId);
-    if (product) {
-      if (!inventoryFields.sku) inventoryFields.sku = product.sku;
-      if (!inventoryFields.product_name) inventoryFields.product_name = product.name;
-    }
-  }
-
-  // ── If no product_id provided, create the product catalog entry first ──
-  if (!resolvedProductId && product_name) {
-    const sku = await generateUniqueSKU(orgId, product_name);
-
-    const product = await ProductRepository.create({
-      organization_id: orgId,
-      sku,
-      name: product_name.trim(),
-      category: category || null,
-      unit_price: unit_price || null,
-      currency: 'INR',
-      is_active: true,
-    });
-
-    resolvedProductId = product?.id || null;
-
-    // Denormalized copy on inventory row
-    inventoryFields.sku = sku;
-    inventoryFields.product_name = product_name.trim();
-  }
+  inventoryFields.sku = product.sku;
+  inventoryFields.product_name = product.name;
 
   const data = {
     ...inventoryFields,
-    product_id: resolvedProductId,
+    product_id,
     organization_id: orgId,
   };
-
-  // Fallback: auto-generate SKU for inventory row if still without one
-  if (!data.sku && !resolvedProductId) {
-    data.sku = await generateUniqueSKU(orgId, data.product_name);
-  }
 
   const item = await InventoryRepository.createInventoryItem(data);
 
@@ -284,7 +219,7 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
 
 /**
  * PUT /inventory/:id
- * Update non-quantity fields (bin_location, zone, reorder_point, max_stock_level).
+ * Update non-quantity fields (reorder_point, max_stock_level, unit_cost).
  * For quantity changes use the /adjust endpoint.
  */
 export const updateInventoryItem = asyncHandler(async (req, res) => {
@@ -386,7 +321,8 @@ export const adjustStock = asyncHandler(async (req, res) => {
       reference_id: reference_id || null,
       notes: reason,
       batch_number: batch_number || null,
-      created_by: userId
+      created_by: userId,
+      performed_by: req.user?.email || null
     }, tx);
 
     logger.info('Stock adjusted', {
@@ -406,6 +342,11 @@ export const adjustStock = asyncHandler(async (req, res) => {
   });
 
   // Transaction committed — now safe to send the HTTP response
+  emitToOrg(item.organization_id, 'inventory:updated', txResult.data);
+  // Emit low_stock alert if updated item is at or below reorder point
+  if (txResult.data?.quantity <= txResult.data?.reorderPoint) {
+    emitToOrg(item.organization_id, 'inventory:low_stock', txResult.data);
+  }
   res.json({ success: true, ...txResult });
 });
 
@@ -492,7 +433,8 @@ export const transferInventory = asyncHandler(async (req, res) => {
       quantity,
       reference_type: 'transfer',
       notes: reason,
-      created_by: userId
+      created_by: userId,
+      performed_by: req.user?.email || null
     }, tx);
 
     // Record inbound movement on destination
@@ -506,7 +448,8 @@ export const transferInventory = asyncHandler(async (req, res) => {
       quantity,
       reference_type: 'transfer',
       notes: reason,
-      created_by: userId
+      created_by: userId,
+      performed_by: req.user?.email || null
     }, tx);
 
     logger.info('Inventory transfer completed', {
@@ -522,5 +465,6 @@ export const transferInventory = asyncHandler(async (req, res) => {
   });
 
   // Transaction committed — now safe to send the HTTP response
+  emitToOrg(organizationId, 'inventory:updated', null); // triggers refetch in frontend
   res.json({ success: true, ...txResult });
 });

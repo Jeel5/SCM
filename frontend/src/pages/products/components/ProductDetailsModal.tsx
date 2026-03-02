@@ -1,6 +1,9 @@
 import { Modal, Button, Badge } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
-import { AlertTriangle, Snowflake, Zap, Edit2, Flame, ShieldCheck } from 'lucide-react';
+import {
+  AlertTriangle, Snowflake, Zap, Edit2, Flame, ShieldCheck,
+  Tag, Package, Globe, Barcode, Clock, ShoppingCart,
+} from 'lucide-react';
 import type { Product } from '@/types';
 
 interface Props {
@@ -19,6 +22,14 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b border-gray-100 dark:border-gray-700 pb-1 mb-3">
+      {children}
+    </p>
+  );
+}
+
 export function ProductDetailsModal({ isOpen, onClose, onEdit, product }: Props) {
   if (!product) return null;
 
@@ -28,12 +39,17 @@ export function ProductDetailsModal({ isOpen, onClose, onEdit, product }: Props)
     : null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Product Details" size="2xl">
-      <div className="space-y-6">
-        {/* Header row */}
+    <Modal isOpen={isOpen} onClose={onClose} title="Product Details" size="4xl">
+      <div className="space-y-6 max-h-[78vh] overflow-y-auto pr-1">
+
+        {/* ── Header ────────────────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{product.name}</h3>
+            {product.brand && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{product.brand}</p>
+            )}
+            <p className="text-xs font-mono text-indigo-600 dark:text-indigo-400 mt-1">SKU: {product.sku}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 flex-shrink-0 justify-end">
             <Badge variant={product.isActive ? 'success' : 'error'}>
@@ -73,40 +89,66 @@ export function ProductDetailsModal({ isOpen, onClose, onEdit, product }: Props)
           </p>
         )}
 
-        {/* Pricing & Physical */}
+        {/* Tags */}
+        {product.tags && product.tags.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Tag className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            {product.tags.map(tag => (
+              <span key={tag} className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-medium">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* ── Pricing & Tax ─────────────────────────────────────────── */}
         <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Pricing & Physical</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+          <SectionHeader>Pricing & Tax</SectionHeader>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
             <Field label="Category" value={product.category} />
             <Field label="Currency" value={product.currency} />
-            <Field
-              label="Unit Price"
-              value={product.unitPrice != null ? formatCurrency(product.unitPrice, product.currency) : null}
-            />
-            <Field
-              label="Cost Price"
-              value={product.costPrice != null ? formatCurrency(product.costPrice, product.currency) : null}
-            />
-            <Field
-              label="Weight"
-              value={product.weight != null ? `${product.weight} kg` : null}
-            />
+            <Field label="Selling Price" value={product.sellingPrice != null ? formatCurrency(product.sellingPrice, product.currency) : null} />
+            <Field label="Cost Price" value={product.costPrice != null ? formatCurrency(product.costPrice, product.currency) : null} />
+            <Field label="MRP (Retail)" value={product.mrp != null ? formatCurrency(product.mrp, product.currency) : null} />
+            <Field label="GST Rate" value={product.gstRate != null ? `${product.gstRate}%` : null} />
+            <Field label="HSN / SAC Code" value={product.hsnCode} />
+          </div>
+        </div>
+
+        {/* ── Identification ────────────────────────────────────────── */}
+        <div>
+          <SectionHeader>Identification & Barcodes</SectionHeader>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+            <Field label="Internal Barcode" value={
+              <span className="flex items-center gap-1.5 font-mono text-indigo-600 dark:text-indigo-400">
+                <Barcode className="h-3.5 w-3.5" /> {product.internalBarcode}
+              </span>
+            } />
+            {product.manufacturerBarcode && (
+              <Field label="Manufacturer Barcode" value={
+                <span className="flex items-center gap-1.5 font-mono">
+                  <Barcode className="h-3.5 w-3.5 text-gray-400" /> {product.manufacturerBarcode}
+                </span>
+              } />
+            )}
+            <Field label="Country of Origin" value={
+              product.countryOfOrigin
+                ? <span className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5 text-gray-400" />{product.countryOfOrigin}</span>
+                : null
+            } />
+          </div>
+        </div>
+
+        {/* ── Physical ──────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader>Physical Specifications</SectionHeader>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+            <Field label="Weight" value={product.weight != null ? `${product.weight} kg` : null} />
             <Field label="Dimensions (L × W × H)" value={dimStr} />
             {product.volumetricWeight != null && (
               <Field label="Volumetric Weight" value={`${product.volumetricWeight} kg`} />
             )}
-          </div>
-        </div>
-
-        {/* Shipping Classification */}
-        <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Shipping Classification</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
-            <Field label="Item Type" value={product.itemType ? <span className="capitalize">{product.itemType}</span> : null} />
             <Field label="Package Type" value={product.packageType ? <span className="capitalize">{product.packageType}</span> : null} />
-            {product.declaredValue != null && (
-              <Field label="Declared Value" value={formatCurrency(product.declaredValue, product.currency)} />
-            )}
           </div>
           {product.handlingInstructions && (
             <div className="mt-3">
@@ -118,16 +160,29 @@ export function ProductDetailsModal({ isOpen, onClose, onEdit, product }: Props)
           )}
         </div>
 
-        {/* Timestamps */}
+        {/* ── Order Rules ───────────────────────────────────────────── */}
+        <div>
+          <SectionHeader>Warranty & Lifecycle</SectionHeader>
+          <div className="grid grid-cols-2 md:grid-cols-2 gap-x-6 gap-y-4">
+            <Field label="Warranty" value={
+              product.warrantyPeriodDays > 0
+                ? <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-gray-400" />{product.warrantyPeriodDays} days</span>
+                : <span className="text-gray-400">No warranty</span>
+            } />
+            {product.isPerishable && (
+              <Field label="Shelf Life" value={
+                product.shelfLifeDays != null
+                  ? `${product.shelfLifeDays} days`
+                  : <span className="text-gray-400">Not set</span>
+              } />
+            )}
+          </div>
+        </div>
+
+        {/* ── Timestamps ────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-4 border-t border-gray-200 dark:border-gray-700 pt-4">
-          <Field
-            label="Created"
-            value={product.createdAt ? new Date(product.createdAt).toLocaleString() : null}
-          />
-          <Field
-            label="Last Updated"
-            value={product.updatedAt ? new Date(product.updatedAt).toLocaleString() : null}
-          />
+          <Field label="Created" value={product.createdAt ? new Date(product.createdAt).toLocaleString() : null} />
+          <Field label="Last Updated" value={product.updatedAt ? new Date(product.updatedAt).toLocaleString() : null} />
         </div>
 
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -137,6 +192,9 @@ export function ProductDetailsModal({ isOpen, onClose, onEdit, product }: Props)
             </Button>
           )}
         </div>
+
+        {/* hidden ref to avoid unused import warning (tree-shaked in prod) */}
+        <span className="hidden"><Package /></span>
       </div>
     </Modal>
   );

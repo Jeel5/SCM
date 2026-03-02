@@ -2,8 +2,12 @@
 import shipmentRepo from '../repositories/ShipmentRepository.js';
 import orderRepo from '../repositories/OrderRepository.js';
 import shipmentService from '../services/shipmentService.js';
+import orderService from '../services/orderService.js';
+import { emitToOrg, emitToShipment } from '../sockets/emitter.js';
+import { matchSlaPolicyForShipment } from '../services/slaPolicyMatchingService.js';
 import { withTransaction } from '../utils/dbTransaction.js';
-import { asyncHandler, NotFoundError } from '../errors/index.js';
+import { asyncHandler, NotFoundError, ValidationError } from '../errors/index.js';
+import logger from '../utils/logger.js';
 
 // ─── Shipment State Machine lives in services/shipmentService.js ───────────────────────
 // Import SHIPMENT_VALID_TRANSITIONS from there if needed in other controller functions.
@@ -140,17 +144,62 @@ export const createShipment = asyncHandler(async (req, res) => {
   // Inject org context so the shipment is scoped to the creating org (T1-03)
   const organizationId = req.orgContext?.organizationId;
 
+  // Defensive: log the incoming request for traceability
+  logger.info('Shipment creation requested', {
+    orderId: order_id,
+    carrierId: carrier_id,
+    organizationId,
+    hasOrigin: !!origin,
+    hasDestination: !!destination,
+  });
+
+  if (!order_id) throw new ValidationError('order_id is required');
+  if (!carrier_id) throw new ValidationError('carrier_id is required');
+
   const shipment = await withTransaction(async (tx) => {
     const order = await orderRepo.findOrderWithItems(order_id, undefined, tx);
     if (!order) throw new NotFoundError('Order');
 
+    // Defensive: warn if order is already shipped
+    if (order.status === 'shipped' || order.status === 'delivered') {
+      logger.warn('Creating shipment for order that is already shipped/delivered', {
+        orderId: order_id,
+        currentStatus: order.status,
+      });
+    }
+
     const trackingNumber = req.body.tracking_number
       || `TRK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
+    // Match SLA policy and derive delivery_scheduled
+    const slaMatch = await matchSlaPolicyForShipment({
+      organizationId,
+      carrierId:          carrier_id,
+      originAddress:      origin,
+      destinationAddress: destination,
+      serviceType:        req.body.service_type || null,
+      client:             tx,
+    });
+
     const row = await shipmentRepo.createShipment(
-      { tracking_number: trackingNumber, order_id, carrier_id, origin, destination, organization_id: organizationId },
+      {
+        tracking_number:    trackingNumber,
+        order_id,
+        carrier_id,
+        origin,
+        destination,
+        organization_id:    organizationId,
+        delivery_scheduled: slaMatch.deliveryScheduled,
+        pickup_scheduled:   slaMatch.pickupDeadline,
+        sla_policy_id:      slaMatch.policyId,
+      },
       tx
     );
+
+    if (!row || !row.id) {
+      logger.error('Shipment creation returned empty result', { orderId: order_id });
+      throw new Error('Shipment creation failed unexpectedly');
+    }
 
     await shipmentRepo.addTrackingEvent(
       { shipment_id: row.id, event_type: 'created', description: 'Shipment created and pickup scheduled' },
@@ -159,8 +208,20 @@ export const createShipment = asyncHandler(async (req, res) => {
 
     await orderRepo.updateStatus(order_id, 'shipped', tx);
 
+    // Deduct stock from inventory and refresh warehouse utilization
+    await orderService.commitOrderStock(order_id, tx);
+
+    logger.info('Shipment created successfully', {
+      shipmentId: row.id,
+      trackingNumber,
+      orderId: order_id,
+    });
+
     return row;
   });
+
+  emitToOrg(organizationId, 'shipment:created', shipment);
+  emitToShipment(shipment.id, 'shipment:updated', shipment);
 
   res.status(201).json({
     success: true,
@@ -175,8 +236,21 @@ export const updateShipmentStatus = asyncHandler(async (req, res) => {
   const { status, location, notes } = req.body;
   const organizationId = req.orgContext?.organizationId;
 
+  if (!status) throw new ValidationError('status is required');
+
+  logger.info('Shipment status update requested', {
+    shipmentId: id,
+    newStatus: status,
+    location: location || null,
+    organizationId,
+  });
+
   await shipmentService.updateStatus(id, status, location, notes, organizationId);
-  res.json({ success: true, message: 'Shipment updated' });
+
+  emitToOrg(organizationId, 'shipment:updated', { id, status, location });
+  emitToShipment(id, 'shipment:updated', { id, status, location });
+
+  res.json({ success: true, message: `Shipment status updated to '${status}'` });
 });
 
 /**

@@ -14,15 +14,196 @@ class SlaRepository extends BaseRepository {
    * @returns {Promise<Array>}
    */
   async findActivePolicies(organizationId = null) {
-    let sql    = `SELECT * FROM sla_policies WHERE is_active = true`;
+    const select = `
+      SELECT sp.*,
+             c.name AS carrier_name
+      FROM sla_policies sp
+      LEFT JOIN carriers c ON c.id = sp.carrier_id
+      WHERE sp.is_active = true`;
     const params = [];
+    let sql = select;
     if (organizationId) {
       params.push(organizationId);
-      sql += ` AND (organization_id = $1 OR organization_id IS NULL)`;
+      sql += ` AND (sp.organization_id = $1 OR sp.organization_id IS NULL)`;
     }
-    sql += ` ORDER BY priority ASC, name ASC`;
+    sql += ` ORDER BY sp.priority ASC, sp.name ASC`;
     const result = await this.query(sql, params);
     return result.rows;
+  }
+
+  /**
+   * Find a single policy by id, optionally org-scoped.
+   */
+  async findPolicyById(id, organizationId = null) {
+    const sql = organizationId
+      ? `SELECT sp.*, c.name AS carrier_name FROM sla_policies sp LEFT JOIN carriers c ON c.id = sp.carrier_id WHERE sp.id = $1 AND (sp.organization_id = $2 OR sp.organization_id IS NULL)`
+      : `SELECT sp.*, c.name AS carrier_name FROM sla_policies sp LEFT JOIN carriers c ON c.id = sp.carrier_id WHERE sp.id = $1`;
+    const params = organizationId ? [id, organizationId] : [id];
+    const result = await this.query(sql, params);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Insert a new SLA policy.
+   */
+  async createPolicy(data) {
+    const result = await this.query(
+      `INSERT INTO sla_policies
+       (organization_id, name, service_type, carrier_id,
+        origin_region, destination_region,
+        origin_zone_type, destination_zone_type,
+        delivery_hours, pickup_hours,
+        penalty_per_hour, max_penalty_amount, penalty_type,
+        warning_threshold_percent, is_active, priority)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       RETURNING *`,
+      [
+        data.organizationId || null,
+        data.name,
+        data.serviceType,
+        data.carrierId || null,
+        data.originZoneType || null,   // using zone as region label too
+        data.destinationZoneType || null,
+        data.originZoneType || null,
+        data.destinationZoneType || null,
+        data.deliveryHours,
+        data.pickupHours ?? 4,
+        data.penaltyPerHour ?? 0,
+        data.maxPenaltyAmount || null,
+        data.penaltyType || 'fixed',
+        data.warningThresholdPercent ?? 80,
+        data.isActive !== false,
+        data.priority ?? 5,
+      ]
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Update an existing SLA policy. Returns updated row or null.
+   */
+  async updatePolicy(id, data, organizationId = null) {
+    const fields = [];
+    const params = [];
+    let p = 1;
+
+    const fieldMap = {
+      name:                    'name',
+      serviceType:             'service_type',
+      carrierId:               'carrier_id',
+      originZoneType:          'origin_zone_type',
+      destinationZoneType:     'destination_zone_type',
+      deliveryHours:           'delivery_hours',
+      pickupHours:             'pickup_hours',
+      penaltyPerHour:          'penalty_per_hour',
+      maxPenaltyAmount:        'max_penalty_amount',
+      penaltyType:             'penalty_type',
+      warningThresholdPercent: 'warning_threshold_percent',
+      isActive:                'is_active',
+      priority:                'priority',
+    };
+
+    for (const [key, col] of Object.entries(fieldMap)) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        params.push(data[key]);
+        fields.push(`${col} = $${p++}`);
+      }
+    }
+
+    if (fields.length === 0) return null;
+
+    params.push(id);
+    const whereClause = organizationId
+      ? `id = $${p++} AND (organization_id = $${p++} OR organization_id IS NULL)`
+      : `id = $${p++}`;
+    if (organizationId) params.push(organizationId);
+
+    const result = await this.query(
+      `UPDATE sla_policies SET ${fields.join(', ')}, updated_at = NOW() WHERE ${whereClause} RETURNING *`,
+      params
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Soft-delete (deactivate) a policy.
+   */
+  async deactivatePolicy(id, organizationId = null) {
+    const sql = organizationId
+      ? `UPDATE sla_policies SET is_active = false, updated_at = NOW() WHERE id = $1 AND (organization_id = $2 OR organization_id IS NULL) RETURNING *`
+      : `UPDATE sla_policies SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING *`;
+    const params = organizationId ? [id, organizationId] : [id];
+    const result = await this.query(sql, params);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Find the best matching active SLA policy for a shipment.
+   *
+   * All criteria are "OR NULL" — a policy with NULL in a field is a wildcard.
+   * Tie-breaking order: priority ASC, then specificity DESC.
+   *
+   * @param {object} opts
+   * @param {string|null} opts.organizationId
+   * @param {string|null} opts.carrierId
+   * @param {string|null} opts.originZone      - classified zone type
+   * @param {string|null} opts.destinationZone - classified zone type
+   * @param {string|null} opts.serviceType     - normalised service type
+   * @param {object}      [opts.client]        - optional tx client
+   * @returns {Promise<object|null>}
+   */
+  async findMatchingPolicy({ organizationId, carrierId, originZone, destinationZone, serviceType, client }) {
+    const params = [];
+    let p = 1;
+
+    // Always scope to org (or system-wide NULL policies)
+    params.push(organizationId || null);
+    let sql = `
+      SELECT sp.*
+      FROM   sla_policies sp
+      WHERE  sp.is_active = true
+        AND  (sp.organization_id = $${p++} OR sp.organization_id IS NULL)
+    `;
+
+    // Carrier: match exact carrier or wildcard (NULL)
+    if (carrierId) {
+      params.push(carrierId);
+      sql += ` AND (sp.carrier_id IS NULL OR sp.carrier_id = $${p++})`;
+    } else {
+      sql += ` AND sp.carrier_id IS NULL`;
+    }
+
+    // Origin zone: match or wildcard
+    if (originZone) {
+      params.push(originZone);
+      sql += ` AND (sp.origin_zone_type IS NULL OR sp.origin_zone_type = $${p++})`;
+    }
+
+    // Destination zone: match or wildcard
+    if (destinationZone) {
+      params.push(destinationZone);
+      sql += ` AND (sp.destination_zone_type IS NULL OR sp.destination_zone_type = $${p++})`;
+    }
+
+    // Service type: match or wildcard
+    if (serviceType) {
+      params.push(serviceType);
+      sql += ` AND (sp.service_type IS NULL OR sp.service_type = $${p++})`;
+    }
+
+    // Specificity ranking: more constrained policies beat generic ones
+    sql += `
+      ORDER BY
+        sp.priority ASC,
+        (sp.carrier_id            IS NOT NULL)::int DESC,
+        (sp.service_type          IS NOT NULL)::int DESC,
+        (sp.origin_zone_type      IS NOT NULL)::int DESC,
+        (sp.destination_zone_type IS NOT NULL)::int DESC
+      LIMIT 1
+    `;
+
+    const result = await this.query(sql, params, client);
+    return result.rows[0] || null;
   }
 
   /**
@@ -35,12 +216,12 @@ class SlaRepository extends BaseRepository {
          FROM eta_predictions ep
          JOIN shipments s ON ep.shipment_id = s.id
          WHERE ep.shipment_id = $1 AND s.organization_id = $2
-         ORDER BY ep.predicted_at DESC LIMIT 1`
+         ORDER BY ep.created_at DESC LIMIT 1`
       : `SELECT ep.*, s.tracking_number
          FROM eta_predictions ep
          JOIN shipments s ON ep.shipment_id = s.id
          WHERE ep.shipment_id = $1
-         ORDER BY ep.predicted_at DESC LIMIT 1`;
+         ORDER BY ep.created_at DESC LIMIT 1`;
     const params = organizationId ? [shipmentId, organizationId] : [shipmentId];
     const result = await this.query(sql, params);
     return result.rows[0] || null;
@@ -197,21 +378,25 @@ class SlaRepository extends BaseRepository {
    * Used by the automated monitoring job.
    */
   async findActiveShipmentsForMonitoring(client = null) {
+    // Use sla_policy_id FK directly — set at shipment creation by slaPolicyMatchingService.
+    // Union with shipments that have no policy (NULL) but are still past their delivery_scheduled.
     const result = await this.query(
-      `SELECT s.*, sp.id as policy_id, sp.delivery_hours, sp.penalty_per_hour,
-              sp.name as policy_name
-       FROM shipments s
-       JOIN orders o ON o.id = s.order_id
-       JOIN sla_policies sp ON (
-         sp.service_type = o.priority
-         AND sp.is_active = true
-       )
-       WHERE s.status NOT IN ('delivered', 'returned', 'cancelled')
-       AND s.delivery_scheduled < NOW()
-       AND NOT EXISTS (
-         SELECT 1 FROM sla_violations sv
-         WHERE sv.shipment_id = s.id AND sv.status = 'open'
-       )`,
+      `SELECT s.*,
+              sp.id             AS policy_id,
+              sp.delivery_hours,
+              sp.penalty_per_hour,
+              sp.name           AS policy_name,
+              sp.max_penalty_amount
+       FROM   shipments s
+       LEFT   JOIN sla_policies sp ON sp.id = s.sla_policy_id AND sp.is_active = true
+       WHERE  s.status NOT IN ('delivered', 'returned', 'cancelled', 'lost')
+         AND  s.delivery_scheduled IS NOT NULL
+         AND  s.delivery_scheduled < NOW()
+         AND  NOT EXISTS (
+           SELECT 1 FROM sla_violations sv
+           WHERE sv.shipment_id = s.id
+             AND sv.status IN ('open', 'investigating')
+         )`,
       [],
       client
     );
@@ -220,16 +405,17 @@ class SlaRepository extends BaseRepository {
 
   /**
    * Insert a new SLA violation record.
-   * @param {{ shipmentId, slaPolicyId, promisedDelivery, delayHours, penaltyAmount, reason, status, detectionMethod }} data
+   * @param {{ organizationId, shipmentId, slaPolicyId, promisedDelivery, delayHours, penaltyAmount, reason, status }} data
    */
   async createViolation(data, client = null) {
     const result = await this.query(
       `INSERT INTO sla_violations
-       (shipment_id, sla_policy_id, promised_delivery, delay_hours, penalty_amount,
-        reason, status, detected_at, detection_method)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+       (organization_id, shipment_id, sla_policy_id, promised_delivery, delay_hours,
+        penalty_amount, reason, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
+        data.organizationId || null,
         data.shipmentId,
         data.slaPolicyId,
         data.promisedDelivery,
@@ -237,11 +423,30 @@ class SlaRepository extends BaseRepository {
         data.penaltyAmount,
         data.reason,
         data.status,
-        data.detectionMethod,
       ],
       client
     );
     return result.rows[0];
+  }
+
+  /**
+   * Fetch a single exception by id with shipment and order joins.
+   */
+  async findExceptionById(id, organizationId) {
+    const sql = organizationId
+      ? `SELECT e.*, s.tracking_number, o.order_number
+         FROM exceptions e
+         LEFT JOIN shipments s ON e.shipment_id = s.id
+         LEFT JOIN orders o ON e.order_id = o.id
+         WHERE e.id = $1 AND e.organization_id = $2`
+      : `SELECT e.*, s.tracking_number, o.order_number
+         FROM exceptions e
+         LEFT JOIN shipments s ON e.shipment_id = s.id
+         LEFT JOIN orders o ON e.order_id = o.id
+         WHERE e.id = $1`;
+    const params = organizationId ? [id, organizationId] : [id];
+    const result = await this.query(sql, params);
+    return result.rows[0] || null;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -382,14 +587,15 @@ class SlaRepository extends BaseRepository {
    * Get SLA compliance report grouped by status and severity for a date range.
    */
   async getComplianceReport(startDate, endDate, client = null) {
+    // Note: sla_violations has no severity column — group by status only
     const result = await this.query(
       `SELECT
          status,
-         severity,
-         COUNT(*)                                      AS total,
-         COUNT(*) FILTER (WHERE status = 'open')       AS open,
-         COUNT(*) FILTER (WHERE status = 'resolved')   AS resolved,
-         COUNT(*) FILTER (WHERE status = 'acknowledged') AS acknowledged,
+         COUNT(*)                                         AS total,
+         COUNT(*) FILTER (WHERE status = 'open')          AS open,
+         COUNT(*) FILTER (WHERE status = 'resolved')      AS resolved,
+         COUNT(*) FILTER (WHERE status = 'acknowledged')  AS acknowledged,
+         COUNT(*) FILTER (WHERE status = 'waived')        AS waived,
          ROUND(AVG(
            CASE WHEN resolved_at IS NOT NULL
                 THEN EXTRACT(EPOCH FROM (resolved_at - violated_at)) / 3600
@@ -397,8 +603,8 @@ class SlaRepository extends BaseRepository {
          ), 2) AS avg_resolution_hours
        FROM sla_violations
        WHERE violated_at BETWEEN $1 AND $2
-       GROUP BY ROLLUP(status, severity)
-       ORDER BY status, severity`,
+       GROUP BY ROLLUP(status)
+       ORDER BY status`,
       [startDate, endDate], client
     );
     return result.rows;

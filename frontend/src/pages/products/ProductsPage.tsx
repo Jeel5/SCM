@@ -77,11 +77,11 @@ export function ProductsPage() {
           : <span className="text-gray-400">—</span>,
     },
     {
-      key: 'unitPrice',
-      header: 'Unit Price',
+      key: 'sellingPrice',
+      header: 'Selling Price',
       render: (p: Product) =>
-        p.unitPrice != null
-          ? <span className="font-medium">{formatCurrency(p.unitPrice, p.currency)}</span>
+        p.sellingPrice != null
+          ? <span className="font-medium">{formatCurrency(p.sellingPrice, p.currency)}</span>
           : <span className="text-gray-400">—</span>,
     },
     {

@@ -7,6 +7,7 @@ import ProductRepository from '../repositories/ProductRepository.js';
 import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
+import { generateInternalBarcode } from '../utils/barcodeGenerator.js';
 
 // ========== WAREHOUSES ==========
 
@@ -51,7 +52,13 @@ export const listWarehouses = asyncHandler(async (req, res) => {
       code: w.code,
       name: w.name,
       type: w.warehouse_type,
-      address: w.address,
+      address: {
+        street: w.address?.street || '',
+        city: w.address?.city || '',
+        state: w.address?.state || '',
+        postalCode: w.address?.postal_code || w.address?.postalCode || '',
+        country: w.address?.country || 'India',
+      },
       coordinates: w.coordinates,
       capacity,
       currentUtilization: totalQty,
@@ -63,8 +70,15 @@ export const listWarehouses = asyncHandler(async (req, res) => {
       contactEmail: w.contact_email,
       contactPhone: w.contact_phone,
       operatingHours: w.operating_hours || { open: '00:00', close: '23:59', timezone: 'UTC' },
-      managerId: w.manager_id,
-      managerName: w.manager_name,
+      // SCM operational fields
+      gstin: w.gstin || null,
+      hasColdStorage: w.has_cold_storage || false,
+      temperatureMinCelsius: w.temperature_min_celsius != null ? parseFloat(w.temperature_min_celsius) : null,
+      temperatureMaxCelsius: w.temperature_max_celsius != null ? parseFloat(w.temperature_max_celsius) : null,
+      dailyInboundCapacity: undefined,
+      dailyOutboundCapacity: undefined,
+      customsBondedWarehouse: w.customs_bonded_warehouse || false,
+      certifications: w.certifications || [],
       createdAt: w.created_at,
       updatedAt: w.updated_at
     };
@@ -106,7 +120,13 @@ export const getWarehouse = asyncHandler(async (req, res) => {
     code: warehouse.code,
     name: warehouse.name,
     type: warehouse.warehouse_type,
-    address: warehouse.address,
+    address: {
+      street: warehouse.address?.street || '',
+      city: warehouse.address?.city || '',
+      state: warehouse.address?.state || '',
+      postalCode: warehouse.address?.postal_code || warehouse.address?.postalCode || '',
+      country: warehouse.address?.country || 'India',
+    },
     coordinates: warehouse.coordinates,
     capacity,
     currentUtilization: totalQty,
@@ -118,10 +138,15 @@ export const getWarehouse = asyncHandler(async (req, res) => {
     contactEmail: warehouse.contact_email,
     contactPhone: warehouse.contact_phone,
     operatingHours: warehouse.operating_hours || { open: '00:00', close: '23:59', timezone: 'UTC' },
-    managerId: warehouse.manager_id,
-    managerName: warehouse.manager_name,
-    managerEmail: warehouse.manager_email,
-    managerPhone: warehouse.manager_phone,
+    // SCM operational fields
+    gstin: warehouse.gstin || null,
+    hasColdStorage: warehouse.has_cold_storage || false,
+    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
+    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
+    dailyInboundCapacity: undefined,
+    dailyOutboundCapacity: undefined,
+    customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
+    certifications: warehouse.certifications || [],
     createdAt: warehouse.created_at,
     updatedAt: warehouse.updated_at
   };
@@ -167,7 +192,13 @@ export const createWarehouse = asyncHandler(async (req, res) => {
     code: warehouse.code,
     name: warehouse.name,
     type: warehouse.warehouse_type,
-    address: warehouse.address,
+    address: {
+      street: warehouse.address?.street || '',
+      city: warehouse.address?.city || '',
+      state: warehouse.address?.state || '',
+      postalCode: warehouse.address?.postal_code || warehouse.address?.postalCode || '',
+      country: warehouse.address?.country || 'India',
+    },
     coordinates: warehouse.coordinates,
     capacity: warehouse.capacity,
     currentUtilization: warehouse.current_utilization,
@@ -175,7 +206,15 @@ export const createWarehouse = asyncHandler(async (req, res) => {
     status: warehouse.is_active ? 'active' : 'inactive',
     contactEmail: warehouse.contact_email,
     contactPhone: warehouse.contact_phone,
-    managerId: warehouse.manager_id,
+    // SCM operational fields
+    gstin: warehouse.gstin || null,
+    hasColdStorage: warehouse.has_cold_storage || false,
+    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
+    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
+    dailyInboundCapacity: undefined,
+    dailyOutboundCapacity: undefined,
+    customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
+    certifications: warehouse.certifications || [],
     createdAt: warehouse.created_at
   };
 
@@ -204,7 +243,13 @@ export const updateWarehouse = asyncHandler(async (req, res) => {
     code: warehouse.code,
     name: warehouse.name,
     type: warehouse.warehouse_type,
-    address: warehouse.address,
+    address: {
+      street: warehouse.address?.street || '',
+      city: warehouse.address?.city || '',
+      state: warehouse.address?.state || '',
+      postalCode: warehouse.address?.postal_code || warehouse.address?.postalCode || '',
+      country: warehouse.address?.country || 'India',
+    },
     coordinates: warehouse.coordinates,
     capacity: warehouse.capacity,
     currentUtilization: warehouse.current_utilization,
@@ -212,7 +257,15 @@ export const updateWarehouse = asyncHandler(async (req, res) => {
     status: warehouse.is_active ? 'active' : 'inactive',
     contactEmail: warehouse.contact_email,
     contactPhone: warehouse.contact_phone,
-    managerId: warehouse.manager_id,
+    // SCM operational fields
+    gstin: warehouse.gstin || null,
+    hasColdStorage: warehouse.has_cold_storage || false,
+    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
+    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
+    dailyInboundCapacity: undefined,
+    dailyOutboundCapacity: undefined,
+    customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
+    certifications: warehouse.certifications || [],
     updatedAt: warehouse.updated_at
   };
 
@@ -335,7 +388,8 @@ function formatCarrier(c) {
     website: c.website || null,
     apiEndpoint: c.api_endpoint || null,
     webhookUrl: c.webhook_url || null,
-    webhook_secret: c.webhook_secret || null,
+    webhookSecret: c.webhook_secret || null,
+    webhookEnabled: c.webhook_enabled ?? true,
     organizationId: c.organization_id || null,
     createdAt: c.created_at,
     updatedAt: c.updated_at
@@ -498,10 +552,12 @@ export const listProducts = asyncHandler(async (req, res) => {
 
 // POST /products
 export const createProduct = asyncHandler(async (req, res) => {
-  let { sku, name, category, description, weight, dimensions, unit_price, cost_price, currency,
+  let { sku, name, category, description, weight, dimensions, selling_price, cost_price, mrp, currency,
     is_fragile, requires_cold_storage, is_hazmat, is_perishable,
-    item_type, package_type, handling_instructions, requires_insurance, declared_value,
-    attributes } = req.body;
+    package_type, handling_instructions, requires_insurance,
+    attributes,
+    manufacturer_barcode, hsn_code, gst_rate, brand, country_of_origin,
+    warranty_period_days, shelf_life_days, tags, supplier_id } = req.body;
   const organizationId = req.orgContext?.organizationId;
 
   // Auto-generate SKU from product name if not supplied
@@ -532,16 +588,21 @@ export const createProduct = asyncHandler(async (req, res) => {
   const existing = await ProductRepository.findBySku(sku, organizationId);
   if (existing) throw new BusinessLogicError(`Product SKU '${sku}' already exists`);
 
+  // Auto-generate internal_barcode (globally unique warehouse barcode)
+  const internal_barcode = generateInternalBarcode();
+
   const product = await ProductRepository.create({
     organization_id: organizationId,
     sku, name, category, description, weight, dimensions,
-    unit_price, cost_price, currency,
+    selling_price, cost_price, mrp, currency,
     is_fragile, requires_cold_storage, is_hazmat, is_perishable,
-    item_type, package_type, handling_instructions,
-    requires_insurance, declared_value, attributes,
+    package_type, handling_instructions,
+    requires_insurance, attributes,
+    manufacturer_barcode, internal_barcode, hsn_code, gst_rate, brand, country_of_origin,
+    warranty_period_days, shelf_life_days, tags, supplier_id,
   });
 
-  logger.info('Product created', { productId: product.id, sku, userId: req.user?.userId });
+  logger.info('Product created', { productId: product.id, sku, internal_barcode, userId: req.user?.userId });
   res.status(201).json({ success: true, data: product });
 });
 

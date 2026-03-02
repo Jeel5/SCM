@@ -1,18 +1,23 @@
 // Main server entry point - starts the Express application
 import express from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import { errorHandler, notFoundHandler } from './errors/index.js';
 import { requestLogger, requestId, slowRequestLogger } from './middlewares/requestLogger.js';
 import logger from './utils/logger.js';
 import { jobWorker } from './jobs/jobWorker.js';
 import { cronScheduler } from './jobs/cronScheduler.js';
+import { jobsService } from './services/jobsService.js';
+import { initSocket } from './sockets/index.js';
 
 // Load environment variables from .env file
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT;
 const API_PREFIX = '/api';
 
@@ -33,6 +38,7 @@ import carriersRoutes from './routes/carriers.js';
 import companiesRoutes from './routes/companies.js';
 import organizationsRoutes from './routes/organizations.js';
 import partnersRoutes from './routes/partners.js';
+import notificationRoutes from './routes/notifications.js';
 
 // Security headers middleware
 app.use(helmet());
@@ -43,6 +49,8 @@ const allowedOrigins =
 	process.env.ALLOWED_ORIGINS
 		?.split(",")
 		.map(o => o.trim()) || [];
+
+const corsOrigin = isDev ? true : allowedOrigins;
 
 app.use(
 	cors({
@@ -62,6 +70,9 @@ app.use(
 	})
 );
 
+// Initialise Socket.IO on the shared HTTP server
+initSocket(httpServer, corsOrigin);
+
 // Parse JSON bodies and capture raw body for HMAC webhook signature verification.
 // The verify callback stores the raw Buffer as req.rawBody so webhook routes can
 // validate HMAC signatures without re-serialising (which would alter key order).
@@ -71,6 +82,7 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Request tracking and logging middleware
 app.use(requestId);
@@ -98,6 +110,7 @@ app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
 app.use(API_PREFIX, companiesRoutes); // Superadmin company management
 app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization management (superadmin)
 app.use(API_PREFIX, partnersRoutes); // Sales channels & suppliers
+app.use(API_PREFIX, notificationRoutes); // In-app notifications
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes
@@ -107,7 +120,7 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server and listen on specified port
-const server = app.listen(PORT, async () => {
+httpServer.listen(PORT, async () => {
 	logger.info(`🚀 Server running on http://localhost:${PORT}`);
 	logger.info(`📚 API available at http://localhost:${PORT}${API_PREFIX}`);
 	logger.info(`🌍 Environment: ${process.env.NODE_ENV}`);
@@ -120,9 +133,10 @@ const server = app.listen(PORT, async () => {
 		logger.error('Failed to start Job Worker:', error);
 	}
 	
-	// Start cron scheduler
+	// Start cron scheduler — sync active DB schedules into BullMQ repeatable jobs
 	try {
-		await cronScheduler.start();
+		const initialSchedules = await jobsService.getCronSchedules();
+		await cronScheduler.start(initialSchedules);
 		logger.info('✅ Cron Scheduler initialized');
 	} catch (error) {
 		logger.error('Failed to start Cron Scheduler:', error);
@@ -134,7 +148,7 @@ process.on('SIGTERM', async () => {
 	logger.info('SIGTERM received, shutting down gracefully...');
 	
 	// Stop accepting new requests
-	server.close(() => {
+	httpServer.close(() => {
 		logger.info('HTTP server closed');
 	});
 	
@@ -151,7 +165,7 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
 	logger.info('SIGINT received, shutting down gracefully...');
 	
-	server.close(() => {
+	httpServer.close(() => {
 		logger.info('HTTP server closed');
 	});
 	

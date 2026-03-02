@@ -1,207 +1,141 @@
-// Job Worker - Processes background jobs from the queue
-import { jobsService } from '../services/jobsService.js';
+/**
+ * BullMQ Worker — processes jobs from the 'background_jobs' queue.
+ *
+ * Handles two kinds of jobs:
+ *
+ *   1. Regular jobs (enqueued via jobsService.createJob):
+ *      data = { jobId, jobType, payload }
+ *      → claim DB row → run handler → mark complete/fail
+ *
+ *   2. Cron-fired jobs (enqueued by cronScheduler as repeatable):
+ *      data = { cronScheduleId, jobType, payload, isCron: true }
+ *      → create an ephemeral DB row for audit trail → run handler → mark complete/fail
+ *
+ * BullMQ handles retries (exponential backoff).
+ * After all retries exhausted the 'failed' event fires → DLQ.
+ */
+import { Worker } from 'bullmq';
+import { createRedisConnection } from '../config/redis.js';
+import { QUEUE_NAME } from '../queues/index.js';
 import { jobHandlers } from './jobHandlers.js';
+import { jobsService } from '../services/jobsService.js';
+import jobsRepo from '../repositories/JobsRepository.js';
 import logger from '../utils/logger.js';
 
-class JobWorker {
-  constructor(config = {}) {
-    this.isRunning = false;
-    this.pollInterval = config.pollInterval || 5000; // Poll every 5 seconds
-    this.concurrency = config.concurrency || 5; // Process 5 jobs concurrently
-    this.activeJobs = new Set();
-    this.pollTimer = null;
-    this.stopRequested = false;
-  }
+let worker = null;
 
-  /**
-   * Start the job worker
-   */
-  async start() {
-    if (this.isRunning) {
-      logger.warn('Job worker is already running');
-      return;
-    }
+/**
+ * Process a single BullMQ job.
+ * Throws on error so BullMQ can apply exponential-backoff retries.
+ */
+async function processJob(bullJob) {
+  const { jobId, jobType, payload, isCron, cronScheduleId } = bullJob.data;
+  let dbJobId = jobId;
+  let logId = null;
 
-    this.isRunning = true;
-    this.stopRequested = false;
-    logger.info('🚀 Job Worker started', {
-      pollInterval: this.pollInterval,
-      concurrency: this.concurrency,
+  // ── Cron path: create a DB record for audit trail ───────────────────────
+  if (isCron) {
+    const parsed = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
+    const dbJob = await jobsRepo.createJobIdempotent({
+      jobType,
+      payload: parsed,
+      priority: 5,
+      // Use BullMQ's own job id as idempotency key so re-queued retries
+      // don't create duplicate DB rows.
+      idempotencyKey: `bullmq:${bullJob.id}`,
     });
-
-    // Start polling for jobs
-    this.poll();
+    dbJobId = dbJob.id;
+    logger.info(`⏰ Cron job triggered: ${jobType} (schedule ${cronScheduleId}, DB id ${dbJobId})`);
   }
 
-  /**
-   * Stop the job worker gracefully
-   */
-  async stop() {
-    logger.info('🛑 Job Worker stopping...');
-    this.stopRequested = true;
-    this.isRunning = false;
+  // ── Claim in DB (race-condition guard) ────────────────────────────────
+  const logResult = await jobsService.startJobExecution(dbJobId);
+  if (!logResult) {
+    logger.info(`⏭️  Job ${dbJobId} already claimed — skipping`);
+    return;
+  }
+  logId = logResult.id;
 
-    // Clear poll timer
-    if (this.pollTimer) {
-      clearTimeout(this.pollTimer);
-      this.pollTimer = null;
-    }
-
-    // Wait for active jobs to complete
-    if (this.activeJobs.size > 0) {
-      logger.info(`Waiting for ${this.activeJobs.size} active jobs to complete...`);
-      
-      // Wait up to 30 seconds for jobs to complete
-      const timeout = 30000;
-      const startTime = Date.now();
-      
-      while (this.activeJobs.size > 0 && Date.now() - startTime < timeout) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
-      if (this.activeJobs.size > 0) {
-        logger.warn(`Forcefully stopping with ${this.activeJobs.size} jobs still active`);
-      }
-    }
-
-    logger.info('✅ Job Worker stopped');
+  // ── Resolve and run handler ────────────────────────────────────────────
+  const handler = jobHandlers[jobType];
+  if (!handler) {
+    const err = new Error(`No handler registered for job type: ${jobType}`);
+    await jobsService.failJobExecution(dbJobId, logId, err.message);
+    throw err;
   }
 
-  /**
-   * Poll for pending jobs
-   */
-  async poll() {
-    if (this.stopRequested) {
-      return;
-    }
+  logger.info(`🔄 Processing job ${dbJobId}`, { type: jobType });
+  const parsedPayload = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
 
-    try {
-      // Only fetch more jobs if we have capacity
-      const availableSlots = this.concurrency - this.activeJobs.size;
-      
-      if (availableSlots > 0) {
-        const pendingJobs = await jobsService.getPendingJobs(availableSlots);
-        
-        if (pendingJobs.length > 0) {
-          logger.info(`📥 Found ${pendingJobs.length} pending jobs`);
-          
-          // Process each job concurrently
-          for (const job of pendingJobs) {
-            this.processJob(job).catch(error => {
-              logger.error('Job processing error:', error);
-            });
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('Error polling for jobs:', error);
-    }
+  const result = await handler(parsedPayload);
 
-    // Schedule next poll
-    this.pollTimer = setTimeout(() => this.poll(), this.pollInterval);
-  }
+  await jobsService.completeJobExecution(dbJobId, logId, result);
+  logger.info(`✅ Job ${dbJobId} completed`, { type: jobType, duration: result?.duration });
 
-  /**
-   * Process a single job
-   */
-  async processJob(job) {
-    const jobId = job.id;
-    this.activeJobs.add(jobId);
-
-    let logId = null;
-
-    try {
-      logger.info(`🔄 Processing job ${jobId}`, {
-        type: job.job_type,
-        priority: job.priority,
-        retryCount: job.retry_count,
-      });
-
-      // Start job execution — returns null if another worker already claimed it
-      const logResult = await jobsService.startJobExecution(jobId);
-      if (!logResult) {
-        logger.info(`⏭️  Job ${jobId} already claimed by another worker — skipping`);
-        this.activeJobs.delete(jobId);
-        return;
-      }
-      logId = logResult.id; // Extract just the ID from the log object
-
-      // Get the appropriate handler for this job type
-      const handler = jobHandlers[job.job_type];
-      
-      if (!handler) {
-        throw new Error(`No handler found for job type: ${job.job_type}`);
-      }
-
-      // Parse payload
-      const payload = typeof job.payload === 'string' 
-        ? JSON.parse(job.payload) 
-        : job.payload;
-
-      // Execute the job handler
-      const result = await handler(payload, job);
-
-      // Complete job execution
-      await jobsService.completeJobExecution(jobId, logId, result);
-
-      logger.info(`✅ Job ${jobId} completed successfully`, {
-        type: job.job_type,
-        duration: result?.duration || 'unknown',
-      });
-
-    } catch (error) {
-      logger.error(`❌ Job ${jobId} failed:`, {
-        error: error.message,
-        stack: error.stack,
-        type: job.job_type,
-      });
-
-      if (logId) {
-        await jobsService.failJobExecution(jobId, logId, error.message);
-      }
-
-      // Retry logic
-      if (job.retry_count < job.max_retries) {
-        logger.info(`🔄 Retrying job ${jobId} (attempt ${job.retry_count + 1}/${job.max_retries})`);
-        await jobsService.retryJob(jobId);
-      } else {
-        logger.error(`💀 Job ${jobId} exceeded max retries, moving to dead letter queue`);
-        await this.moveToDeadLetterQueue(job, error.message);
-      }
-    } finally {
-      this.activeJobs.delete(jobId);
-    }
-  }
-
-  /**
-   * Move failed job to dead letter queue
-   */
-  async moveToDeadLetterQueue(job, errorMessage) {
-    try {
-      await jobsService.moveToDeadLetterQueue(job.id, errorMessage);
-      logger.info(`📮 Job ${job.id} moved to dead letter queue`);
-    } catch (error) {
-      logger.error(`Failed to move job ${job.id} to dead letter queue:`, error);
-    }
-  }
-
-  /**
-   * Get worker status
-   */
-  getStatus() {
-    return {
-      isRunning: this.isRunning,
-      activeJobs: this.activeJobs.size,
-      capacity: this.concurrency,
-      availableSlots: this.concurrency - this.activeJobs.size,
-    };
-  }
+  return result;
 }
 
-// Export singleton instance
-export const jobWorker = new JobWorker({
-  pollInterval: parseInt(process.env.JOB_POLL_INTERVAL) || 5000,
-  concurrency: parseInt(process.env.JOB_CONCURRENCY) || 5,
-});
+export const jobWorker = {
+  async start() {
+    if (worker) {
+      logger.warn('BullMQ Worker is already running');
+      return;
+    }
+
+    worker = new Worker(QUEUE_NAME, processJob, {
+      connection: createRedisConnection(),
+      concurrency: parseInt(process.env.JOB_CONCURRENCY) || 5,
+      stalledInterval: 30_000,
+    });
+
+    worker.on('completed', (job) => {
+      logger.info(`✅ BullMQ job complete: ${job.data.jobType}`, {
+        bullId: job.id,
+        attempts: job.attemptsMade,
+      });
+    });
+
+    worker.on('failed', async (job, err) => {
+      if (!job) return;
+      const { jobId: dbId, jobType, isCron } = job.data;
+      logger.error(`❌ BullMQ job failed: ${jobType}`, {
+        bullId: job.id,
+        dbId,
+        attempts: job.attemptsMade,
+        error: err.message,
+      });
+
+      // Move to DLQ only after final attempt, only for DB-tracked regular jobs
+      if (job.attemptsMade >= (job.opts?.attempts ?? 1) && dbId && !isCron) {
+        try {
+          await jobsService.moveToDeadLetterQueue(dbId, err.message);
+          logger.info(`📮 Job ${dbId} moved to dead letter queue`);
+        } catch (dlqErr) {
+          logger.error(`Failed to move job ${dbId} to DLQ:`, dlqErr.message);
+        }
+      }
+    });
+
+    worker.on('stalled', (jobId) => logger.warn(`⚠️  Job stalled: ${jobId}`));
+    worker.on('error', (err) => logger.error('Worker error:', err.message));
+
+    logger.info('🚀 BullMQ Worker started', {
+      queue: QUEUE_NAME,
+      concurrency: parseInt(process.env.JOB_CONCURRENCY) || 5,
+    });
+  },
+
+  async stop() {
+    if (worker) {
+      await worker.close();
+      worker = null;
+      logger.info('✅ BullMQ Worker stopped');
+    }
+  },
+
+  getStatus() {
+    return { isRunning: !!worker, engine: 'bullmq' };
+  },
+};
 
 export default jobWorker;

@@ -101,6 +101,12 @@ CREATE TABLE users (
     -- Status
     is_active BOOLEAN DEFAULT true,
     email_verified BOOLEAN DEFAULT false,
+    -- Email change staging (pending_email is confirmed via one-time token)
+    pending_email         VARCHAR(255),
+    email_change_token    VARCHAR(255),
+    email_change_expires  TIMESTAMPTZ,
+    -- JWT invalidation version (bump on password change / deactivation)
+    token_version         INTEGER NOT NULL DEFAULT 0,
     -- Session
     last_login TIMESTAMPTZ,
     failed_login_attempts INTEGER DEFAULT 0,
@@ -1249,6 +1255,7 @@ CREATE INDEX idx_organizations_active ON organizations(is_active) WHERE is_activ
 CREATE INDEX idx_users_organization ON users(organization_id) WHERE organization_id IS NOT NULL;
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_users_active ON users(is_active) WHERE is_active = true;
+CREATE INDEX idx_users_email_change_token ON users(email_change_token) WHERE email_change_token IS NOT NULL;
 
 -- User Sessions
 CREATE INDEX idx_user_sessions_user ON user_sessions(user_id);

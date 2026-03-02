@@ -168,35 +168,15 @@
         <div id="step1" class="card">
             <div class="section-title">📦 Step 1: Select Product</div>
 
-            <div class="products-grid">
-                <div class="product-card" data-product="laptop">
-                    <div class="product-name">💻 Dell XPS 15</div>
-                    <div class="product-price">₹89,999</div>
-                    <div class="product-details">
-                        Weight: 2.5 kg<br>
-                        Dimensions: 40×28×2 cm<br>
-                        Fragile: Yes ⚠️
-                    </div>
-                </div>
-                <div class="product-card" data-product="phone">
-                    <div class="product-name">📱 iPhone 15</div>
-                    <div class="product-price">₹79,999</div>
-                    <div class="product-details">
-                        Weight: 0.5 kg<br>
-                        Dimensions: 15×7×1 cm<br>
-                        Fragile: Yes
-                    </div>
-                </div>
-                <div class="product-card" data-product="book">
-                    <div class="product-name">📚 JavaScript Guide</div>
-                    <div class="product-price">₹599</div>
-                    <div class="product-details">
-                        Weight: 1.2 kg<br>
-                        Dimensions: 24×18×3 cm<br>
-                        Fragile: No
-                    </div>
-                </div>
+            <!-- Catalog loads live from the SCM backend. Only products with
+                 available inventory are shown. If empty, add products via
+                 the MDM API and assign inventory before using this portal. -->
+            <div id="catalogLoading" class="loading">
+                <div class="spinner"></div>
+                <p>Loading available products from catalog…</p>
             </div>
+            <div id="catalogError" class="error-message" style="display:none;"></div>
+            <div class="products-grid" id="productsGrid" style="display:none;"></div>
 
             <div class="form-group">
                 <label>📍 Delivery Location</label>
@@ -296,47 +276,127 @@
     <script>
         const API_BASE = 'http://localhost:3000/api';
 
-        // ──────────── Hardcoded Croma credentials ────────────
+        // ──────────── Org credentials ────────────
         const selectedOrgToken = '661e0b56fb823ff60573b5257a6b7f3bc9ba66ee864ea2b4ab050cc6d05a801d';
         const orgName = 'Croma';
 
-        // ──────────── Product catalog ────────────
-
-        const PRODUCTS = {
-            laptop: {
-                name: 'Dell XPS 15', sku: 'LAP-202602-VPGOX', weight: 2.5, price: 89999,
-                dimensions: { length: 40, width: 28, height: 2 },
-                is_fragile: true, is_hazardous: false, is_perishable: false,
-                requires_cold_storage: false, item_type: 'electronics',
-                package_type: 'box', requires_insurance: true, declared_value: 89999
-            },
-            phone: {
-                name: 'iPhone 15', sku: 'PHN-202507-IP15X', weight: 0.5, price: 79999,
-                dimensions: { length: 15, width: 7, height: 1 },
-                is_fragile: true, is_hazardous: false, is_perishable: false,
-                requires_cold_storage: false, item_type: 'electronics',
-                package_type: 'box', requires_insurance: true, declared_value: 79999
-            },
-            book: {
-                name: 'JavaScript Guide', sku: 'BKS-202507-JSGDE', weight: 1.2, price: 599,
-                dimensions: { length: 24, width: 18, height: 3 },
-                is_fragile: false, is_hazardous: false, is_perishable: false,
-                requires_cold_storage: false, item_type: 'general',
-                package_type: 'envelope', requires_insurance: false, declared_value: 599
-            }
-        };
-
+        // ──────────── State ────────────
+        // selectedProduct = full product object from live catalog (null if nothing selected)
         let selectedProduct = null;
-        let estimateData = null;
+        let estimateData   = null;
 
-        // Product selection
-        document.querySelectorAll('.product-card').forEach(card => {
-            card.addEventListener('click', function () {
-                document.querySelectorAll('.product-card').forEach(c => c.classList.remove('selected'));
-                this.classList.add('selected');
-                selectedProduct = this.dataset.product;
-            });
-        });
+        // ──────────── Load live catalog ────────────
+        // External platforms MUST fetch the catalog before placing orders.
+        // Only products with available_quantity > 0 in inventory are returned.
+        async function loadCatalog() {
+            const grid     = document.getElementById('productsGrid');
+            const loading  = document.getElementById('catalogLoading');
+            const errorDiv = document.getElementById('catalogError');
+            const estimateBtn = document.getElementById('getEstimateBtn');
+
+            loading.style.display = 'block';
+            grid.style.display    = 'none';
+            errorDiv.style.display = 'none';
+            estimateBtn.disabled   = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/webhooks/${selectedOrgToken}/catalog`);
+                if (!res.ok) throw new Error(`Catalog API returned HTTP ${res.status}`);
+                const { products, count } = await res.json();
+
+                loading.style.display = 'none';
+
+                if (!products || products.length === 0) {
+                    errorDiv.innerHTML =
+                        '<strong>No products available.</strong> Add products via the SCM MDM API ' +
+                        'and assign inventory in a warehouse before orders can be placed.';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+
+                grid.innerHTML = '';
+                products.forEach((p, idx) => {
+                    const dims = p.dimensions
+                        ? (typeof p.dimensions === 'string' ? JSON.parse(p.dimensions) : p.dimensions)
+                        : null;
+                    const dimStr = dims
+                        ? `${dims.length ?? '?'}×${dims.width ?? '?'}×${dims.height ?? '?'} cm`
+                        : 'N/A';
+                    const price = p.selling_price
+                        ? `₹${parseFloat(p.selling_price).toLocaleString('en-IN')}`
+                        : 'N/A';
+                    const mrp = p.mrp
+                        ? `₹${parseFloat(p.mrp).toLocaleString('en-IN')}`
+                        : null;
+                    const stockBadge = p.stock.available <= 5
+                        ? `<span style="color:#c05621;font-weight:600;">⚠️ Only ${p.stock.available} left</span>`
+                        : `<span style="color:#047857;">✅ In Stock (${p.stock.available})</span>`;
+
+                    // Handling flags
+                    const flags = [];
+                    if (p.is_fragile)            flags.push('⚠️ Fragile');
+                    if (p.is_hazmat)             flags.push('☢️ Hazmat');
+                    if (p.is_perishable)         flags.push('🕒 Perishable');
+                    if (p.requires_cold_storage) flags.push('❄️ Cold Chain');
+                    if (p.requires_insurance)    flags.push('🛡️ Insured');
+
+                    // Tags
+                    const tags = Array.isArray(p.tags) ? p.tags : (p.tags ? JSON.parse(p.tags) : []);
+                    const tagsHtml = tags.length
+                        ? `<div style="margin-top:6px;">${tags.map(t =>
+                            `<span style="display:inline-block;background:#e0e7ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:0.72em;margin:2px 2px 0 0;">${t}</span>`
+                          ).join('')}</div>`
+                        : '';
+
+                    // GST badge
+                    const gstHtml = p.gst_rate != null
+                        ? `<span style="background:#dcfce7;color:#166534;border-radius:4px;padding:1px 6px;font-size:0.78em;font-weight:600;">GST ${p.gst_rate}%</span>`
+                        : '';
+
+                    // Warranty
+                    const warrantyHtml = p.warranty_period_days > 0
+                        ? `<br>Warranty: ${p.warranty_period_days >= 365
+                            ? Math.round(p.warranty_period_days / 365) + ' yr'
+                            : p.warranty_period_days + ' days'}`
+                        : '';
+
+                    const card = document.createElement('div');
+                    card.className = 'product-card';
+                    card.dataset.idx = idx;
+                    card.innerHTML = `
+                        ${p.brand ? `<div style="font-size:0.78em;color:#6b7280;font-weight:500;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.05em;">${p.brand}</div>` : ''}
+                        <div class="product-name">${p.name}</div>
+                        <div class="product-price">${price} ${gstHtml}</div>
+                        ${mrp ? `<div style="font-size:0.8em;color:#6b7280;">MRP: ${mrp}</div>` : ''}
+                        <div class="product-details">
+                            Internal: <code style="font-size:0.82em;color:#4f46e5;">${p.internal_barcode}</code>
+                            ${p.manufacturer_barcode ? ` &nbsp;|&nbsp; Mfr: <code style="font-size:0.82em;">${p.manufacturer_barcode}</code>` : ''}<br>
+                            ${p.country_of_origin ? `Origin: <strong>${p.country_of_origin}</strong> &nbsp;|&nbsp; ` : ''}${p.hsn_code ? `HSN: <code style="font-size:0.82em;">${p.hsn_code}</code><br>` : '<br>'}
+                            Weight: ${p.weight ? p.weight + ' kg' : 'N/A'} &nbsp;|&nbsp; Dims: ${dimStr}<br>
+                            ${stockBadge}
+                            ${warrantyHtml}
+                            ${flags.length ? `<br><span style="font-size:0.82em;">${flags.join(' &nbsp; ')}</span>` : ''}
+                        </div>
+                        ${tagsHtml}`;
+                    card.addEventListener('click', () => {
+                        document.querySelectorAll('.product-card').forEach(c => c.classList.remove('selected'));
+                        card.classList.add('selected');
+                        selectedProduct = p;
+                        estimateBtn.disabled = false;
+                    });
+                    grid.appendChild(card);
+
+                    // Auto-select first product
+                    if (idx === 0) card.click();
+                });
+
+                grid.style.display = 'grid';
+            } catch (err) {
+                loading.style.display = 'none';
+                errorDiv.innerHTML = `<strong>Failed to load catalog:</strong> ${err.message}. Make sure the backend is running on port 3000.`;
+                errorDiv.style.display = 'block';
+            }
+        }
 
         // ──────────── Shipping Estimate ────────────
 
@@ -352,19 +412,19 @@
             if (btn.disabled) return;
             btn.disabled = true;
 
-            const step2 = document.getElementById('step2');
-            const loading = document.getElementById('estimateLoading');
-            const result = document.getElementById('estimateResult');
+            const step2    = document.getElementById('step2');
+            const loading  = document.getElementById('estimateLoading');
+            const result   = document.getElementById('estimateResult');
             const errorDiv = document.getElementById('estimateError');
 
-            step2.style.display = 'block';
-            loading.style.display = 'block';
-            result.style.display = 'none';
+            step2.style.display    = 'block';
+            loading.style.display  = 'block';
+            result.style.display   = 'none';
             errorDiv.style.display = 'none';
 
-            const product = PRODUCTS[selectedProduct];
+            const product = selectedProduct;  // from live catalog
             const fromPin = document.getElementById('fromPincode').value;
-            const toPin = document.getElementById('toPincode').value;
+            const toPin   = document.getElementById('toPincode').value;
 
             const pincodeCoords = {
                 '110001': { lat: 28.6139, lon: 77.2090, city: 'Delhi' },
@@ -374,16 +434,21 @@
                 '700001': { lat: 22.5726, lon: 88.3639, city: 'Kolkata' }
             };
 
+            const productWeight = parseFloat(product.weight) || 0.5;
+            const productDims   = product.dimensions
+                ? (typeof product.dimensions === 'string' ? JSON.parse(product.dimensions) : product.dimensions)
+                : null;
+
             const requestData = pincodeCoords[fromPin] && pincodeCoords[toPin] ? {
-                origin: { lat: pincodeCoords[fromPin].lat, lon: pincodeCoords[fromPin].lon, postalCode: fromPin },
-                destination: { lat: pincodeCoords[toPin].lat, lon: pincodeCoords[toPin].lon, postalCode: toPin },
-                weightKg: product.weight,
-                dimensions: product.dimensions,
+                origin:      { lat: pincodeCoords[fromPin].lat, lon: pincodeCoords[fromPin].lon, postalCode: fromPin },
+                destination: { lat: pincodeCoords[toPin].lat,  lon: pincodeCoords[toPin].lon,  postalCode: toPin  },
+                weightKg:    productWeight,
+                dimensions:  productDims,
                 serviceType: document.getElementById('serviceType').value
             } : {
                 fromPincode: fromPin,
-                toPincode: toPin,
-                weightKg: product.weight,
+                toPincode:   toPin,
+                weightKg:    productWeight,
                 serviceType: document.getElementById('serviceType').value
             };
 
@@ -398,17 +463,17 @@
                 const data = await response.json();
                 estimateData = data;
 
-                document.getElementById('requestData').textContent = JSON.stringify(requestData, null, 2);
+                document.getElementById('requestData').textContent  = JSON.stringify(requestData, null, 2);
                 document.getElementById('responseData').textContent = JSON.stringify(data, null, 2);
 
-                const cost = data.data?.estimatedCost || data.estimatedCost || 0;
-                const minCost = data.data?.minCost || data.minCost || 0;
-                const maxCost = data.data?.maxCost || data.maxCost || 0;
-                const distance = data.data?.distance || data.distance;
-                const estimatedDays = data.data?.estimatedDays || data.estimatedDays;
-                const routingEngine = data.data?.routingEngine || data.routingEngine;
-                const routingMethod = data.data?.routingMethod || data.routingMethod;
-                const volumetricWeight = data.data?.volumetricWeight || data.volumetricWeight;
+                const cost            = data.data?.estimatedCost  || data.estimatedCost  || 0;
+                const minCost         = data.data?.minCost        || data.minCost        || 0;
+                const maxCost         = data.data?.maxCost        || data.maxCost        || 0;
+                const distance        = data.data?.distance       || data.distance;
+                const estimatedDays   = data.data?.estimatedDays  || data.estimatedDays;
+                const routingEngine   = data.data?.routingEngine  || data.routingEngine;
+                const routingMethod   = data.data?.routingMethod  || data.routingMethod;
+                const volumetricWeight= data.data?.volumetricWeight || data.volumetricWeight;
 
                 document.getElementById('estimatePrice').textContent = `₹${cost}`;
 
@@ -419,16 +484,16 @@
                     rangeText += ` | via ${routingEngine === 'osrm' ? 'OSRM' : 'Pincode'}`;
                     if (routingMethod === 'haversine_fallback') rangeText += ' (fallback)';
                 }
-                if (volumetricWeight && volumetricWeight > (product.weight || 0)) {
+                if (volumetricWeight && volumetricWeight > productWeight) {
                     rangeText += ` | Volumetric: ${volumetricWeight.toFixed(2)}kg`;
                 }
                 document.getElementById('estimateRange').textContent = rangeText;
 
                 loading.style.display = 'none';
-                result.style.display = 'block';
+                result.style.display  = 'block';
             } catch (err) {
-                loading.style.display = 'none';
-                errorDiv.textContent = `Error: ${err.message}. Make sure backend is running on port 3000.`;
+                loading.style.display  = 'none';
+                errorDiv.textContent   = `Error: ${err.message}. Make sure backend is running on port 3000.`;
                 errorDiv.style.display = 'block';
             } finally {
                 btn.disabled = false;
@@ -436,6 +501,8 @@
         }
 
         // ──────────── Place Order (Webhook) ────────────
+        // Uses real SKU from catalog — backend will reject if SKU is not in
+        // the products table with available inventory (no bypass).
 
         document.getElementById('placeOrderBtn').addEventListener('click', (e) => {
             e.preventDefault();
@@ -443,49 +510,71 @@
         });
 
         async function placeOrder() {
+            if (!selectedProduct) { alert('Please select a product first'); return; }
+
+            // Pre-order stock check before payment
+            try {
+                const stockRes = await fetch(
+                    `${API_BASE}/webhooks/${selectedOrgToken}/catalog/check-stock?sku=${encodeURIComponent(selectedProduct.sku)}&quantity=1`
+                );
+                const stockData = await stockRes.json();
+                if (!stockData.in_stock) {
+                    alert(`❌ ${stockData.message}\n\nRefreshing catalog…`);
+                    await loadCatalog();
+                    return;
+                }
+            } catch (e) {
+                console.warn('Stock pre-check failed (non-fatal):', e.message);
+            }
+
             const btn = document.getElementById('placeOrderBtn');
-            btn.disabled = true;
+            btn.disabled    = true;
             btn.textContent = '⏳ Placing order…';
 
-            const product = PRODUCTS[selectedProduct];
+            const product     = selectedProduct;
             const estimateCost = estimateData?.data?.estimatedCost || estimateData?.estimatedCost || 0;
-            const quantity = 1;
-            const itemTotal = product.price * quantity;
-            const subtotal = itemTotal;
-            const taxAmount = subtotal * 0.18;
+            const quantity    = 1;
+            const unitPrice   = parseFloat(product.unit_price) || 0;
+            const subtotal    = unitPrice * quantity;
+            const taxAmount   = subtotal * 0.18;
             const totalAmount = subtotal + taxAmount + estimateCost;
 
             const webhookPayload = {
                 event_type: 'order.created',
-                source: 'customer-portal',
-                timestamp: new Date().toISOString(),
+                source:     'customer-portal',
+                timestamp:  new Date().toISOString(),
                 data: {
                     external_order_id: `ORD-${Date.now()}`,
-                    platform: 'customer-portal',
-                    customer_name: 'Test Customer',
-                    customer_email: 'customer@example.com',
-                    customer_phone: '9876543210',
+                    platform:          'customer-portal',
+                    customer_name:     'Test Customer',
+                    customer_email:    'customer@example.com',
+                    customer_phone:    '9876543210',
                     shipping_address: {
-                        street: '123 Main St',
-                        city: 'Mumbai',
-                        state: 'Maharashtra',
+                        street:      '123 Main St',
+                        city:        'Mumbai',
+                        state:       'Maharashtra',
                         postal_code: document.getElementById('toPincode').value,
-                        country: 'India'
+                        country:     'India'
                     },
-                    total_amount: totalAmount,
-                    tax_amount: taxAmount,
+                    total_amount:    totalAmount,
+                    tax_amount:      taxAmount,
                     shipping_amount: estimateCost,
-                    priority: 'standard',
-                    notes: `Order for ${product.name}`,
+                    priority:        'standard',
+                    notes:           `Order for ${product.name}`,
                     items: [{
-                        sku: product.sku,
-                        name: product.name,
-                        quantity: quantity,
-                        price: product.price,
-                        weight: product.weight,
-                        dimensions: product.dimensions,
-                        is_fragile: product.is_fragile,
-                        declared_value: product.declared_value
+                        // Use the REAL SKU from the SCM catalog (product must exist in DB with inventory)
+                        sku:             product.sku,
+                        product_name:    product.name,
+                        quantity:        quantity,
+                        unit_price:      unitPrice,
+                        weight:          parseFloat(product.weight) || null,
+                        dimensions:      product.dimensions
+                                            ? (typeof product.dimensions === 'string'
+                                               ? JSON.parse(product.dimensions)
+                                               : product.dimensions)
+                                            : null,
+                        is_fragile:      product.is_fragile  || false,
+                        declared_value:  parseFloat(product.declared_value) || unitPrice,
                     }]
                 }
             };
@@ -506,28 +595,25 @@
                 const jobId = orderResult.job_id;
 
                 localStorage.setItem('currentJobId', jobId);
-                localStorage.setItem('webhookPayload', JSON.stringify(webhookPayload));
+                localStorage.setItem('webhookPayload',  JSON.stringify(webhookPayload));
                 localStorage.setItem('webhookResponse', JSON.stringify(orderResult));
 
-                document.getElementById('orderIdDisplay').textContent = `Job #${jobId}`;
+                document.getElementById('orderIdDisplay').textContent     = `Job #${jobId}`;
                 document.getElementById('carrierRequestData').textContent = JSON.stringify(webhookPayload.data, null, 2);
-                document.getElementById('orderResponseData').textContent = JSON.stringify(orderResult, null, 2);
+                document.getElementById('orderResponseData').textContent  = JSON.stringify(orderResult, null, 2);
 
                 document.getElementById('step3').style.display = 'block';
                 document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
             } catch (error) {
                 alert(`Error placing order: ${error.message}`);
-                btn.disabled = false;
+                btn.disabled    = false;
                 btn.textContent = '💳 Place Order';
             }
         }
 
         // ──────────── Init ────────────
-
-        window.addEventListener('DOMContentLoaded', () => {
-            const firstCard = document.querySelector('.product-card[data-product="laptop"]');
-            if (firstCard) firstCard.click();
-        });
+        // Load live catalog on page load — no hardcoded products.
+        window.addEventListener('DOMContentLoaded', loadCatalog);
     </script>
 </body>
 </html>

@@ -1,5 +1,8 @@
-import { useState } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui';
+import { useState, useEffect } from 'react';
+import { Card, CardHeader, CardTitle, CardContent, Button } from '@/components/ui';
+import { settingsApi } from '@/api/services';
+import { useToastContext } from '@/components/ui/Toast';
+import { Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Extract component outside of render
@@ -39,6 +42,9 @@ function NotificationToggle({
 }
 
 export function NotificationSettings() {
+  const { success, error: toastError } = useToastContext();
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [settings, setSettings] = useState({
     emailNotifications: true,
     pushNotifications: true,
@@ -49,8 +55,52 @@ export function NotificationSettings() {
     weeklyReport: true,
   });
 
+  // Load preferences from backend on mount — convert snake_case backend keys to camelCase UI keys
+  useEffect(() => {
+    settingsApi.getNotificationPreferences().then((res) => {
+      const d = res.data as any;
+      if (!d) return;
+      const types = d.notification_types || {};
+      setSettings((prev) => ({
+        ...prev,
+        emailNotifications: d.email_enabled   ?? prev.emailNotifications,
+        pushNotifications:  d.push_enabled    ?? prev.pushNotifications,
+        orderUpdates:       types.orders      ?? prev.orderUpdates,
+        shipmentAlerts:     types.shipments   ?? prev.shipmentAlerts,
+        exceptionAlerts:    types.exceptions  ?? prev.exceptionAlerts,
+        weeklyReport:       types.system_updates ?? prev.weeklyReport,
+      }));
+    }).catch(() => { /* use defaults */ });
+  }, []);
+
   const toggleSetting = (key: keyof typeof settings) => {
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      // Map camelCase UI state → snake_case backend schema
+      await settingsApi.updateNotificationPreferences({
+        email_enabled: settings.emailNotifications,
+        push_enabled:  settings.pushNotifications,
+        notification_types: {
+          orders:       settings.orderUpdates,
+          shipments:    settings.shipmentAlerts,
+          exceptions:   settings.exceptionAlerts,
+          system_updates: settings.weeklyReport,
+          sla_alerts:   settings.exceptionAlerts,
+          returns:      true,
+        },
+      } as any);
+      success('Notification preferences saved');
+      setIsDirty(false);
+    } catch (err: any) {
+      toastError(err?.response?.data?.message || err?.message || 'Failed to save preferences');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -103,6 +153,13 @@ export function NotificationSettings() {
             onToggle={() => toggleSetting('weeklyReport')}
           />
         </div>
+        {isDirty && (
+          <div className="flex justify-end pt-4">
+            <Button variant="primary" leftIcon={<Save className="h-4 w-4" />} isLoading={isSaving} onClick={handleSave}>
+              Save Preferences
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

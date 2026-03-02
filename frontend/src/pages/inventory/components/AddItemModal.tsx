@@ -16,21 +16,17 @@ interface AddItemModalProps {
 interface InventoryFields {
   warehouse_id: string;
   quantity: string;
-  reserved_quantity: string;
-  bin_location: string;
-  zone: string;
   reorder_point: string;
   max_stock_level: string;
+  unit_cost: string;
 }
 
 const INITIAL_FIELDS: InventoryFields = {
   warehouse_id: '',
   quantity: '',
-  reserved_quantity: '',
-  bin_location: '',
-  zone: '',
   reorder_point: '',
   max_stock_level: '',
+  unit_cost: '',
 };
 
 export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItemModalProps) {
@@ -87,11 +83,9 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
       warehouse_id: fields.warehouse_id,
       quantity: Number(fields.quantity),
     };
-    if (fields.reserved_quantity !== '') payload.reserved_quantity = Number(fields.reserved_quantity);
-    if (fields.bin_location.trim()) payload.bin_location = fields.bin_location.trim();
-    if (fields.zone.trim()) payload.zone = fields.zone.trim();
     if (fields.reorder_point !== '') payload.reorder_point = Number(fields.reorder_point);
     if (fields.max_stock_level !== '') payload.max_stock_level = Number(fields.max_stock_level);
+    if (fields.unit_cost !== '') payload.unit_cost = Number(fields.unit_cost);
 
     try {
       setIsSubmitting(true);
@@ -137,22 +131,22 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
           {selectedProduct ? (
             /* Selected product card */
             <div className="flex items-center gap-3 p-3 rounded-xl border-2 border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">
-              <div className="h-10 w-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+              <div className="h-10 w-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center shrink-0">
                 <Package2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 dark:text-white truncate">{selectedProduct.name}</p>
                 <p className="text-xs text-gray-500 font-mono">{selectedProduct.sku}{selectedProduct.category ? ` · ${selectedProduct.category}` : ''}</p>
               </div>
-              {selectedProduct.unitPrice != null && (
-                <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 flex-shrink-0">
-                  {formatCurrency(selectedProduct.unitPrice, selectedProduct.currency)}
+              {selectedProduct.sellingPrice != null && (
+                <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 shrink-0">
+                  {formatCurrency(selectedProduct.sellingPrice, selectedProduct.currency)}
                 </p>
               )}
               <button
                 type="button"
                 onClick={() => setSelectedProduct(null)}
-                className="p-1 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-800 text-indigo-500 flex-shrink-0"
+                className="p-1 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-800 text-indigo-500 shrink-0"
                 title="Change product"
               >
                 <X className="h-4 w-4" />
@@ -185,14 +179,14 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
                         onClick={() => selectProduct(p)}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-left transition-colors"
                       >
-                        <Package2 className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                        <Package2 className="h-4 w-4 text-indigo-500 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{p.name}</p>
                           <p className="text-xs text-gray-500 font-mono">{p.sku}{p.category ? ` · ${p.category}` : ''}</p>
                         </div>
-                        {p.unitPrice != null && (
-                          <p className="text-xs font-medium text-gray-600 dark:text-gray-300 flex-shrink-0">
-                            {formatCurrency(p.unitPrice, p.currency)}
+                        {p.sellingPrice != null && (
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0">
+                            {formatCurrency(p.sellingPrice, p.currency)}
                           </p>
                         )}
                       </button>
@@ -219,7 +213,7 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
                 2. Storage Location
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <Select
                   label="Warehouse *"
                   value={fields.warehouse_id}
@@ -228,18 +222,6 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
                     { value: '', label: 'Select warehouse…' },
                     ...warehouses.map(w => ({ value: w.id, label: w.name })),
                   ]}
-                />
-                <Input
-                  label="Zone"
-                  placeholder="e.g. A"
-                  value={fields.zone}
-                  onChange={setField('zone')}
-                />
-                <Input
-                  label="Bin Location"
-                  placeholder="e.g. A-03-02"
-                  value={fields.bin_location}
-                  onChange={setField('bin_location')}
                 />
               </div>
             </div>
@@ -259,14 +241,6 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
                   required
                 />
                 <Input
-                  label="Reserved"
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  value={fields.reserved_quantity}
-                  onChange={setField('reserved_quantity')}
-                />
-                <Input
                   label="Reorder Point"
                   type="number"
                   min="0"
@@ -281,6 +255,15 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
                   placeholder="0"
                   value={fields.max_stock_level}
                   onChange={setField('max_stock_level')}
+                />
+                <Input
+                  label="Unit Cost (₹)"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={fields.unit_cost}
+                  onChange={setField('unit_cost')}
                 />
               </div>
             </div>

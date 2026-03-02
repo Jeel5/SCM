@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
   RotateCcw,
   Package,
@@ -13,21 +14,54 @@ import {
   Button,
 } from '@/components/ui';
 import { formatDate, formatCurrency } from '@/lib/utils';
+import { returnsApi } from '@/api/services';
+import { useToast } from '@/components/ui/Toast';
 import type { Return } from '@/types';
 
 export function ReturnDetailsModal({
   returnItem,
   isOpen,
   onClose,
+  onStatusChange,
 }: {
   returnItem: Return | null;
   isOpen: boolean;
   onClose: () => void;
+  onStatusChange?: () => void;
 }) {
+  const [isActing, setIsActing] = useState(false);
+  const [detail, setDetail] = useState<Return | null>(null);
+  const { addToast } = useToast();
+
+  // Fetch full detail (with items) when modal opens
+  useEffect(() => {
+    if (isOpen && returnItem?.id) {
+      setDetail(null);
+      returnsApi.getReturn(returnItem.id)
+        .then((res: any) => setDetail(res.data ?? res))
+        .catch(() => setDetail(returnItem)); // fallback to list data
+    }
+  }, [isOpen, returnItem?.id]);
+
   if (!returnItem) return null;
 
+  const displayItem = detail || returnItem;
+
+  const handleStatusUpdate = async (status: string) => {
+    setIsActing(true);
+    try {
+      await returnsApi.updateReturn(returnItem.id, { status } as any);
+      addToast(`Return ${status === 'approved' ? 'approved' : 'rejected'} successfully`, 'success');
+      onStatusChange?.();
+    } catch (err: any) {
+      addToast(err?.message || `Failed to update return`, 'error');
+    } finally {
+      setIsActing(false);
+    }
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Return ${returnItem.id}`} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={`Return ${displayItem.id}`} size="lg">
       <div className="space-y-6">
         {/* Status Header */}
         <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
@@ -38,14 +72,14 @@ export function ReturnDetailsModal({
               </div>
               <div>
                 <p className="font-semibold text-gray-900 dark:text-white capitalize">
-                  {returnItem.reason.replace('_', ' ')}
+                  {displayItem.reason.replace('_', ' ')}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Requested: {formatDate(returnItem.requestedAt)}
+                  Requested: {formatDate(displayItem.requestedAt || displayItem.createdAt)}
                 </p>
               </div>
             </div>
-            <StatusBadge status={returnItem.status} />
+            <StatusBadge status={displayItem.status} />
           </div>
         </div>
 
@@ -53,17 +87,17 @@ export function ReturnDetailsModal({
         <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
           <div className="text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">Order</p>
-            <p className="font-medium text-gray-900 dark:text-white">{returnItem.orderId}</p>
+            <p className="font-medium text-gray-900 dark:text-white">{displayItem.orderId}</p>
           </div>
           <ArrowRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
           <div className="text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">Return Type</p>
-            <p className="font-medium text-gray-900 dark:text-white capitalize">{returnItem.type}</p>
+            <p className="font-medium text-gray-900 dark:text-white capitalize">{displayItem.type || 'refund'}</p>
           </div>
           <ArrowRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
           <div className="text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">Refund Amount</p>
-            <p className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(returnItem.refundAmount || 0)}</p>
+            <p className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(displayItem.refundAmount || 0)}</p>
           </div>
         </div>
 
@@ -71,7 +105,9 @@ export function ReturnDetailsModal({
         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Return Items</h4>
           <div className="space-y-2">
-            {returnItem.items.map((item, index) => (
+            {(displayItem.items ?? []).length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No items recorded</p>
+            ) : (displayItem.items ?? []).map((item, index) => (
               <div
                 key={index}
                 className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700"
@@ -94,31 +130,43 @@ export function ReturnDetailsModal({
         </div>
 
         {/* Notes */}
-        {returnItem.notes && (
+        {displayItem.notes && (
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <h4 className="font-medium text-gray-900 dark:text-white mb-2">Notes</h4>
-            <p className="text-gray-600 dark:text-gray-300">{returnItem.notes}</p>
+            <p className="text-gray-600 dark:text-gray-300">{displayItem.notes}</p>
           </div>
         )}
 
         {/* Tracking */}
-        {returnItem.trackingNumber && (
+        {displayItem.trackingNumber && (
           <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
             <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 mb-2">
               <Truck className="h-5 w-5" />
               <span className="font-medium">Return Shipment</span>
             </div>
-            <p className="text-blue-700 dark:text-blue-300">Tracking: {returnItem.trackingNumber}</p>
+            <p className="text-blue-700 dark:text-blue-300">Tracking: {displayItem.trackingNumber}</p>
           </div>
         )}
 
         {/* Actions */}
-        {returnItem.status === 'pending' && (
+        {(displayItem.status === 'pending' || displayItem.status === 'requested') && (
           <div className="flex items-center gap-3">
-            <Button variant="primary" className="flex-1" leftIcon={<CheckCircle2 className="h-4 w-4" />}>
+            <Button
+              variant="primary"
+              className="flex-1"
+              leftIcon={<CheckCircle2 className="h-4 w-4" />}
+              isLoading={isActing}
+              onClick={() => handleStatusUpdate('approved')}
+            >
               Approve Return
             </Button>
-            <Button variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50" leftIcon={<XCircle className="h-4 w-4" />}>
+            <Button
+              variant="outline"
+              className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+              leftIcon={<XCircle className="h-4 w-4" />}
+              isLoading={isActing}
+              onClick={() => handleStatusUpdate('rejected')}
+            >
               Reject Return
             </Button>
           </div>

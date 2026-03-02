@@ -49,6 +49,7 @@ class SLAService {
 
     // Create SLA violation record
     const violation = await slaRepository.createViolation({
+      organizationId: shipment.organization_id,
       shipmentId: shipment.id,
       slaPolicyId: shipment.policy_id,
       promisedDelivery: scheduledDelivery,
@@ -56,7 +57,6 @@ class SLAService {
       penaltyAmount: penalty,
       reason: 'Late delivery',
       status: 'open',
-      detectionMethod: 'automated',
     });
 
     logEvent('SLAViolationCreated', {
@@ -73,11 +73,18 @@ class SLAService {
    * Calculate penalty amount for SLA violation
    */
   async calculatePenalty(delayHours, penaltyPerHour, shippingCost) {
-    // Base penalty calculation
-    let penalty = delayHours * penaltyPerHour;
+    const ratePerHour = parseFloat(penaltyPerHour) || 0;
+    const cost        = parseFloat(shippingCost)    || 0;
 
-    // Cap penalty at shipping cost (configurable business rule)
-    penalty = Math.min(penalty, shippingCost * 0.5); // Max 50% of shipping cost
+    if (ratePerHour === 0) return 0; // Policy has no penalty clause
+
+    // Base penalty calculation
+    let penalty = delayHours * ratePerHour;
+
+    // Cap penalty at 50% of shipping cost (only when shipping cost is known)
+    if (cost > 0) {
+      penalty = Math.min(penalty, cost * 0.5);
+    }
 
     // Round to 2 decimal places
     return Math.round(penalty * 100) / 100;

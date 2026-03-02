@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { useSocketEvent } from '@/hooks/useSocket';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -20,7 +21,7 @@ import {
   Handshake,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/stores';
+import { useUIStore, useAuthStore } from '@/stores';
 import { usePermissions } from '@/hooks/usePermissions';
 import { exceptionsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
@@ -172,11 +173,14 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
 export function Sidebar() {
   const location = useLocation();
   const { sidebarMobileOpen, setMobileSidebarOpen } = useUIStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [openExceptionsCount, setOpenExceptionsCount] = useState(0);
   const can = usePermissions();
 
-  // Fetch open exceptions count
+  // Fetch open exceptions count — only when authenticated to avoid spurious 401s
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const fetchExceptionsCount = async () => {
       const useMockApi = localStorage.getItem('useMockApi') === 'true';
       try {
@@ -188,14 +192,17 @@ export function Sidebar() {
         ).length;
         setOpenExceptionsCount(openCount);
       } catch (error) {
-        console.error('Failed to fetch exceptions count:', error);
+        // Silently ignore — badge is non-critical
       }
     };
 
     fetchExceptionsCount();
-    const interval = setInterval(fetchExceptionsCount, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    return; // no interval — socket events drive incremental updates
+  }, [isAuthenticated]);
+
+  // Real-time exception count updates via socket
+  useSocketEvent('exception:created', () => setOpenExceptionsCount((c) => c + 1));
+  useSocketEvent('exception:resolved', () => setOpenExceptionsCount((c) => Math.max(0, c - 1)));
 
   const navigation = getNavigation(openExceptionsCount);
 

@@ -3,11 +3,29 @@ import jobsRepo from '../repositories/JobsRepository.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import parser from 'cron-parser';
 import { NotFoundError, ValidationError } from '../errors/index.js';
+import { enqueueJob } from '../queues/index.js';
+import { cronScheduler } from '../jobs/cronScheduler.js';
 
 export const jobsService = {
   // Create a new background job; idempotencyKey prevents duplicate processing of the same event.
+  // After writing the DB record the job is pushed onto the BullMQ queue for immediate (or
+  // deferred) processing — no polling required.
   async createJob(jobType, payload, priority = 5, scheduledFor = null, createdBy = null, idempotencyKey = null) {
-    return jobsRepo.createJobIdempotent({ jobType, payload, priority, scheduledFor, createdBy, idempotencyKey });
+    const dbJob = await jobsRepo.createJobIdempotent({ jobType, payload, priority, scheduledFor, createdBy, idempotencyKey });
+
+    // Calculate delay from scheduledFor
+    const delay = scheduledFor ? Math.max(0, new Date(scheduledFor).getTime() - Date.now()) : 0;
+
+    // Enqueue in BullMQ (fails silently if Redis is down — DB record still exists
+    // and can be processed manually via retryJob)
+    try {
+      await enqueueJob(jobType, dbJob.id, dbJob.payload, { priority, delay });
+    } catch (err) {
+      // Non-fatal: job is in DB, worker will retry via queue on reconnect
+      console.warn('[jobsService] BullMQ enqueue failed (job is in DB):', err.message);
+    }
+
+    return dbJob;
   },
 
   // Get jobs with filtering and pagination
@@ -101,8 +119,12 @@ export const jobsService = {
     try {
       const interval = parser.parseExpression(cronExpression);
       const nextRun = interval.next().toDate();
-      return jobsRepo.createCronSchedule({ name, jobType, cronExpression, payload, nextRun, organizationId });
+      const schedule = await jobsRepo.createCronSchedule({ name, jobType, cronExpression, payload, nextRun, organizationId });
+      // Register in BullMQ so it fires at the right time
+      await cronScheduler.addSchedule(schedule);
+      return schedule;
     } catch (error) {
+      if (error instanceof ValidationError) throw error;
       throw new ValidationError(`Invalid cron expression: ${error.message}`);
     }
   },
@@ -129,11 +151,15 @@ export const jobsService = {
 
     const updated = await jobsRepo.updateCronSchedule(scheduleId, fields, organizationId);
     if (!updated) throw new NotFoundError('Schedule');
+    // Sync change to BullMQ (remove old repeatable + add new if active)
+    await cronScheduler.updateSchedule(updated);
     return updated;
   },
 
   async deleteCronSchedule(scheduleId, organizationId = undefined) {
-    return jobsRepo.deleteCronSchedule(scheduleId, organizationId);
+    await jobsRepo.deleteCronSchedule(scheduleId, organizationId);
+    // Remove from BullMQ so it stops firing
+    await cronScheduler.removeSchedule(scheduleId);
   },
 
   // Get due cron schedules

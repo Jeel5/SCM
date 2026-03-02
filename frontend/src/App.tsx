@@ -11,6 +11,7 @@ import { ToastContainer } from '@/components/ui/ToastContainer';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { PermissionRoute } from '@/components/ui/PermissionGate';
 import { useAuthStore, useUIStore } from '@/stores';
+import { SocketProvider } from '@/hooks/useSocket';
 
 // Lazy load all pages for code splitting
 const LoginPage = lazy(() => import('@/pages/auth').then(m => ({ default: m.LoginPage })));
@@ -32,6 +33,7 @@ const HelpSupportPage = lazy(() => import('@/pages/help').then(m => ({ default: 
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })));
 const TeamPage = lazy(() => import('@/pages/team').then(m => ({ default: m.TeamPage })));
 const PartnersPage = lazy(() => import('@/pages/partners').then(m => ({ default: m.PartnersPage })));
+const NotificationsPage = lazy(() => import('@/pages/notifications').then(m => ({ default: m.NotificationsPage })));
 const LandingPage = lazy(() => import('@/pages/public').then(m => ({ default: m.LandingPage })));
 const AboutPage = lazy(() => import('@/pages/public').then(m => ({ default: m.AboutPage })));
 const GetDemoPage = lazy(() => import('@/pages/public').then(m => ({ default: m.GetDemoPage })));
@@ -149,6 +151,7 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <ToastProvider>
             <ToastContainer />
+            <SocketProvider>
             <BrowserRouter>
               <Routes>
                 <Route
@@ -398,12 +401,21 @@ function App() {
                       </PageLoader>
                     }
                   />
+                  <Route
+                    path="notifications"
+                    element={
+                      <PageLoader>
+                        <NotificationsPage />
+                      </PageLoader>
+                    }
+                  />
                 </Route>
 
                 {/* Catch-all redirect */}
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
+            </SocketProvider>
           </ToastProvider>
         </QueryClientProvider>
       </GoogleOAuthProvider>

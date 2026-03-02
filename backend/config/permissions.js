@@ -32,6 +32,7 @@ export const ALL_PERMISSIONS = [
   'returns.create',      // initiate a return
   'returns.update',
   'sla.view',
+  'sla.manage',    // create + update + deactivate SLA policies
   'finance.view',
   'analytics.view',
   'jobs.view',          // view background jobs and cron schedules
@@ -71,7 +72,7 @@ export const ROLE_PERMISSIONS = {
     'suppliers.view',
     'exceptions.view', 'exceptions.create', 'exceptions.update',
     'returns.view', 'returns.create', 'returns.update',
-    'sla.view',
+    'sla.view', 'sla.manage',
     'analytics.view',
     'jobs.view', 'jobs.create', 'jobs.update', 'jobs.delete',
     'settings.personal',

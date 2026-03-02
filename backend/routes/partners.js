@@ -5,7 +5,6 @@ import {
   listSuppliers, getSupplier, createSupplier, updateSupplier, deleteSupplier,
 } from '../controllers/partnersController.js';
 import { authenticate } from '../middlewares/auth.js';
-import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { requirePermission } from '../middlewares/rbac.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import {
@@ -16,17 +15,17 @@ import {
 const router = express.Router();
 
 // ─── Sales Channels ─────────────────────────────────────
-router.get('/channels',     authenticate, injectOrgContext, requirePermission('channels.view'), validateQuery(listChannelsQuerySchema), listChannels);
-router.get('/channels/:id', authenticate, injectOrgContext, requirePermission('channels.view'), getChannel);
-router.post('/channels',    authenticate, injectOrgContext, requirePermission('channels.manage'), validateRequest(createChannelSchema), createChannel);
-router.put('/channels/:id', authenticate, injectOrgContext, requirePermission('channels.manage'), validateRequest(updateChannelSchema), updateChannel);
-router.delete('/channels/:id', authenticate, injectOrgContext, requirePermission('channels.manage'), deleteChannel);
+router.get('/channels',     authenticate, requirePermission('channels.view'), validateQuery(listChannelsQuerySchema), listChannels);
+router.get('/channels/:id', authenticate, requirePermission('channels.view'), getChannel);
+router.post('/channels',    authenticate, requirePermission('channels.manage'), validateRequest(createChannelSchema), createChannel);
+router.put('/channels/:id', authenticate, requirePermission('channels.manage'), validateRequest(updateChannelSchema), updateChannel);
+router.delete('/channels/:id', authenticate, requirePermission('channels.manage'), deleteChannel);
 
 // ─── Suppliers ───────────────────────────────────────────
-router.get('/suppliers',     authenticate, injectOrgContext, requirePermission('suppliers.view'), validateQuery(listSuppliersQuerySchema), listSuppliers);
-router.get('/suppliers/:id', authenticate, injectOrgContext, requirePermission('suppliers.view'), getSupplier);
-router.post('/suppliers',    authenticate, injectOrgContext, requirePermission('suppliers.manage'), validateRequest(createSupplierSchema), createSupplier);
-router.put('/suppliers/:id', authenticate, injectOrgContext, requirePermission('suppliers.manage'), validateRequest(updateSupplierSchema), updateSupplier);
-router.delete('/suppliers/:id', authenticate, injectOrgContext, requirePermission('suppliers.manage'), deleteSupplier);
+router.get('/suppliers',     authenticate, requirePermission('suppliers.view'), validateQuery(listSuppliersQuerySchema), listSuppliers);
+router.get('/suppliers/:id', authenticate, requirePermission('suppliers.view'), getSupplier);
+router.post('/suppliers',    authenticate, requirePermission('suppliers.manage'), validateRequest(createSupplierSchema), createSupplier);
+router.put('/suppliers/:id', authenticate, requirePermission('suppliers.manage'), validateRequest(updateSupplierSchema), updateSupplier);
+router.delete('/suppliers/:id', authenticate, requirePermission('suppliers.manage'), deleteSupplier);
 
 export default router;

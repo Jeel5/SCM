@@ -29,7 +29,7 @@ export const listDisputesQuerySchema = Joi.object({
 });
 
 export const financialSummaryQuerySchema = Joi.object({
-  date_range: Joi.string().valid('day', 'week', 'month', 'year').optional().default('month'),
+  range: Joi.string().valid('day', 'week', 'month', 'year').optional().default('month'),
 });
 
 // ── Mutations ────────────────────────────────────────────────────────────────

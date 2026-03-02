@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Building2, MapPin, MoreHorizontal, Eye, Edit, Boxes, Truck } from 'lucide-react';
+import { Building2, MapPin, MoreHorizontal, Eye, Edit, Trash2, Boxes, Truck } from 'lucide-react';
 import { Badge, Progress, Dropdown } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
 import type { Warehouse } from '@/types';
@@ -8,11 +8,15 @@ import type { Warehouse } from '@/types';
 export function WarehouseCard({
   warehouse,
   onViewDetails,
+  onEdit,
+  onDelete,
   index,
   totalInRow = 3,
 }: {
   warehouse: Warehouse;
   onViewDetails: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
   index?: number;
   totalInRow?: number;
 }) {
@@ -73,9 +77,12 @@ export function WarehouseCard({
             items={[
               { label: 'View Details', value: 'view', icon: <Eye className="h-4 w-4" /> },
               { label: 'Edit', value: 'edit', icon: <Edit className="h-4 w-4" /> },
+              { label: 'Delete', value: 'delete', icon: <Trash2 className="h-4 w-4 text-red-500" /> },
             ]}
             onSelect={(value) => {
               if (value === 'view') onViewDetails();
+              else if (value === 'edit') onEdit?.();
+              else if (value === 'delete') onDelete?.();
               setIsDropdownOpen(false);
             }}
             onOpenChange={setIsDropdownOpen}

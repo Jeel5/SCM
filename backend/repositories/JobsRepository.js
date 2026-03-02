@@ -333,8 +333,8 @@ class JobsRepository extends BaseRepository {
   async insertDlqEntry({ originalJobId, jobType, payload, priority, errorMessage, retryCount, createdAt } = {}, client = null) {
     await this.query(
       `INSERT INTO dead_letter_queue
-         (original_job_id, job_type, payload, priority, error_message, retry_count, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         (original_job_id, job_type, payload, priority, error_message, retry_count, original_created_at, moved_to_dlq_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
       [originalJobId, jobType, payload, priority, errorMessage, retryCount, createdAt], client
     );
   }
@@ -388,7 +388,7 @@ class JobsRepository extends BaseRepository {
       `SELECT dlq.*, COUNT(*) OVER() AS total_count
        FROM dead_letter_queue dlq
        ${orgJoin}
-       ORDER BY dlq.created_at DESC
+       ORDER BY dlq.moved_to_dlq_at DESC
        LIMIT $1 OFFSET $2`,
       params, client
     );
@@ -399,7 +399,7 @@ class JobsRepository extends BaseRepository {
 
   async purgeDlq(cutoffDate, client = null) {
     const result = await this.query(
-      'DELETE FROM dead_letter_queue WHERE created_at < $1',
+      'DELETE FROM dead_letter_queue WHERE moved_to_dlq_at < $1',
       [cutoffDate], client
     );
     return result.rowCount;

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useSocketEvent } from '@/hooks/useSocket';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, X, Package, ArrowRight } from 'lucide-react';
 import { Card, Badge, Button } from '@/components/ui';
@@ -16,26 +17,26 @@ export function LowStockAlerts({ onViewAll, warehouseId }: LowStockAlertsProps) 
   const [loading, setLoading] = useState(true);
   const [dismissed, setDismissed] = useState(false);
 
-  useEffect(() => {
-    const fetchLowStockItems = async () => {
-      try {
-        setLoading(true);
-        const response = await inventoryApi.getLowStockItems(warehouseId);
-        setLowStockItems(response.data);
-      } catch (error) {
-        console.error('Failed to fetch low stock items:', error);
-        setLowStockItems([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchLowStockItems();
-    
-    // Refresh every 5 minutes
-    const interval = setInterval(fetchLowStockItems, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+  const fetchLowStockItems = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await inventoryApi.getLowStockItems(warehouseId);
+      setLowStockItems(response.data);
+    } catch (error) {
+      console.error('Failed to fetch low stock items:', error);
+      setLowStockItems([]);
+    } finally {
+      setLoading(false);
+    }
   }, [warehouseId]);
+
+  useEffect(() => {
+    fetchLowStockItems();
+  }, [fetchLowStockItems]);
+
+  // Re-fetch when inventory changes or a low-stock alert fires via socket
+  useSocketEvent('inventory:updated', fetchLowStockItems);
+  useSocketEvent('inventory:low_stock', fetchLowStockItems);
 
   if (loading) {
     return (

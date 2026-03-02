@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useSocketEvent } from '@/hooks/useSocket';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
@@ -13,16 +14,39 @@ import {
 import { cn, formatRelativeTime, getRoleDisplayName } from '@/lib/utils';
 import { useUIStore, useAuthStore, useNotificationStore } from '@/stores';
 import { Avatar, Dropdown } from '@/components/ui';
+import { notificationsApi, authApi } from '@/api/services';
 
 export function Header() {
   const { toggleMobileSidebar, theme, setTheme } = useUIStore();
-  const { user, logout } = useAuthStore();
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore();
+  const { user, logout, isAuthenticated } = useAuthStore();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, setNotifications } = useNotificationStore();
   const [showNotifications, setShowNotifications] = useState(false);
+  const navigate = useNavigate();
 
-  const handleLogout = () => {
+  // Load notifications from API on mount and periodically
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const resp = await notificationsApi.getNotifications({ page: 1, limit: 20 });
+      if (resp.success) setNotifications(resp.data);
+    } catch {
+      // Silently ignore — user may not be fully authenticated yet
+    }
+  }, [setNotifications]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchNotifications();
+  }, [fetchNotifications, isAuthenticated]);
+
+  // Refresh notification list whenever a new one arrives via socket
+  useSocketEvent('notification:new', fetchNotifications);
+
+  const handleLogout = async () => {
+    try {
+      await authApi.logout(); // clears httpOnly cookies on the server
+    } catch { /* best-effort */ }
     logout();
-    window.location.href = '/login';
+    navigate('/login');
   };
 
   const userMenuItems = [
@@ -112,7 +136,10 @@ export function Header() {
                     <h3 className="font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
                     {unreadCount > 0 && (
                       <button
-                        onClick={() => markAllAsRead()}
+                        onClick={() => {
+                          markAllAsRead();
+                          notificationsApi.markAllNotificationsRead().catch(() => {});
+                        }}
                         className="text-sm text-blue-600 hover:text-blue-700"
                       >
                         Mark all read
@@ -133,6 +160,8 @@ export function Header() {
                           animate={{ opacity: 1, x: 0 }}
                           onClick={() => {
                             markAsRead(notification.id);
+                            notificationsApi.markNotificationRead(notification.id).catch(() => {});
+                            if (notification.actionUrl) navigate(notification.actionUrl);
                             setShowNotifications(false);
                           }}
                           className={cn(
@@ -205,7 +234,7 @@ export function Header() {
             if (value === 'logout') {
               handleLogout();
             } else if (value === 'help') {
-              window.location.href = '/help';
+              navigate('/help');
             }
           }}
           align="right"

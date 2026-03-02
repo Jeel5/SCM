@@ -38,15 +38,28 @@ class ShipmentService {
       const currentStatus = current.status;
       const allowedTransitions = SHIPMENT_VALID_TRANSITIONS[currentStatus];
       if (allowedTransitions === undefined) {
+        logger.error('Unknown shipment status in state machine', { shipmentId: id, currentStatus });
         throw new AppError(`Unknown shipment status: '${currentStatus}'`, 409);
       }
       if (!allowedTransitions.includes(status)) {
+        logger.warn('Invalid shipment status transition attempted', {
+          shipmentId: id,
+          currentStatus,
+          requestedStatus: status,
+          allowedTransitions,
+        });
         throw new ConflictError(
           `Invalid status transition: '${currentStatus}' → '${status}'. Allowed: ${
             allowedTransitions.length ? allowedTransitions.join(', ') : '(none — terminal state)'
           }`
         );
       }
+
+      logger.info('Shipment status transition validated', {
+        shipmentId: id,
+        from: currentStatus,
+        to: status,
+      });
       // ────────────────────────────────────────────────────────────────────
 
       await shipmentRepo.setStatus(id, status, location, organizationId, tx);

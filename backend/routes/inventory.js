@@ -13,7 +13,6 @@ import {
 } from '../controllers/inventoryController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
-import { injectOrgContext } from '../middlewares/multiTenant.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import {
   createInventorySchema,
@@ -22,6 +21,7 @@ import {
   transferInventorySchema,
   listInventoryQuerySchema
 } from '../validators/inventorySchemas.js';
+import { validateUUIDParams } from '../middlewares/validateParams.js';
 
 const router = express.Router();
 
@@ -30,7 +30,7 @@ const router = express.Router();
 // List inventory (with filters + pagination)
 router.get(
   '/inventory',
-  authenticate, injectOrgContext, authorize('inventory:read'),
+  authenticate, authorize('inventory:read'),
   validateQuery(listInventoryQuerySchema),
   getInventory
 );
@@ -38,28 +38,30 @@ router.get(
 // Aggregate stats for dashboard / warehouse view
 router.get(
   '/inventory/stats',
-  authenticate, injectOrgContext, authorize('inventory:read'),
+  authenticate, authorize('inventory:read'),
   getInventoryStats
 );
 
 // All items at or below reorder_point
 router.get(
   '/inventory/low-stock',
-  authenticate, injectOrgContext, authorize('inventory:read'),
+  authenticate, authorize('inventory:read'),
   getLowStockItems
 );
 
 // Single inventory item (must come AFTER static routes like /stats, /low-stock)
 router.get(
   '/inventory/:id',
-  authenticate, injectOrgContext, authorize('inventory:read'),
+  authenticate, authorize('inventory:read'),
+  validateUUIDParams,
   getInventoryItem
 );
 
 // Stock movement history for one item
 router.get(
   '/inventory/:id/movements',
-  authenticate, injectOrgContext, authorize('inventory:read'),
+  authenticate, authorize('inventory:read'),
+  validateUUIDParams,
   getStockMovements
 );
 
@@ -68,7 +70,7 @@ router.get(
 // Create new inventory record (or upsert via unique idx)
 router.post(
   '/inventory',
-  authenticate, injectOrgContext, authorize('inventory:create'),
+  authenticate, authorize('inventory:create'),
   validateRequest(createInventorySchema),
   createInventoryItem
 );
@@ -76,7 +78,7 @@ router.post(
 // Transfer stock between warehouses (simple, no order created)
 router.post(
   '/inventory/transfer',
-  authenticate, injectOrgContext, authorize('inventory:update'),
+  authenticate, authorize('inventory:update'),
   validateRequest(transferInventorySchema),
   transferInventory
 );
@@ -84,15 +86,17 @@ router.post(
 // Adjust stock (add / remove / set / damaged)
 router.post(
   '/inventory/:id/adjust',
-  authenticate, injectOrgContext, authorize('inventory:update'),
+  authenticate, authorize('inventory:update'),
+  validateUUIDParams,
   validateRequest(adjustInventorySchema),
   adjustStock
 );
 
-// Update metadata (bin_location, zone, thresholds)
+// Update metadata (thresholds, unit_cost)
 router.put(
   '/inventory/:id',
-  authenticate, injectOrgContext, authorize('inventory:update'),
+  authenticate, authorize('inventory:update'),
+  validateUUIDParams,
   validateRequest(updateInventorySchema),
   updateInventoryItem
 );

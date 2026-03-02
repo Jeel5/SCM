@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSocketEvent } from '@/hooks/useSocket';
 import { motion } from 'framer-motion';
 import {
   RotateCcw,
@@ -16,6 +17,7 @@ import {
   StatusBadge,
   Badge,
   Tabs,
+  PermissionGate,
 } from '@/components/ui';
 import { formatCurrency, formatRelativeTime, cn } from '@/lib/utils';
 import type { Return } from '@/types';
@@ -30,7 +32,30 @@ export function ReturnsPage() {
   const [activeTab, setActiveTab] = useState('all');
 
   const pageSize = 10;
-  const { returns, totalReturns, isLoading } = useReturns(page, pageSize);
+  const { returns, totalReturns, isLoading, refetch } = useReturns(page, pageSize);
+
+  // Refetch on real-time return events
+  useSocketEvent('return:created', refetch);
+  useSocketEvent('return:updated', refetch);
+
+  const handleExport = async () => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const resp = await fetch(`${apiBase}/analytics/export?type=returns&range=month`, {
+        credentials: 'include',
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `returns-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   // Count returns per status for tab badges
   const statusCounts = returns.reduce<Record<string, number>>((acc, returnItem) => {
@@ -134,10 +159,10 @@ export function ReturnsPage() {
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage product returns and refunds</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} className="hidden sm:flex">
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} className="hidden sm:flex" onClick={handleExport}>
             Export
           </Button>
-          <Button variant="outline" className="flex sm:hidden p-2">
+          <Button variant="outline" className="flex sm:hidden p-2" onClick={handleExport}>
             <Download className="h-4 w-4" />
           </Button>
           <PermissionGate permission="returns.update">
@@ -210,8 +235,20 @@ export function ReturnsPage() {
           setIsDetailsOpen(false);
           setSelectedReturn(null);
         }}
+        onStatusChange={() => {
+          refetch();
+          setIsDetailsOpen(false);
+          setSelectedReturn(null);
+        }}
       />
-      <CreateReturnModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateReturnModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onSuccess={() => {
+          refetch();
+          setIsCreateOpen(false);
+        }}
+      />
     </div>
   );
 }

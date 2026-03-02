@@ -5,7 +5,26 @@ import { formatCurrency } from '@/lib/utils';
 import { useFinance } from './hooks/useFinance';
 
 export function FinancePage() {
-  const { data, isLoading } = useFinance();
+  const { data, isLoading, refetch } = useFinance();
+
+  const handleExport = async () => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const resp = await fetch(`${apiBase}/analytics/export?type=orders&range=month`, {
+        credentials: 'include',
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `finance-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   const summaryCards = data
     ? [
@@ -116,10 +135,10 @@ export function FinancePage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Reconcile payouts, refunds, and invoices</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={refetch}>
             Refresh
           </Button>
-          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+          <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
           <PermissionGate permission="settings.organization">

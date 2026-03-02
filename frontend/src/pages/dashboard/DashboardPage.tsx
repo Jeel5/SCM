@@ -89,9 +89,10 @@ export function DashboardPage() {
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
-          <Button variant="outline" size="sm" leftIcon={<Calendar className="h-4 w-4" />}>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+            <Calendar className="h-4 w-4" />
             {formatDate(new Date(), 'MMM dd, yyyy')}
-          </Button>
+          </div>
         </div>
       </motion.div>
 

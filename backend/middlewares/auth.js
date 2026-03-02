@@ -3,15 +3,23 @@ import userRepo from '../repositories/UserRepository.js';
 import logger from '../utils/logger.js';
 
 // Middleware to verify JWT token and attach user info to request
+// Reads from httpOnly cookie first, falls back to Authorization header
 export async function authenticate(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // 1. Prefer httpOnly cookie (set by login/refresh endpoints)
+    // 2. Fall back to Authorization header (useful for Postman / server-to-server calls)
+    let token = req.cookies?.accessToken || null;
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+
+    if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
-    
-    const token = authHeader.split(' ')[1];
+
     const decoded = verifyAccessToken(token);
     
     if (!decoded) {
@@ -35,6 +43,16 @@ export async function authenticate(req, res, next) {
       jti: decoded.jti || null,
       exp: decoded.exp || null
     };
+
+    // Inject org context inline — role and organizationId are already in the JWT,
+    // so there is no need for a separate injectOrgContext middleware on every route.
+    if (req.user.role === 'superadmin') {
+      req.orgContext = { isSuperadmin: true, organizationId: null, canAccessAllOrgs: true };
+    } else {
+      req.orgContext = req.user.organizationId
+        ? { isSuperadmin: false, organizationId: req.user.organizationId, canAccessAllOrgs: false }
+        : null;
+    }
     
     next();
   } catch (error) {

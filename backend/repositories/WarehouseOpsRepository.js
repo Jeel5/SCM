@@ -237,14 +237,14 @@ class WarehouseOpsRepository extends BaseRepository {
   /**
    * Insert (or upsert on tracking_number) a shipment record.
    */
-  async upsertShipment({ trackingNumber, orderId, carrierId, warehouseId, destinationAddress, deliveryScheduled }, client = null) {
+  async upsertShipment({ trackingNumber, orderId, carrierId, warehouseId, destinationAddress, deliveryScheduled, organizationId }, client = null) {
     const res = await this.query(
       `INSERT INTO shipments
-        (tracking_number, order_id, carrier_id, warehouse_id, status, destination_address, delivery_scheduled)
-       VALUES ($1, $2, $3, $4, 'picked_up', $5, $6)
+        (tracking_number, order_id, carrier_id, warehouse_id, status, destination_address, delivery_scheduled, organization_id)
+       VALUES ($1, $2, $3, $4, 'picked_up', $5, $6, $7)
        ON CONFLICT (tracking_number) DO UPDATE SET status = 'picked_up'
        RETURNING *`,
-      [trackingNumber, orderId, carrierId, warehouseId, destinationAddress, deliveryScheduled],
+      [trackingNumber, orderId, carrierId, warehouseId, destinationAddress, deliveryScheduled, organizationId || null],
       client
     );
     return res.rows[0];
