@@ -7,11 +7,15 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      # Override localhost Redis URL from .env with the Docker service name
+      # Override localhost values from .env with Docker service names
       REDIS_URL: redis://redis:6379
+      DB_HOST: db
+      NODE_ENV: production
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -39,6 +43,12 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
 
   redis:
@@ -47,6 +57,12 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   # ── Reverse proxy ─────────────────────────────────────────────────
   nginx:
@@ -62,11 +78,14 @@ services:
     restart: unless-stopped
 
   # ── Observability ─────────────────────────────────────────────────
+  # These are disabled by default because Prometheus and Grafana run natively.
+  # To run them in Docker instead: docker compose --profile monitoring up
   prometheus:
     container_name: scm_prometheus
     image: prom/prometheus:latest
+    profiles: ["monitoring"]
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -75,8 +94,9 @@ services:
   grafana:
     container_name: scm_grafana
     image: grafana/grafana:latest
+    profiles: ["monitoring"]
     ports:
-      - "3000:3000"
+      - "3003:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"

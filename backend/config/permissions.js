@@ -54,10 +54,9 @@ export const SUPERADMIN_PERMISSIONS = [
 
 // Role → permission mapping (single source of truth)
 export const ROLE_PERMISSIONS = {
-  superadmin: [
-    'dashboard.view',
-    'companies.manage',
-  ],
+  // superadmin: wildcard — has ALL org permissions + exclusive superadmin permissions.
+  // Represented as '**' to distinguish from admin '*' (which never includes SUPERADMIN_PERMISSIONS).
+  superadmin: ['**'],
 
   admin: ['*'], // expands to ALL_PERMISSIONS only (never SUPERADMIN_PERMISSIONS)
 
@@ -121,11 +120,13 @@ export const ROLE_PERMISSIONS = {
 
 /**
  * Returns the resolved permission list for a role.
- * admin → expands '*' to ALL_PERMISSIONS.
+ * superadmin → expands '**' to ALL_PERMISSIONS + SUPERADMIN_PERMISSIONS.
+ * admin      → expands '*'  to ALL_PERMISSIONS only.
  */
 export function getPermissionsForRole(role) {
   const perms = ROLE_PERMISSIONS[role];
   if (!perms) return [];
+  if (perms.includes('**')) return [...ALL_PERMISSIONS, ...SUPERADMIN_PERMISSIONS];
   if (perms.includes('*')) return ALL_PERMISSIONS;
   return perms;
 }
@@ -138,7 +139,9 @@ export function userHasPermission(user, permission) {
   if (!user || !user.role) return false;
   const perms = ROLE_PERMISSIONS[user.role];
   if (!perms) return false;
-  // '*' only expands to org-level ALL_PERMISSIONS, never SUPERADMIN_PERMISSIONS
+  // '**' = superadmin: has every permission unconditionally
+  if (perms.includes('**')) return true;
+  // '*' = admin: expands to org-level permissions only (never SUPERADMIN_PERMISSIONS)
   if (perms.includes('*')) return ALL_PERMISSIONS.includes(permission);
   return perms.includes(permission);
 }

@@ -117,7 +117,7 @@ export const jobWorker = {
     });
 
     worker.on('stalled', (jobId) => logger.warn(`⚠️  Job stalled: ${jobId}`));
-    worker.on('error', (err) => logger.error('Worker error:', err.message));
+    worker.on('error', (err) => logger.error(`Worker error: ${err.message}`));
 
     logger.info('🚀 BullMQ Worker started', {
       queue: QUEUE_NAME,

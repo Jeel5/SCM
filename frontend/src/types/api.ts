@@ -1,4 +1,22 @@
 // Comprehensive API Response Types
+import type {
+  Order,
+  Shipment,
+  ShipmentEvent,
+  InventoryItem,
+  Warehouse,
+  WarehouseUtilization,
+  Carrier,
+  CarrierPerformance,
+  Return,
+  Exception,
+  SLAPolicy,
+  SLAViolation,
+  DashboardMetrics,
+  ChartDataPoint,
+  User,
+} from './index';
+import type { Invoice, Refund } from '../pages/finance/types';
 
 /**
  * Standard API Response Structure
@@ -190,7 +208,6 @@ export type {
   SLAViolation,
   DashboardMetrics,
   ChartDataPoint,
-  Invoice,
-  Refund,
   User,
 } from './index';
+export type { Invoice, Refund } from '../pages/finance/types';

@@ -66,7 +66,7 @@ export async function invalidate(...keys) {
   try {
     await redis.del(...flat);
   } catch (err) {
-    logger.warn('Cache key invalidation failed:', err.message);
+    logger.warn(`Cache key invalidation failed: ${err.message}`);
   }
 }
 

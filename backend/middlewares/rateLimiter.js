@@ -28,7 +28,7 @@ function makeRedisLimiter(opts) {
       ...opts,
     });
   } catch (err) {
-    logger.warn('Rate limiter fell back to memory store:', err.message);
+    logger.warn(`Rate limiter fell back to memory store: ${err.message}`);
     return new RateLimiterMemory(opts);
   }
 }

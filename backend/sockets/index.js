@@ -57,7 +57,7 @@ export function initSocket(httpServer, corsOrigin) {
     io.adapter(createAdapter(pubClient, subClient));
     logger.info('✅ Socket.IO Redis adapter enabled (cluster-safe broadcasts)');
   } catch (err) {
-    logger.warn('Socket.IO Redis adapter failed — falling back to in-memory adapter:', err.message);
+    logger.warn(`Socket.IO Redis adapter failed — falling back to in-memory adapter: ${err.message}`);
   }
 
   // ── Authentication middleware ────────────────────────────────────────────
@@ -86,7 +86,7 @@ export function initSocket(httpServer, corsOrigin) {
 
       next();
     } catch (err) {
-      logger.warn('Socket auth failed:', err.message);
+      logger.warn(`Socket auth failed: ${err.message}`);
       next(new Error('Authentication failed'));
     }
   });

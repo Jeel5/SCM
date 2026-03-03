@@ -25,7 +25,7 @@ export function createRedisConnection() {
   });
 
   client.on('connect', () => logger.info('✅ Redis connected'));
-  client.on('error', (err) => logger.warn('Redis error:', err.message));
+  client.on('error', (err) => logger.warn(`Redis error: ${err.message}`));
   client.on('reconnecting', () => logger.info('Redis reconnecting...'));
 
   return client;

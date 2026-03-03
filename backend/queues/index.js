@@ -31,7 +31,7 @@ export const jobQueue = new Queue(QUEUE_NAME, {
   },
 });
 
-jobQueue.on('error', (err) => logger.error('Queue error:', err.message));
+jobQueue.on('error', (err) => logger.error(`Queue error: ${err.message}`));
 
 /**
  * Enqueue a one-off job that already has a DB record.
