@@ -5,6 +5,7 @@ import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import { asyncHandler, NotFoundError, AppError, ValidationError } from '../errors/index.js';
+import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
 // Get returns list with filters and pagination
 export const listReturns = asyncHandler(async (req, res) => {
@@ -12,39 +13,42 @@ export const listReturns = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status, reason } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
-  const { returns, totalCount } = await returnRepo.findReturnsWithDetails({
-    page:  parseInt(page)  || 1,
-    limit: Math.min(parseInt(limit) || 20, 100),
-    status:  status  || null,
-    reason:  reason  || null,
-    organizationId,
+  const pageNum  = parseInt(page)  || 1;
+  const limitNum = Math.min(parseInt(limit) || 20, 100);
+
+  // Cache filtered paginated list for 30 seconds
+  const cacheKey = `returns:list:${orgSeg(organizationId)}:${hashParams({ page: pageNum, limit: limitNum, status, reason })}`;
+  const cached = await cacheWrap(cacheKey, 30, async () => {
+    const { returns, totalCount } = await returnRepo.findReturnsWithDetails({
+      page: pageNum, limit: limitNum, status: status || null, reason: reason || null, organizationId,
+    });
+    return {
+      data: returns.map(r => ({
+        id: r.id,
+        rmaNumber: r.rma_number,
+        orderId: r.order_id,
+        orderNumber: r.order_number,
+        reason: r.reason,
+        status: r.status,
+        refundAmount: parseFloat(r.refund_amount || 0),
+        restockingFee: parseFloat(r.restocking_fee || 0),
+        customerName: r.customer_name,
+        customerEmail: r.customer_email,
+        items: r.items || [],
+        notes: r.quality_check_notes,
+        requestedAt: r.requested_at,
+        createdAt: r.created_at,
+        approvedAt: r.approved_at,
+        resolvedAt: r.resolved_at,
+      })),
+      totalCount
+    };
   });
 
   res.json({
     success: true,
-    data: returns.map(r => ({
-      id: r.id,
-      rmaNumber: r.rma_number,
-      orderId: r.order_id,
-      orderNumber: r.order_number,
-      reason: r.reason,
-      status: r.status,
-      refundAmount: parseFloat(r.refund_amount || 0),
-      restockingFee: parseFloat(r.restocking_fee || 0),
-      customerName: r.customer_name,
-      customerEmail: r.customer_email,
-      items: r.items || [],
-      notes: r.quality_check_notes,
-      requestedAt: r.requested_at,
-      createdAt: r.created_at,
-      approvedAt: r.approved_at,
-      resolvedAt: r.resolved_at,
-    })),
-    pagination: {
-      page: parseInt(page),
-      limit: Math.min(parseInt(limit) || 20, 100),
-      total: totalCount,
-    },
+    data: cached.data,
+    pagination: { page: pageNum, limit: limitNum, total: cached.totalCount },
   });
 });
 
@@ -156,6 +160,7 @@ export const createReturn = asyncHandler(async (req, res) => {
   });
 
   emitToOrg(organizationId, 'return:created', returnRecord);
+  await invalidatePatterns(invalidationTargets(organizationId, 'returns:list', 'dash', 'analytics'));
 
   res.status(201).json({ success: true, message: 'Return created successfully', data: returnRecord });
 });
@@ -200,6 +205,7 @@ export const updateReturn = asyncHandler(async (req, res) => {
   });
 
   emitToOrg(organizationId, 'return:updated', { id: updated.id, status: updated.status });
+  await invalidatePatterns(invalidationTargets(organizationId, 'returns:list', 'dash', 'analytics'));
 
   res.json({ success: true, message: `Return updated${status ? ` to '${status}'` : ''}`, data: updated });
 });

@@ -8,6 +8,7 @@ import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
+import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -83,23 +84,26 @@ export const getInventory = asyncHandler(async (req, res) => {
   const { page, limit, warehouse_id, search, low_stock } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
-  const { items, totalCount } = await InventoryRepository.findInventory({
-    page,
-    limit,
-    warehouse_id,
-    search,
-    low_stock,
-    organizationId
+  const pageNum  = parseInt(page)  || 1;
+  const limitNum = Math.min(parseInt(limit) || 20, 100);
+
+  // Cache filtered paginated list for 30 seconds
+  const cacheKey = `inv:list:${orgSeg(organizationId)}:${hashParams({ page: pageNum, limit: limitNum, warehouse_id, search, low_stock })}`;
+  const cached = await cacheWrap(cacheKey, 30, async () => {
+    const { items, totalCount } = await InventoryRepository.findInventory({
+      page: pageNum, limit: limitNum, warehouse_id, search, low_stock, organizationId
+    });
+    return { data: items.map(formatInventoryItem), totalCount };
   });
 
   res.json({
     success: true,
-    data: items.map(formatInventoryItem),
+    data: cached.data,
     pagination: {
-      page,
-      limit,
-      total: totalCount,
-      totalPages: Math.ceil(totalCount / limit)
+      page: pageNum,
+      limit: limitNum,
+      total: cached.totalCount,
+      totalPages: Math.ceil(cached.totalCount / limitNum)
     }
   });
 });
@@ -134,11 +138,10 @@ export const getInventoryStats = asyncHandler(async (req, res) => {
   const { warehouse_id } = req.query;
   const organizationId = req.orgContext?.organizationId;
 
-  const stats = await InventoryRepository.getInventoryStats(warehouse_id, organizationId);
-
-  res.json({
-    success: true,
-    data: {
+  const cacheKey = `inv:stats:${orgSeg(organizationId)}:${warehouse_id || '_all_'}`;
+  const data = await cacheWrap(cacheKey, 30, async () => {
+    const stats = await InventoryRepository.getInventoryStats(warehouse_id, organizationId);
+    return {
       totalItems: stats.total_items,
       totalQuantity: stats.total_quantity,
       totalAvailable: stats.total_available,
@@ -147,8 +150,10 @@ export const getInventoryStats = asyncHandler(async (req, res) => {
       lowStockItems: stats.low_stock_items,
       outOfStockItems: stats.out_of_stock_items,
       totalInventoryValue: parseFloat(stats.total_inventory_value) || 0
-    }
+    };
   });
+
+  res.json({ success: true, data });
 });
 
 /**
@@ -159,13 +164,13 @@ export const getLowStockItems = asyncHandler(async (req, res) => {
   const { warehouse_id } = req.query;
   const organizationId = req.orgContext?.organizationId;
 
-  const items = await InventoryRepository.findLowStock(warehouse_id, organizationId);
-
-  res.json({
-    success: true,
-    data: items.map(formatInventoryItem),
-    count: items.length
+  const cacheKey = `inv:lowstock:${orgSeg(organizationId)}:${warehouse_id || '_all_'}`;
+  const items = await cacheWrap(cacheKey, 30, async () => {
+    const rows = await InventoryRepository.findLowStock(warehouse_id, organizationId);
+    return rows.map(formatInventoryItem);
   });
+
+  res.json({ success: true, data: items, count: items.length });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +214,7 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
     quantity: item.quantity,
     userId: req.user?.userId
   });
+  await invalidatePatterns(invalidationTargets(orgId, 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'));
 
   res.status(201).json({ success: true, data: formatInventoryItem(item) });
 });
@@ -237,6 +243,7 @@ export const updateInventoryItem = asyncHandler(async (req, res) => {
     fields: Object.keys(req.body),
     userId: req.user?.userId
   });
+  await invalidatePatterns(invalidationTargets(organizationId, 'inv:list', 'inv:stats', 'inv:lowstock'));
 
   res.json({ success: true, data: formatInventoryItem(updated) });
 });
@@ -347,6 +354,7 @@ export const adjustStock = asyncHandler(async (req, res) => {
   if (txResult.data?.quantity <= txResult.data?.reorderPoint) {
     emitToOrg(item.organization_id, 'inventory:low_stock', txResult.data);
   }
+  await invalidatePatterns(invalidationTargets(item.organization_id, 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'));
   res.json({ success: true, ...txResult });
 });
 
@@ -466,5 +474,6 @@ export const transferInventory = asyncHandler(async (req, res) => {
 
   // Transaction committed — now safe to send the HTTP response
   emitToOrg(organizationId, 'inventory:updated', null); // triggers refetch in frontend
+  await invalidatePatterns(invalidationTargets(organizationId, 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'));
   res.json({ success: true, ...txResult });
 });

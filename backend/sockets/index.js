@@ -11,10 +11,13 @@
  */
 
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { verifyAccessToken } from '../utils/jwt.js';
 import userRepo from '../repositories/UserRepository.js';
+import { createRedisConnection } from '../config/redis.js';
 import logger from '../utils/logger.js';
 import { setIo } from './emitter.js';
+import { activeConnections } from '../middlewares/metrics.js';
 
 /** Parse cookie string into key→value map. */
 function parseCookies(cookieHeader = '') {
@@ -41,9 +44,21 @@ export function initSocket(httpServer, corsOrigin) {
       origin: corsOrigin,
       credentials: true,
     },
-    // Allow long-polling fallback for environments that block WS
     transports: ['websocket', 'polling'],
   });
+
+  // ── Redis adapter (required for PM2 cluster / multi-instance) ────────────
+  // Each Socket.IO event is published via Redis pub/sub so any worker can
+  // emit to any socket regardless of which worker it connected to.
+  // This replaces the need for sticky sessions in Nginx.
+  try {
+    const pubClient = createRedisConnection();
+    const subClient = createRedisConnection();
+    io.adapter(createAdapter(pubClient, subClient));
+    logger.info('✅ Socket.IO Redis adapter enabled (cluster-safe broadcasts)');
+  } catch (err) {
+    logger.warn('Socket.IO Redis adapter failed — falling back to in-memory adapter:', err.message);
+  }
 
   // ── Authentication middleware ────────────────────────────────────────────
   io.use(async (socket, next) => {
@@ -76,9 +91,11 @@ export function initSocket(httpServer, corsOrigin) {
     }
   });
 
-  // ── Connection handler ───────────────────────────────────────────────────
   io.on('connection', (socket) => {
     const { userId, role, organizationId } = socket.user;
+
+    // Track live connection count in Prometheus
+    activeConnections.inc();
 
     // Join the org room so org-scoped broadcasts reach this socket
     if (role === 'superadmin') {
@@ -102,6 +119,7 @@ export function initSocket(httpServer, corsOrigin) {
     });
 
     socket.on('disconnect', (reason) => {
+      activeConnections.dec();
       logger.debug('Socket disconnected', { userId, reason, socketId: socket.id });
     });
   });

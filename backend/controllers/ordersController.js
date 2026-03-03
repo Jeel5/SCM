@@ -1,6 +1,7 @@
 import orderService from '../services/orderService.js';
 import { asyncHandler, AppError } from '../errors/index.js';
 import { emitToOrg } from '../sockets/emitter.js';
+import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
 // Orders Controller - handles HTTP requests and delegates to service layer
 
@@ -13,60 +14,53 @@ const VALID_ORDER_STATUSES = [
 
 // List orders with filters and pagination
 export const listOrders = asyncHandler(async (req, res) => {
-  // Use validatedQuery for Joi-validated params (with type coercion)
   const queryParams = req.validatedQuery || req.query;
   const { status, search, page, limit, sortBy, sortOrder } = queryParams;
-  
-  // Get organization context for multi-tenancy
   const organizationId = req.orgContext?.organizationId;
-  
-  const result = await orderService.getOrders({
-    status,
-    search,
-    page: parseInt(page) || 1,
-    limit: Math.min(parseInt(limit) || 20, 100),
-    sortBy,
-    sortOrder,
-    organizationId
+
+  const pageNum  = parseInt(page)  || 1;
+  const limitNum = Math.min(parseInt(limit) || 20, 100);
+
+  // Cache paginated + filtered list for 30 seconds
+  const cacheKey = `orders:list:${orgSeg(organizationId)}:${hashParams({ status, search, page: pageNum, limit: limitNum, sortBy, sortOrder })}`;
+  const cached = await cacheWrap(cacheKey, 30, async () => {
+    const result = await orderService.getOrders({ status, search, page: pageNum, limit: limitNum, sortBy, sortOrder, organizationId });
+    return {
+      data: result.orders.map(row => ({
+        id: row.id,
+        orderNumber: row.order_number,
+        customerId: row.customer_id || 'N/A',
+        customerName: row.customer_name,
+        customerEmail: row.customer_email,
+        customerPhone: row.customer_phone,
+        status: row.status,
+        priority: row.priority,
+        shippingAddress: row.shipping_address,
+        billingAddress: row.billing_address,
+        totalAmount: parseFloat(row.total_amount),
+        currency: row.currency,
+        items: (row.items || []).map(item => ({
+          id: item.id,
+          productId: item.product_id,
+          sku: item.sku,
+          productName: item.product_name,
+          quantity: item.quantity,
+          unitPrice: parseFloat(item.unit_price || 0),
+          weight: item.weight,
+          warehouseId: item.warehouse_id
+        })),
+        itemCount: parseInt(row.item_count || 0),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        estimatedDelivery: row.estimated_delivery,
+        actualDelivery: row.actual_delivery,
+        notes: row.notes
+      })),
+      pagination: result.pagination
+    };
   });
-  
-  // Transform for frontend
-  const orders = result.orders.map(row => ({
-    id: row.id,
-    orderNumber: row.order_number,
-    customerId: row.customer_id || 'N/A',
-    customerName: row.customer_name,
-    customerEmail: row.customer_email,
-    customerPhone: row.customer_phone,
-    status: row.status,
-    priority: row.priority,
-    shippingAddress: row.shipping_address,
-    billingAddress: row.billing_address,
-    totalAmount: parseFloat(row.total_amount),
-    currency: row.currency,
-    items: (row.items || []).map(item => ({
-      id: item.id,
-      productId: item.product_id,
-      sku: item.sku,
-      productName: item.product_name,
-      quantity: item.quantity,
-      unitPrice: parseFloat(item.unit_price || 0),
-      weight: item.weight,
-      warehouseId: item.warehouse_id
-    })),
-    itemCount: parseInt(row.item_count || 0),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    estimatedDelivery: row.estimated_delivery,
-    actualDelivery: row.actual_delivery,
-    notes: row.notes
-  }));
-  
-  res.json({
-    success: true,
-    data: orders,
-    pagination: result.pagination
-  });
+
+  res.json({ success: true, ...cached });
 });
 
 // Get single order
@@ -126,6 +120,7 @@ export const createOrder = asyncHandler(async (req, res) => {
   const order = await orderService.createOrder(orderData, requestCarrierAssignment);
 
   emitToOrg(req.orgContext?.organizationId, 'order:created', order);
+  await invalidatePatterns(invalidationTargets(req.orgContext?.organizationId, 'orders:list', 'dash', 'analytics'));
 
   res.status(201).json({ 
     success: true, 
@@ -182,6 +177,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const order = await orderService.updateOrderStatus(id, status, organizationId);
 
   emitToOrg(organizationId, 'order:updated', { id: order.id, status: order.status, orderNumber: order.order_number });
+  await invalidatePatterns(invalidationTargets(organizationId, 'orders:list', 'dash', 'analytics'));
 
   res.json({ 
     success: true, 

@@ -1,5 +1,6 @@
 // User Repository - handles user authentication and management queries
 import BaseRepository from './BaseRepository.js';
+import redis from '../config/redis.js';
 
 class UserRepository extends BaseRepository {
   constructor() {
@@ -375,6 +376,7 @@ class UserRepository extends BaseRepository {
   /**
    * Bulk-insert rows into revoked_tokens (ignore conflicts on jti).
    * rows: Array of { jti, user_id, expires_at }
+   * Also writes each JTI to Redis so isTokenRevoked() can short-circuit.
    */
   async bulkInsertRevokedTokens(rows, client = null) {
     if (!rows.length) return;
@@ -391,6 +393,16 @@ class UserRepository extends BaseRepository {
        ON CONFLICT (jti) DO NOTHING`,
       params, client
     );
+    // Mirror to Redis — pipeline so it's one round-trip
+    try {
+      const pipeline = redis.pipeline();
+      for (const { jti, expires_at } of rows) {
+        const exp = expires_at ? new Date(expires_at) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const ttlSec = Math.max(1, Math.floor((exp.getTime() - Date.now()) / 1000));
+        pipeline.set(`revoked_jti:${jti}`, '1', 'EX', ttlSec);
+      }
+      await pipeline.exec();
+    } catch (_) { /* Redis unavailable — DB is source of truth */ }
   }
 
   // ── Org-user CRUD ───────────────────────────────────────────────────────────
@@ -640,6 +652,7 @@ class UserRepository extends BaseRepository {
 
   /**
    * Insert a single JTI into the revoked_tokens blocklist.
+   * Also writes to Redis so subsequent auth checks hit the cache.
    */
   async insertRevokedToken(jti, userId, expiresAt, client = null) {
     await this.query(
@@ -648,6 +661,11 @@ class UserRepository extends BaseRepository {
        ON CONFLICT (jti) DO NOTHING`,
       [jti, userId, expiresAt], client
     );
+    try {
+      const exp = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const ttlSec = Math.max(1, Math.floor((exp.getTime() - Date.now()) / 1000));
+      await redis.set(`revoked_jti:${jti}`, '1', 'EX', ttlSec);
+    } catch (_) { /* Redis unavailable — DB remains source of truth */ }
   }
 
   // ─── Notification preferences ────────────────────────────────────────────────
@@ -716,14 +734,36 @@ class UserRepository extends BaseRepository {
 
   /**
    * Check whether a JWT (by its jti) has been revoked.
+   *
+   * Strategy:
+   *   1. Redis GET revoked_jti:{jti}  — O(1), sub-millisecond
+   *   2. On Redis miss, fall back to Postgres and backfill Redis if revoked
+   *   3. If Redis is unavailable, go straight to Postgres
+   *
    * Returns true if revoked, false otherwise.
    */
   async isTokenRevoked(jti, client = null) {
+    // ── 1. Redis fast path ─────────────────────────────────────────────
+    try {
+      const cached = await redis.get(`revoked_jti:${jti}`);
+      if (cached !== null) return true; // key exists → revoked
+    } catch (_) { /* Redis unavailable — fall through to DB */ }
+
+    // ── 2. DB source of truth ──────────────────────────────────────────
     const result = await this.query(
-      'SELECT 1 FROM revoked_tokens WHERE jti = $1 AND expires_at > NOW() LIMIT 1',
+      'SELECT jti, expires_at FROM revoked_tokens WHERE jti = $1 AND expires_at > NOW() LIMIT 1',
       [jti], client
     );
-    return result.rows.length > 0;
+    if (result.rows.length === 0) return false;
+
+    // ── 3. Backfill Redis (handles Redis restart / cache miss) ─────────
+    try {
+      const exp = new Date(result.rows[0].expires_at);
+      const ttlSec = Math.max(1, Math.floor((exp.getTime() - Date.now()) / 1000));
+      await redis.set(`revoked_jti:${jti}`, '1', 'EX', ttlSec);
+    } catch (_) { /* best-effort */ }
+
+    return true;
   }
 }
 

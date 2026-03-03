@@ -8,13 +8,13 @@ import { matchSlaPolicyForShipment } from '../services/slaPolicyMatchingService.
 import { withTransaction } from '../utils/dbTransaction.js';
 import { asyncHandler, NotFoundError, ValidationError } from '../errors/index.js';
 import logger from '../utils/logger.js';
+import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
 // ─── Shipment State Machine lives in services/shipmentService.js ───────────────────────
 // Import SHIPMENT_VALID_TRANSITIONS from there if needed in other controller functions.
 
 // Get shipments list with filters and pagination
 export const listShipments = asyncHandler(async (req, res) => {
-  // Use validatedQuery for Joi-validated params (with type coercion)
   const queryParams = req.validatedQuery || req.query;
   const { status, carrier_id, search, page, limit } = queryParams;
   const organizationId = req.orgContext?.organizationId;
@@ -22,62 +22,63 @@ export const listShipments = asyncHandler(async (req, res) => {
   const pageNum  = parseInt(page)  || 1;
   const limitNum = Math.min(parseInt(limit) || 20, 100);
 
-  const { shipments: rows, totalCount } = await shipmentRepo.findShipmentsWithDetails({
-    page: pageNum, limit: limitNum, status, carrier_id, search, organizationId,
+  // Cache paginated + filtered list (including batch-loaded events) for 30 seconds
+  const cacheKey = `ship:list:${orgSeg(organizationId)}:${hashParams({ status, carrier_id, search, page: pageNum, limit: limitNum })}`;
+  const cached = await cacheWrap(cacheKey, 30, async () => {
+    const { shipments: rows, totalCount } = await shipmentRepo.findShipmentsWithDetails({
+      page: pageNum, limit: limitNum, status, carrier_id, search, organizationId,
+    });
+
+    const shipmentIds = rows.map(r => r.id);
+    const allEvents = await shipmentRepo.findTrackingEventsByIds(shipmentIds);
+    const eventsByShipment = allEvents.reduce((acc, e) => {
+      (acc[e.shipment_id] = acc[e.shipment_id] || []).push(e);
+      return acc;
+    }, {});
+
+    return {
+      data: rows.map(row => ({
+        id: row.id,
+        trackingNumber: row.tracking_number,
+        orderId: row.order_id,
+        orderNumber: row.order_number,
+        carrierId: row.carrier_id,
+        carrierName: row.carrier_name,
+        carrierCode: row.carrier_code,
+        warehouseId: row.warehouse_id,
+        warehouseName: row.warehouse_name,
+        status: row.status,
+        origin: row.origin_address,
+        destination: row.destination_address,
+        currentLocation: row.current_location,
+        weight: parseFloat(row.weight || 0),
+        cost: parseFloat(row.shipping_cost || 0),
+        estimatedDelivery: row.delivery_scheduled,
+        slaDeadline: row.delivery_scheduled,
+        pickupScheduled: row.pickup_scheduled,
+        pickupActual: row.pickup_actual,
+        deliveryActual: row.delivery_actual,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        events: (eventsByShipment[row.id] || []).map(e => ({
+          id: e.id,
+          shipmentId: e.shipment_id,
+          status: e.event_type,
+          location: e.location,
+          timestamp: e.event_timestamp,
+          description: e.description
+        }))
+      })),
+      pagination: {
+        total: totalCount,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(totalCount / limitNum)
+      }
+    };
   });
 
-  // Batch-load events for all returned shipments — avoids N+1 (T3-01)
-  const shipmentIds = rows.map(r => r.id);
-  const allEvents = await shipmentRepo.findTrackingEventsByIds(shipmentIds);
-
-  const eventsByShipment = allEvents.reduce((acc, e) => {
-    (acc[e.shipment_id] = acc[e.shipment_id] || []).push(e);
-    return acc;
-  }, {});
-
-  const shipments = rows.map(row => ({
-    id: row.id,
-    trackingNumber: row.tracking_number,
-    orderId: row.order_id,
-    orderNumber: row.order_number,
-    carrierId: row.carrier_id,
-    carrierName: row.carrier_name,
-    carrierCode: row.carrier_code,
-    warehouseId: row.warehouse_id,
-    warehouseName: row.warehouse_name,
-    status: row.status,
-    origin: row.origin_address,
-    destination: row.destination_address,
-    currentLocation: row.current_location,
-    weight: parseFloat(row.weight || 0),
-    cost: parseFloat(row.shipping_cost || 0),
-    estimatedDelivery: row.delivery_scheduled,
-    slaDeadline: row.delivery_scheduled,
-    pickupScheduled: row.pickup_scheduled,
-    pickupActual: row.pickup_actual,
-    deliveryActual: row.delivery_actual,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    events: (eventsByShipment[row.id] || []).map(e => ({
-      id: e.id,
-      shipmentId: e.shipment_id,
-      status: e.event_type,
-      location: e.location,
-      timestamp: e.event_timestamp,
-      description: e.description
-    }))
-  }));
-  
-  res.json({
-    success: true,
-    data: shipments,
-    pagination: {
-      total: totalCount,
-      page: pageNum,
-      limit: limitNum,
-      totalPages: Math.ceil(totalCount / limitNum)
-    }
-  });
+  res.json({ success: true, ...cached });
 });
 
 // Get single shipment
@@ -222,6 +223,7 @@ export const createShipment = asyncHandler(async (req, res) => {
 
   emitToOrg(organizationId, 'shipment:created', shipment);
   emitToShipment(shipment.id, 'shipment:updated', shipment);
+  await invalidatePatterns(invalidationTargets(organizationId, 'ship:list', 'orders:list', 'dash', 'analytics'));
 
   res.status(201).json({
     success: true,
@@ -249,6 +251,7 @@ export const updateShipmentStatus = asyncHandler(async (req, res) => {
 
   emitToOrg(organizationId, 'shipment:updated', { id, status, location });
   emitToShipment(id, 'shipment:updated', { id, status, location });
+  await invalidatePatterns(invalidationTargets(organizationId, 'ship:list', 'dash', 'analytics'));
 
   res.json({ success: true, message: `Shipment status updated to '${status}'` });
 });

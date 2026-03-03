@@ -5,7 +5,10 @@ services:
     ports:
       - "3001:3001"
     env_file:
-      - .env
+      - ./backend/.env
+    environment:
+      # Override localhost Redis URL from .env with the Docker service name
+      REDIS_URL: redis://redis:6379
     depends_on:
       - db
       - redis
@@ -17,8 +20,6 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: ${VITE_API_URL}
-    env_file:
-      - .env
     ports:
       - "5173:80"
     depends_on:
@@ -29,8 +30,6 @@ services:
     container_name: scm_db
     image: postgres:16-alpine
     restart: unless-stopped
-    env_file:
-      - .env
     ports:
       - "5433:5432"
     environment:
@@ -49,6 +48,46 @@ services:
     volumes:
       - redis-data:/data
 
+  # ── Reverse proxy ─────────────────────────────────────────────────
+  nginx:
+    container_name: scm_nginx
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  # ── Observability ─────────────────────────────────────────────────
+  prometheus:
+    container_name: scm_prometheus
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    container_name: scm_grafana
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   db-data:
   redis-data:
+  prometheus-data:
+  grafana-data:

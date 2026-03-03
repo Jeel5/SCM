@@ -3,6 +3,7 @@ import slaRepo from '../repositories/SlaRepository.js';
 import logger from '../utils/logger.js';
 import { asyncHandler, NotFoundError } from '../errors/index.js';
 import { emitToOrg } from '../sockets/emitter.js';
+import { cacheWrap, orgSeg, invalidatePattern } from '../utils/cache.js';
 
 // Map a sla_policies DB row to the API response shape
 function mapPolicy(p) {
@@ -28,11 +29,14 @@ function mapPolicy(p) {
   };
 }
 
-// Get list of active SLA policies
+// Get list of active SLA policies — cached 10 minutes (rarely changes)
 export const listSlaPolicies = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
-  const rows = await slaRepo.findActivePolicies(organizationId);
-  res.json({ success: true, data: rows.map(mapPolicy) });
+  const data = await cacheWrap(`sla:pol:${orgSeg(organizationId)}`, 600, async () => {
+    const rows = await slaRepo.findActivePolicies(organizationId);
+    return rows.map(mapPolicy);
+  });
+  res.json({ success: true, data });
 });
 
 // Create a new SLA policy
@@ -42,6 +46,8 @@ export const createSlaPolicy = asyncHandler(async (req, res) => {
 
   const row = await slaRepo.createPolicy({ organizationId, ...data });
   logger.info('SLA policy created', { policyId: row.id, name: row.name, userId: req.user?.userId });
+  // Invalidate policy list cache for this org and global scope
+  await invalidatePattern('sla:pol:*');
   res.status(201).json({ success: true, data: mapPolicy(row) });
 });
 
@@ -55,6 +61,7 @@ export const updateSlaPolicy = asyncHandler(async (req, res) => {
   if (!row) throw new NotFoundError('SLA Policy');
 
   logger.info('SLA policy updated', { policyId: id, userId: req.user?.userId });
+  await invalidatePattern('sla:pol:*');
   res.json({ success: true, data: mapPolicy(row) });
 });
 
@@ -66,6 +73,7 @@ export const deactivateSlaPolicy = asyncHandler(async (req, res) => {
   const row = await slaRepo.deactivatePolicy(id, organizationId);
   if (!row) throw new NotFoundError('SLA Policy');
 
+  await invalidatePattern('sla:pol:*');
   res.json({ success: true, message: 'Policy deactivated' });
 });
 

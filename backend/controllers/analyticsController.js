@@ -2,15 +2,21 @@
 import analyticsRepo from '../repositories/AnalyticsRepository.js';
 import logger from '../utils/logger.js';
 import { asyncHandler, ValidationError } from '../errors/index.js';
+import { cacheWrap, orgSeg } from '../utils/cache.js';
 
 // Get analytics data with time-series trends and breakdowns
 export const getAnalytics = asyncHandler(async (req, res) => {
   const { range = 'month' } = req.validatedQuery ?? req.query; // day, week, month, year
-    
-    // Map range to SQL interval
+  const organizationId = req.orgContext?.organizationId;
+
+  // Cache the fully-computed analytics response for 5 minutes.
+  // 8 heavy aggregation queries across orders/shipments/inventory are inside
+  // the miss path — a cache hit costs only a single Redis GET.
+  const cacheKey = `analytics:${orgSeg(organizationId)}:${range}`;
+  const data = await cacheWrap(cacheKey, 300, async () => {
     let interval = '30 days';
     let dateGrouping = "DATE(created_at)";
-    
+
     if (range === 'day') {
       interval = '1 day';
       dateGrouping = "DATE_TRUNC('hour', created_at)";
@@ -22,22 +28,13 @@ export const getAnalytics = asyncHandler(async (req, res) => {
       dateGrouping = "DATE_TRUNC('month', created_at)";
     }
 
-    const organizationId = req.orgContext?.organizationId;
-
-    // Build query param array: [interval, orgId?]
-    // Using $N::INTERVAL avoids interpolating user-controlled strings into SQL (TASK-R8-016).
-    // interval values are already whitelisted above, but parameterize for hygiene.
-    const orgParam = organizationId ? 1 : null;   // index of orgId param when present
-    const intParam = organizationId ? 2 : 1;       // index of interval param
-
+    const orgParam = organizationId ? 1 : null;
+    const intParam = organizationId ? 2 : 1;
     const baseArgs  = organizationId ? [organizationId, interval] : [interval];
-
-    // Convenience helpers so each query below can reference the right param indices
     const orgClause = organizationId ? `AND organization_id = $${orgParam}` : '';
     const orgClauseAlias = (alias) => organizationId ? `AND ${alias}.organization_id = $${orgParam}` : '';
     const intClause = `NOW() - $${intParam}::INTERVAL`;
 
-    // Run all 8 independent queries in parallel for ~6-8x latency improvement
     const [
       ordersOverTime,
       shipmentsByCarrier,
@@ -58,84 +55,81 @@ export const getAnalytics = asyncHandler(async (req, res) => {
       analyticsRepo.getFinancialMetrics({ intClause, orgClause, baseArgs }),
     ]);
 
-    // Calculate derived metrics
     const shipmentsByCarrierFormatted = shipmentsByCarrier.rows.map(r => {
       const delivered = parseInt(r.delivered);
       const total = parseInt(r.total_shipments);
       const onTime = parseInt(r.on_time_deliveries);
-      
       return {
         carrier: r.carrier,
         carrierId: r.carrier_id,
         totalShipments: total,
-        delivered: delivered,
+        delivered,
         onTimeRate: delivered > 0 ? ((onTime / delivered) * 100).toFixed(1) : '100.0',
         avgDelayHours: r.avg_delay_hours ? parseFloat(r.avg_delay_hours).toFixed(1) : '0.0',
         totalCost: parseFloat(r.total_cost)
       };
     });
-    
-    res.json({
-      success: true,
-      data: {
-        timeRange: range,
-        ordersOverTime: ordersOverTime.rows.map(r => ({
-          date: r.date,
-          count: parseInt(r.count),
-          value: parseFloat(r.value),
-          delivered: parseInt(r.delivered),
-          inTransit: parseInt(r.in_transit),
-          pending: parseInt(r.pending)
-        })),
-        shipmentsByCarrier: shipmentsByCarrierFormatted,
-        topProducts: topProducts.rows.map(r => ({
-          name: r.name,
-          sku: r.sku,
-          category: r.category,
-          unitsSold: parseInt(r.units_sold),
-          revenue: parseFloat(r.revenue),
-          orderCount: parseInt(r.order_count)
-        })),
-        warehouseUtilization: warehouseUtil.rows.map(r => ({
-          name: r.name,
-          code: r.code,
-          capacity: r.capacity,
-          currentStock: parseInt(r.current_stock),
-          utilization: r.capacity > 0 ? Math.round((parseInt(r.current_stock) / r.capacity) * 100) : 0,
-          shipmentsProcessed: parseInt(r.shipments_processed),
-          ordersFulfilled: parseInt(r.orders_fulfilled)
-        })),
-        slaViolations: slaViolations.rows.map(r => ({
-          date: r.date,
-          violations: parseInt(r.violations),
-          totalPenalties: parseFloat(r.total_penalties)
-        })),
-        exceptionsByType: exceptionsByType.rows.map(r => ({
-          type: r.exception_type,
-          severity: r.severity,
-          count: parseInt(r.count),
-          resolved: parseInt(r.resolved),
-          avgResolutionHours: r.avg_resolution_hours ? parseFloat(r.avg_resolution_hours).toFixed(1) : null
-        })),
-        returnsAnalysis: {
-          totalReturns: parseInt(returnsAnalysis.rows[0].total_returns),
-          refunded: parseInt(returnsAnalysis.rows[0].refunded),
-          totalRefundAmount: parseFloat(returnsAnalysis.rows[0].total_refund_amount),
-          avgRefundAmount: parseFloat(returnsAnalysis.rows[0].avg_refund_amount),
-          qualityPassed: parseInt(returnsAnalysis.rows[0].quality_passed),
-          qualityFailed: parseInt(returnsAnalysis.rows[0].quality_failed)
-        },
-        financialMetrics: {
-          totalRevenue: parseFloat(financialMetrics.rows[0].total_revenue),
-          totalShippingCost: parseFloat(financialMetrics.rows[0].total_shipping_cost),
-          totalPenalties: parseFloat(financialMetrics.rows[0].total_penalties),
-          totalRefunds: parseFloat(financialMetrics.rows[0].total_refunds),
-          totalOrders: parseInt(financialMetrics.rows[0].total_orders),
-          avgOrderValue: parseFloat(financialMetrics.rows[0].avg_order_value)
-        }
-      }
-    });
 
+    return {
+      timeRange: range,
+      ordersOverTime: ordersOverTime.rows.map(r => ({
+        date: r.date,
+        count: parseInt(r.count),
+        value: parseFloat(r.value),
+        delivered: parseInt(r.delivered),
+        inTransit: parseInt(r.in_transit),
+        pending: parseInt(r.pending)
+      })),
+      shipmentsByCarrier: shipmentsByCarrierFormatted,
+      topProducts: topProducts.rows.map(r => ({
+        name: r.name,
+        sku: r.sku,
+        category: r.category,
+        unitsSold: parseInt(r.units_sold),
+        revenue: parseFloat(r.revenue),
+        orderCount: parseInt(r.order_count)
+      })),
+      warehouseUtilization: warehouseUtil.rows.map(r => ({
+        name: r.name,
+        code: r.code,
+        capacity: r.capacity,
+        currentStock: parseInt(r.current_stock),
+        utilization: r.capacity > 0 ? Math.round((parseInt(r.current_stock) / r.capacity) * 100) : 0,
+        shipmentsProcessed: parseInt(r.shipments_processed),
+        ordersFulfilled: parseInt(r.orders_fulfilled)
+      })),
+      slaViolations: slaViolations.rows.map(r => ({
+        date: r.date,
+        violations: parseInt(r.violations),
+        totalPenalties: parseFloat(r.total_penalties)
+      })),
+      exceptionsByType: exceptionsByType.rows.map(r => ({
+        type: r.exception_type,
+        severity: r.severity,
+        count: parseInt(r.count),
+        resolved: parseInt(r.resolved),
+        avgResolutionHours: r.avg_resolution_hours ? parseFloat(r.avg_resolution_hours).toFixed(1) : null
+      })),
+      returnsAnalysis: {
+        totalReturns: parseInt(returnsAnalysis.rows[0].total_returns),
+        refunded: parseInt(returnsAnalysis.rows[0].refunded),
+        totalRefundAmount: parseFloat(returnsAnalysis.rows[0].total_refund_amount),
+        avgRefundAmount: parseFloat(returnsAnalysis.rows[0].avg_refund_amount),
+        qualityPassed: parseInt(returnsAnalysis.rows[0].quality_passed),
+        qualityFailed: parseInt(returnsAnalysis.rows[0].quality_failed)
+      },
+      financialMetrics: {
+        totalRevenue: parseFloat(financialMetrics.rows[0].total_revenue),
+        totalShippingCost: parseFloat(financialMetrics.rows[0].total_shipping_cost),
+        totalPenalties: parseFloat(financialMetrics.rows[0].total_penalties),
+        totalRefunds: parseFloat(financialMetrics.rows[0].total_refunds),
+        totalOrders: parseInt(financialMetrics.rows[0].total_orders),
+        avgOrderValue: parseFloat(financialMetrics.rows[0].avg_order_value)
+      }
+    };
+  });
+
+  res.json({ success: true, data });
 });
 
 // ─── Analytics CSV Export ──────────────────────────────────────────────────
