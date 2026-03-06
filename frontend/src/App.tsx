@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Link, BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -98,36 +98,73 @@ function PageLoader({ children }: { children: React.ReactNode }) {
   );
 }
 
+function RouteTitleManager() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      '/': 'TwinChain | Supply Chain Visibility',
+      '/about': 'About | TwinChain',
+      '/contact': 'Contact | TwinChain',
+      '/get-demo': 'Get Demo | TwinChain',
+      '/login': 'Login | TwinChain',
+      '/dashboard': 'Dashboard | TwinChain',
+      '/orders': 'Orders | TwinChain',
+      '/shipments': 'Shipments | TwinChain',
+      '/inventory': 'Inventory | TwinChain',
+      '/products': 'Products | TwinChain',
+      '/warehouses': 'Warehouses | TwinChain',
+      '/carriers': 'Carriers | TwinChain',
+      '/exceptions': 'Exceptions | TwinChain',
+      '/returns': 'Returns | TwinChain',
+      '/analytics': 'Analytics | TwinChain',
+      '/sla': 'SLA Management | TwinChain',
+      '/finance': 'Finance | TwinChain',
+      '/help': 'Help & Support | TwinChain',
+      '/settings': 'Settings | TwinChain',
+      '/team': 'Team | TwinChain',
+      '/partners': 'Partners | TwinChain',
+      '/notifications': 'Notifications | TwinChain',
+      '/super-admin/dashboard': 'Super Admin Dashboard | TwinChain',
+      '/super-admin/companies': 'Companies | TwinChain',
+    };
+
+    document.title = titles[pathname] || 'TwinChain';
+  }, [pathname]);
+
+  return null;
+}
+
 // Protected Route Component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
 // Public Route Component (redirect if already authenticated)
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
-  
+
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
 // Main App Component
 function App() {
   const { theme } = useUIStore();
-  
+
   // Apply theme class to document root on mount and when theme changes
   useEffect(() => {
     const root = document.documentElement;
-    
+
     if (theme === 'dark') {
       root.classList.add('dark');
     } else if (theme === 'light') {
@@ -142,7 +179,7 @@ function App() {
       }
     }
   }, [theme]);
-  
+
   return (
     <ErrorBoundary>
       <GoogleOAuthProvider
@@ -152,269 +189,270 @@ function App() {
           <ToastProvider>
             <ToastContainer />
             <SocketProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route
-                  path="*"
-                  element={
-                    <PageLoader>
-                      <NotFoundPage />
-                    </PageLoader>
-                  }
-                />
+              <BrowserRouter>
+                <RouteTitleManager />
+                <Routes>
+                  <Route
+                    path="*"
+                    element={
+                      <PageLoader>
+                        <NotFoundPage />
+                      </PageLoader>
+                    }
+                  />
 
-                {/* Landing Page */}
-                <Route
-                  path="/"
-                  element={
-                    <PageLoader>
-                      <LandingPage />
-                    </PageLoader>
-                  }
-                />
+                  {/* Landing Page */}
+                  <Route
+                    path="/"
+                    element={
+                      <PageLoader>
+                        <LandingPage />
+                      </PageLoader>
+                    }
+                  />
 
-                {/* About */}
-                <Route
-                  path="/about"
-                  element={
-                    <PageLoader>
-                      <AboutPage />
-                    </PageLoader>
-                  }
-                />
+                  {/* About */}
+                  <Route
+                    path="/about"
+                    element={
+                      <PageLoader>
+                        <AboutPage />
+                      </PageLoader>
+                    }
+                  />
 
-                {/* Get Demo */}
-                <Route
-                  path="/get-demo"
-                  element={
-                    <PageLoader>
-                      <GetDemoPage />
-                    </PageLoader>
-                  }
-                />
+                  {/* Get Demo */}
+                  <Route
+                    path="/get-demo"
+                    element={
+                      <PageLoader>
+                        <GetDemoPage />
+                      </PageLoader>
+                    }
+                  />
 
-                {/* Contact Sales */}
-                <Route
-                  path="/contact"
-                  element={
-                    <PageLoader>
-                      <ContactPage />
-                    </PageLoader>
-                  }
-                />
+                  {/* Contact Sales */}
+                  <Route
+                    path="/contact"
+                    element={
+                      <PageLoader>
+                        <ContactPage />
+                      </PageLoader>
+                    }
+                  />
 
-                {/* Public Routes */}
-                <Route
-                  path="/login"
-                  element={
-                    <PublicRoute>
-                      <AuthLayout>
+                  {/* Public Routes */}
+                  <Route
+                    path="/login"
+                    element={
+                      <PublicRoute>
+                        <AuthLayout>
+                          <PageLoader>
+                            <LoginPage />
+                          </PageLoader>
+                        </AuthLayout>
+                      </PublicRoute>
+                    }
+                  />
+
+                  {/* Protected Routes - requires authentication */}
+                  <Route
+                    element={
+                      <ProtectedRoute>
+                        <MainLayout />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route
+                      path="dashboard"
+                      element={
                         <PageLoader>
-                          <LoginPage />
+                          <DashboardPage />
                         </PageLoader>
-                      </AuthLayout>
-                    </PublicRoute>
-                  }
-                />
+                      }
+                    />
+                    <Route
+                      path="super-admin/dashboard"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="companies.manage">
+                            <SuperAdminDashboard />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="super-admin/companies"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="companies.manage">
+                            <CompaniesPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="orders"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="orders.view">
+                            <OrdersPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="shipments"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="shipments.view">
+                            <ShipmentsPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="inventory"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="inventory.view">
+                            <InventoryPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="products"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="inventory.view">
+                            <ProductsPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="warehouses"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="warehouses.view">
+                            <WarehousesPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="carriers"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="carriers.view">
+                            <CarriersPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="exceptions"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="exceptions.view">
+                            <ExceptionsPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="returns"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="returns.view">
+                            <ReturnsPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="analytics"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="analytics.view">
+                            <AnalyticsPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="sla"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="sla.view">
+                            <SLAManagementPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="finance"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="finance.view">
+                            <FinancePage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="help"
+                      element={
+                        <PageLoader>
+                          <HelpSupportPage />
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="settings"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="settings.personal">
+                            <SettingsPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="team"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="team.manage">
+                            <TeamPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="partners"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="channels.view">
+                            <PartnersPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="notifications"
+                      element={
+                        <PageLoader>
+                          <NotificationsPage />
+                        </PageLoader>
+                      }
+                    />
+                  </Route>
 
-                {/* Protected Routes - requires authentication */}
-                <Route
-                  element={
-                    <ProtectedRoute>
-                      <MainLayout />
-                    </ProtectedRoute>
-                  }
-                >
-                  <Route
-                    path="dashboard"
-                    element={
-                      <PageLoader>
-                        <DashboardPage />
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="super-admin/dashboard"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="companies.manage">
-                          <SuperAdminDashboard />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="super-admin/companies"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="companies.manage">
-                          <CompaniesPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="orders"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="orders.view">
-                          <OrdersPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="shipments"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="shipments.view">
-                          <ShipmentsPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="inventory"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="inventory.view">
-                          <InventoryPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="products"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="inventory.view">
-                          <ProductsPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="warehouses"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="warehouses.view">
-                          <WarehousesPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="carriers"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="carriers.view">
-                          <CarriersPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="exceptions"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="exceptions.view">
-                          <ExceptionsPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="returns"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="returns.view">
-                          <ReturnsPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="analytics"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="analytics.view">
-                          <AnalyticsPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="sla"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="sla.view">
-                          <SLAManagementPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="finance"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="finance.view">
-                          <FinancePage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="help"
-                    element={
-                      <PageLoader>
-                        <HelpSupportPage />
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="settings"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="settings.personal">
-                          <SettingsPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="team"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="team.manage">
-                          <TeamPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="partners"
-                    element={
-                      <PageLoader>
-                        <PermissionRoute permission="channels.view">
-                          <PartnersPage />
-                        </PermissionRoute>
-                      </PageLoader>
-                    }
-                  />
-                  <Route
-                    path="notifications"
-                    element={
-                      <PageLoader>
-                        <NotificationsPage />
-                      </PageLoader>
-                    }
-                  />
-                </Route>
-
-                {/* Catch-all redirect */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </BrowserRouter>
+                  {/* Catch-all redirect */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </BrowserRouter>
             </SocketProvider>
           </ToastProvider>
         </QueryClientProvider>

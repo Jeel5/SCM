@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { motion, useInView } from 'framer-motion';
 import {
   Truck, Package, BarChart3, Zap, Globe, ArrowRight,
@@ -107,7 +107,7 @@ const howItWorks = [
 const plans = [
   {
     name: 'Starter',
-    price: '$499',
+    price: '₹499',
     period: '/month',
     desc: 'Perfect for growing e-commerce brands',
     highlight: false,
@@ -123,7 +123,7 @@ const plans = [
   },
   {
     name: 'Growth',
-    price: '$1,499',
+    price: '₹1,499',
     period: '/month',
     desc: 'For scaling operations teams',
     highlight: true,
@@ -186,7 +186,7 @@ function DashboardMockup() {
           )}
         </div>
         {/* Main content */}
-        <div className="flex-1 p-4 space-y-3 bg-gray-950 min-h-[320px]">
+        <div className="flex-1 p-4 space-y-3 bg-gray-950 min-h-80">
           {/* KPI row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
@@ -235,17 +235,32 @@ function DashboardMockup() {
 
 /* ─────────────────────────── Page Component ─────────────────────────── */
 export function LandingPage() {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!location.hash) return;
+
+    const id = location.hash.slice(1);
+    const section = document.getElementById(id);
+    if (!section) return;
+
+    // Defer until layout/animations mount so scrolling targets the final position.
+    window.requestAnimationFrame(() => {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [location.hash]);
+
   return (
     <div className="bg-white dark:bg-gray-950 h-screen overflow-y-auto overflow-x-hidden scrollbar-none font-sans antialiased">
       <PublicHeader />
 
       {/* ── HERO ─────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-[#0a0f1e] dark:via-[#0a0f1e] dark:to-[#0a0f1e] pt-32 pb-20 lg:pt-40 lg:pb-28">
+      <section className="relative overflow-hidden bg-linear-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-[#0a0f1e] dark:via-[#0a0f1e] dark:to-[#0a0f1e] pt-32 pb-20 lg:pt-40 lg:pb-28">
         {/* Background glow */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full bg-blue-600/10 blur-[120px]" />
-          <div className="absolute -top-20 right-0 w-[500px] h-[500px] rounded-full bg-indigo-600/10 blur-[100px]" />
-          <div className="absolute bottom-0 left-1/3 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
+          <div className="absolute -top-40 -left-40 w-175 h-175 rounded-full bg-blue-600/10 blur-[120px]" />
+          <div className="absolute -top-20 right-0 w-125 h-125 rounded-full bg-indigo-600/10 blur-[100px]" />
+          <div className="absolute bottom-0 left-1/3 w-100 h-100 rounded-full bg-purple-600/8 blur-[100px]" />
         </div>
 
         {/* Grid overlay */}
@@ -378,7 +393,7 @@ export function LandingPage() {
       </section>
 
       {/* ── FEATURES ──────────────────────────────────────────────────── */}
-      <Section className="py-24 lg:py-32">
+      <Section id="features" className="py-24 lg:py-32 scroll-mt-24 lg:scroll-mt-28">
         <div className="w-full px-6 sm:px-10 lg:px-16 xl:px-24 2xl:px-32">
           <div className="text-center max-w-2xl mx-auto mb-16">
             <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3">Platform</p>
@@ -412,7 +427,7 @@ export function LandingPage() {
       </Section>
 
       {/* ── HOW IT WORKS ──────────────────────────────────────────────── */}
-      <Section className="py-24 lg:py-32 bg-gray-100 dark:bg-gray-950">
+      <Section id="how-it-works" className="py-24 lg:py-32 bg-gray-100 dark:bg-gray-950 scroll-mt-24 lg:scroll-mt-28">
         <div className="w-full px-6 sm:px-10 lg:px-16 xl:px-24 2xl:px-32">
           <div className="text-center max-w-2xl mx-auto mb-16">
             <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3">How it works</p>
@@ -490,7 +505,7 @@ export function LandingPage() {
       </Section>
 
       {/* ── PRICING ───────────────────────────────────────────────────── */}
-      <Section id="pricing" className="py-24 lg:py-32 bg-white dark:bg-gray-950">
+      <Section id="pricing" className="py-24 lg:py-32 bg-white dark:bg-gray-950 scroll-mt-24 lg:scroll-mt-28">
         <div className="w-full px-6 sm:px-10 lg:px-16 xl:px-24 2xl:px-32">
           <div className="text-center max-w-2xl mx-auto mb-14">
             <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3">Pricing</p>
