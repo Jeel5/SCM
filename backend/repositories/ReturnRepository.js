@@ -520,7 +520,7 @@ class ReturnRepository extends BaseRepository {
     const res = await this.query(
       `INSERT INTO inventory (warehouse_id, product_id, available_quantity)
        VALUES ($1, $2, $3)
-       ON CONFLICT (warehouse_id, product_id)
+       ON CONFLICT (warehouse_id, product_id) WHERE product_id IS NOT NULL
        DO UPDATE SET available_quantity = inventory.available_quantity + $3`,
       [warehouseId, productId, quantity],
       client

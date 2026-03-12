@@ -767,7 +767,7 @@ class ShipmentRepository extends BaseRepository {
       `INSERT INTO inventory
          (warehouse_id, product_id, sku, product_name, quantity, available_quantity, reserved_quantity)
        VALUES ($1, $2, $3, $4, $5, $5, 0)
-       ON CONFLICT (warehouse_id, sku)
+       ON CONFLICT (warehouse_id, sku) WHERE sku IS NOT NULL
        DO UPDATE SET quantity = inventory.quantity + $5,
                      available_quantity = inventory.available_quantity + $5,
                      updated_at = NOW()`,
