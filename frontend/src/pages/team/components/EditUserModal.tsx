@@ -21,7 +21,7 @@ interface EditUserModalProps {
 const ROLE_OPTIONS = [
   { value: 'operations_manager', label: 'Operations Manager' },
   { value: 'warehouse_manager', label: 'Warehouse Manager' },
-  { value: 'carrier_partner', label: 'Carrier Partner' },
+  { value: 'carrier_partner', label: 'Carrier Manager' },
   { value: 'finance', label: 'Finance' },
   { value: 'customer_support', label: 'Customer Support' },
 ];

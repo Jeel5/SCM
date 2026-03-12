@@ -54,9 +54,11 @@ export function EditCarrierModal({ isOpen, onClose, onSuccess, carrier }: Props)
       toast.success('Carrier updated successfully');
       onClose();
       onSuccess?.();
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      toast.error('Failed to update carrier', msg);
+    } catch (error: any) {
+      if (!error.response) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        toast.error('Failed to update carrier', msg);
+      }
     } finally {
       setIsSubmitting(false);
     }

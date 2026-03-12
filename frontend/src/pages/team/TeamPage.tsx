@@ -33,7 +33,7 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
   operations_manager: 'Operations Manager',
   warehouse_manager: 'Warehouse Manager',
-  carrier_partner: 'Carrier Partner',
+  carrier_partner: 'Carrier Manager',
   finance: 'Finance',
   customer_support: 'Customer Support',
 };
@@ -155,6 +155,7 @@ export function TeamPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             leftIcon={<Search className="h-4 w-4 text-gray-400" />}
+            autoComplete="off"
           />
         </div>
         <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">

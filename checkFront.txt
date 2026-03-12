@@ -1,0 +1,4 @@
+add inventory remove Unit cost field
+in create order one field is Unit Price is not fetched from db or data thats why the total is 0
+remove carrier code in add carrier because there is genrating uuid in backend no
+remove unit cost completly insted add cost price at different secenarios

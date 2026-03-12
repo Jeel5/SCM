@@ -445,10 +445,15 @@ export const getCarrier = asyncHandler(async (req, res) => {
 export const createCarrier = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
 
-  // Validate code format (uppercase letters, numbers, hyphens)
-  const code = (req.body.code || '').trim().toUpperCase();
-  if (!/^[A-Z0-9][A-Z0-9-]{0,48}$/.test(code)) {
-    throw new BusinessLogicError('Carrier code must be uppercase letters, numbers, and hyphens (e.g. DHL-001)');
+  // Use provided code or auto-generate one from the sequence
+  let code;
+  if (req.body.code && req.body.code.trim()) {
+    code = req.body.code.trim().toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9-]{0,48}$/.test(code)) {
+      throw new BusinessLogicError('Carrier code must be uppercase letters, numbers, and hyphens (e.g. DHL-001)');
+    }
+  } else {
+    code = await CarrierRepository.generateCarrierCode();
   }
 
   // Check uniqueness within org scope

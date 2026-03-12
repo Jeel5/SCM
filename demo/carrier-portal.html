@@ -430,7 +430,10 @@
 
         async function loadPendingRequests() {
             try {
-                const response = await fetch(`${API_BASE}/carriers/assignments/pending?carrierId=${currentCarrier}`);
+                // Pass carrier UUID (not code) — backend getPendingAssignments expects an ID
+                const carrierId = carrierDetails[currentCarrier]?.id;
+                if (!carrierId) { showEmptyState(); return; }
+                const response = await fetch(`${API_BASE}/carriers/assignments/pending?carrierId=${carrierId}`);
                 if (!response.ok) { showEmptyState(); return; }
 
                 const result = await response.json();
@@ -677,16 +680,14 @@
 
         async function loadMyShipments() {
             try {
+                // Resolve carrier UUID from stored details if not yet set
                 if (!currentCarrierId) {
-                    const carrierResponse = await fetch(`${API_BASE}/carriers?code=${currentCarrier}`);
-                    const carrierData = await carrierResponse.json();
-                    if (!carrierData.success || !carrierData.data || carrierData.data.length === 0) {
+                    currentCarrierId = carrierDetails[currentCarrier]?.id || null;
+                    if (!currentCarrierId) {
                         document.getElementById('shipmentsContainer').innerHTML = `
-                            <div class="empty-state"><h3>❌ Carrier Not Found</h3><p>Could not find carrier with code: ${currentCarrier}</p></div>`;
+                            <div class="empty-state"><h3>❌ Carrier Not Found</h3><p>Could not resolve carrier ID for: ${currentCarrier}</p></div>`;
                         return;
                     }
-                    currentCarrierId = carrierData.data[0].id;
-                    await fetchWebhookSecret(currentCarrierId);
                 }
 
                 const response = await fetch(`${API_BASE}/shipments?carrier_id=${currentCarrierId}&status=pending`);

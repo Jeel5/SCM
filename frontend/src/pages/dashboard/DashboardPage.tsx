@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Calendar,
 } from 'lucide-react';
-import { Button, MetricCardSkeleton } from '@/components/ui';
+import { Button, MetricCardSkeleton, PermissionGate } from '@/components/ui';
 import { formatCurrency, formatNumber, formatPercentage, formatDate } from '@/lib/utils';
 import { useAuthStore } from '@/stores';
 import { MetricCard } from './components/MetricCard';
@@ -187,7 +187,9 @@ export function DashboardPage() {
         <div className="lg:col-span-2">
           <RecentShipments shipments={shipments} />
         </div>
-        <WarehouseUtilizationChart data={warehouseUtilization} />
+        <PermissionGate permission="warehouses.view">
+          <WarehouseUtilizationChart data={warehouseUtilization} />
+        </PermissionGate>
       </div>
     </div>
   );

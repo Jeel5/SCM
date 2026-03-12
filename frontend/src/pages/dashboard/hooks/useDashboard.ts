@@ -3,6 +3,8 @@ import { dashboardApi, shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
+import { useAuthStore } from '@/stores';
+import { checkPermission } from '@/lib/permissions';
 import type { DashboardMetrics, ChartDataPoint, Shipment, CarrierPerformance, WarehouseUtilization } from '@/types';
 
 export type DashboardPeriod = '1d' | '7d' | '30d' | '90d' | '365d';
@@ -26,6 +28,9 @@ export function useDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const { useRealApi } = useApiMode();
 
+  const currentUser = useAuthStore((s) => s.user);
+  const canViewWarehouses = checkPermission(currentUser?.role, 'warehouses.view');
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -36,7 +41,7 @@ export function useDashboard() {
           dashboardApi.getDashboardStats(period),
           shipmentsApi.getShipments(1, 10),
           dashboardApi.getCarrierPerformance(),
-          dashboardApi.getWarehouseUtilization(),
+          canViewWarehouses ? dashboardApi.getWarehouseUtilization() : Promise.resolve({ data: [] }),
         ]);
         
         setMetrics(metricsRes.data);
@@ -76,7 +81,7 @@ export function useDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [useRealApi, period]);
+  }, [useRealApi, period, canViewWarehouses]);
 
   useEffect(() => {
     fetchData();

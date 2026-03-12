@@ -13,7 +13,7 @@ interface InviteUserModalProps {
 const ROLE_OPTIONS = [
   { value: 'operations_manager', label: 'Operations Manager' },
   { value: 'warehouse_manager', label: 'Warehouse Manager' },
-  { value: 'carrier_partner', label: 'Carrier Partner' },
+  { value: 'carrier_partner', label: 'Carrier Manager' },
   { value: 'finance', label: 'Finance' },
   { value: 'customer_support', label: 'Customer Support' },
 ];
@@ -105,6 +105,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
             value={form.name}
             onChange={(e) => set('name', e.target.value)}
             leftIcon={<UserPlus className="h-4 w-4 text-gray-400" />}
+            autoComplete="name"
           />
         </div>
 
@@ -118,6 +119,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
             value={form.email}
             onChange={(e) => set('email', e.target.value)}
             leftIcon={<Mail className="h-4 w-4 text-gray-400" />}
+            autoComplete="off"
           />
         </div>
 
@@ -144,6 +146,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
             value={form.password}
             onChange={(e) => set('password', e.target.value)}
             leftIcon={<Lock className="h-4 w-4 text-gray-400" />}
+            autoComplete="new-password"
           />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             The user should change this on first login.

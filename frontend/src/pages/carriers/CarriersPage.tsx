@@ -38,7 +38,9 @@ export function CarriersPage() {
       setSelectedCarrier(null);
       refetch();
     } catch (error: any) {
-      toast.error('Failed to deactivate carrier', error.message);
+      if (!error.response) {
+        toast.error('Failed to deactivate carrier', error.message);
+      }
     }
   };
 

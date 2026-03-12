@@ -1,11 +1,21 @@
 // Carrier Repository — all SQL queries for the carriers, rate_cards, and
 // carrier_performance_metrics tables live here.
+import { randomBytes } from 'crypto';
 import BaseRepository from './BaseRepository.js';
 import { ValidationError } from '../errors/AppError.js';
 
 class CarrierRepository extends BaseRepository {
     constructor() {
         super('carriers');
+    }
+
+    // Generate unique carrier code using an atomic DB sequence
+    async generateCarrierCode(client = null) {
+        const prefix = 'CAR';
+        const year = new Date().getFullYear().toString().slice(-2);
+        const result = await this.query(`SELECT nextval('carrier_code_seq') AS seq`, [], client);
+        const sequence = result.rows[0].seq.toString().padStart(3, '0');
+        return `${prefix}-${year}-${sequence}`;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -177,21 +187,23 @@ class CarrierRepository extends BaseRepository {
     async createCarrier(data, client = null) {
         // Enforce uppercase code
         const code = data.code.toUpperCase().trim();
+        // Auto-generate a secure webhook secret so HMAC-authenticated endpoints work immediately
+        const webhookSecret = randomBytes(32).toString('hex');
 
         const query = `
       INSERT INTO carriers (
         organization_id, code, name, service_type, service_areas,
         contact_email, contact_phone, website,
-        api_endpoint, webhook_url,
+        api_endpoint, webhook_url, webhook_secret,
         reliability_score, avg_delivery_days, daily_capacity,
         is_active, availability_status,
         created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8,
-        $9, $10,
-        $11, $12, $13,
-        $14, $15,
+        $9, $10, $11,
+        $12, $13, $14,
+        $15, $16,
         NOW(), NOW()
       )
       RETURNING *
@@ -208,6 +220,7 @@ class CarrierRepository extends BaseRepository {
             data.website || null,
             data.api_endpoint || null,
             data.webhook_url || null,
+            webhookSecret,
             data.reliability_score ?? 0.85,
             data.avg_delivery_days || null,
             data.daily_capacity || null,

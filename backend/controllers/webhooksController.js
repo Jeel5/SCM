@@ -433,6 +433,16 @@ export const handleCatalogWebhook = asyncHandler(async (req, res) => {
       currency:           p.currency || 'INR',
       weight:             p.weight,
       dimensions:         p.dimensions,
+      // Brand / identification
+      brand:              p.brand || null,
+      internal_barcode:   p.internal_barcode || null,
+      manufacturer_barcode: p.manufacturer_barcode || null,
+      country_of_origin:  p.country_of_origin || null,
+      hsn_code:           p.hsn_code || null,
+      gst_rate:           p.gst_rate != null ? parseFloat(p.gst_rate) : null,
+      warranty_period_days: p.warranty_period_days || 0,
+      tags:               Array.isArray(p.tags) ? p.tags : (p.tags ? JSON.parse(p.tags) : []),
+      // Handling flags
       is_fragile:         p.is_fragile,
       requires_cold_storage: p.requires_cold_storage,
       is_hazmat:          p.is_hazmat,

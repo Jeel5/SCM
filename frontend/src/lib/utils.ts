@@ -147,7 +147,7 @@ export function getRoleDisplayName(role: string): string {
     admin: 'Administrator',
     operations_manager: 'Operations Manager',
     warehouse_manager: 'Warehouse Manager',
-    carrier_partner: 'Carrier Partner',
+    carrier_partner: 'Carrier Manager',
     finance: 'Finance & Accounts',
     customer_support: 'Customer Support',
   };

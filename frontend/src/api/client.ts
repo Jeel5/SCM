@@ -105,7 +105,28 @@ api.interceptors.response.use(
 
     const serverMessage = extractMessage();
     const fieldDetails = extractDetails();
-    
+
+    // Convert raw Joi messages like '"website" is not allowed to be empty'
+    // into human-readable text like 'Website is required'
+    const humanize = (raw: string): string => {
+      return raw
+        // Remove enclosing quotes around field name and title-case it
+        .replace(/^"([^"]+)"\s/, (_, field) => {
+          const label = field
+            .replace(/_/g, ' ')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/\b\w/g, (c: string) => c.toUpperCase());
+          return label + ' ';
+        })
+        .replace(/is not allowed to be empty/gi, 'is required')
+        .replace(/must be a valid uri/gi, 'must be a valid URL')
+        .replace(/must be a valid email/gi, 'must be a valid email address')
+        .replace(/is not allowed/gi, 'is not permitted')
+        .replace(/must be a number/gi, 'must be a number')
+        .replace(/must be a string/gi, 'must be text')
+        .replace(/must be a boolean/gi, 'must be true or false');
+    };
+
     // Handle authorization errors
     if (error.response?.status === 403) {
       toast.error('Access Denied', serverMessage || 'You don\'t have permission to perform this action');
@@ -123,8 +144,12 @@ api.interceptors.response.use(
     
     // Handle validation errors
     else if (error.response?.status === 400 || error.response?.status === 422) {
-      const detail = fieldDetails ? `${serverMessage}. ${fieldDetails}` : serverMessage;
-      toast.error('Validation Error', detail || 'Invalid request data');
+      // Prefer per-field detail messages; fall back to top-level message
+      const rawMessages: string[] = Array.isArray((data as any)?.details) && (data as any).details.length > 0
+        ? (data as any).details.map((d: Record<string, unknown>) => String(d.message || d.field || ''))
+        : serverMessage ? [serverMessage] : [];
+      const readable = [...new Set(rawMessages.map(humanize))].join(' • ');
+      toast.error('Please check your input', readable || 'Invalid request data');
     }
     
     // Handle rate limiting

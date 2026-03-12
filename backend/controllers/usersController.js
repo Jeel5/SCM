@@ -143,7 +143,7 @@ export const listRoles = asyncHandler(async (req, res) => {
       { id: 'admin', name: 'Administrator', description: 'Full system access' },
       { id: 'operations_manager', name: 'Operations Manager', description: 'Manage orders and shipments' },
       { id: 'warehouse_manager', name: 'Warehouse Manager', description: 'Manage inventory and warehouses' },
-      { id: 'carrier_partner', name: 'Carrier Partner', description: 'View and update shipments' },
+      { id: 'carrier_partner', name: 'Carrier Manager', description: 'View and update shipments' },
       { id: 'finance', name: 'Finance', description: 'Access financial reports' },
       { id: 'customer_support', name: 'Customer Support', description: 'Handle returns and exceptions' }
     ]

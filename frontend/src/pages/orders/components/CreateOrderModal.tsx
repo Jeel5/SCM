@@ -202,7 +202,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
           product_name: item.product.name,
           quantity: item.quantity,
           unit_price: item.unitPrice,
-          weight: item.product.weight,
+          ...(item.product.weight != null && { weight: item.product.weight }),
         })),
       };
 

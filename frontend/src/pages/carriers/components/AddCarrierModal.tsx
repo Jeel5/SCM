@@ -6,7 +6,6 @@ import { toast } from '@/stores/toastStore';
 export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolean; onClose: () => void; onSuccess?: () => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    code: '',
     name: '',
     contactPhone: '',
     contactEmail: '',
@@ -21,7 +20,6 @@ export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolea
 
     try {
       await carriersApi.createCarrier({
-        code: formData.code,
         name: formData.name,
         contactPhone: formData.contactPhone,
         contactEmail: formData.contactEmail,
@@ -35,7 +33,6 @@ export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolea
       
       // Reset form
       setFormData({
-        code: '',
         name: '',
         contactPhone: '',
         contactEmail: '',
@@ -46,7 +43,11 @@ export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolea
       
       onSuccess?.();
     } catch (error: any) {
-      toast.error('Failed to add carrier', error.message);
+      // API interceptor already shows a toast for HTTP errors (400, 500, etc.)
+      // Only show here for non-HTTP failures (e.g. network down before request left)
+      if (!error.response) {
+        toast.error('Failed to add carrier', error.message);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -64,16 +65,6 @@ export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolea
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add New Carrier" size="lg">
       <form className="space-y-4" onSubmit={handleSubmit}>
-        <Input 
-          label="Carrier Code" 
-          placeholder="e.g., DHL-001, FEDEX-001" 
-          required 
-          value={formData.code}
-          onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
-          helperText="Use format: CARRIER-XXX (e.g., DHL-001)"
-          pattern="[A-Z0-9-]+"
-          maxLength={50}
-        />
         <Input 
           label="Carrier Name" 
           placeholder="Enter carrier name" 

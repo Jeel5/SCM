@@ -534,7 +534,8 @@
             const product     = selectedProduct;
             const estimateCost = estimateData?.data?.estimatedCost || estimateData?.estimatedCost || 0;
             const quantity    = 1;
-            const unitPrice   = parseFloat(product.unit_price) || 0;
+            // Catalog returns selling_price — not unit_price
+            const unitPrice   = parseFloat(product.selling_price) || 0;
             const subtotal    = unitPrice * quantity;
             const taxAmount   = subtotal * 0.18;
             const totalAmount = subtotal + taxAmount + estimateCost;
@@ -574,7 +575,8 @@
                                                : product.dimensions)
                                             : null,
                         is_fragile:      product.is_fragile  || false,
-                        declared_value:  parseFloat(product.declared_value) || unitPrice,
+                        // mrp is the declared value for insurance; fall back to selling_price
+                        declared_value:  parseFloat(product.mrp) || unitPrice,
                     }]
                 }
             };

@@ -354,16 +354,15 @@ export const carriersApi = {
 
   async createCarrier(data: Partial<Carrier>): Promise<ApiResponse<Carrier>> {
     // Transform camelCase to snake_case for backend
-    const backendData = {
-      code: data.code,
+    const backendData: Record<string, unknown> = {
       name: data.name,
-      contact_email: data.contactEmail,
-      contact_phone: data.contactPhone,
-      website: data.website,
       is_active: data.status === 'active',
-      service_areas: data.servicesOffered,
-      service_type: data.serviceType,
     };
+    if (data.contactEmail) backendData.contact_email = data.contactEmail;
+    if (data.contactPhone) backendData.contact_phone = data.contactPhone;
+    if (data.website) backendData.website = data.website;
+    if (data.servicesOffered) backendData.service_areas = data.servicesOffered;
+    if (data.serviceType) backendData.service_type = data.serviceType;
     return post('/carriers', backendData);
   },
 

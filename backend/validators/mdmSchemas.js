@@ -4,7 +4,7 @@ import Joi from 'joi';
 // ─── Carrier schemas ──────────────────────────────────────────────────────────
 
 export const createCarrierSchema = Joi.object({
-  code: Joi.string().max(50).pattern(/^[A-Z0-9][A-Z0-9-]{0,48}$/i).required(),
+  code: Joi.string().max(50).pattern(/^[A-Z0-9][A-Z0-9-]{0,48}$/i).optional(),
   name: Joi.string().min(2).max(255).required(),
   service_type: Joi.string().valid('express', 'standard', 'economy', 'overnight', 'two_day', 'surface', 'air', 'all').default('standard'),
   service_areas: Joi.array().items(Joi.string()).optional(),
@@ -23,11 +23,11 @@ export const createCarrierSchema = Joi.object({
 export const updateCarrierSchema = Joi.object({
   name: Joi.string().min(2).max(255).optional(),
   service_type: Joi.string().valid('express', 'standard', 'economy', 'overnight', 'two_day', 'surface', 'air', 'all').optional(),
-  contact_email: Joi.string().email().max(255).optional(),
-  contact_phone: Joi.string().max(50).optional(),
-  website: Joi.string().uri().max(500).optional(),
-  api_endpoint: Joi.string().uri().max(500).optional(),
-  webhook_url: Joi.string().uri().max(500).optional(),
+  contact_email: Joi.string().email().max(255).optional().allow(''),
+  contact_phone: Joi.string().max(50).optional().allow(''),
+  website: Joi.string().uri().max(500).optional().allow(''),
+  api_endpoint: Joi.string().uri().max(500).optional().allow(''),
+  webhook_url: Joi.string().uri().max(500).optional().allow(''),
   reliability_score: Joi.number().min(0).max(1).optional(),
   avg_delivery_days: Joi.number().integer().min(0).optional(),
   daily_capacity: Joi.number().integer().min(0).optional(),
