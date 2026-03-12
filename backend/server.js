@@ -8,8 +8,6 @@ import cookieParser from 'cookie-parser';
 import { errorHandler, notFoundHandler } from './errors/index.js';
 import { requestLogger, requestId, slowRequestLogger } from './middlewares/requestLogger.js';
 import { globalRateLimit, userRateLimit, authRateLimit } from './middlewares/rateLimiter.js';
-import { metricsMiddleware, metricsHandler } from './middlewares/metrics.js';
-import { initSentry, sentryErrorHandler } from './utils/sentry.js';
 import logger from './utils/logger.js';
 import { jobWorker } from './jobs/jobWorker.js';
 import { cronScheduler } from './jobs/cronScheduler.js';
@@ -45,9 +43,6 @@ import notificationRoutes from './routes/notifications.js';
 
 // Trust the first proxy hop (Nginx) so IP-based rate limiting sees the real client IP
 app.set('trust proxy', 1);
-
-// Initialise Sentry (no-op when SENTRY_DSN is absent)
-initSentry(app);
 
 // Security headers middleware
 app.use(helmet());
@@ -98,9 +93,6 @@ app.use(requestId);
 app.use(requestLogger);
 app.use(slowRequestLogger(2000));
 
-// Prometheus metrics middleware (tracks duration + request counts for all routes)
-app.use(metricsMiddleware);
-
 // Global IP-based rate limiter — 200 req/min per IP before any auth
 app.use(globalRateLimit);
 
@@ -109,9 +101,6 @@ app.use('/api/auth', authRateLimit);
 
 // Per-user rate limiter — 500 req/min applied to all authenticated API routes
 app.use(API_PREFIX, userRateLimit);
-
-// Prometheus scrape endpoint — Nginx restricts this to internal networks
-app.get('/metrics', metricsHandler);
 
 // Health check endpoint - returns server status
 app.get('/health', (req, res) => {
@@ -139,9 +128,6 @@ app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);
-
-// Sentry error handler — must come BEFORE the global error handler
-app.use(sentryErrorHandler());
 
 // Global error handler - must be last
 app.use(errorHandler);

@@ -17,7 +17,6 @@ import userRepo from '../repositories/UserRepository.js';
 import { createRedisConnection } from '../config/redis.js';
 import logger from '../utils/logger.js';
 import { setIo } from './emitter.js';
-import { activeConnections } from '../middlewares/metrics.js';
 
 /** Parse cookie string into key→value map. */
 function parseCookies(cookieHeader = '') {
@@ -94,9 +93,6 @@ export function initSocket(httpServer, corsOrigin) {
   io.on('connection', (socket) => {
     const { userId, role, organizationId } = socket.user;
 
-    // Track live connection count in Prometheus
-    activeConnections.inc();
-
     // Join the org room so org-scoped broadcasts reach this socket
     if (role === 'superadmin') {
       socket.join('superadmin');
@@ -119,7 +115,6 @@ export function initSocket(httpServer, corsOrigin) {
     });
 
     socket.on('disconnect', (reason) => {
-      activeConnections.dec();
       logger.debug('Socket disconnected', { userId, reason, socketId: socket.id });
     });
   });

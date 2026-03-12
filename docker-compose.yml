@@ -49,8 +49,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-
-
   redis:
     container_name: scm_redis
     image: redis:7-alpine
@@ -77,37 +75,6 @@ services:
       - frontend
     restart: unless-stopped
 
-  # ── Observability ─────────────────────────────────────────────────
-  # These are disabled by default because Prometheus and Grafana run natively.
-  # To run them in Docker instead: docker compose --profile monitoring up
-  prometheus:
-    container_name: scm_prometheus
-    image: prom/prometheus:latest
-    profiles: ["monitoring"]
-    ports:
-      - "9091:9090"
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    restart: unless-stopped
-
-  grafana:
-    container_name: scm_grafana
-    image: grafana/grafana:latest
-    profiles: ["monitoring"]
-    ports:
-      - "3003:3000"
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana-data:/var/lib/grafana
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
 volumes:
   db-data:
   redis-data:
-  prometheus-data:
-  grafana-data:

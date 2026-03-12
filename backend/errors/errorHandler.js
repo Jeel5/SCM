@@ -2,7 +2,6 @@
 
 import { AppError } from './AppError.js';
 import { logError } from '../utils/logger.js';
-import { captureException } from '../utils/sentry.js';
 
 // Development mode - include full error details and stack trace
 function sendErrorDev(err, res) {
@@ -120,11 +119,6 @@ export function errorHandler(err, req, res, next) {
   if (err.name === 'JsonWebTokenError') error = handleJWTError();
   if (err.name === 'TokenExpiredError') error = handleJWTExpiredError();
   if (err.code && err.code.startsWith('23')) error = handleDatabaseError(err);
-
-  // Report unexpected 5xx errors to Sentry
-  if ((error.statusCode || 500) >= 500 && !error.isOperational) {
-    captureException(error, { path: req.path, method: req.method, userId: req.user?.userId });
-  }
 
   // Send response based on environment
   if (process.env.NODE_ENV === 'development') {

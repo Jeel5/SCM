@@ -78,7 +78,7 @@ export async function globalRateLimit(req, res, next) {
   } catch (rateLimiterRes) {
     if (rateLimiterRes instanceof Error) {
       // Redis error — fail open
-      logger.warn('Rate limiter error (fail-open):', rateLimiterRes.message);
+      logger.warn(`Rate limiter error (fail-open): ${rateLimiterRes.message}`);
       return next();
     }
     logger.warn('Global rate limit exceeded', { ip });
