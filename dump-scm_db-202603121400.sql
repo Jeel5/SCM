@@ -2,12 +2,12 @@
 -- PostgreSQL database dump
 --
 
-\restrict jaBYgdxGsPqIfVcTOFEJ8QS7OnuPEcsVfC5bfD89RT5JmHNawOPUpzU3dqEhwcm
+\restrict 3H3rV7SL1KHR9SA9qWXLJUk8tfnuOO6zjFtxoVAyqa3OHUAqbrFSuY0x16jnJvl
 
 -- Dumped from database version 18.1
 -- Dumped by pg_dump version 18.1
 
--- Started on 2026-03-03 19:40:57 IST
+-- Started on 2026-03-12 14:00:24 IST
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -6595,11 +6595,11 @@ ALTER TABLE ONLY public.webhook_logs
     ADD CONSTRAINT webhook_logs_carrier_id_fkey FOREIGN KEY (carrier_id) REFERENCES public.carriers(id);
 
 
--- Completed on 2026-03-03 19:40:57 IST
+-- Completed on 2026-03-12 14:00:24 IST
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jaBYgdxGsPqIfVcTOFEJ8QS7OnuPEcsVfC5bfD89RT5JmHNawOPUpzU3dqEhwcm
+\unrestrict 3H3rV7SL1KHR9SA9qWXLJUk8tfnuOO6zjFtxoVAyqa3OHUAqbrFSuY0x16jnJvl
 
