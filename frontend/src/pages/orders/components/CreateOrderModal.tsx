@@ -121,7 +121,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
     setItems(prev => [...prev, {
       product,
       quantity: 1,
-      unitPrice: product.unitPrice ?? 0,
+      unitPrice: product.sellingPrice ?? 0,
       stock,
       totalAvailable,
     }]);
@@ -136,7 +136,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
 
   // Update item quantity
   const updateItemQuantity = (index: number, qty: number) => {
-    setItems(prev => prev.map((item, i) => i === index ? { ...item, quantity: Math.max(1, qty) } : item));
+    setItems(prev => prev.map((item, i) => i === index ? { ...item, quantity: qty } : item));
   };
 
   // Update item price
@@ -145,7 +145,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
   };
 
   // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+  const subtotal = items.reduce((sum, item) => sum + (item.unitPrice * (item.quantity || 0)), 0);
 
   const resetForm = () => {
     setFormData({
@@ -170,6 +170,13 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
 
     if (items.length === 0) {
       error('Add at least one product to the order');
+      return;
+    }
+
+    // Validate quantities
+    const invalidQty = items.filter(i => !i.quantity || i.quantity < 1);
+    if (invalidQty.length > 0) {
+      error('All item quantities must be at least 1');
       return;
     }
 
@@ -344,7 +351,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
                         <span className="ml-2 text-xs text-gray-500 font-mono">{product.sku}</span>
                       </div>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        {product.unitPrice != null ? `₹${product.unitPrice.toLocaleString('en-IN')}` : '—'}
+                        {product.sellingPrice != null ? `₹${product.sellingPrice.toLocaleString('en-IN')}` : '—'}
                       </span>
                     </div>
                     {product.category && (
@@ -371,7 +378,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
           ) : (
             <div className="space-y-3">
               {items.map((item, index) => {
-                const exceedsStock = item.quantity > item.totalAvailable;
+                const exceedsStock = item.quantity > 0 && item.quantity > item.totalAvailable;
                 return (
                   <div
                     key={item.product.id}
@@ -440,8 +447,8 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
                           type="number"
                           min="1"
                           max={item.totalAvailable || undefined}
-                          value={item.quantity}
-                          onChange={(e) => updateItemQuantity(index, parseInt(e.target.value) || 1)}
+                          value={item.quantity || ''}
+                          onChange={(e) => updateItemQuantity(index, e.target.value === '' ? 0 : (parseInt(e.target.value, 10) || 0))}
                           className={`w-full px-3 py-1.5 border rounded-md text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 ${
                             exceedsStock ? 'border-red-400' : 'border-gray-300 dark:border-gray-600'
                           }`}
@@ -449,14 +456,9 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Unit Price (₹)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.unitPrice}
-                          onChange={(e) => updateItemPrice(index, parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+                        <div className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-md">
+                          ₹{item.unitPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </div>
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Line Total</label>

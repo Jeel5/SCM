@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Croma Order Portal — SCM Platform</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -179,23 +181,10 @@
             <div class="products-grid" id="productsGrid" style="display:none;"></div>
 
             <div class="form-group">
-                <label>📍 Delivery Location</label>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                    <div>
-                        <label style="font-weight: normal; font-size: 0.9em;">From Pincode</label>
-                        <input type="text" id="fromPincode" value="110001" readonly>
-                    </div>
-                    <div>
-                        <label style="font-weight: normal; font-size: 0.9em;">To Pincode</label>
-                        <input type="text" id="toPincode" value="400001" placeholder="e.g., 400001">
-                    </div>
-                    <div>
-                        <label style="font-weight: normal; font-size: 0.9em;">Service Type</label>
-                        <select id="serviceType">
-                            <option value="standard">Standard</option>
-                            <option value="express">Express</option>
-                        </select>
-                    </div>
+                <label>📍 Delivery Location <span style="font-weight:normal;font-size:0.85em;color:#6b7280;">— click on the map to pin your delivery address</span></label>
+                <div id="deliveryMap" style="height:380px; border-radius:8px; border:2px solid #e2e8f0; overflow:hidden; margin-top:8px;"></div>
+                <div id="selectedLocation" style="display:none; margin-top:10px; padding:10px 14px; background:#f7faff; border:1px solid #c3dafe; border-radius:6px; font-size:0.9em; color:#4a5568;">
+                    <strong>📌 Delivery to:</strong> <span id="locationText"></span>
                 </div>
             </div>
 
@@ -277,13 +266,16 @@
         const API_BASE = 'http://localhost:3000/api';
 
         // ──────────── Org credentials ────────────
-        const selectedOrgToken = '661e0b56fb823ff60573b5257a6b7f3bc9ba66ee864ea2b4ab050cc6d05a801d';
+        const selectedOrgToken = '5f984f1af6c99c60eff9641894b0d57d3f38eaff123a047330fad8403ec2b5d9';
         const orgName = 'Croma';
 
         // ──────────── State ────────────
         // selectedProduct = full product object from live catalog (null if nothing selected)
         let selectedProduct = null;
         let estimateData   = null;
+        let deliveryPin    = null; // { lat, lon, city, state, postalCode, displayName }
+        let leafletMap     = null;
+        let leafletMarker  = null;
 
         // ──────────── Load live catalog ────────────
         // External platforms MUST fetch the catalog before placing orders.
@@ -382,12 +374,12 @@
                         document.querySelectorAll('.product-card').forEach(c => c.classList.remove('selected'));
                         card.classList.add('selected');
                         selectedProduct = p;
-                        estimateBtn.disabled = false;
+                        estimateBtn.disabled = !deliveryPin;
                     });
                     grid.appendChild(card);
 
-                    // Auto-select first product
-                    if (idx === 0) card.click();
+                    // Auto-select first product (estimate btn stays disabled until map pin is set)
+                    if (idx === 0) { card.click(); }
                 });
 
                 grid.style.display = 'grid';
@@ -396,6 +388,47 @@
                 errorDiv.innerHTML = `<strong>Failed to load catalog:</strong> ${err.message}. Make sure the backend is running on port 3000.`;
                 errorDiv.style.display = 'block';
             }
+        }
+
+        // ──────────── Delivery Map ────────────
+        function initMap() {
+            leafletMap = L.map('deliveryMap').setView([20.5937, 78.9629], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
+            }).addTo(leafletMap);
+
+            leafletMap.on('click', async (e) => {
+                const { lat, lng } = e.latlng;
+                if (leafletMarker) leafletMarker.remove();
+                leafletMarker = L.marker([lat, lng]).addTo(leafletMap);
+
+                const locEl  = document.getElementById('selectedLocation');
+                const textEl = document.getElementById('locationText');
+                locEl.style.display  = 'block';
+                textEl.textContent   = `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E — looking up address…`;
+
+                try {
+                    const r   = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`,
+                        { headers: { 'Accept-Language': 'en' } }
+                    );
+                    const geo  = await r.json();
+                    const addr = geo.address || {};
+                    deliveryPin = {
+                        lat,
+                        lon:         lng,
+                        city:        addr.city || addr.town || addr.village || addr.county || '',
+                        state:       addr.state || '',
+                        postalCode:  addr.postcode || '',
+                        displayName: geo.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+                    };
+                } catch (_) {
+                    deliveryPin = { lat, lon: lng, city: '', state: '', postalCode: '', displayName: `${lat.toFixed(4)}, ${lng.toFixed(4)}` };
+                }
+                textEl.textContent = deliveryPin.displayName;
+                document.getElementById('getEstimateBtn').disabled = !selectedProduct;
+            });
         }
 
         // ──────────── Shipping Estimate ────────────
@@ -407,6 +440,7 @@
 
         async function getEstimate() {
             if (!selectedProduct) { alert('Please select a product first'); return; }
+            if (!deliveryPin)     { alert('Please click on the map to set a delivery location'); return; }
 
             const btn = document.getElementById('getEstimateBtn');
             if (btn.disabled) return;
@@ -422,34 +456,20 @@
             result.style.display   = 'none';
             errorDiv.style.display = 'none';
 
-            const product = selectedProduct;  // from live catalog
-            const fromPin = document.getElementById('fromPincode').value;
-            const toPin   = document.getElementById('toPincode').value;
-
-            const pincodeCoords = {
-                '110001': { lat: 28.6139, lon: 77.2090, city: 'Delhi' },
-                '400001': { lat: 19.0760, lon: 72.8777, city: 'Mumbai' },
-                '560001': { lat: 12.9716, lon: 77.5946, city: 'Bangalore' },
-                '600001': { lat: 13.0827, lon: 80.2707, city: 'Chennai' },
-                '700001': { lat: 22.5726, lon: 88.3639, city: 'Kolkata' }
-            };
+            const product = selectedProduct;
+            // Origin: default system warehouse location (Delhi)
+            const originCoords = { lat: 28.6139, lon: 77.2090 };
 
             const productWeight = parseFloat(product.weight) || 0.5;
             const productDims   = product.dimensions
                 ? (typeof product.dimensions === 'string' ? JSON.parse(product.dimensions) : product.dimensions)
                 : null;
 
-            const requestData = pincodeCoords[fromPin] && pincodeCoords[toPin] ? {
-                origin:      { lat: pincodeCoords[fromPin].lat, lon: pincodeCoords[fromPin].lon, postalCode: fromPin },
-                destination: { lat: pincodeCoords[toPin].lat,  lon: pincodeCoords[toPin].lon,  postalCode: toPin  },
+            const requestData = {
+                origin:      { lat: originCoords.lat, lon: originCoords.lon },
+                destination: { lat: deliveryPin.lat,  lon: deliveryPin.lon  },
                 weightKg:    productWeight,
-                dimensions:  productDims,
-                serviceType: document.getElementById('serviceType').value
-            } : {
-                fromPincode: fromPin,
-                toPincode:   toPin,
-                weightKg:    productWeight,
-                serviceType: document.getElementById('serviceType').value
+                dimensions:  productDims
             };
 
             try {
@@ -551,10 +571,10 @@
                     customer_email:    'customer@example.com',
                     customer_phone:    '9876543210',
                     shipping_address: {
-                        street:      '123 Main St',
-                        city:        'Mumbai',
-                        state:       'Maharashtra',
-                        postal_code: document.getElementById('toPincode').value,
+                        street:      deliveryPin.displayName,
+                        city:        deliveryPin.city  || 'Unknown',
+                        state:       deliveryPin.state || 'Unknown',
+                        postal_code: deliveryPin.postalCode || '',
                         country:     'India'
                     },
                     total_amount:    totalAmount,
@@ -615,7 +635,7 @@
 
         // ──────────── Init ────────────
         // Load live catalog on page load — no hardcoded products.
-        window.addEventListener('DOMContentLoaded', loadCatalog);
+        window.addEventListener('DOMContentLoaded', () => { loadCatalog(); initMap(); });
     </script>
 </body>
 </html>

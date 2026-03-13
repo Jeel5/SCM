@@ -31,10 +31,8 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
     is_active: initialData ? initialData.status === 'active' : true,
     // SCM operational fields
     gstin: initialData?.gstin || '',
-    has_cold_storage: initialData?.hasColdStorage || false,
     temperature_min_celsius: initialData?.temperatureMinCelsius?.toString() || '',
     temperature_max_celsius: initialData?.temperatureMaxCelsius?.toString() || '',
-    customs_bonded_warehouse: initialData?.customsBondedWarehouse || false,
     certifications: initialData?.certifications?.join(', ') || '',
   });
 
@@ -65,10 +63,10 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
         is_active: formData.is_active,
         // SCM operational fields
         gstin: formData.gstin || null,
-        has_cold_storage: formData.has_cold_storage,
+        has_cold_storage: formData.warehouse_type === 'cold_storage',
         temperature_min_celsius: formData.temperature_min_celsius ? parseFloat(formData.temperature_min_celsius) : null,
         temperature_max_celsius: formData.temperature_max_celsius ? parseFloat(formData.temperature_max_celsius) : null,
-        customs_bonded_warehouse: formData.customs_bonded_warehouse,
+        customs_bonded_warehouse: formData.warehouse_type === 'bonded_customs',
         certifications: formData.certifications
           ? formData.certifications.split(',').map(c => c.trim()).filter(Boolean)
           : [],
@@ -99,10 +97,8 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
           contact_phone: '',
           is_active: true,
           gstin: '',
-          has_cold_storage: false,
           temperature_min_celsius: '',
           temperature_max_celsius: '',
-          customs_bonded_warehouse: false,
           certifications: '',
         });
       }
@@ -228,29 +224,7 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
 
         <div className="space-y-3">
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Cold Storage &amp; Compliance</h4>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
-              <input
-                type="checkbox"
-                id="has_cold_storage"
-                checked={formData.has_cold_storage}
-                onChange={(e) => handleChange('has_cold_storage', e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
-              />
-              <label htmlFor="has_cold_storage" className="text-sm font-medium text-gray-700 dark:text-gray-300">Has Cold Storage</label>
-            </div>
-            <div className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
-              <input
-                type="checkbox"
-                id="customs_bonded"
-                checked={formData.customs_bonded_warehouse}
-                onChange={(e) => handleChange('customs_bonded_warehouse', e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
-              />
-              <label htmlFor="customs_bonded" className="text-sm font-medium text-gray-700 dark:text-gray-300">Customs Bonded Warehouse</label>
-            </div>
-          </div>
-          {formData.has_cold_storage && (
+          {formData.warehouse_type === 'cold_storage' && (
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Min Temperature (°C)"

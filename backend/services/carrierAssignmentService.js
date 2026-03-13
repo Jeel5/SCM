@@ -381,7 +381,7 @@ class CarrierAssignmentService {
           orderId: assignment.order_id,
           assignmentId,
           carrierId: assignment.carrier_id,
-          warehouseId: null,
+          warehouseId: items[0]?.warehouse_id || null,
           organizationId: assignment.organization_id,
           pickupAddress: assignment.pickup_address,
           deliveryAddress: assignment.delivery_address,

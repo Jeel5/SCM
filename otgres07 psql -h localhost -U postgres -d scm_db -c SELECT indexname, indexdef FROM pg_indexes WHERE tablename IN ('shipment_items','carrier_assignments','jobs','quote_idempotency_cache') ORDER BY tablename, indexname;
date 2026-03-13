@@ -1,0 +1,32 @@
+                                    Table "public.carrier_assignments"
+         Column          |           Type           | Collation | Nullable |           Default            
+-------------------------+--------------------------+-----------+----------+------------------------------
+ id                      | uuid                     |           | not null | gen_random_uuid()
+ organization_id         | uuid                     |           |          | 
+ order_id                | uuid                     |           | not null | 
+ carrier_id              | uuid                     |           | not null | 
+ service_type            | character varying(50)    |           |          | 
+ status                  | character varying(50)    |           |          | 'pending'::character varying
+ pickup_address          | jsonb                    |           | not null | 
+ delivery_address        | jsonb                    |           | not null | 
+ estimated_pickup        | timestamp with time zone |           |          | 
+ estimated_delivery      | timestamp with time zone |           |          | 
+ actual_pickup           | timestamp with time zone |           |          | 
+ special_instructions    | text                     |           |          | 
+ request_payload         | jsonb                    |           |          | 
+ acceptance_payload      | jsonb                    |           |          | 
+ carrier_reference_id    | character varying(100)   |           |          | 
+ carrier_tracking_number | character varying(100)   |           |          | 
+ rejected_reason         | text                     |           |          | 
+ idempotency_key         | character varying(255)   |           |          | 
+ requested_at            | timestamp with time zone |           |          | now()
+ assigned_at             | timestamp with time zone |           |          | 
+ accepted_at             | timestamp with time zone |           |          | 
+ expires_at              | timestamp with time zone |           |          | 
+ created_at              | timestamp with time zone |           |          | now()
+ updated_at              | timestamp with time zone |           |          | now()
+Indexes:
+    "carrier_assignments_pkey" PRIMARY KEY, btree (id)
+Check constraints:
+    "carrier_assignments_status_check" CHECK (status::text = ANY (ARRAY['pending'::character varying::text, 'sent'::character varying::text, 'accepted'::character varying::text, 'rejected'::character varying::text, 'busy'::character varying::text, 'expired'::character varying::text, 'cancelled'::character varying::text, 'completed'::character varying::text]))
+

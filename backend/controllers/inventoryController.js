@@ -215,6 +215,7 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
     userId: req.user?.userId
   });
   await invalidatePatterns(invalidationTargets(orgId, 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'));
+  emitToOrg(orgId, 'inventory:updated', formatInventoryItem(item));
 
   res.status(201).json({ success: true, data: formatInventoryItem(item) });
 });

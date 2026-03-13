@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { inventoryApi, warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { useSocketEvent } from '@/hooks/useSocket';
 import type { InventoryItem, Warehouse } from '@/types';
 
 export function useInventory(page: number, pageSize: number) {
@@ -16,29 +17,43 @@ export function useInventory(page: number, pageSize: number) {
 
   const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
+  // Live refetch when backend emits inventory changes via socket
+  useSocketEvent('inventory:updated', refetch);
+
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [inventoryRes, warehouseRes, statsRes, lowStockRes] = useMockApi
-          ? await Promise.all([
+        if (useMockApi) {
+          const [inventoryRes, warehouseRes] = await Promise.all([
             mockApi.getInventory(page, pageSize),
             mockApi.getWarehouses(),
-            { data: { total_items: 0, total_inventory_value: 0, low_stock_items: 0 } },
-            { data: [] }
-          ])
-          : await Promise.all([
+          ]);
+          setInventory(inventoryRes.data);
+          setTotalItems(inventoryRes.total);
+          setWarehouses(warehouseRes.data);
+          setStats({ total_items: 0, total_inventory_value: 0, low_stock_items: 0 });
+          setLowStockItems([]);
+        } else {
+          // Use allSettled so a failing stats/low-stock call doesn't wipe the main list
+          const [inventoryRes, warehouseRes, statsRes, lowStockRes] = await Promise.allSettled([
             inventoryApi.getInventory(page, pageSize),
             warehousesApi.getWarehouses(),
             inventoryApi.getInventoryStats(),
-            inventoryApi.getLowStockItems()
+            inventoryApi.getLowStockItems(),
           ]);
 
-        setInventory(inventoryRes.data);
-        setTotalItems(inventoryRes.total);
-        setWarehouses(warehouseRes.data);
-        setStats(statsRes.data);
-        setLowStockItems(lowStockRes.data);
+          if (inventoryRes.status === 'fulfilled') {
+            setInventory(inventoryRes.value.data);
+            setTotalItems(inventoryRes.value.total);
+          } else {
+            setInventory([]);
+            setTotalItems(0);
+          }
+          if (warehouseRes.status === 'fulfilled') setWarehouses(warehouseRes.value.data);
+          if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
+          if (lowStockRes.status === 'fulfilled') setLowStockItems(lowStockRes.value.data);
+        }
       } catch (error) {
         console.error('Failed to fetch inventory:', error);
         setInventory([]);

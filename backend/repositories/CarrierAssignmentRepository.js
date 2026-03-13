@@ -377,7 +377,7 @@ class CarrierAssignmentRepository extends BaseRepository {
             `SELECT quantity, weight, dimensions, volumetric_weight,
                     is_fragile, is_hazardous, is_perishable, requires_cold_storage,
                     item_type, package_type, handling_instructions,
-                    requires_insurance, declared_value
+                    requires_insurance, declared_value, warehouse_id
              FROM order_items
              WHERE order_id = $1`,
             [orderId], client

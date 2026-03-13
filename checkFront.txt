@@ -3,3 +3,83 @@ in create order one field is Unit Price is not fetched from db or data thats why
 remove carrier code in add carrier because there is genrating uuid in backend no
 remove unit cost completly insted add cost price at different secenarios
 shipment is not creating automatically after creating order(also start from warehouse no??)
+remove has cold storage and coustom bounded warehouse checkbox field beacuse it is already in warehouse type options in add warehouse form
+in inventory creation after creation the inventory stays in loading state and i have to reload to see list this is common to all creation likely problem with socket but please check otherwise
+when i create inventory of existing product the whole inventory gets overwritten
+remove mrp field from product creation
+remove shelf life field from product creation
+2026-03-12 22:09:00 [error]: Transaction failed and rolled back {
+  "error": "invalid input syntax for type uuid: \"{\"client\":{\"_events\":{},\"_eventsCount\":0,\"connectionParameters\":{\"user\":\"postgres\",\"database\":\"scm_db\",\"port\":5432,\"host\":\"localhost\",\"binary\":false,\"ssl\":false,\"client_encoding\":\"\",\"isDomainSocket\":false,\"statement_timeout\":false,\"lock_timeout\":false,\"idle_in_transaction_session_timeout\":false,\"query_timeout\":false,\"connect_timeout\":2},\"user\":\"postgres\",\"database\":\"scm_db\",\"port\":5432,\"host\":\"localhost\",\"_types\":{\"_types\":{\"arrayParser\":{},\"builtins\":{\"BOOL\":16,\"BYTEA\":17,\"CHAR\":18,\"INT8\":20,\"INT2\":21,\"INT4\":23,\"REGPROC\":24,\"TEXT\":25,\"OID\":26,\"TID\":27,\"XID\":28,\"CID\":29,\"JSON\":114,\"XML\":142,\"PG_NODE_TREE\":194,\"SMGR\":210,\"PATH\":602,\"POLYGON\":604,\"CIDR\":650,\"FLOAT4\":700,\"FLOAT8\":701,\"ABSTIME\":702,\"RELTIME\":703,\"TINTERVAL\":704,\"CIRCLE\":718,\"MACADDR8\":774,\"MONEY\":790,\"MACADDR\":829,\"INET\":869,\"ACLITEM\":1033,\"BPCHAR\":1042,\"VARCHAR\":1043,\"DATE\":1082,\"TIME\":1083,\"TIMESTAMP\":1114,\"TIMESTAMPTZ\":1184,\"INTERVAL\":1186,\"TIMETZ\":1266,\"BIT\":1560,\"VARBIT\":1562,\"NUMERIC\":1700,\"REFCURSOR\":1790,\"REGPROCEDURE\":2202,\"REGOPER\":2203,\"REGOPERATOR\":2204,\"REGCLASS\":2205,\"REGTYPE\":2206,\"UUID\":2950,\"TXID_SNAPSHOT\":2970,\"PG_LSN\":3220,\"PG_NDISTINCT\":3361,\"PG_DEPENDENCIES\":3402,\"TSVECTOR\":3614,\"TSQUERY\":3615,\"GTSVECTOR\":3642,\"REGCONFIG\":3734,\"REGDICTIONARY\":3769,\"JSONB\":3802,\"REGNAMESPACE\":4089,\"REGROLE\":4096}},\"text\":{},\"binary\":{}},\"_ending\":false,\"_ended\":false,\"_connecting\":false,\"_connected\":true,\"_connectionError\":false,\"_queryable\":true,\"_activeQuery\":null,\"enableChannelBinding\":false,\"connection\":{\"_events\":{},\"_eventsCount\":23,\"stream\":{\"connecting\":false,\"_hadError\":false,\"_parent\":null,\"_host\":\"localhost\",\"_closeAfterHandlingError\":false,\"_events\":{\"end\":[null,null]},\"_readableState\":{\"highWaterMark\":65536,\"buffer\":[],\"bufferIndex\":0,\"length\":0,\"pipes\":[],\"awaitDrainWriters\":null},\"_writableState\":{\"highWaterMark\":65536,\"length\":0,\"corked\":0,\"writelen\":0,\"bufferedIndex\":0,\"pendingcb\":0},\"allowHalfOpen\":false,\"_eventsCount\":4,\"_sockname\":null,\"_pendingData\":null,\"_pendingEncoding\":\"\",\"server\":null,\"_server\":null,\"autoSelectFamilyAttemptedAddresses\":[\"::1:5432\"]},\"_keepAlive\":false,\"_keepAliveInitialDelayMillis\":0,\"parsedStatements\":{},\"ssl\":false,\"_ending\":true,\"_emitMessage\":false,\"_connecting\":true},\"_queryQueue\":[],\"binary\":false,\"processID\":16268,\"secretKey\":1428206024,\"ssl\":false,\"_connectionTimeoutMillis\":2000,\"_connectionCallback\":null,\"connectionTimeoutHandle\":{\"_idleTimeout\":-1,\"_idlePrev\":null,\"_idleNext\":null,\"_idleStart\":1075969,\"_onTimeout\":null,\"_repeat\":null,\"_destroyed\":true},\"saslSession\":null,\"readyForQuery\":true,\"hasExecuted\":true,\"_poolUseCount\":28},\"isActive\":true}\"",
+  "stack": "error: invalid input syntax for type uuid: \"{\"client\":{\"_events\":{},\"_eventsCount\":0,\"connectionParameters\":{\"user\":\"postgres\",\"database\":\"scm_db\",\"port\":5432,\"host\":\"localhost\",\"binary\":false,\"ssl\":false,\"client_encoding\":\"\",\"isDomainSocket\":false,\"statement_timeout\":false,\"lock_timeout\":false,\"idle_in_transaction_session_timeout\":false,\"query_timeout\":false,\"connect_timeout\":2},\"user\":\"postgres\",\"database\":\"scm_db\",\"port\":5432,\"host\":\"localhost\",\"_types\":{\"_types\":{\"arrayParser\":{},\"builtins\":{\"BOOL\":16,\"BYTEA\":17,\"CHAR\":18,\"INT8\":20,\"INT2\":21,\"INT4\":23,\"REGPROC\":24,\"TEXT\":25,\"OID\":26,\"TID\":27,\"XID\":28,\"CID\":29,\"JSON\":114,\"XML\":142,\"PG_NODE_TREE\":194,\"SMGR\":210,\"PATH\":602,\"POLYGON\":604,\"CIDR\":650,\"FLOAT4\":700,\"FLOAT8\":701,\"ABSTIME\":702,\"RELTIME\":703,\"TINTERVAL\":704,\"CIRCLE\":718,\"MACADDR8\":774,\"MONEY\":790,\"MACADDR\":829,\"INET\":869,\"ACLITEM\":1033,\"BPCHAR\":1042,\"VARCHAR\":1043,\"DATE\":1082,\"TIME\":1083,\"TIMESTAMP\":1114,\"TIMESTAMPTZ\":1184,\"INTERVAL\":1186,\"TIMETZ\":1266,\"BIT\":1560,\"VARBIT\":1562,\"NUMERIC\":1700,\"REFCURSOR\":1790,\"REGPROCEDURE\":2202,\"REGOPER\":2203,\"REGOPERATOR\":2204,\"REGCLASS\":2205,\"REGTYPE\":2206,\"UUID\":2950,\"TXID_SNAPSHOT\":2970,\"PG_LSN\":3220,\"PG_NDISTINCT\":3361,\"PG_DEPENDENCIES\":3402,\"TSVECTOR\":3614,\"TSQUERY\":3615,\"GTSVECTOR\":3642,\"REGCONFIG\":3734,\"REGDICTIONARY\":3769,\"JSONB\":3802,\"REGNAMESPACE\":4089,\"REGROLE\":4096}},\"text\":{},\"binary\":{}},\"_ending\":false,\"_ended\":false,\"_connecting\":false,\"_connected\":true,\"_connectionError\":false,\"_queryable\":true,\"_activeQuery\":null,\"enableChannelBinding\":false,\"connection\":{\"_events\":{},\"_eventsCount\":23,\"stream\":{\"connecting\":false,\"_hadError\":false,\"_parent\":null,\"_host\":\"localhost\",\"_closeAfterHandlingError\":false,\"_events\":{\"end\":[null,null]},\"_readableState\":{\"highWaterMark\":65536,\"buffer\":[],\"bufferIndex\":0,\"length\":0,\"pipes\":[],\"awaitDrainWriters\":null},\"_writableState\":{\"highWaterMark\":65536,\"length\":0,\"corked\":0,\"writelen\":0,\"bufferedIndex\":0,\"pendingcb\":0},\"allowHalfOpen\":false,\"_eventsCount\":4,\"_sockname\":null,\"_pendingData\":null,\"_pendingEncoding\":\"\",\"server\":null,\"_server\":null,\"autoSelectFamilyAttemptedAddresses\":[\"::1:5432\"]},\"_keepAlive\":false,\"_keepAliveInitialDelayMillis\":0,\"parsedStatements\":{},\"ssl\":false,\"_ending\":true,\"_emitMessage\":false,\"_connecting\":true},\"_queryQueue\":[],\"binary\":false,\"processID\":16268,\"secretKey\":1428206024,\"ssl\":false,\"_connectionTimeoutMillis\":2000,\"_connectionCallback\":null,\"connectionTimeoutHandle\":{\"_idleTimeout\":-1,\"_idlePrev\":null,\"_idleNext\":null,\"_idleStart\":1075969,\"_onTimeout\":null,\"_repeat\":null,\"_destroyed\":true},\"saslSession\":null,\"readyForQuery\":true,\"hasExecuted\":true,\"_poolUseCount\":28},\"isActive\":true}\"\n    at /home/manav/Desktop/SCM/backend/node_modules/pg-pool/index.js:45:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async WarehouseRepository.query (file:///home/manav/Desktop/SCM/backend/repositories/BaseRepository.js:18:12)\n    at async WarehouseRepository.findByIdWithDetails (file:///home/manav/Desktop/SCM/backend/repositories/WarehouseRepository.js:83:20)\n    at async file:///home/manav/Desktop/SCM/backend/services/orderService.js:500:31\n    at async withTransaction (file:///home/manav/Desktop/SCM/backend/utils/dbTransaction.js:104:20)\n    at async OrderService.createTransferOrder (file:///home/manav/Desktop/SCM/backend/services/orderService.js:498:22)\n    at async file:///home/manav/Desktop/SCM/backend/controllers/ordersController.js:153:17"
+}
+2026-03-12 22:09:00 [error]: Failed to create transfer order {
+  "error": "invalid input syntax for type uuid: \"{\"client\":{\"_events\":{},\"_eventsCount\":0,\"connectionParameters\":{\"user\":\"postgres\",\"database\":\"scm_db\",\"port\":5432,\"host\":\"localhost\",\"binary\":false,\"ssl\":false,\"client_encoding\":\"\",\"isDomainSocket\":false,\"statement_timeout\":false,\"lock_timeout\":false,\"idle_in_transaction_session_timeout\":false,\"query_timeout\":false,\"connect_timeout\":2},\"user\":\"postgres\",\"database\":\"scm_db\",\"port\":5432,\"host\":\"localhost\",\"_types\":{\"_types\":{\"arrayParser\":{},\"builtins\":{\"BOOL\":16,\"BYTEA\":17,\"CHAR\":18,\"INT8\":20,\"INT2\":21,\"INT4\":23,\"REGPROC\":24,\"TEXT\":25,\"OID\":26,\"TID\":27,\"XID\":28,\"CID\":29,\"JSON\":114,\"XML\":142,\"PG_NODE_TREE\":194,\"SMGR\":210,\"PATH\":602,\"POLYGON\":604,\"CIDR\":650,\"FLOAT4\":700,\"FLOAT8\":701,\"ABSTIME\":702,\"RELTIME\":703,\"TINTERVAL\":704,\"CIRCLE\":718,\"MACADDR8\":774,\"MONEY\":790,\"MACADDR\":829,\"INET\":869,\"ACLITEM\":1033,\"BPCHAR\":1042,\"VARCHAR\":1043,\"DATE\":1082,\"TIME\":1083,\"TIMESTAMP\":1114,\"TIMESTAMPTZ\":1184,\"INTERVAL\":1186,\"TIMETZ\":1266,\"BIT\":1560,\"VARBIT\":1562,\"NUMERIC\":1700,\"REFCURSOR\":1790,\"REGPROCEDURE\":2202,\"REGOPER\":2203,\"REGOPERATOR\":2204,\"REGCLASS\":2205,\"REGTYPE\":2206,\"UUID\":2950,\"TXID_SNAPSHOT\":2970,\"PG_LSN\":3220,\"PG_NDISTINCT\":3361,\"PG_DEPENDENCIES\":3402,\"TSVECTOR\":3614,\"TSQUERY\":3615,\"GTSVECTOR\":3642,\"REGCONFIG\":3734,\"REGDICTIONARY\":3769,\"JSONB\":3802,\"REGNAMESPACE\":4089,\"REGROLE\":4096}},\"text\":{},\"binary\":{}},\"_ending\":false,\"_ended\":false,\"_connecting\":false,\"_connected\":true,\"_connectionError\":false,\"_queryable\":true,\"_activeQuery\":null,\"enableChannelBinding\":false,\"connection\":{\"_events\":{},\"_eventsCount\":23,\"stream\":{\"connecting\":false,\"_hadError\":false,\"_parent\":null,\"_host\":\"localhost\",\"_closeAfterHandlingError\":false,\"_events\":{\"end\":[null,null]},\"_readableState\":{\"highWaterMark\":65536,\"buffer\":[],\"bufferIndex\":0,\"length\":0,\"pipes\":[],\"awaitDrainWriters\":null},\"_writableState\":{\"highWaterMark\":65536,\"length\":0,\"corked\":0,\"writelen\":0,\"bufferedIndex\":0,\"pendingcb\":0},\"allowHalfOpen\":false,\"_eventsCount\":4,\"_sockname\":null,\"_pendingData\":null,\"_pendingEncoding\":\"\",\"server\":null,\"_server\":null,\"autoSelectFamilyAttemptedAddresses\":[\"::1:5432\"]},\"_keepAlive\":false,\"_keepAliveInitialDelayMillis\":0,\"parsedStatements\":{},\"ssl\":false,\"_ending\":true,\"_emitMessage\":false,\"_connecting\":true},\"_queryQueue\":[],\"binary\":false,\"processID\":16268,\"secretKey\":1428206024,\"ssl\":false,\"_connectionTimeoutMillis\":2000,\"_connectionCallback\":null,\"connectionTimeoutHandle\":{\"_idleTimeout\":-1,\"_idlePrev\":null,\"_idleNext\":null,\"_idleStart\":1075969,\"_onTimeout\":null,\"_repeat\":null,\"_destroyed\":true},\"saslSession\":null,\"readyForQuery\":true,\"hasExecuted\":true,\"_poolUseCount\":28},\"isActive\":true}\"",
+  "transferData": {
+    "from": "86920ed4-4940-4399-8f35-f708471e971c",
+    "to": "d03acd47-5776-4c5f-a647-0e8b39635b26",
+    "itemCount": 1
+  }
+}
+2026-03-12 22:09:00 [error]: invalid input syntax for type uuid: "{"client":{"_events":{},"_eventsCount":0,"connectionParameters":{"user":"postgres","database":"scm_db","port":5432,"host":"localhost","binary":false,"ssl":false,"client_encoding":"","isDomainSocket":false,"statement_timeout":false,"lock_timeout":false,"idle_in_transaction_session_timeout":false,"query_timeout":false,"connect_timeout":2},"user":"postgres","database":"scm_db","port":5432,"host":"localhost","_types":{"_types":{"arrayParser":{},"builtins":{"BOOL":16,"BYTEA":17,"CHAR":18,"INT8":20,"INT2":21,"INT4":23,"REGPROC":24,"TEXT":25,"OID":26,"TID":27,"XID":28,"CID":29,"JSON":114,"XML":142,"PG_NODE_TREE":194,"SMGR":210,"PATH":602,"POLYGON":604,"CIDR":650,"FLOAT4":700,"FLOAT8":701,"ABSTIME":702,"RELTIME":703,"TINTERVAL":704,"CIRCLE":718,"MACADDR8":774,"MONEY":790,"MACADDR":829,"INET":869,"ACLITEM":1033,"BPCHAR":1042,"VARCHAR":1043,"DATE":1082,"TIME":1083,"TIMESTAMP":1114,"TIMESTAMPTZ":1184,"INTERVAL":1186,"TIMETZ":1266,"BIT":1560,"VARBIT":1562,"NUMERIC":1700,"REFCURSOR":1790,"REGPROCEDURE":2202,"REGOPER":2203,"REGOPERATOR":2204,"REGCLASS":2205,"REGTYPE":2206,"UUID":2950,"TXID_SNAPSHOT":2970,"PG_LSN":3220,"PG_NDISTINCT":3361,"PG_DEPENDENCIES":3402,"TSVECTOR":3614,"TSQUERY":3615,"GTSVECTOR":3642,"REGCONFIG":3734,"REGDICTIONARY":3769,"JSONB":3802,"REGNAMESPACE":4089,"REGROLE":4096}},"text":{},"binary":{}},"_ending":false,"_ended":false,"_connecting":false,"_connected":true,"_connectionError":false,"_queryable":true,"_activeQuery":null,"enableChannelBinding":false,"connection":{"_events":{},"_eventsCount":23,"stream":{"connecting":false,"_hadError":false,"_parent":null,"_host":"localhost","_closeAfterHandlingError":false,"_events":{"end":[null,null]},"_readableState":{"highWaterMark":65536,"buffer":[],"bufferIndex":0,"length":0,"pipes":[],"awaitDrainWriters":null},"_writableState":{"highWaterMark":65536,"length":0,"corked":0,"writelen":0,"bufferedIndex":0,"pendingcb":0},"allowHalfOpen":false,"_eventsCount":4,"_sockname":null,"_pendingData":null,"_pendingEncoding":"","server":null,"_server":null,"autoSelectFamilyAttemptedAddresses":["::1:5432"]},"_keepAlive":false,"_keepAliveInitialDelayMillis":0,"parsedStatements":{},"ssl":false,"_ending":true,"_emitMessage":false,"_connecting":true},"_queryQueue":[],"binary":false,"processID":16268,"secretKey":1428206024,"ssl":false,"_connectionTimeoutMillis":2000,"_connectionCallback":null,"connectionTimeoutHandle":{"_idleTimeout":-1,"_idlePrev":null,"_idleNext":null,"_idleStart":1075969,"_onTimeout":null,"_repeat":null,"_destroyed":true},"saslSession":null,"readyForQuery":true,"hasExecuted":true,"_poolUseCount":28},"isActive":true}" {
+  "name": "error",
+  "statusCode": 500,
+  "path": "/api/orders/transfer",
+  "method": "POST",
+  "requestId": "3043dcb2-7902-4f01-9edf-a16b2b216d94",
+  "ip": "::ffff:127.0.0.1"
+}
+2026-03-12 22:09:00 [http]: HTTP Request {
+  "method": "POST",
+  "url": "/api/orders/transfer",
+  "status": 500,
+  "responseTime": "24ms",
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0"
+}
+
+one big problem across all field in all creation forms when there is auto filled option 1 or 0
+or whatever i cant backspace it to write single digit numbers like 5 9 etc only append at last
+in order creation next to quantity there us unit price as a field i want only the unit price 
+of that product not enter unit price like qte(editable field) x unit price(plain text) = line total already ok
+2026-03-12 22:17:14 [debug]: SLA policy matching — inputs {
+  "organizationId": null,
+  "carrierId": "a0de9060-8e6c-42af-96f1-a8e8f21171ab",
+  "originZone": "regional",
+  "destinationZone": "regional",
+  "normService": "standard"
+}
+2026-03-12 22:17:14 [info]: SLA policy matched {
+  "organizationId": null,
+  "policyId": null,
+  "policyName": null,
+  "originZone": "regional",
+  "destinationZone": "regional",
+  "deliveryHours": 72,
+  "matchedBy": "system-fallback (72h)"
+}
+solve above problem as well all things are null
+if there is no active policy should we not abort the transaction and send message about it
+in partner page when creating a sales channel as we dont have vendors so why need 
+markeplace type remove it
+026-03-12 22:33:37 [info]: 📦 Received order webhook: order.created from customer-portal
+2026-03-12 22:33:37 [error]: there is no unique or exclusion constraint matching the ON CONFLICT specification {
+  "name": "error",
+  "statusCode": 500,
+  "path": "/api/webhooks/5f984f1af6c99c60eff9641894b0d57d3f38eaff123a047330fad8403ec2b5d9/orders",
+  "method": "POST",
+  "requestId": "02e8721d-4fe5-4a5a-b140-2404ad9bce30",
+  "ip": "::ffff:127.0.0.1"
+}
+2026-03-12 22:33:37 [http]: HTTP Request {
+  "method": "POST",
+  "url": "/api/webhooks/5f984f1af6c99c60eff9641894b0d57d3f38eaff123a047330fad8403ec2b5d9/orders",
+  "status": 500,
+  "responseTime": "25ms",
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0"
+}
+fix above error as well
+also in demo customer html should not there be map picker for destination and remove from 
+field as it will be assigned after order creation of the warehouse check if this flow exists
+if not do it also remove service type as it should only be needed if internal stock
+transfer or sinbound order restock from supplier

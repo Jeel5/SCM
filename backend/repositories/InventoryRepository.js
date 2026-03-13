@@ -258,9 +258,9 @@ class InventoryRepository extends BaseRepository {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
       ON CONFLICT (warehouse_id, sku) WHERE sku IS NOT NULL
       DO UPDATE SET
-        quantity           = EXCLUDED.quantity,
-        available_quantity = EXCLUDED.available_quantity,
-        reserved_quantity  = EXCLUDED.reserved_quantity,
+        quantity           = inventory.quantity + EXCLUDED.quantity,
+        available_quantity = inventory.available_quantity + EXCLUDED.available_quantity,
+        reserved_quantity  = inventory.reserved_quantity + EXCLUDED.reserved_quantity,
         reorder_point      = COALESCE(EXCLUDED.reorder_point, inventory.reorder_point),
         max_stock_level    = COALESCE(EXCLUDED.max_stock_level, inventory.max_stock_level),
         unit_cost          = COALESCE(EXCLUDED.unit_cost, inventory.unit_cost),

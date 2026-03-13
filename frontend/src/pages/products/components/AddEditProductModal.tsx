@@ -23,7 +23,7 @@ interface FormState {
   // Basic
   name: string; description: string; category: string; brand: string;
   // Pricing
-  selling_price: string; cost_price: string; mrp: string; currency: string;
+  selling_price: string; cost_price: string; currency: string;
   // Physical
   weight: string; dim_length: string; dim_width: string; dim_height: string; dim_unit: string;
   // Compliance (India)
@@ -34,19 +34,19 @@ interface FormState {
   // Flags
   is_fragile: boolean; requires_cold_storage: boolean; is_hazmat: boolean; is_perishable: boolean;
   // Order rules
-  warranty_period_days: string; shelf_life_days: string;
+  warranty_period_days: string;
   // Meta
   tags: string; is_active: boolean;
 }
 
 const EMPTY: FormState = {
   name: '', description: '', category: '', brand: '',
-  selling_price: '', cost_price: '', mrp: '', currency: 'INR',
+  selling_price: '', cost_price: '', currency: 'INR',
   weight: '', dim_length: '', dim_width: '', dim_height: '', dim_unit: 'cm',
   hsn_code: '', gst_rate: '18', manufacturer_barcode: '', country_of_origin: 'India',
   package_type: 'box', handling_instructions: '', requires_insurance: false,
   is_fragile: false, requires_cold_storage: false, is_hazmat: false, is_perishable: false,
-  warranty_period_days: '0', shelf_life_days: '',
+  warranty_period_days: '0',
   tags: '', is_active: true,
 };
 
@@ -87,7 +87,6 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
         brand: product.brand || '',
         selling_price: product.sellingPrice != null ? String(product.sellingPrice) : '',
         cost_price: product.costPrice != null ? String(product.costPrice) : '',
-        mrp: product.mrp != null ? String(product.mrp) : '',
         currency: product.currency || 'INR',
         weight: product.weight != null ? String(product.weight) : '',
         dim_length: product.dimensions?.length != null ? String(product.dimensions.length) : '',
@@ -106,7 +105,6 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
         is_hazmat: Boolean(product.isHazmat),
         is_perishable: Boolean(product.isPerishable),
         warranty_period_days: product.warrantyPeriodDays != null ? String(product.warrantyPeriodDays) : '0',
-        shelf_life_days: product.shelfLifeDays != null ? String(product.shelfLifeDays) : '',
         tags: (product.tags || []).join(', '),
         is_active: product.isActive !== false,
       });
@@ -142,7 +140,6 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
         brand: form.brand.trim() || undefined,
         sellingPrice: form.selling_price ? parseFloat(form.selling_price) : undefined,
         costPrice: form.cost_price ? parseFloat(form.cost_price) : undefined,
-        mrp: form.mrp ? parseFloat(form.mrp) : undefined,
         currency: form.currency,
         weight: form.weight ? parseFloat(form.weight) : undefined,
         dimensions: hasDims ? {
@@ -163,7 +160,6 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
         isHazmat: form.is_hazmat,
         isPerishable: form.is_perishable,
         warrantyPeriodDays: form.warranty_period_days ? parseInt(form.warranty_period_days) : 0,
-        shelfLifeDays: form.shelf_life_days ? parseInt(form.shelf_life_days) : undefined,
         tags: tagsArr,
         isActive: form.is_active,
       };
@@ -220,7 +216,7 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
 
         {/* PRICING & TAX */}
         <Section title="Pricing & Tax (India Compliance)">
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className={lbl}>Selling Price</label>
               <Input type="number" min="0" step="0.01" value={form.selling_price} onChange={set('selling_price')} placeholder="0.00" />
@@ -228,10 +224,6 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
             <div>
               <label className={lbl}>Cost Price</label>
               <Input type="number" min="0" step="0.01" value={form.cost_price} onChange={set('cost_price')} placeholder="0.00" />
-            </div>
-            <div>
-              <label className={lbl}>MRP <span className="text-xs font-normal text-gray-400">(retail)</span></label>
-              <Input type="number" min="0" step="0.01" value={form.mrp} onChange={set('mrp')} placeholder="0.00" />
             </div>
             <div>
               <label className={lbl}>Currency</label>
@@ -334,19 +326,10 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
         </Section>
 
         {/* ORDER RULES */}
-        <Section title="Warranty & Shelf Life">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={lbl}>Warranty (days) <span className="text-xs font-normal text-gray-400">0 = none</span></label>
-              <Input type="number" min="0" step="1" value={form.warranty_period_days} onChange={set('warranty_period_days')} placeholder="365" />
-            </div>
-            <div>
-              <label className={lbl}>Shelf Life (days) <span className="text-xs font-normal text-gray-400">perishables only</span></label>
-              <Input type="number" min="1" step="1" value={form.shelf_life_days} onChange={set('shelf_life_days')}
-                placeholder={form.is_perishable ? 'e.g. 180' : 'N/A'}
-                disabled={!form.is_perishable}
-              />
-            </div>
+        <Section title="Warranty">
+          <div>
+            <label className={lbl}>Warranty (days) <span className="text-xs font-normal text-gray-400">0 = none</span></label>
+            <Input type="number" min="0" step="1" value={form.warranty_period_days} onChange={set('warranty_period_days')} placeholder="365" />
           </div>
         </Section>
 

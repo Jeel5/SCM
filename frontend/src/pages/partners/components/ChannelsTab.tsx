@@ -21,7 +21,6 @@ interface Channel {
 }
 
 const PLATFORM_TYPES = [
-  { value: 'marketplace', label: 'Marketplace' },
   { value: 'd2c', label: 'Direct to Consumer (D2C)' },
   { value: 'b2b', label: 'Business to Business (B2B)' },
   { value: 'wholesale', label: 'Wholesale' },
@@ -29,7 +28,7 @@ const PLATFORM_TYPES = [
 ];
 
 const emptyForm = {
-  name: '', platform_type: 'marketplace',
+  name: '', platform_type: 'd2c',
   api_endpoint: '', contact_name: '', contact_email: '', contact_phone: '',
   default_warehouse_id: '',
 };

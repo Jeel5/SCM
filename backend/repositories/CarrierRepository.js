@@ -504,12 +504,12 @@ class CarrierRepository extends BaseRepository {
     async createCarrierAssignment(data, client) {
         const result = await this.query(
             `INSERT INTO carrier_assignments
-               (order_id, carrier_id, service_type, status, pickup_address, delivery_address,
+               (order_id, carrier_id, organization_id, service_type, status, pickup_address, delivery_address,
                 estimated_pickup, estimated_delivery, request_payload, expires_at, idempotency_key)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-             RETURNING id, carrier_id, order_id, status, created_at`,
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             RETURNING id, carrier_id, order_id, organization_id, status, created_at`,
             [
-                data.orderId, data.carrierId, data.serviceType, data.status || 'pending',
+                data.orderId, data.carrierId, data.organizationId || null, data.serviceType, data.status || 'pending',
                 data.pickupAddress, data.deliveryAddress,
                 data.estimatedPickup, data.estimatedDelivery,
                 JSON.stringify(data.requestPayload), data.expiresAt, data.idempotencyKey,

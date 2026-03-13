@@ -18,7 +18,6 @@ interface InventoryFields {
   quantity: string;
   reorder_point: string;
   max_stock_level: string;
-  unit_cost: string;
 }
 
 const INITIAL_FIELDS: InventoryFields = {
@@ -26,7 +25,6 @@ const INITIAL_FIELDS: InventoryFields = {
   quantity: '',
   reorder_point: '',
   max_stock_level: '',
-  unit_cost: '',
 };
 
 export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItemModalProps) {
@@ -85,7 +83,6 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
     };
     if (fields.reorder_point !== '') payload.reorder_point = Number(fields.reorder_point);
     if (fields.max_stock_level !== '') payload.max_stock_level = Number(fields.max_stock_level);
-    if (fields.unit_cost !== '') payload.unit_cost = Number(fields.unit_cost);
 
     try {
       setIsSubmitting(true);
@@ -230,7 +227,7 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
                 3. Stock Levels
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <Input
                   label="Quantity *"
                   type="number"
@@ -255,15 +252,6 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
                   placeholder="0"
                   value={fields.max_stock_level}
                   onChange={setField('max_stock_level')}
-                />
-                <Input
-                  label="Unit Cost (₹)"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={fields.unit_cost}
-                  onChange={setField('unit_cost')}
                 />
               </div>
             </div>
