@@ -6,6 +6,22 @@ import shipmentRepo from '../repositories/ShipmentRepository.js';
 
 const OSRM_URL = process.env.OSRM_API_URL || 'http://router.project-osrm.org';
 
+function parseJsonField(value, fallback) {
+  if (value == null) {
+    return fallback;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return value;
+}
+
 class ShipmentTrackingService {
   /**
    * Calculate route between two addresses using OSRM
@@ -60,7 +76,7 @@ class ShipmentTrackingService {
         const shipment = await shipmentRepo.findById(shipmentId, tx);
         if (!shipment) throw new NotFoundError('Shipment');
 
-        const trackingEvents = JSON.parse(shipment.tracking_events || '[]');
+        const trackingEvents = parseJsonField(shipment.tracking_events, []);
 
         // Add new event with timestamp
         const newEvent = {
@@ -160,7 +176,7 @@ class ShipmentTrackingService {
         pickupActual: row.pickup_actual,
         deliveryScheduled: row.delivery_scheduled,
         deliveryActual: row.delivery_actual,
-        trackingEvents: JSON.parse(row.tracking_events || '[]'),
+        trackingEvents: parseJsonField(row.tracking_events, []),
         customerName: row.customer_name,
         customerEmail: row.customer_email,
         createdAt: row.created_at,

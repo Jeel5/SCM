@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { Plus, Store, Pencil, Trash2, Copy, CheckCircle } from 'lucide-react';
 import { Button, Badge, DataTable, Modal, Input, Select, PermissionGate } from '@/components/ui';
 import { channelsApi, warehousesApi } from '@/api/services';
@@ -43,11 +43,14 @@ export function ChannelsTab() {
   const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const fetchChannels = async () => {
-    setIsLoading(true);
+  const hasLoaded = useRef(false);
+
+  const fetchChannels = async (soft = false) => {
+    if (!soft && !hasLoaded.current) setIsLoading(true);
     try {
       const response = await channelsApi.getChannels({ limit: 100 });
       setChannels(response.data);
+      hasLoaded.current = true;
     } catch {
       toast.error('Failed to load sales channels');
     } finally {
@@ -100,7 +103,7 @@ export function ChannelsTab() {
         toast.success('Channel created');
       }
       setIsModalOpen(false);
-      fetchChannels();
+      fetchChannels(true);
     } catch (err: unknown) {
       toast.error((err as Error)?.message || 'Failed to save channel');
     } finally {

@@ -305,7 +305,8 @@ class UserRepository extends BaseRepository {
    */
   async findByEmailWithOrg(email, client = null) {
     const result = await this.query(
-      `SELECT u.*, o.name AS organization_name, o.is_active AS org_is_active
+            `SELECT u.*, o.name AS organization_name, o.is_active AS org_is_active,
+              o.suspended_at AS org_suspended_at, o.is_deleted AS org_is_deleted
        FROM users u
        LEFT JOIN organizations o ON u.organization_id = o.id
        WHERE u.email = $1 AND u.is_active = true`,

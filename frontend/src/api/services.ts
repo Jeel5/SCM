@@ -344,20 +344,73 @@ function toSnakeProduct(data: Partial<Product>): Record<string, unknown> {
 // ==================== CARRIERS ====================
 export const carriersApi = {
   async getCarriers(filters?: Record<string, unknown>): Promise<ApiResponse<Carrier[]>> {
-    const response = await get<{ success: boolean; data: Carrier[] }>('/carriers', filters);
-    return { data: response.data, success: true };
+    const response = await get<{ success: boolean; data: any[] }>('/carriers', filters);
+    const normalized = (response.data || []).map((c) => ({
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      status: c.status,
+      rating: c.reliabilityScore ?? c.rating ?? 0,
+      onTimeDeliveryRate: c.onTimeRate ?? c.onTimeDeliveryRate ?? 0,
+      damageRate: c.damageRate ?? 0,
+      lossRate: c.lossRate ?? 0,
+      averageDeliveryTime: c.avgDeliveryDays ?? c.averageDeliveryTime ?? 0,
+      activeShipments: c.activeShipments ?? 0,
+      totalShipments: c.totalShipments ?? 0,
+      services: c.serviceAreas ?? c.services ?? [],
+      serviceAreas: c.serviceAreas ?? [],
+      rateCard: c.rateCard ?? [],
+      contactEmail: c.contactEmail ?? '',
+      contactPhone: c.contactPhone ?? '',
+      website: c.website,
+      servicesOffered: c.serviceAreas ?? c.services ?? [],
+      serviceType: c.serviceType,
+      apiEndpoint: c.apiEndpoint,
+      createdAt: c.createdAt,
+    }));
+    return { data: normalized, success: true };
   },
 
   async getCarrier(id: string): Promise<ApiResponse<Carrier>> {
-    return get(`/carriers/${id}`);
+    const response = await get<{ success: boolean; data: any }>(`/carriers/${id}`);
+    const c = response.data;
+    return {
+      success: true,
+      data: {
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        status: c.status,
+        rating: c.reliabilityScore ?? c.rating ?? 0,
+        onTimeDeliveryRate: c.onTimeRate ?? c.onTimeDeliveryRate ?? 0,
+        damageRate: c.damageRate ?? 0,
+        lossRate: c.lossRate ?? 0,
+        averageDeliveryTime: c.avgDeliveryDays ?? c.averageDeliveryTime ?? 0,
+        activeShipments: c.activeShipments ?? 0,
+        totalShipments: c.totalShipments ?? 0,
+        services: c.serviceAreas ?? c.services ?? [],
+        serviceAreas: c.serviceAreas ?? [],
+        rateCard: c.rateCard ?? [],
+        contactEmail: c.contactEmail ?? '',
+        contactPhone: c.contactPhone ?? '',
+        website: c.website,
+        servicesOffered: c.serviceAreas ?? c.services ?? [],
+        serviceType: c.serviceType,
+        apiEndpoint: c.apiEndpoint,
+        createdAt: c.createdAt,
+      }
+    };
   },
 
   async createCarrier(data: Partial<Carrier>): Promise<ApiResponse<Carrier>> {
     // Transform camelCase to snake_case for backend
     const backendData: Record<string, unknown> = {
       name: data.name,
-      is_active: data.status === 'active',
+      is_active: data.status !== 'inactive',
     };
+    if (data.status === 'suspended') backendData.availability_status = 'suspended';
+    else if (data.status === 'inactive') backendData.availability_status = 'offline';
+    else backendData.availability_status = 'available';
     if (data.contactEmail) backendData.contact_email = data.contactEmail;
     if (data.contactPhone) backendData.contact_phone = data.contactPhone;
     if (data.website) backendData.website = data.website;
@@ -376,8 +429,13 @@ export const carriersApi = {
     if (data.contactEmail !== undefined) backendData.contact_email = data.contactEmail;
     if (data.contactPhone !== undefined) backendData.contact_phone = data.contactPhone;
     if (data.website !== undefined) backendData.website = data.website;
-    if (data.status !== undefined) backendData.status = data.status;
-    if (data.servicesOffered !== undefined) backendData.services_offered = data.servicesOffered;
+    if (data.status !== undefined) {
+      backendData.is_active = data.status !== 'inactive';
+      if (data.status === 'suspended') backendData.availability_status = 'suspended';
+      else if (data.status === 'inactive') backendData.availability_status = 'offline';
+      else backendData.availability_status = 'available';
+    }
+    if (data.servicesOffered !== undefined) backendData.service_areas = data.servicesOffered;
     if (data.serviceType !== undefined) backendData.service_type = data.serviceType;
     return put(`/carriers/${id}`, backendData);
   },
@@ -602,6 +660,7 @@ export const dashboardApi = {
         ordersChange: data.orders?.change ?? 0,
         activeShipments: data.shipments?.inTransit || 0,
         shipmentsChange: data.shipments?.change ?? 0,
+        lowStockAlerts: data.inventory?.lowStockAlerts || 0,
         deliveryRate: data.shipments?.onTimeRate || 0,
         deliveryRateChange: data.shipments?.onTimeRateChange ?? 0,
         slaCompliance: data.shipments?.onTimeRate || 0,
@@ -833,16 +892,31 @@ export const realApi = {
 // ==================== SUPERADMIN ====================
 export const superAdminApi = {
   async getGlobalStats(): Promise<ApiResponse<{
-    totalCompanies: number;
-    activeCompanies: number;
-    totalUsers: number;
-    totalOrders: number;
-    activeShipments: number;
-    totalRevenue: number;
-    avgSlaCompliance: number;
-    systemHealth: number;
+    tenants: {
+      total: number;
+      active: number;
+      suspended: number;
+      deleted: number;
+    };
+    users: { totalActive: number };
+    orders: { total: number; last30d: number };
+    shipments: { active: number; last30d: number };
+    alerts: { active: number };
+    revenue: { last30d: number };
+    atRiskTenants: Array<{
+      id: string;
+      name: string;
+      code: string;
+      subscriptionTier?: string;
+      isActive: boolean;
+      suspendedAt?: string | null;
+      slaViolations30d: number;
+      openExceptions: number;
+      activeUsers: number;
+      lastUserLogin?: string | null;
+    }>;
   }>> {
-    return get('/super-admin/stats');
+    return get('/organizations/stats/global');
   },
 
   async getCompanies(): Promise<ApiResponse<Array<{
@@ -866,7 +940,8 @@ export const superAdminApi = {
     createdAt: string;
     updatedAt: string;
   }>>> {
-    return get('/companies');
+    // Kept for backwards compatibility with existing call sites.
+    return get('/organizations');
   },
 
   async getCompanyById(id: string): Promise<ApiResponse<{
@@ -883,12 +958,11 @@ export const superAdminApi = {
     createdAt: string;
     updatedAt: string;
   }>> {
-    return get(`/companies/${id}`);
+    return get(`/organizations/${id}`);
   },
 
   async createCompany(data: {
     name: string;
-    code: string;
     email: string;
     phone: string;
     website?: string;
@@ -899,8 +973,28 @@ export const superAdminApi = {
       country?: string;
       postalCode: string;
     };
+    adminUser: {
+      name: string;
+      email: string;
+      phone?: string;
+    };
   }): Promise<ApiResponse<object>> {
-    return post('/companies', data);
+    return post('/organizations', {
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      website: data.website,
+      address: data.address?.street,
+      city: data.address?.city,
+      state: data.address?.state,
+      country: data.address?.country || 'India',
+      postal_code: data.address?.postalCode,
+      admin_user: {
+        name: data.adminUser.name,
+        email: data.adminUser.email,
+        phone: data.adminUser.phone,
+      },
+    });
   },
 
   async updateCompany(id: string, data: Partial<{
@@ -910,11 +1004,119 @@ export const superAdminApi = {
     website: string;
     address: object;
   }>): Promise<ApiResponse<object>> {
-    return patch(`/companies/${id}`, data);
+    return put(`/organizations/${id}`, data);
   },
 
   async getCompanyUsers(id: string): Promise<ApiResponse<User[]>> {
-    return get(`/companies/${id}/users`);
+    return get(`/organizations/${id}/users`);
+  },
+
+  async suspendCompany(id: string, reason: string): Promise<ApiResponse<{ id: string; suspendedAt: string; reason: string }>> {
+    return post(`/organizations/${id}/suspend`, { reason });
+  },
+
+  async reactivateCompany(id: string): Promise<ApiResponse<{ id: string; reactivatedAt: string }>> {
+    return post(`/organizations/${id}/reactivate`, {});
+  },
+
+  async getGlobalUsers(params?: { page?: number; limit?: number; search?: string }): Promise<ApiResponse<Array<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    is_active: boolean;
+    last_login?: string | null;
+    created_at: string;
+    organization_id: string;
+    organization_name: string;
+    organization_code: string;
+  }>>> {
+    return get('/organizations/users/global', params);
+  },
+
+  async getOrganizationAudit(id: string, limit = 100): Promise<ApiResponse<Array<{
+    id: string;
+    action: string;
+    performed_by?: string | null;
+    performed_by_role?: string | null;
+    performed_by_name?: string | null;
+    performed_by_email?: string | null;
+    metadata?: Record<string, unknown> | null;
+    created_at: string;
+  }>>> {
+    return get(`/organizations/${id}/audit`, { limit });
+  },
+
+  async getOrganizationBilling(id: string, range_days = 90): Promise<ApiResponse<{
+    rangeDays: number;
+    invoiceCount: number;
+    billedAmount: number;
+    paidAmount: number;
+    openAmount: number;
+    refundsAmount: number;
+    avgInvoiceAmount: number;
+    lastInvoice: {
+      invoiceNumber: string;
+      status: string;
+      createdAt: string;
+    } | null;
+  }>> {
+    return get(`/organizations/${id}/billing`, { range_days });
+  },
+
+  async startImpersonation(user_id: string): Promise<ApiResponse<{ user: User }>> {
+    return post('/organizations/impersonation/start', { user_id });
+  },
+
+  async stopImpersonation(): Promise<ApiResponse<{ user: User }>> {
+    return post('/organizations/impersonation/stop', {});
+  },
+
+  async getActiveIncidentBanner(): Promise<ApiResponse<{
+    id: string;
+    title: string;
+    message: string;
+    severity: 'info' | 'warning' | 'critical';
+    starts_at?: string | null;
+    ends_at?: string | null;
+    organization_id?: string | null;
+  } | null>> {
+    return get('/organizations/incidents/banner/active');
+  },
+
+  async listIncidentBanners(): Promise<ApiResponse<Array<{
+    id: string;
+    title: string;
+    message: string;
+    severity: 'info' | 'warning' | 'critical';
+    is_active: boolean;
+    created_at: string;
+    organization_id?: string | null;
+    organization_name?: string | null;
+  }>>> {
+    return get('/organizations/incidents/banner');
+  },
+
+  async createIncidentBanner(data: {
+    title: string;
+    message: string;
+    severity?: 'info' | 'warning' | 'critical';
+    starts_at?: string;
+    ends_at?: string;
+    organization_id?: string | null;
+  }): Promise<ApiResponse<object>> {
+    return post('/organizations/incidents/banner', data);
+  },
+
+  async updateIncidentBanner(id: string, data: {
+    title?: string;
+    message?: string;
+    severity?: 'info' | 'warning' | 'critical';
+    starts_at?: string | null;
+    ends_at?: string | null;
+    is_active?: boolean;
+  }): Promise<ApiResponse<object>> {
+    return patch(`/organizations/incidents/banner/${id}`, data);
   },
 };
 

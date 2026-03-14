@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { Plus, Package, Pencil, Trash2 } from 'lucide-react';
 import { Button, Badge, DataTable, Modal, Input, Select, PermissionGate } from '@/components/ui';
 import { suppliersApi } from '@/api/services';
@@ -38,11 +38,14 @@ export function SuppliersTab() {
   const [formData, setFormData] = useState(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchSuppliers = async () => {
-    setIsLoading(true);
+    const hasLoaded = useRef(false);
+
+    const fetchSuppliers = async (soft = false) => {
+      if (!soft && !hasLoaded.current) setIsLoading(true);
     try {
       const response = await suppliersApi.getSuppliers({ limit: 100 });
       setSuppliers(response.data);
+        hasLoaded.current = true;
     } catch {
       toast.error('Failed to load suppliers');
     } finally {
@@ -95,7 +98,7 @@ export function SuppliersTab() {
         toast.success('Supplier created');
       }
       setIsModalOpen(false);
-      fetchSuppliers();
+        fetchSuppliers(true);
     } catch (err: unknown) {
       toast.error((err as Error)?.message || 'Failed to save supplier');
     } finally {
@@ -108,7 +111,7 @@ export function SuppliersTab() {
     try {
       await suppliersApi.deleteSupplier(s.id);
       toast.success('Supplier deleted');
-      fetchSuppliers();
+        fetchSuppliers(true);
     } catch {
       toast.error('Failed to delete supplier');
     }

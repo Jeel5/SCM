@@ -71,6 +71,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) return;
 
+    let attemptedRefresh = false;
+
     const sock = io(SOCKET_URL, {
       withCredentials: true, // sends accessToken httpOnly cookie in handshake
       transports: ['websocket', 'polling'],
@@ -80,8 +82,26 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     sock.on('connect', () => setIsConnected(true));
     sock.on('disconnect', () => setIsConnected(false));
-    sock.on('connect_error', (err: Error) => {
+    sock.on('connect_error', async (err: Error) => {
       console.warn('[socket] connection error:', err.message);
+
+      // Token can expire before socket reconnect; try one silent refresh then reconnect.
+      const msg = (err?.message || '').toLowerCase();
+      const authError = msg.includes('auth') || msg.includes('token') || msg.includes('unauthorized');
+      if (!attemptedRefresh && authError) {
+        attemptedRefresh = true;
+        try {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+          await fetch(`${apiUrl}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          sock.connect();
+        } catch {
+          // No-op: normal reconnect policy and app auth guards will handle failures.
+        }
+      }
     });
 
     // Global handler: notification:new updates the header bell for ALL pages

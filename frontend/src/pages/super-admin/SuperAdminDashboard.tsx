@@ -9,102 +9,137 @@ import {
   DollarSign,
   AlertCircle,
 } from 'lucide-react';
-import { Card, Badge, Button } from '@/components/ui';
-import { formatCurrency, formatNumber, formatPercentage, formatDate } from '@/lib/utils';
-import { useState } from 'react';
+import { Card, Badge, Button, Skeleton } from '@/components/ui';
+import { formatCurrency, formatNumber, formatDate } from '@/lib/utils';
 import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { superAdminApi } from '@/api/services';
+import { useOrganizations } from './hooks/useOrganizations';
 
-interface GlobalMetrics {
-  totalCompanies: number;
-  activeCompanies: number;
-  totalUsers: number;
-  totalOrders: number;
-  totalShipments: number;
-  totalRevenue: number;
-  avgSlaCompliance: number;
-  systemHealth: number;
+interface DashboardStats {
+  tenants: {
+    total: number;
+    active: number;
+    suspended: number;
+    deleted: number;
+  };
+  users: {
+    totalActive: number;
+  };
+  orders: {
+    total: number;
+    last30d: number;
+  };
+  shipments: {
+    active: number;
+    last30d: number;
+  };
+  alerts: {
+    active: number;
+  };
+  revenue: {
+    last30d: number;
+  };
+  atRiskTenants: Array<{
+    id: string;
+    name: string;
+    code: string;
+    subscriptionTier?: string;
+    isActive: boolean;
+    suspendedAt?: string | null;
+    slaViolations30d: number;
+    openExceptions: number;
+    activeUsers: number;
+    lastUserLogin?: string | null;
+  }>;
 }
-
-interface CompanySummary {
-  id: string;
-  name: string;
-  code: string;
-  admins: number;
-  users: number;
-  orders: number;
-  revenue: number;
-  slaCompliance: number;
-  status: 'active' | 'inactive' | 'suspended';
-  lastActivity: string;
-}
-
-// Static timestamps for mock data (calculated once)
-const ONE_HOUR_AGO = new Date(Date.now() - 3600000).toISOString();
-const TWO_HOURS_AGO = new Date(Date.now() - 7200000).toISOString();
-const ONE_WEEK_AGO = new Date(Date.now() - 86400000 * 7).toISOString();
 
 export function SuperAdminDashboard() {
-  const [metrics] = useState<GlobalMetrics>({
-    totalCompanies: 12,
-    activeCompanies: 11,
-    totalUsers: 156,
-    totalOrders: 8547,
-    totalShipments: 7123,
-    totalRevenue: 4250000,
-    avgSlaCompliance: 94.5,
-    systemHealth: 99.2,
-  });
+  const { organizations, isLoading: loadingOrganizations } = useOrganizations({ page: 1, limit: 8 });
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
 
-  const [companies] = useState<CompanySummary[]>([
-    {
-      id: '1',
-      name: 'TwinChain Demo',
-      code: 'DEMO001',
-      admins: 1,
-      users: 7,
-      orders: 2547,
-      revenue: 1250000,
-      slaCompliance: 96.5,
-      status: 'active',
-      lastActivity: new Date().toISOString(),
-    },
-    {
-      id: '2',
-      name: 'Acme Corporation',
-      code: 'ACME001',
-      admins: 2,
-      users: 15,
-      orders: 3890,
-      revenue: 1890000,
-      slaCompliance: 94.2,
-      status: 'active',
-      lastActivity: ONE_HOUR_AGO,
-    },
-    {
-      id: '3',
-      name: 'Global Logistics Inc',
-      code: 'GLI001',
-      admins: 1,
-      users: 12,
-      orders: 1234,
-      revenue: 780000,
-      slaCompliance: 92.8,
-      status: 'active',
-      lastActivity: TWO_HOURS_AGO,
-    },
-    {
-      id: '4',
-      name: 'FastShip Limited',
-      code: 'FSL001',
-      admins: 1,
-      users: 8,
-      orders: 876,
-      revenue: 330000,
-      slaCompliance: 88.5,
-      status: 'inactive',
-      lastActivity: ONE_WEEK_AGO,
-    },
-  ]);
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        setLoadingStats(true);
+        const response = await superAdminApi.getGlobalStats();
+        if (mounted) setStats(response.data as DashboardStats);
+      } catch (error) {
+        console.error('Failed to load superadmin stats', error);
+      } finally {
+        if (mounted) setLoadingStats(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const metrics = useMemo(() => {
+    if (!stats) return null;
+    return [
+      {
+        title: 'Total Tenants',
+        value: formatNumber(stats.tenants.total),
+        subtitle: `${stats.tenants.active} active, ${stats.tenants.suspended} suspended`,
+        icon: <Building2 className="h-6 w-6 text-indigo-600" />,
+        iconBg: 'bg-indigo-100',
+      },
+      {
+        title: 'Active Users',
+        value: formatNumber(stats.users.totalActive),
+        subtitle: 'Across all tenants',
+        icon: <Users className="h-6 w-6 text-purple-600" />,
+        iconBg: 'bg-purple-100',
+      },
+      {
+        title: 'Orders (30d)',
+        value: formatNumber(stats.orders.last30d),
+        subtitle: `${formatNumber(stats.orders.total)} total`,
+        icon: <ShoppingCart className="h-6 w-6 text-blue-600" />,
+        iconBg: 'bg-blue-100',
+      },
+      {
+        title: 'Active Shipments',
+        value: formatNumber(stats.shipments.active),
+        subtitle: `${formatNumber(stats.shipments.last30d)} created in 30d`,
+        icon: <Truck className="h-6 w-6 text-emerald-600" />,
+        iconBg: 'bg-emerald-100',
+      },
+      {
+        title: 'Revenue (30d)',
+        value: formatCurrency(stats.revenue.last30d),
+        subtitle: 'Across all tenants',
+        icon: <DollarSign className="h-6 w-6 text-green-600" />,
+        iconBg: 'bg-green-100',
+      },
+      {
+        title: 'Suspended Tenants',
+        value: formatNumber(stats.tenants.suspended),
+        subtitle: `${formatNumber(stats.tenants.deleted)} deleted`,
+        icon: <TrendingUp className="h-6 w-6 text-amber-600" />,
+        iconBg: 'bg-amber-100',
+      },
+      {
+        title: 'System Health',
+        value: stats.alerts.active > 0 ? 'Warning' : 'Healthy',
+        subtitle: `${formatNumber(stats.alerts.active)} active alerts`,
+        icon: <Activity className="h-6 w-6 text-cyan-600" />,
+        iconBg: 'bg-cyan-100',
+      },
+      {
+        title: 'At-Risk Tenants',
+        value: formatNumber(stats.atRiskTenants.length),
+        subtitle: 'Based on SLA + open exceptions',
+        icon: <AlertCircle className="h-6 w-6 text-rose-600" />,
+        iconBg: 'bg-rose-100',
+      },
+    ];
+  }, [stats]);
 
   return (
     <div className="p-6 space-y-6">
@@ -133,74 +168,80 @@ export function SuperAdminDashboard() {
 
       {/* Global Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Total Companies"
-          value={formatNumber(metrics.totalCompanies)}
-          subtitle={`${metrics.activeCompanies} active`}
-          icon={<Building2 className="h-6 w-6 text-indigo-600" />}
-          iconBg="bg-indigo-100"
-        />
-        <MetricCard
-          title="Total Users"
-          value={formatNumber(metrics.totalUsers)}
-          subtitle="Across all companies"
-          icon={<Users className="h-6 w-6 text-purple-600" />}
-          iconBg="bg-purple-100"
-        />
-        <MetricCard
-          title="Total Orders"
-          value={formatNumber(metrics.totalOrders)}
-          subtitle="All time"
-          icon={<ShoppingCart className="h-6 w-6 text-blue-600" />}
-          iconBg="bg-blue-100"
-        />
-        <MetricCard
-          title="Total Shipments"
-          value={formatNumber(metrics.totalShipments)}
-          subtitle="Active + Delivered"
-          icon={<Truck className="h-6 w-6 text-emerald-600" />}
-          iconBg="bg-emerald-100"
-        />
-        <MetricCard
-          title="Global Revenue"
-          value={formatCurrency(metrics.totalRevenue)}
-          subtitle="Combined"
-          icon={<DollarSign className="h-6 w-6 text-green-600" />}
-          iconBg="bg-green-100"
-        />
-        <MetricCard
-          title="Avg SLA Compliance"
-          value={formatPercentage(metrics.avgSlaCompliance)}
-          subtitle="Across companies"
-          icon={<TrendingUp className="h-6 w-6 text-amber-600" />}
-          iconBg="bg-amber-100"
-        />
-        <MetricCard
-          title="System Health"
-          value={formatPercentage(metrics.systemHealth)}
-          subtitle="All services"
-          icon={<Activity className="h-6 w-6 text-cyan-600" />}
-          iconBg="bg-cyan-100"
-        />
-        <MetricCard
-          title="Active Issues"
-          value="3"
-          subtitle="Require attention"
-          icon={<AlertCircle className="h-6 w-6 text-rose-600" />}
-          iconBg="bg-rose-100"
-        />
+        {(loadingStats || !metrics) && Array.from({ length: 8 }).map((_, i) => (
+          <Card key={`skeleton-${i}`}>
+            <div className="p-6 space-y-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-8 w-24" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+          </Card>
+        ))}
+
+        {!loadingStats && metrics?.map((m) => (
+          <MetricCard key={m.title} title={m.title} value={m.value} subtitle={m.subtitle} icon={m.icon} iconBg={m.iconBg} />
+        ))}
       </div>
 
-      {/* Companies Overview */}
+      {/* Tenant Risk Table */}
+      <Card>
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Tenant Risk Watchlist</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Highest SLA violations and unresolved exception load in the last 30 days
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tenant</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">SLA Violations (30d)</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Open Exceptions</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Users</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Last Login</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {(stats?.atRiskTenants || []).map((tenant) => (
+                  <tr key={tenant.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                    <td className="py-4 px-4">
+                      <div className="font-medium text-gray-900 dark:text-white">{tenant.name}</div>
+                      <code className="text-xs text-gray-500 dark:text-gray-400">{tenant.code}</code>
+                    </td>
+                    <td className="py-4 px-4 text-gray-900 dark:text-white">{formatNumber(tenant.slaViolations30d)}</td>
+                    <td className="py-4 px-4 text-gray-900 dark:text-white">{formatNumber(tenant.openExceptions)}</td>
+                    <td className="py-4 px-4 text-gray-900 dark:text-white">{formatNumber(tenant.activeUsers)}</td>
+                    <td className="py-4 px-4 text-sm text-gray-500 dark:text-gray-400">
+                      {tenant.lastUserLogin ? formatDate(new Date(tenant.lastUserLogin), 'MMM dd, HH:mm') : 'No recent login'}
+                    </td>
+                  </tr>
+                ))}
+                {!loadingStats && (stats?.atRiskTenants?.length || 0) === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">No risk signals detected</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Card>
+
+      {/* Organizations Overview */}
       <Card>
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Companies Overview
+                Organizations Overview
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Performance metrics for all registered companies
+                Live tenant list from the organizations domain
               </p>
             </div>
             <Link to="/super-admin/companies">
@@ -241,63 +282,57 @@ export function SuperAdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {companies.map((company) => (
+                {loadingOrganizations && (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading organizations...</td>
+                  </tr>
+                )}
+
+                {!loadingOrganizations && organizations.map((org) => (
                   <tr
-                    key={company.id}
+                    key={org.id}
                     className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                   >
                     <td className="py-4 px-4">
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white">
-                          {company.name}
+                          {org.name}
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {company.admins} {company.admins === 1 ? 'admin' : 'admins'}
+                          {org.subscriptionTier || 'standard'} plan
                         </div>
                       </div>
                     </td>
                     <td className="py-4 px-4">
                       <code className="text-sm font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                        {company.code}
+                        {org.code}
                       </code>
                     </td>
                     <td className="py-4 px-4 text-gray-900 dark:text-white">
-                      {company.users}
+                      -
                     </td>
                     <td className="py-4 px-4 text-gray-900 dark:text-white">
-                      {formatNumber(company.orders)}
+                      -
                     </td>
                     <td className="py-4 px-4 text-gray-900 dark:text-white">
-                      {formatCurrency(company.revenue)}
+                      -
                     </td>
                     <td className="py-4 px-4">
-                      <span
-                        className={`text-sm font-medium ${
-                          company.slaCompliance >= 95
-                            ? 'text-green-600'
-                            : company.slaCompliance >= 90
-                            ? 'text-amber-600'
-                            : 'text-rose-600'
-                        }`}
-                      >
-                        {formatPercentage(company.slaCompliance)}
-                      </span>
+                      -
                     </td>
                     <td className="py-4 px-4">
                       <Badge
                         variant={
-                          company.status === 'active'
+                          org.isActive
                             ? 'success'
-                            : company.status === 'inactive'
-                            ? 'warning'
-                            : 'error'
+                            : 'warning'
                         }
                       >
-                        {company.status}
+                        {org.isActive ? 'active' : 'inactive'}
                       </Badge>
                     </td>
                     <td className="py-4 px-4 text-sm text-gray-500 dark:text-gray-400">
-                      {formatDate(new Date(company.lastActivity), 'MMM dd, HH:mm')}
+                      {formatDate(new Date(org.updatedAt || org.createdAt), 'MMM dd, HH:mm')}
                     </td>
                   </tr>
                 ))}

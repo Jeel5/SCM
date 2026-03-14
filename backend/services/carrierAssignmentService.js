@@ -90,6 +90,7 @@ class CarrierAssignmentService {
           const assignmentResult = await carrierAssignmentRepo.createAssignment({
             orderId,
             carrierId: carrier.id,
+            organizationId: order.organization_id || null,
             serviceType,
             pickupAddress,
             deliveryAddress,
@@ -249,7 +250,8 @@ class CarrierAssignmentService {
   }
 
   /**
-   * Accept an assignment and create shipment
+   * Accept an assignment as a bid response.
+   * Shipment is created only after bidding window closure / finalization.
    */
   async acceptAssignment(assignmentId, carrierId, acceptanceData = {}) {
     try {
@@ -296,141 +298,36 @@ class CarrierAssignmentService {
           throw new AppError('Assignment is no longer available (already accepted or cancelled)', 409);
         }
 
-        // Cancel all other pending assignments for this order to prevent duplicates
-        const cancelled = await carrierAssignmentRepo.cancelRemainingAssignments(
-          assignment.order_id, assignmentId, tx
-        );
-        if (cancelled.length > 0) {
-          logger.info('Cancelled remaining assignments after acceptance', {
-            orderId: assignment.order_id,
-            acceptedAssignmentId: assignmentId,
-            cancelledIds: cancelled.map(c => c.id)
-          });
-        }
-
-        // Create shipment from accepted assignment
-        const trackingNumber = acceptancePayload.tracking.trackingNumber || 
-                              `TRACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-        // Get order items to aggregate shipping attributes
-        const items = await carrierAssignmentRepo.findOrderItemsForShipment(assignment.order_id, tx);
-        
-        // Aggregate item data for shipment
-        const aggregatedData = {
-          totalItems: items.reduce((sum, item) => sum + (item.quantity || 0), 0),
-          totalWeight: items.reduce((sum, item) => sum + ((item.weight || 0) * (item.quantity || 1)), 0),
-          totalVolumetricWeight: items.reduce((sum, item) => sum + ((item.volumetric_weight || 0) * (item.quantity || 1)), 0),
-          totalDeclaredValue: items.reduce((sum, item) => sum + (item.declared_value || 0), 0),
-          packageCount: items.length,
-          
-          // Flags: true if ANY item has the attribute
-          isFragile: items.some(item => item.is_fragile),
-          isHazardous: items.some(item => item.is_hazardous),
-          isPerishable: items.some(item => item.is_perishable),
-          requiresColdStorage: items.some(item => item.requires_cold_storage),
-          requiresInsurance: items.some(item => item.requires_insurance),
-          
-          // Item type: most restrictive
-          itemType: this._getMostRestrictiveItemType(items.map(i => i.item_type)),
-          
-          // Package type: most common
-          packageType: this._getMostCommonPackageType(items.map(i => i.package_type)),
-          
-          // Handling instructions: concatenate all non-null
-          handlingInstructions: items
-            .filter(i => i.handling_instructions)
-            .map(i => i.handling_instructions)
-            .join('; '),
-          
-          // Dimensions: use largest item or aggregate
-          dimensions: this._aggregateDimensions(items.map(i => i.dimensions)),
-        };
-
-        // Calculate shipment weight from request payload or aggregated data
-        // PostgreSQL JSONB columns are automatically parsed by pg driver
-        const requestPayload = typeof assignment.request_payload === 'string' 
-          ? JSON.parse(assignment.request_payload) 
-          : assignment.request_payload;
-        const shipmentWeight = requestPayload.shipment?.chargeableWeight || 
-                              Math.max(aggregatedData.totalWeight, aggregatedData.totalVolumetricWeight);
-
-        // Use SLA policy matching to derive delivery_scheduled.
-        // Carrier's estimatedDeliveryTime becomes a fallback only if no policy matches.
-        const slaMatch = await matchSlaPolicyForShipment({
-          organizationId: assignment.organization_id,
-          carrierId:      assignment.carrier_id,
-          originAddress:  assignment.pickup_address,
-          destinationAddress: assignment.delivery_address,
-          serviceType:    assignment.service_type || null,
-          client: tx,
-        });
-
-        // If carrier promised earlier than SLA policy, respect carrier's promise.
-        // Otherwise use SLA deadline so monitoring is accurate.
-        const carrierPromised = acceptancePayload.delivery.estimatedDeliveryTime
-          ? new Date(acceptancePayload.delivery.estimatedDeliveryTime)
-          : null;
-        const slaDeadline = slaMatch.deliveryScheduled;
-        const deliveryScheduled = (carrierPromised && carrierPromised < slaDeadline)
-          ? carrierPromised
-          : slaDeadline;
-
-        const shipment = await carrierAssignmentRepo.createShipment({
-          trackingNumber,
-          carrierTrackingNumber: acceptancePayload.tracking.carrierReferenceId,
+        return {
+          updatedAssignment,
           orderId: assignment.order_id,
-          assignmentId,
-          carrierId: assignment.carrier_id,
-          warehouseId: items[0]?.warehouse_id || null,
-          organizationId: assignment.organization_id,
-          pickupAddress: assignment.pickup_address,
-          deliveryAddress: assignment.delivery_address,
-          deliveryScheduled,
-          pickupScheduled: slaMatch.pickupDeadline,
-          slaPolicyId: slaMatch.policyId,
-          weight: shipmentWeight,
-          volumetricWeight: aggregatedData.totalVolumetricWeight,
-          dimensions: aggregatedData.dimensions,
-          packageCount: aggregatedData.packageCount,
-          totalItems: aggregatedData.totalItems,
-          shippingCost: acceptancePayload.pricing?.quotedPrice || 0,
-          codAmount: assignment.is_cod ? assignment.total_amount : 0,
-          isFragile: aggregatedData.isFragile,
-          isHazardous: aggregatedData.isHazardous,
-          isPerishable: aggregatedData.isPerishable,
-          requiresColdStorage: aggregatedData.requiresColdStorage,
-          itemType: aggregatedData.itemType,
-          packageType: aggregatedData.packageType,
-          handlingInstructions: aggregatedData.handlingInstructions || null,
-          requiresInsurance: aggregatedData.requiresInsurance,
-          declaredValue: aggregatedData.totalDeclaredValue
-        }, tx);
-
-        // Insert initial tracking event
-        await carrierAssignmentRepo.insertShipmentCreatedEvent(shipment.id, tx);
-
-        // Update order status to 'ready_to_ship' (not 'shipped' until carrier actually ships)
-        await carrierAssignmentRepo.updateOrderCarrier(assignment.order_id, 'ready_to_ship', assignment.carrier_id, tx);
-
-        return { updatedAssignment, shipment, trackingNumber };
+        };
       });
 
-      logger.info('Assignment accepted and shipment created', {
+      const finalization = await this.tryFinalizeBiddingWindow(result.orderId);
+
+      logger.info('Assignment accepted during bidding window', {
         assignmentId,
-        shipmentId: result.shipment.id,
-        trackingNumber: result.trackingNumber,
+        orderId: result.orderId,
+        finalized: finalization.finalized,
         carrierId
       });
 
+      if (finalization.finalized) {
+        return {
+          assignment: result.updatedAssignment,
+          shipment: finalization.shipment,
+          message: 'Assignment accepted and bidding finalized. Shipment created successfully.',
+        };
+      }
+
       return {
         assignment: result.updatedAssignment,
-        shipment: {
-          id: result.shipment.id,
-          trackingNumber: result.trackingNumber,
-          status: result.shipment.status,
-          createdAt: result.shipment.created_at
+        message: 'Assignment accepted. Waiting for bidding window closure before shipment creation.',
+        biddingWindow: {
+          finalized: false,
+          openAssignments: finalization.openAssignments ?? null,
         },
-        message: 'Assignment accepted. Shipment created successfully.'
       };
     } catch (error) {
       logger.error('Failed to accept assignment', {
@@ -440,6 +337,64 @@ class CarrierAssignmentService {
       });
       throw error;
     }
+  }
+
+  async tryFinalizeBiddingWindow(orderId) {
+    return withTransaction(async (tx) => {
+      const existingShipment = await carrierAssignmentRepo.findShipmentByOrderId(orderId, tx);
+      if (existingShipment) {
+        return { finalized: false, alreadyFinalized: true, shipment: existingShipment };
+      }
+
+      const openAssignments = await carrierAssignmentRepo.countOpenWindowAssignments(orderId, tx);
+      if (openAssignments > 0) {
+        return { finalized: false, openAssignments };
+      }
+
+      const acceptedAssignments = await carrierAssignmentRepo.findAcceptedAssignmentsByOrder(orderId, tx);
+      if (acceptedAssignments.length === 0) {
+        return { finalized: false, noAcceptedBids: true };
+      }
+
+      const winner = this._selectBestAcceptedAssignment(acceptedAssignments);
+
+      await carrierAssignmentRepo.markWinnerAndCloseOrderWindow(orderId, winner.id, tx);
+      const shipment = await this._createShipmentFromAcceptedAssignment(winner, tx);
+
+      logger.info('Bidding window finalized', {
+        orderId,
+        winnerAssignmentId: winner.id,
+        winnerCarrierId: winner.carrier_id,
+        score: winner._selectionScore,
+      });
+
+      return {
+        finalized: true,
+        winnerAssignmentId: winner.id,
+        shipment: {
+          id: shipment.id,
+          trackingNumber: shipment.tracking_number,
+          status: shipment.status,
+          createdAt: shipment.created_at,
+        },
+      };
+    });
+  }
+
+  async finalizeReadyBiddingWindows() {
+    const readyOrders = await carrierAssignmentRepo.findOrdersReadyForBiddingFinalization();
+    let finalizedCount = 0;
+
+    for (const orderId of readyOrders) {
+      try {
+        const result = await this.tryFinalizeBiddingWindow(orderId);
+        if (result.finalized) finalizedCount += 1;
+      } catch (error) {
+        logger.error('Failed to finalize bidding window', { orderId, error: error.message });
+      }
+    }
+
+    return finalizedCount;
   }
 
   /**
@@ -458,6 +413,9 @@ class CarrierAssignmentService {
         carrierId,
         reason
       });
+
+      // If this was the last open response, finalize immediately.
+      await this.tryFinalizeBiddingWindow(row.order_id);
 
       return {
         assignment: row,
@@ -586,6 +544,132 @@ class CarrierAssignmentService {
     });
 
     return largest;
+  }
+
+  _selectBestAcceptedAssignment(assignments) {
+    const enriched = assignments.map((a) => {
+      const payload = typeof a.acceptance_payload === 'string'
+        ? JSON.parse(a.acceptance_payload)
+        : (a.acceptance_payload || {});
+
+      const quotedPrice = Number(payload?.pricing?.quotedPrice ?? 0);
+      const promisedTs = payload?.delivery?.estimatedDeliveryTime || payload?.delivery?.estimatedDeliveryDate || null;
+      const promisedDate = promisedTs ? new Date(promisedTs) : null;
+      const etaHours = promisedDate && !Number.isNaN(promisedDate.getTime())
+        ? Math.max((promisedDate.getTime() - Date.now()) / (1000 * 60 * 60), 1)
+        : 72;
+
+      return {
+        ...a,
+        _quotedPrice: quotedPrice,
+        _etaHours: etaHours,
+        _reliability: Number(a.reliability_score || 0.8),
+      };
+    });
+
+    const minPrice = Math.min(...enriched.map(e => e._quotedPrice));
+    const maxPrice = Math.max(...enriched.map(e => e._quotedPrice));
+    const minEta = Math.min(...enriched.map(e => e._etaHours));
+    const maxEta = Math.max(...enriched.map(e => e._etaHours));
+
+    const normalizeDescending = (value, min, max) => {
+      if (max === min) return 1;
+      return 1 - ((value - min) / (max - min));
+    };
+
+    for (const item of enriched) {
+      const priceScore = normalizeDescending(item._quotedPrice, minPrice, maxPrice);
+      const etaScore = normalizeDescending(item._etaHours, minEta, maxEta);
+      const reliabilityScore = Math.max(0, Math.min(item._reliability, 1));
+      item._selectionScore = (0.5 * priceScore) + (0.3 * etaScore) + (0.2 * reliabilityScore);
+    }
+
+    enriched.sort((a, b) => b._selectionScore - a._selectionScore);
+    return enriched[0];
+  }
+
+  async _createShipmentFromAcceptedAssignment(assignment, tx) {
+    const acceptancePayload = typeof assignment.acceptance_payload === 'string'
+      ? JSON.parse(assignment.acceptance_payload)
+      : (assignment.acceptance_payload || {});
+
+    const trackingNumber = acceptancePayload?.tracking?.trackingNumber ||
+      assignment.carrier_tracking_number ||
+      `TRACK-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+
+    const items = await carrierAssignmentRepo.findOrderItemsForShipment(assignment.order_id, tx);
+    const aggregatedData = {
+      totalItems: items.reduce((sum, item) => sum + (item.quantity || 0), 0),
+      totalWeight: items.reduce((sum, item) => sum + ((item.weight || 0) * (item.quantity || 1)), 0),
+      totalVolumetricWeight: items.reduce((sum, item) => sum + ((item.volumetric_weight || 0) * (item.quantity || 1)), 0),
+      totalDeclaredValue: items.reduce((sum, item) => sum + (item.declared_value || 0), 0),
+      packageCount: items.length,
+      isFragile: items.some(item => item.is_fragile),
+      isHazardous: items.some(item => item.is_hazardous),
+      isPerishable: items.some(item => item.is_perishable),
+      requiresColdStorage: items.some(item => item.requires_cold_storage),
+      requiresInsurance: items.some(item => item.requires_insurance),
+      itemType: this._getMostRestrictiveItemType(items.map(i => i.item_type)),
+      packageType: this._getMostCommonPackageType(items.map(i => i.package_type)),
+      handlingInstructions: items.filter(i => i.handling_instructions).map(i => i.handling_instructions).join('; '),
+      dimensions: this._aggregateDimensions(items.map(i => i.dimensions)),
+    };
+
+    const requestPayload = typeof assignment.request_payload === 'string'
+      ? JSON.parse(assignment.request_payload)
+      : assignment.request_payload;
+    const shipmentWeight = requestPayload?.shipment?.chargeableWeight ||
+      Math.max(aggregatedData.totalWeight, aggregatedData.totalVolumetricWeight);
+
+    const slaMatch = await matchSlaPolicyForShipment({
+      organizationId: assignment.organization_id,
+      carrierId: assignment.carrier_id,
+      originAddress: assignment.pickup_address,
+      destinationAddress: assignment.delivery_address,
+      serviceType: assignment.service_type || null,
+      client: tx,
+    });
+
+    const promisedTs = acceptancePayload?.delivery?.estimatedDeliveryTime || acceptancePayload?.delivery?.estimatedDeliveryDate;
+    const carrierPromised = promisedTs ? new Date(promisedTs) : null;
+    const slaDeadline = slaMatch.deliveryScheduled;
+    const deliveryScheduled = (carrierPromised && carrierPromised < slaDeadline) ? carrierPromised : slaDeadline;
+
+    const shipment = await carrierAssignmentRepo.createShipment({
+      trackingNumber,
+      carrierTrackingNumber: acceptancePayload?.tracking?.carrierReferenceId || assignment.carrier_reference_id,
+      orderId: assignment.order_id,
+      assignmentId: assignment.id,
+      carrierId: assignment.carrier_id,
+      warehouseId: items[0]?.warehouse_id || null,
+      organizationId: assignment.organization_id,
+      pickupAddress: assignment.pickup_address,
+      deliveryAddress: assignment.delivery_address,
+      deliveryScheduled,
+      pickupScheduled: slaMatch.pickupDeadline,
+      slaPolicyId: slaMatch.policyId,
+      weight: shipmentWeight,
+      volumetricWeight: aggregatedData.totalVolumetricWeight,
+      dimensions: aggregatedData.dimensions,
+      packageCount: aggregatedData.packageCount,
+      totalItems: aggregatedData.totalItems,
+      shippingCost: acceptancePayload?.pricing?.quotedPrice || 0,
+      codAmount: assignment.is_cod ? assignment.total_amount : 0,
+      isFragile: aggregatedData.isFragile,
+      isHazardous: aggregatedData.isHazardous,
+      isPerishable: aggregatedData.isPerishable,
+      requiresColdStorage: aggregatedData.requiresColdStorage,
+      itemType: aggregatedData.itemType,
+      packageType: aggregatedData.packageType,
+      handlingInstructions: aggregatedData.handlingInstructions || null,
+      requiresInsurance: aggregatedData.requiresInsurance,
+      declaredValue: aggregatedData.totalDeclaredValue,
+    }, tx);
+
+    await carrierAssignmentRepo.insertShipmentCreatedEvent(shipment.id, tx);
+    await carrierAssignmentRepo.updateOrderCarrier(assignment.order_id, 'ready_to_ship', assignment.carrier_id, tx);
+
+    return shipment;
   }
 }
 

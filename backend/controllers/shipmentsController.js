@@ -3,6 +3,7 @@ import shipmentRepo from '../repositories/ShipmentRepository.js';
 import orderRepo from '../repositories/OrderRepository.js';
 import shipmentService from '../services/shipmentService.js';
 import orderService from '../services/orderService.js';
+import { sendShipmentCallback } from '../services/channelCallbackService.js';
 import { emitToOrg, emitToShipment } from '../sockets/emitter.js';
 import { matchSlaPolicyForShipment } from '../services/slaPolicyMatchingService.js';
 import { withTransaction } from '../utils/dbTransaction.js';
@@ -223,6 +224,16 @@ export const createShipment = asyncHandler(async (req, res) => {
 
   emitToOrg(organizationId, 'shipment:created', shipment);
   emitToShipment(shipment.id, 'shipment:updated', shipment);
+
+  // Best-effort outbound callback to the source sales channel (if configured).
+  const callbackOrder = await orderRepo.findById(order_id);
+  await sendShipmentCallback({
+    order: callbackOrder,
+    shipment,
+    status: shipment.status,
+    location: shipment.current_location || null,
+  });
+
   await invalidatePatterns(invalidationTargets(organizationId, 'ship:list', 'orders:list', 'dash', 'analytics'));
 
   res.status(201).json({
@@ -251,6 +262,18 @@ export const updateShipmentStatus = asyncHandler(async (req, res) => {
 
   emitToOrg(organizationId, 'shipment:updated', { id, status, location });
   emitToShipment(id, 'shipment:updated', { id, status, location });
+
+  const updatedShipment = await shipmentRepo.findById(id);
+  if (updatedShipment?.order_id) {
+    const callbackOrder = await orderRepo.findById(updatedShipment.order_id);
+    await sendShipmentCallback({
+      order: callbackOrder,
+      shipment: updatedShipment,
+      status,
+      location,
+    });
+  }
+
   await invalidatePatterns(invalidationTargets(organizationId, 'ship:list', 'dash', 'analytics'));
 
   res.json({ success: true, message: `Shipment status updated to '${status}'` });

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { productsApi } from '@/api/services';
 import { useApiMode } from '@/hooks';
 import type { Product } from '@/types';
@@ -7,9 +7,18 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
   const [products, setProducts] = useState<Product[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
+  const isSoftRefresh = useRef(false);
+
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const fetchProducts = useCallback(async () => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
     if (useMockApi) {
       setProducts([]);
       setTotalItems(0);
@@ -17,7 +26,7 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
       return;
     }
 
-    setIsLoading(true);
+    if (!isSoft) setIsLoading(true);
     try {
       const res = await productsApi.getProducts({ page, limit: pageSize, ...filters });
       setProducts(res.data);
@@ -34,7 +43,7 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
 
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
+  }, [fetchProducts, refreshKey]);
 
-  return { products, totalItems, isLoading, refetch: fetchProducts };
+  return { products, totalItems, isLoading, refetch };
 }

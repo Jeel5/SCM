@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   UserPlus,
@@ -74,9 +74,10 @@ export function TeamPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editUser, setEditUser] = useState<OrgUser | null>(null);
+    const hasLoaded = useRef(false);
 
-  const fetchUsers = useCallback(async () => {
-    setIsLoading(true);
+    const fetchUsers = useCallback(async (soft = false) => {
+      if (!soft && !hasLoaded.current) setIsLoading(true);
     try {
       const params: Record<string, unknown> = {};
       if (search) params.search = search;
@@ -88,6 +89,7 @@ export function TeamPage() {
       );
       setUsers(res.data);
       setTotal(res.total);
+      hasLoaded.current = true;
     } catch {
       toast.error('Error', 'Failed to load team members');
     } finally {
@@ -103,7 +105,7 @@ export function TeamPage() {
     try {
       await del(`/users/${user.id}`);
       toast.success('Deactivated', `${user.name} has been deactivated`);
-      fetchUsers();
+        fetchUsers(true);
     } catch {
       toast.error('Error', 'Failed to deactivate user');
     }
@@ -174,7 +176,7 @@ export function TeamPage() {
           ))}
         </div>
         <button
-          onClick={fetchUsers}
+          onClick={() => fetchUsers(true)}
           className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
           title="Refresh"
         >
@@ -310,12 +312,12 @@ export function TeamPage() {
       <InviteUserModal
         isOpen={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        onSuccess={fetchUsers}
+          onSuccess={() => fetchUsers(true)}
       />
       <EditUserModal
         isOpen={!!editUser}
         onClose={() => setEditUser(null)}
-        onSuccess={fetchUsers}
+          onSuccess={() => fetchUsers(true)}
         user={editUser}
       />
     </div>

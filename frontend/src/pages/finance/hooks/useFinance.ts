@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { financeApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { useSocketEvent } from '@/hooks/useSocket';
 
 interface FinanceData {
   outstandingInvoices: number;
@@ -31,11 +32,17 @@ export function useFinance() {
   const { useMockApi } = useApiMode();
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const isSoftRefresh = useRef(false);
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
     const fetchData = async () => {
-      setIsLoading(true);
+      if (!isSoft) setIsLoading(true);
 
       try {
         if (useMockApi) {
@@ -96,6 +103,11 @@ export function useFinance() {
 
     fetchData();
   }, [refreshKey]);
+
+  useSocketEvent('order:updated', refetch);
+  useSocketEvent('shipment:updated', refetch);
+  useSocketEvent('return:updated', refetch);
+  useSocketEvent('return:created', refetch);
 
   return { data, isLoading, refetch };
 }

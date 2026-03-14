@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, User, Lock } from 'lucide-react';
+import { Building2, User } from 'lucide-react';
 import { Button, Input, Modal, Select } from '@/components/ui';
 import { toast } from '@/stores/toastStore';
 import { post } from '@/api/client';
@@ -16,20 +16,11 @@ const SUBSCRIPTION_TIERS = [
   { value: 'enterprise', label: 'Enterprise' },
 ];
 
-const TIMEZONES = [
-  { value: 'Asia/Kolkata', label: 'IST (Asia/Kolkata)' },
-  { value: 'Asia/Dubai', label: 'GST (Asia/Dubai)' },
-  { value: 'UTC', label: 'UTC' },
-  { value: 'America/New_York', label: 'EST (America/New_York)' },
-  { value: 'Europe/London', label: 'GMT (Europe/London)' },
-];
-
 export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     // Organization
     name: '',
-    code: '',
     email: '',
     phone: '',
     website: '',
@@ -38,13 +29,11 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
     state: '',
     country: 'India',
     postal_code: '',
-    timezone: 'Asia/Kolkata',
     currency: 'INR',
     subscription_tier: 'standard',
     // Admin user
     admin_name: '',
     admin_email: '',
-    admin_password: '',
     admin_phone: '',
   });
 
@@ -52,20 +41,15 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
     setFormData((prev) => ({ ...prev, [field]: value }));
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.email || !formData.admin_name || !formData.admin_email || !formData.admin_password) {
+    if (!formData.name || !formData.email || !formData.admin_name || !formData.admin_email) {
       toast.error('Validation Error', 'Please fill all required fields');
-      return;
-    }
-    if (formData.admin_password.length < 8) {
-      toast.error('Validation Error', 'Admin password must be at least 8 characters');
       return;
     }
 
     try {
       setIsSubmitting(true);
-      await post('/organizations', {
+      const response = await post<{ success: boolean; data?: { adminUser?: { temporaryPassword?: string } } }>('/organizations', {
         name: formData.name,
-        code: formData.code || undefined,
         email: formData.email,
         phone: formData.phone || undefined,
         website: formData.website || undefined,
@@ -74,24 +58,29 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
         state: formData.state || undefined,
         country: formData.country,
         postal_code: formData.postal_code || undefined,
-        timezone: formData.timezone,
         currency: formData.currency,
         subscription_tier: formData.subscription_tier,
         admin_user: {
           name: formData.admin_name,
           email: formData.admin_email,
-          password: formData.admin_password,
           phone: formData.admin_phone || undefined,
         },
       });
-      toast.success('Organization Created', `${formData.name} has been created successfully`);
+
+      const temporaryPassword = response?.data?.adminUser?.temporaryPassword;
+      if (temporaryPassword) {
+        toast.success('Organization Created', `Admin temporary password: ${temporaryPassword}`);
+      } else {
+        toast.success('Organization Created', `${formData.name} has been created successfully`);
+      }
+
       onSuccess();
       onClose();
       setFormData({
-        name: '', code: '', email: '', phone: '', website: '',
+        name: '', email: '', phone: '', website: '',
         address: '', city: '', state: '', country: 'India', postal_code: '',
-        timezone: 'Asia/Kolkata', currency: 'INR', subscription_tier: 'standard',
-        admin_name: '', admin_email: '', admin_password: '', admin_phone: '',
+        currency: 'INR', subscription_tier: 'standard',
+        admin_name: '', admin_email: '', admin_phone: '',
       });
     } catch {
       // Error handled by axios interceptor
@@ -117,28 +106,20 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
               placeholder="e.g., Acme Logistics"
             />
             <Input
-              label="Code (auto-generated if empty)"
-              value={formData.code}
-              onChange={(e) => set('code', e.target.value.toUpperCase())}
-              placeholder="e.g., ORG-26-001"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4 mt-4">
-            <Input
               label="Email *"
               type="email"
               value={formData.email}
               onChange={(e) => set('email', e.target.value)}
               placeholder="contact@company.in"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-4">
             <Input
               label="Phone"
               value={formData.phone}
               onChange={(e) => set('phone', e.target.value)}
               placeholder="+91-XX-XXXX-XXXX"
             />
-          </div>
-          <div className="mt-4">
             <Input
               label="Website"
               value={formData.website}
@@ -176,17 +157,14 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
           </div>
           <div className="grid grid-cols-2 gap-4 mt-4">
             <Select
-              label="Timezone"
-              value={formData.timezone}
-              onChange={(e) => set('timezone', e.target.value)}
-              options={TIMEZONES}
-            />
-            <Select
               label="Subscription Tier"
               value={formData.subscription_tier}
               onChange={(e) => set('subscription_tier', e.target.value)}
               options={SUBSCRIPTION_TIERS}
             />
+            <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-3 text-xs text-blue-700 dark:text-blue-300 self-end">
+              Organization code is generated automatically by the server.
+            </div>
           </div>
         </div>
 
@@ -218,14 +196,9 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
               onChange={(e) => set('admin_email', e.target.value)}
               placeholder="admin@company.in"
             />
-            <Input
-              label="Admin Password *"
-              type="password"
-              value={formData.admin_password}
-              onChange={(e) => set('admin_password', e.target.value)}
-              placeholder="Min 8 characters"
-              leftIcon={<Lock className="h-4 w-4" />}
-            />
+            <div className="rounded-md bg-emerald-50 dark:bg-emerald-900/20 p-3 text-xs text-emerald-700 dark:text-emerald-300 self-end">
+              Admin temporary password is auto-generated and shown once after creation.
+            </div>
           </div>
         </div>
 

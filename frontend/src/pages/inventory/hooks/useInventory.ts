@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { inventoryApi, warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -15,14 +15,20 @@ export function useInventory(page: number, pageSize: number) {
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const isSoftRefresh = useRef(false);
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   // Live refetch when backend emits inventory changes via socket
   useSocketEvent('inventory:updated', refetch);
 
   useEffect(() => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
     const fetchData = async () => {
-      setIsLoading(true);
+      if (!isSoft) setIsLoading(true);
       try {
         if (useMockApi) {
           const [inventoryRes, warehouseRes] = await Promise.all([

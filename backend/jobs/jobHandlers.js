@@ -363,7 +363,7 @@ async function handleProcessOrder(payload) {
   const startTime = Date.now();
 
   try {
-    const { source, order, organization_id } = payload;
+    const { source, order, organization_id, webhook_channel_id } = payload;
 
     logger.info(`Processing order from ${source}` +
       (organization_id ? ` (org: ${organization_id})` : ' (no org)'));
@@ -417,6 +417,10 @@ async function handleProcessOrder(payload) {
       currency:          order.currency || 'INR',
       shipping_address:  order.shipping_address || {},
       notes:             order.notes || null,
+      tags:              {
+        ...(order.tags || {}),
+        ...(webhook_channel_id ? { source_channel_id: webhook_channel_id } : {}),
+      },
       items: (order.items || []).map(item => ({
         product_name: item.product_name || item.name || 'Unknown',
         sku:          item.sku          || null,

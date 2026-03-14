@@ -72,7 +72,6 @@ export function WarehousesPage() {
   const tabs = [
     { id: 'all', label: 'All Warehouses', count: warehouses.length },
     { id: 'active', label: 'Active', count: warehouses.filter((w) => w.status === 'active').length },
-    { id: 'maintenance', label: 'Maintenance', count: warehouses.filter((w) => w.status === 'maintenance').length },
     { id: 'inactive', label: 'Inactive', count: warehouses.filter((w) => w.status === 'inactive').length },
   ];
 
@@ -154,9 +153,7 @@ export function WarehousesPage() {
           variant={
             warehouse.status === 'active'
               ? 'success'
-              : warehouse.status === 'maintenance'
-                ? 'warning'
-                : 'default'
+              : 'default'
           }
           className="capitalize"
         >
@@ -300,8 +297,7 @@ export function WarehousesPage() {
                   <div
                     className={cn(
                       'h-8 w-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center cursor-pointer hover:scale-110 transition-transform',
-                      warehouse.status === 'active' ? 'bg-green-500' :
-                        warehouse.status === 'maintenance' ? 'bg-yellow-500' : 'bg-gray-500'
+                      warehouse.status === 'active' ? 'bg-green-500' : 'bg-gray-500'
                     )}
                   >
                     <Building2 className="h-4 w-4 text-white" />

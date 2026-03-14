@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { slaApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -13,11 +13,19 @@ export function useSLA(page: number, pageSize: number) {
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  // isSoftRefresh: when triggered by refetch() skip full-page spinner
+  const isSoftRefresh = useRef(false);
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
+
     const fetchData = async () => {
-      setIsLoading(true);
+      if (!isSoft) setIsLoading(true);
 
       try {
         if (useMockApi) {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { exceptionsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -11,11 +11,17 @@ export function useExceptions(page: number, pageSize: number) {
   const { useMockApi } = useApiMode();
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const isSoftRefresh = useRef(false);
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
     const fetchExceptions = async () => {
-      setIsLoading(true);
+      if (!isSoft) setIsLoading(true);
       try {
         const response = useMockApi
           ? await mockApi.getExceptions(page, pageSize)

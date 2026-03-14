@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { dashboardApi, shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -26,13 +26,17 @@ export function useDashboard() {
   const [warehouseUtilization, setWarehouseUtilization] = useState<WarehouseUtilization[]>([]);
   const [topProducts, setTopProducts] = useState<Array<{ name: string; sku: string; unitsSold: number; revenue: number }>>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { useRealApi } = useApiMode();
+  const isSoftRefresh = useRef(false);
 
   const currentUser = useAuthStore((s) => s.user);
   const canViewWarehouses = checkPermission(currentUser?.role, 'warehouses.view');
 
   const fetchData = useCallback(async () => {
-    setIsLoading(true);
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
+    if (!isSoft) setIsLoading(true);
     try {
       if (useRealApi) {
         // getDashboardStats now returns ordersTrend + warehouseActivity in a single call
@@ -83,19 +87,24 @@ export function useDashboard() {
     }
   }, [useRealApi, period, canViewWarehouses]);
 
+  const refetch = useCallback((soft = false) => {
+    if (soft) isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
+
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, refreshKey]);
 
   // Refresh dashboard on any real-time event that changes key metrics
-  useSocketEvent('order:created', fetchData);
-  useSocketEvent('order:updated', fetchData);
-  useSocketEvent('shipment:created', fetchData);
-  useSocketEvent('shipment:updated', fetchData);
-  useSocketEvent('exception:created', fetchData);
-  useSocketEvent('exception:resolved', fetchData);
-  useSocketEvent('return:created', fetchData);
-  useSocketEvent('inventory:low_stock', fetchData);
+  useSocketEvent('order:created', () => refetch(true));
+  useSocketEvent('order:updated', () => refetch(true));
+  useSocketEvent('shipment:created', () => refetch(true));
+  useSocketEvent('shipment:updated', () => refetch(true));
+  useSocketEvent('exception:created', () => refetch(true));
+  useSocketEvent('exception:resolved', () => refetch(true));
+  useSocketEvent('return:created', () => refetch(true));
+  useSocketEvent('inventory:low_stock', () => refetch(true));
 
   return {
     metrics,
@@ -108,6 +117,6 @@ export function useDashboard() {
     period,
     setPeriod,
     periodLabels: PERIOD_LABELS,
-    refetch: fetchData,
+    refetch,
   };
 }

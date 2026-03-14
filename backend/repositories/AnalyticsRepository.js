@@ -2,6 +2,42 @@
 // a proper domain boundary without duplicating complex SQL into the controller.
 import BaseRepository from './BaseRepository.js';
 
+function toDateString(value) {
+  return value.toISOString().slice(0, 10);
+}
+
+function getRangeWindow(range) {
+  const end = new Date();
+  end.setUTCHours(0, 0, 0, 0);
+
+  const days = range === 'day' ? 1 : range === 'week' ? 7 : range === 'year' ? 365 : 30;
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - Math.max(days - 1, 0));
+
+  return {
+    startDate: toDateString(start),
+    endDate: toDateString(end),
+  };
+}
+
+function resolveRangeFromArgs(baseArgs) {
+  const interval = baseArgs[baseArgs.length - 1];
+  if (interval === '1 day') return 'day';
+  if (interval === '7 days') return 'week';
+  if (interval === '1 year') return 'year';
+  return 'month';
+}
+
+function buildBucketExpression(range) {
+  if (range === 'year') {
+    return "DATE_TRUNC('month', stat_date)::date";
+  }
+  if (range === 'month') {
+    return "DATE_TRUNC('week', stat_date)::date";
+  }
+  return 'stat_date';
+}
+
 class AnalyticsRepository extends BaseRepository {
   constructor() {
     // 'orders' is the primary analytics table; query() works for any SQL.
@@ -21,48 +57,47 @@ class AnalyticsRepository extends BaseRepository {
    */
 
   async getOrdersOverTime({ dateGrouping, intClause, orgClause, baseArgs }) {
+    const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
+    const range = resolveRangeFromArgs(baseArgs);
+    const bucket = buildBucketExpression(range);
+    const { startDate, endDate } = getRangeWindow(range);
     return this.query(`
       SELECT
-        ${dateGrouping} as date,
-        COUNT(*) as count,
-        COALESCE(SUM(total_amount), 0) as value,
-        COUNT(CASE WHEN status = 'delivered' THEN 1 END) as delivered,
-        COUNT(CASE WHEN status IN ('shipped','in_transit','out_for_delivery') THEN 1 END) as in_transit,
-        COUNT(CASE WHEN status IN ('created','confirmed','allocated','processing') THEN 1 END) as pending
-      FROM orders
-      WHERE created_at >= ${intClause}
-      ${orgClause}
-      GROUP BY ${dateGrouping}
+        ${bucket} as date,
+        COALESCE(SUM(orders_total), 0) as count,
+        COALESCE(SUM(orders_value), 0) as value,
+        COALESCE(SUM(orders_delivered), 0) as delivered,
+        COALESCE(SUM(shipments_in_transit + shipments_out_for_delivery), 0) as in_transit,
+        COALESCE(SUM(orders_pending + orders_processing), 0) as pending
+      FROM analytics_daily_stats
+      WHERE organization_id = $1
+        AND stat_date BETWEEN $2::date AND $3::date
+      GROUP BY 1
       ORDER BY date ASC
-    `, baseArgs);
+    `, [organizationId, startDate, endDate]);
   }
 
   async getShipmentsByCarrier({ intClause, orgClauseAlias, baseArgs }) {
+    const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
+    const range = baseArgs[baseArgs.length - 1] === '1 year' ? 'year' : baseArgs[baseArgs.length - 1] === '7 days' ? 'week' : baseArgs[baseArgs.length - 1] === '1 day' ? 'day' : 'month';
+    const { startDate, endDate } = getRangeWindow(range);
     return this.query(`
       SELECT
         c.name as carrier,
         c.id as carrier_id,
-        COUNT(s.id) as total_shipments,
-        COUNT(CASE WHEN s.status = 'delivered' THEN 1 END) as delivered,
-        AVG(CASE
-          WHEN s.delivery_actual IS NOT NULL AND s.delivery_scheduled IS NOT NULL
-          THEN EXTRACT(EPOCH FROM (s.delivery_actual - s.delivery_scheduled))/3600
-        END) as avg_delay_hours,
-        COUNT(CASE
-          WHEN s.delivery_actual IS NOT NULL
-          AND s.delivery_scheduled IS NOT NULL
-          AND s.delivery_actual <= s.delivery_scheduled
-          THEN 1
-        END) as on_time_deliveries,
-        COALESCE(SUM(s.shipping_cost), 0) as total_cost
-      FROM shipments s
-      JOIN carriers c ON s.carrier_id = c.id
-      WHERE s.created_at >= ${intClause}
-      ${orgClauseAlias('s')}
+        COALESCE(SUM(a.total_shipments), 0) as total_shipments,
+        COALESCE(SUM(a.delivered_shipments), 0) as delivered,
+        COALESCE(AVG(a.avg_delay_hours) FILTER (WHERE a.total_shipments > 0), 0) as avg_delay_hours,
+        COALESCE(SUM(a.on_time_deliveries), 0) as on_time_deliveries,
+        COALESCE(SUM(a.total_cost), 0) as total_cost
+      FROM analytics_daily_carrier_stats a
+      JOIN carriers c ON a.carrier_id = c.id
+      WHERE a.organization_id = $1
+        AND a.stat_date BETWEEN $2::date AND $3::date
       GROUP BY c.id, c.name
       ORDER BY total_shipments DESC
       LIMIT 10
-    `, baseArgs);
+    `, [organizationId, startDate, endDate]);
   }
 
   async getTopProducts({ intClause, orgClauseAlias, baseArgs }) {
@@ -106,17 +141,21 @@ class AnalyticsRepository extends BaseRepository {
   }
 
   async getSlaViolations({ dateGrouping, intClause, orgClause, baseArgs }) {
+    const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
+    const range = resolveRangeFromArgs(baseArgs);
+    const bucket = buildBucketExpression(range);
+    const { startDate, endDate } = getRangeWindow(range);
     return this.query(`
       SELECT
-        ${dateGrouping} as date,
-        COUNT(*) as violations,
-        COALESCE(SUM(penalty_amount), 0) as total_penalties
-      FROM sla_violations
-      WHERE created_at >= ${intClause}
-      ${orgClause}
-      GROUP BY ${dateGrouping}
+        ${bucket} as date,
+        COALESCE(SUM(sla_violations), 0) as violations,
+        COALESCE(SUM(penalties_total), 0) as total_penalties
+      FROM analytics_daily_stats
+      WHERE organization_id = $1
+        AND stat_date BETWEEN $2::date AND $3::date
+      GROUP BY 1
       ORDER BY date ASC
-    `, baseArgs);
+    `, [organizationId, startDate, endDate]);
   }
 
   async getExceptionsByType({ intClause, orgClause, baseArgs }) {
@@ -154,21 +193,21 @@ class AnalyticsRepository extends BaseRepository {
   }
 
   async getFinancialMetrics({ intClause, orgClause, baseArgs }) {
+    const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
+    const range = resolveRangeFromArgs(baseArgs);
+    const { startDate, endDate } = getRangeWindow(range);
     return this.query(`
       SELECT
-        COALESCE(SUM(o.total_amount), 0) as total_revenue,
-        COALESCE(SUM(s.shipping_cost), 0) as total_shipping_cost,
-        COALESCE(SUM(sv.penalty_amount), 0) as total_penalties,
-        COALESCE(SUM(r.refund_amount), 0) as total_refunds,
-        COUNT(DISTINCT o.id) as total_orders,
-        COALESCE(AVG(o.total_amount), 0) as avg_order_value
-      FROM orders o
-      LEFT JOIN shipments s ON s.order_id = o.id
-      LEFT JOIN sla_violations sv ON sv.shipment_id = s.id
-      LEFT JOIN returns r ON r.order_id = o.id AND r.status = 'refunded'
-      WHERE o.created_at >= ${intClause}
-      ${orgClause.replace('organization_id', 'o.organization_id')}
-    `, baseArgs);
+        COALESCE(SUM(orders_value), 0) as total_revenue,
+        COALESCE(SUM(shipping_cost_total), 0) as total_shipping_cost,
+        COALESCE(SUM(penalties_total), 0) as total_penalties,
+        COALESCE(SUM(refund_amount), 0) as total_refunds,
+        COALESCE(SUM(orders_total), 0) as total_orders,
+        COALESCE(SUM(orders_value) / NULLIF(SUM(orders_total), 0), 0) as avg_order_value
+      FROM analytics_daily_stats
+      WHERE organization_id = $1
+        AND stat_date BETWEEN $2::date AND $3::date
+    `, [organizationId, startDate, endDate]);
   }
 
   // ── CSV export queries ─────────────────────────────────────────────────

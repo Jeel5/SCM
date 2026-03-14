@@ -18,14 +18,6 @@ const SUBSCRIPTION_TIERS = [
   { value: 'enterprise', label: 'Enterprise' },
 ];
 
-const TIMEZONES = [
-  { value: 'Asia/Kolkata', label: 'IST (Asia/Kolkata)' },
-  { value: 'Asia/Dubai', label: 'GST (Asia/Dubai)' },
-  { value: 'UTC', label: 'UTC' },
-  { value: 'America/New_York', label: 'EST (America/New_York)' },
-  { value: 'Europe/London', label: 'GMT (Europe/London)' },
-];
-
 export function EditOrgModal({ isOpen, onClose, onSuccess, organization }: EditOrgModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,7 +30,6 @@ export function EditOrgModal({ isOpen, onClose, onSuccess, organization }: EditO
     state: '',
     country: 'India',
     postal_code: '',
-    timezone: 'Asia/Kolkata',
     subscription_tier: 'standard',
   });
 
@@ -54,7 +45,6 @@ export function EditOrgModal({ isOpen, onClose, onSuccess, organization }: EditO
         state: organization.state || '',
         country: organization.country || 'India',
         postal_code: organization.postalCode || '',
-        timezone: organization.timezone || 'Asia/Kolkata',
         subscription_tier: organization.subscriptionTier || 'standard',
       });
     }
@@ -82,7 +72,6 @@ export function EditOrgModal({ isOpen, onClose, onSuccess, organization }: EditO
         state: formData.state || undefined,
         country: formData.country,
         postal_code: formData.postal_code || undefined,
-        timezone: formData.timezone,
         subscription_tier: formData.subscription_tier,
       });
       toast.success('Organization Updated', `${formData.name} has been updated`);
@@ -162,20 +151,12 @@ export function EditOrgModal({ isOpen, onClose, onSuccess, organization }: EditO
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Select
-            label="Timezone"
-            value={formData.timezone}
-            onChange={(e) => set('timezone', e.target.value)}
-            options={TIMEZONES}
-          />
-          <Select
-            label="Subscription Tier"
-            value={formData.subscription_tier}
-            onChange={(e) => set('subscription_tier', e.target.value)}
-            options={SUBSCRIPTION_TIERS}
-          />
-        </div>
+        <Select
+          label="Subscription Tier"
+          value={formData.subscription_tier}
+          onChange={(e) => set('subscription_tier', e.target.value)}
+          options={SUBSCRIPTION_TIERS}
+        />
 
         <div className="flex justify-end gap-3 pt-2">
           <Button variant="outline" onClick={onClose} disabled={isSubmitting}>

@@ -147,15 +147,18 @@ class AssignmentRetryService {
   async run() {
     try {
       logger.info('===== Starting Carrier Assignment Retry Job =====');
+
+      const finalizedCount = await carrierAssignmentService.finalizeReadyBiddingWindows();
       
       const expiredCount = await this.processExpiredAssignments();
       const busyCount = await this.retryBusyAssignments();
       const rejectedCount = await this.processAllRejectedOrders();
 
-      logger.info(`===== Retry Job Complete: ${expiredCount} expired, ${busyCount} busy retried, ${rejectedCount} all-rejected =====`);
+      logger.info(`===== Retry Job Complete: ${finalizedCount} finalized, ${expiredCount} expired, ${busyCount} busy retried, ${rejectedCount} all-rejected =====`);
 
       return {
         success: true,
+        windowsFinalized: finalizedCount,
         expiredProcessed: expiredCount,
         busyRetried: busyCount,
         rejectedRetried: rejectedCount

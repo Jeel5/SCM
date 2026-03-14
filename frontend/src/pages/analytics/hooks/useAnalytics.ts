@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { dashboardApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { useSocketEvent } from '@/hooks/useSocket';
 
 // ── Rich interfaces to match ALL backend data ──────────────────────────
 
@@ -122,12 +123,20 @@ export function useAnalytics(timeRange: string) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
+  const isSoftRefresh = useRef(false);
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const refetch = useCallback((soft = true) => {
+    if (soft) {
+      isSoftRefresh.current = true;
+    }
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
-      setIsLoading(true);
+      const isSoft = isSoftRefresh.current;
+      isSoftRefresh.current = false;
+      if (!isSoft) setIsLoading(true);
 
       try {
         if (useMockApi) {
@@ -335,6 +344,15 @@ export function useAnalytics(timeRange: string) {
 
     fetchData();
   }, [timeRange, useMockApi, refreshKey]);
+
+  useSocketEvent('order:created', () => refetch());
+  useSocketEvent('order:updated', () => refetch());
+  useSocketEvent('shipment:created', () => refetch());
+  useSocketEvent('shipment:updated', () => refetch());
+  useSocketEvent('exception:created', () => refetch());
+  useSocketEvent('exception:resolved', () => refetch());
+  useSocketEvent('return:created', () => refetch());
+  useSocketEvent('return:updated', () => refetch());
 
   return {
     orderTrendData,

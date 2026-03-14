@@ -275,7 +275,8 @@ class CarrierAssignmentRepository extends BaseRepository {
     async findOrderById(orderId, client = null) {
         const result = await this.query(
             `SELECT id, customer_name, customer_email, customer_phone, priority,
-                    status, shipping_address, total_amount, created_at, order_number
+                    status, shipping_address, total_amount, created_at, order_number,
+                    organization_id, is_cod
              FROM orders WHERE id = $1`,
             [orderId], client
         );
@@ -330,21 +331,97 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
-    async createAssignment({ orderId, carrierId, serviceType, pickupAddress, deliveryAddress, estimatedPickup, estimatedDelivery, requestPayload, expiresAt, idempotencyKey }, client = null) {
+    async createAssignment({ orderId, carrierId, organizationId = null, serviceType, pickupAddress, deliveryAddress, estimatedPickup, estimatedDelivery, requestPayload, expiresAt, idempotencyKey }, client = null) {
         const result = await this.query(
             `INSERT INTO carrier_assignments
-             (order_id, carrier_id, service_type, status, pickup_address, delivery_address,
+             (order_id, carrier_id, organization_id, service_type, status, pickup_address, delivery_address,
               estimated_pickup, estimated_delivery, request_payload, expires_at, idempotency_key)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              RETURNING id, carrier_id, order_id, status, created_at`,
             [
-                orderId, carrierId, serviceType, 'pending',
+                orderId, carrierId, organizationId, serviceType, 'pending',
                 JSON.stringify(pickupAddress), JSON.stringify(deliveryAddress),
                 estimatedPickup, estimatedDelivery,
                 JSON.stringify(requestPayload), expiresAt, idempotencyKey
             ], client
         );
         return result.rows[0];
+    }
+
+    async countOpenWindowAssignments(orderId, client = null) {
+        const result = await this.query(
+            `SELECT COUNT(*)::int AS open_count
+             FROM carrier_assignments
+             WHERE order_id = $1
+               AND status IN ('pending', 'busy', 'assigned')
+               AND expires_at > NOW()`,
+            [orderId], client
+        );
+        return parseInt(result.rows[0]?.open_count || 0, 10);
+    }
+
+    async findOrdersReadyForBiddingFinalization(client = null) {
+        const result = await this.query(
+            `SELECT ca.order_id
+             FROM carrier_assignments ca
+             WHERE ca.status = 'accepted'
+             GROUP BY ca.order_id
+             HAVING COUNT(*) FILTER (WHERE ca.status = 'accepted') > 0
+                AND COUNT(*) FILTER (
+                  WHERE ca.status IN ('pending', 'busy', 'assigned')
+                    AND ca.expires_at > NOW()
+                ) = 0
+                AND NOT EXISTS (
+                  SELECT 1 FROM shipments s WHERE s.order_id = ca.order_id
+                )`,
+            [],
+            client
+        );
+        return result.rows.map(r => r.order_id);
+    }
+
+    async findAcceptedAssignmentsByOrder(orderId, client = null) {
+        const result = await this.query(
+            `SELECT
+                ca.*,
+                c.name AS carrier_name,
+                COALESCE(c.reliability_score, 0.80) AS reliability_score,
+                o.is_cod,
+                o.total_amount
+             FROM carrier_assignments ca
+             JOIN carriers c ON c.id = ca.carrier_id
+             JOIN orders o ON o.id = ca.order_id
+             WHERE ca.order_id = $1 AND ca.status = 'accepted'
+             ORDER BY ca.accepted_at ASC`,
+            [orderId],
+            client
+        );
+        return result.rows;
+    }
+
+    async findShipmentByOrderId(orderId, client = null) {
+        const result = await this.query(
+            `SELECT id, tracking_number, status, created_at
+             FROM shipments
+             WHERE order_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [orderId],
+            client
+        );
+        return result.rows[0] || null;
+    }
+
+    async markWinnerAndCloseOrderWindow(orderId, winnerAssignmentId, client = null) {
+        await this.query(
+            `UPDATE carrier_assignments
+             SET status = CASE WHEN id = $2 THEN 'assigned' ELSE 'cancelled' END,
+                 updated_at = NOW()
+             WHERE order_id = $1
+               AND status IN ('accepted', 'pending', 'busy', 'assigned')`,
+            [orderId, winnerAssignmentId],
+            client
+        );
     }
 
     async updateOrderStatus(orderId, status, client = null) {

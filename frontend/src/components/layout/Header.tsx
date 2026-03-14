@@ -10,17 +10,27 @@ import {
   ChevronDown,
   LogOut,
   HelpCircle,
+  ShieldAlert,
+  UserX,
 } from 'lucide-react';
 import { cn, formatRelativeTime, getRoleDisplayName } from '@/lib/utils';
 import { useUIStore, useAuthStore, useNotificationStore } from '@/stores';
-import { Avatar, Dropdown } from '@/components/ui';
-import { notificationsApi, authApi } from '@/api/services';
+import { Avatar, Button, Dropdown } from '@/components/ui';
+import { notificationsApi, authApi, superAdminApi } from '@/api/services';
 
 export function Header() {
   const { toggleMobileSidebar, theme, setTheme } = useUIStore();
-  const { user, logout, isAuthenticated } = useAuthStore();
+  const { user, logout, isAuthenticated, setUser } = useAuthStore();
   const { notifications, unreadCount, markAsRead, markAllAsRead, setNotifications } = useNotificationStore();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [activeBanner, setActiveBanner] = useState<{
+    id: string;
+    title: string;
+    message: string;
+    severity: 'info' | 'warning' | 'critical';
+  } | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [stoppingImpersonation, setStoppingImpersonation] = useState(false);
   const navigate = useNavigate();
 
   // Load notifications from API on mount and periodically
@@ -38,6 +48,25 @@ export function Header() {
     fetchNotifications();
   }, [fetchNotifications, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const response = await superAdminApi.getActiveIncidentBanner();
+        if (mounted) {
+          setActiveBanner((response.data || null) as typeof activeBanner);
+          setBannerDismissed(false);
+        }
+      } catch {
+        if (mounted) setActiveBanner(null);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [isAuthenticated]);
+
   // Refresh notification list whenever a new one arrives via socket
   useSocketEvent('notification:new', fetchNotifications);
 
@@ -49,13 +78,59 @@ export function Header() {
     navigate('/login');
   };
 
+  const handleStopImpersonation = async () => {
+    try {
+      setStoppingImpersonation(true);
+      const response = await superAdminApi.stopImpersonation();
+      if (response.data?.user) {
+        setUser(response.data.user);
+        navigate('/super-admin/dashboard');
+      }
+    } catch {
+      // handled by interceptor
+    } finally {
+      setStoppingImpersonation(false);
+    }
+  };
+
   const userMenuItems = [
     { label: 'Help & Support', value: 'help', icon: <HelpCircle className="h-4 w-4" /> },
     { label: 'Sign Out', value: 'logout', icon: <LogOut className="h-4 w-4" />, danger: true },
   ];
 
   return (
-    <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 px-4 lg:px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-300">
+    <header className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 sticky top-0 z-30 transition-colors duration-300">
+      {activeBanner && !bannerDismissed && (
+        <div className={cn(
+          'px-4 lg:px-6 py-2 text-sm border-b flex items-start md:items-center justify-between gap-3',
+          activeBanner.severity === 'critical' && 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-200 dark:border-red-800/60',
+          activeBanner.severity === 'warning' && 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800/60',
+          activeBanner.severity === 'info' && 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800/60'
+        )}>
+          <div className="flex items-start md:items-center gap-2 min-w-0">
+            <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 md:mt-0" />
+            <p className="truncate"><span className="font-semibold">{activeBanner.title}:</span> {activeBanner.message}</p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => setBannerDismissed(true)}>Dismiss</Button>
+        </div>
+      )}
+      {user?.impersonation?.isImpersonating && (
+        <div className="px-4 lg:px-6 py-2 bg-purple-50 border-b border-purple-200 dark:bg-purple-900/20 dark:border-purple-800/60 flex items-center justify-between gap-3">
+          <p className="text-sm text-purple-800 dark:text-purple-200">
+            Impersonating session as <span className="font-semibold">{user.name}</span>.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            leftIcon={<UserX className="h-4 w-4" />}
+            isLoading={stoppingImpersonation}
+            onClick={() => void handleStopImpersonation()}
+          >
+            Exit Impersonation
+          </Button>
+        </div>
+      )}
+      <div className="h-16 px-4 lg:px-6 flex items-center justify-between">
       {/* Left Section */}
       <div className="flex items-center gap-4">
         {/* Mobile Menu Toggle */}
@@ -239,6 +314,7 @@ export function Header() {
           }}
           align="right"
         />
+      </div>
       </div>
     </header>
   );

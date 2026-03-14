@@ -32,12 +32,13 @@ export const updateShipmentTracking = asyncHandler(async (req, res) => {
   if (!eventType) throw new AppError('eventType required', 400);
 
   // Find shipment by tracking number
-  const shipment = await shipmentRepo.findByTrackingNumber(trackingNumber);
+  const shipment = await shipmentRepo.findByTrackingNumberWithCarrier(trackingNumber);
   if (!shipment) throw new NotFoundError('Shipment');
 
   // Verify the authenticated carrier owns this shipment (prevent fake delivery injection)
   const authenticatedCarrierId = req.authenticatedCarrier?.id;
-  if (authenticatedCarrierId && shipment.carrier_id !== authenticatedCarrierId) {
+  const shipmentCarrierId = shipment.authenticated_carrier_id || shipment.carrier_id;
+  if (authenticatedCarrierId && shipmentCarrierId !== authenticatedCarrierId) {
     throw new AuthorizationError('Carrier not authorized to update this shipment');
   }
 

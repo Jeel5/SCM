@@ -125,10 +125,10 @@ export function AnalyticsPage() {
         <div className="flex-1">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Analytics</h1>
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
-            Comprehensive performance metrics and business insights
+            Daily aggregated reporting for operational, carrier, SLA, and finance trends
           </p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}
             options={[
               { value: '7d', label: 'Last 7 days' },
@@ -150,6 +150,27 @@ export function AnalyticsPage() {
 
       {isLoading && (
         <div className="w-full p-6 text-center text-gray-500 dark:text-gray-400">Loading analytics...</div>
+      )}
+
+      {!isLoading && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Net Revenue', value: formatCurrency(netRevenue), icon: DollarSign, tone: 'bg-green-100 text-green-600' },
+            { label: 'Return Rate', value: `${returnRate}%`, icon: RotateCcw, tone: 'bg-amber-100 text-amber-600' },
+            { label: 'Penalty Exposure', value: formatCurrency(financialMetrics.totalPenalties), icon: AlertTriangle, tone: 'bg-red-100 text-red-600' },
+            { label: 'Capacity Headroom', value: formatNumber(Math.max(availableCapacity, 0)), icon: Warehouse, tone: 'bg-blue-100 text-blue-600' },
+          ].map((card) => (
+            <div key={card.label} className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm text-gray-500 dark:text-gray-400">{card.label}</p>
+                <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', card.tone)}>
+                  <card.icon className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{card.value}</p>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* ═══════ OVERVIEW TAB ═══════ */}

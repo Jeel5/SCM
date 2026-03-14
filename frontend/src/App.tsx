@@ -18,6 +18,8 @@ const LoginPage = lazy(() => import('@/pages/auth').then(m => ({ default: m.Logi
 const DashboardPage = lazy(() => import('@/pages/dashboard').then(m => ({ default: m.DashboardPage })));
 const SuperAdminDashboard = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.SuperAdminDashboard })));
 const CompaniesPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.CompaniesPage })));
+const SystemUsersPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.SystemUsersPage })));
+const SystemHealthPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.SystemHealthPage })));
 const OrdersPage = lazy(() => import('@/pages/orders').then(m => ({ default: m.OrdersPage })));
 const ShipmentsPage = lazy(() => import('@/pages/shipments').then(m => ({ default: m.ShipmentsPage })));
 const InventoryPage = lazy(() => import('@/pages/inventory').then(m => ({ default: m.InventoryPage })));
@@ -127,6 +129,8 @@ function RouteTitleManager() {
       '/notifications': 'Notifications | TwinChain',
       '/super-admin/dashboard': 'Super Admin Dashboard | TwinChain',
       '/super-admin/companies': 'Companies | TwinChain',
+      '/super-admin/users': 'System Users | TwinChain',
+      '/super-admin/health': 'System Health | TwinChain',
     };
 
     document.title = titles[pathname] || 'TwinChain';
@@ -287,6 +291,26 @@ function App() {
                         <PageLoader>
                           <PermissionRoute permission="companies.manage">
                             <CompaniesPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="super-admin/users"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="companies.manage">
+                            <SystemUsersPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="super-admin/health"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="companies.manage">
+                            <SystemHealthPage />
                           </PermissionRoute>
                         </PageLoader>
                       }

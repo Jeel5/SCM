@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { returnsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -11,11 +11,17 @@ export function useReturns(page: number, pageSize: number) {
   const { useMockApi } = useApiMode();
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const isSoftRefresh = useRef(false);
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
     const fetchReturns = async () => {
-      setIsLoading(true);
+      if (!isSoft) setIsLoading(true);
       try {
         const response = useMockApi
           ? await mockApi.getReturns(page, pageSize)

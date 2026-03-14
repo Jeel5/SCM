@@ -101,7 +101,7 @@ export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolea
           onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
           options={[
             { value: 'active', label: 'Active' },
-            { value: 'pending', label: 'Pending' },
+            { value: 'inactive', label: 'Inactive' },
             { value: 'suspended', label: 'Suspended' },
           ]}
         />

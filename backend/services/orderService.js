@@ -306,29 +306,8 @@ class OrderService {
       const order = result.order;
       
       // After transaction commits successfully, send notifications to carriers
-      // External API calls happen outside transaction
-      if (result.carriersToNotify && result.carriersToNotify.length > 0) {
-        setImmediate(async () => {
-          // Auto-accept the first eligible carrier assignment to create a shipment immediately
-          const firstCarrierInfo = result.carriersToNotify[0];
-          const { assignment, carrier } = firstCarrierInfo;
-          try {
-            const { default: carrierAssignmentService } = await import('./carrierAssignmentService.js');
-            await carrierAssignmentService.acceptAssignment(
-              assignment.id,
-              carrier.id,
-              {
-                carrierReferenceId: `AUTO-${assignment.id.substr(0, 8).toUpperCase()}`,
-                trackingNumber: `TRK-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-                quotedPrice: 0,
-              }
-            );
-            logger.info(`Auto-accepted assignment, shipment created`, { assignmentId: assignment.id, orderId: order.id });
-          } catch (e) {
-            logger.warn(`Auto-accept assignment failed (non-fatal)`, { assignmentId: assignment.id, error: e.message });
-          }
-        });
-      }
+      // External API calls happen outside transaction.
+      // Shipment creation is deferred to bidding-window finalization.
       
       // Log order creation event after successful commit
       logEvent('OrderCreated', {

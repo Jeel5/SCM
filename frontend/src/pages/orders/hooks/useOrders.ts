@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { ordersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -12,11 +12,18 @@ export function useOrders(page: number, pageSize: number) {
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  // isSoftRefresh: true when triggered by refetch() (background update) — skip full-page spinner
+  const isSoftRefresh = useRef(false);
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
     const fetchOrders = async () => {
-      setIsLoading(true);
+      if (!isSoft) setIsLoading(true);
       try {
         const response = useMockApi 
           ? await mockApi.getOrders(page, pageSize)

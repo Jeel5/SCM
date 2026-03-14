@@ -17,7 +17,7 @@ export const createCarrierSchema = Joi.object({
   avg_delivery_days: Joi.number().integer().min(0).optional(),
   daily_capacity: Joi.number().integer().min(0).optional(),
   is_active: Joi.boolean().optional(),
-  availability_status: Joi.string().valid('available', 'busy', 'offline').optional()
+  availability_status: Joi.string().valid('available', 'busy', 'offline', 'suspended').optional()
 });
 
 export const updateCarrierSchema = Joi.object({
@@ -32,7 +32,7 @@ export const updateCarrierSchema = Joi.object({
   avg_delivery_days: Joi.number().integer().min(0).optional(),
   daily_capacity: Joi.number().integer().min(0).optional(),
   is_active: Joi.boolean().optional(),
-  availability_status: Joi.string().valid('available', 'busy', 'offline').optional()
+  availability_status: Joi.string().valid('available', 'busy', 'offline', 'suspended').optional()
 });
 
 // ─── Product schemas ───────────────────────────────────────────────────────────

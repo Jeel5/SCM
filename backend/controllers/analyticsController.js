@@ -3,6 +3,7 @@ import analyticsRepo from '../repositories/AnalyticsRepository.js';
 import logger from '../utils/logger.js';
 import { asyncHandler, ValidationError } from '../errors/index.js';
 import { cacheWrap, orgSeg } from '../utils/cache.js';
+import { getTrailingDateWindow, syncAnalyticsStats } from '../services/analyticsStatsService.js';
 
 // Get analytics data with time-series trends and breakdowns
 export const getAnalytics = asyncHandler(async (req, res) => {
@@ -14,6 +15,12 @@ export const getAnalytics = asyncHandler(async (req, res) => {
   // the miss path — a cache hit costs only a single Redis GET.
   const cacheKey = `analytics:${orgSeg(organizationId)}:${range}`;
   const data = await cacheWrap(cacheKey, 300, async () => {
+    if (organizationId) {
+      const days = range === 'day' ? 1 : range === 'week' ? 7 : range === 'year' ? 365 : 30;
+      const { startDate, endDate } = getTrailingDateWindow(days);
+      await syncAnalyticsStats(organizationId, { startDate, endDate });
+    }
+
     let interval = '30 days';
     let dateGrouping = "DATE(created_at)";
 

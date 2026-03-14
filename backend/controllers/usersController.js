@@ -1,9 +1,11 @@
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import userRepo from '../repositories/UserRepository.js';
 import orgRepo from '../repositories/OrganizationRepository.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { settingsService } from '../services/settingsService.js';
 import { ORG_ASSIGNABLE_ROLES } from '../config/roles.js';
+import { getSubscriptionLimits } from '../config/subscriptionLimits.js';
 import logger from '../utils/logger.js';
 import { asyncHandler, ValidationError, AuthenticationError, AuthorizationError, NotFoundError, ConflictError } from '../errors/index.js';
 
@@ -29,6 +31,8 @@ export const login = asyncHandler(async (req, res) => {
   
   if (!isValid) throw new AuthenticationError('Invalid credentials');
 
+  if (user.org_is_deleted === true) throw new AuthorizationError('Organization is deleted');
+  if (user.org_suspended_at) throw new AuthorizationError('Organization is suspended');
   if (user.org_is_active === false) throw new AuthorizationError('Organization is inactive');
 
   // Update last login
@@ -79,7 +83,13 @@ export const refreshToken = asyncHandler(async (req, res) => {
   const user = await userRepo.findById(decoded.userId);
   if (!user || !user.is_active) throw new AuthenticationError('User not found or inactive');
 
-  const tokenPayload = { userId: user.id, role: user.role, email: user.email, organizationId: user.organization_id };
+  const tokenPayload = {
+    userId: user.id,
+    role: user.role,
+    email: user.email,
+    organizationId: user.organization_id,
+    ...(decoded.impersonation ? { impersonation: decoded.impersonation } : {}),
+  };
   const newAccessToken = generateAccessToken(tokenPayload);
 
   // Update session last_active timestamp
@@ -104,6 +114,7 @@ export const getProfile = asyncHandler(async (req, res) => {
       phone: user.phone || null,
       role: user.role,
       organizationId: user.organization_id,
+      impersonation: req.user.impersonation || null,
       avatar: user.avatar,
       lastLogin: user.last_login,
       createdAt: user.created_at
@@ -330,28 +341,39 @@ export const createOrgUser = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
   if (!organizationId) throw new AuthorizationError('Organization context required');
 
-  const { name, email, password, role, phone } = req.body;
+  const org = await orgRepo.findById(organizationId);
+  if (!org) throw new NotFoundError('Organization');
+
+  const limits = getSubscriptionLimits(org.subscription_tier || 'standard');
+  if (Number.isFinite(limits.maxUsers)) {
+    const activeUsers = await orgRepo.countActiveUsers(organizationId);
+    if (activeUsers >= limits.maxUsers) {
+      throw new ValidationError(
+        `User limit reached for '${org.subscription_tier || 'standard'}' plan (${limits.maxUsers} active users).`
+      );
+    }
+  }
+
+  const { name, email, role, phone } = req.body;
 
   if (!ORG_ASSIGNABLE_ROLES.includes(role)) {
     throw new ValidationError(`Invalid role. Allowed roles: ${ORG_ASSIGNABLE_ROLES.join(', ')}`);
   }
 
-  // Validate password strength (TASK-R12-004): min 8 chars, mixed case, digit
-  const PASSWORD_STRENGTH_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
-  if (!password || !PASSWORD_STRENGTH_RE.test(password)) {
-    throw new ValidationError('Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number');
-  }
+  // Auto-generate a strong temporary password for new org users.
+  const tempPassword = `Scm@${crypto.randomBytes(6).toString('hex')}`;
 
   // Check for duplicate email
   const existing = await userRepo.findByEmail(email);
   if (existing) throw new ConflictError('Email already in use');
 
-  const password_hash = await bcrypt.hash(password, 10);
+  const password_hash = await bcrypt.hash(tempPassword, 10);
 
   const user = await userRepo.createUser({ name, email, password_hash, role, phone: phone || null, organization_id: organizationId });
   await userRepo.insertAuditLog(req.user.userId, 'create_user', 'user', user.id);
 
-  res.status(201).json({ success: true, data: user });
+  // Return temporary password once so admin can share it securely.
+  res.status(201).json({ success: true, data: { ...user, temporary_password: tempPassword } });
 });
 
 // Get a single user (must belong to same org)

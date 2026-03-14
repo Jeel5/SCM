@@ -2,6 +2,7 @@
 import dashboardRepo from '../repositories/DashboardRepository.js';
 import { asyncHandler } from '../errors/index.js';
 import { cacheWrap, orgSeg } from '../utils/cache.js';
+import { getTrailingDateWindow, syncAnalyticsStats } from '../services/analyticsStatsService.js';
 
 /** Compute percentage change: ((current - previous) / previous) * 100 */
 function pctChange(current, previous) {
@@ -25,6 +26,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
   // the entire dashboard load costs a single Redis GET.
   const cacheKey = `dash:${orgSeg(organizationId)}:${periodKey}`;
   const data = await cacheWrap(cacheKey, 60, async () => {
+    if (organizationId) {
+      const { startDate, endDate } = getTrailingDateWindow(days * 2);
+      await syncAnalyticsStats(organizationId, { startDate, endDate });
+    }
+
     const [orders, shipments, lowStock, pendingReturns, activeExceptions, ordersTrend, warehouseActivity, topProducts] =
       await Promise.all([
         dashboardRepo.getOrderStats(organizationId, days),

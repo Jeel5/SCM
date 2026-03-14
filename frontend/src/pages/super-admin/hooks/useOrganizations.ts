@@ -16,6 +16,7 @@ interface OrganizationsResponse {
 interface UseOrganizationsOptions {
   search?: string;
   is_active?: boolean;
+  include_deleted?: boolean;
   page?: number;
   limit?: number;
 }
@@ -37,6 +38,7 @@ export function useOrganizations(options: UseOrganizationsOptions = {}) {
       };
       if (options.search) params.search = options.search;
       if (options.is_active !== undefined) params.is_active = options.is_active;
+      if (options.include_deleted !== undefined) params.include_deleted = options.include_deleted;
 
       const response = await get<OrganizationsResponse>('/organizations', params);
       setOrganizations(response.data);
@@ -47,7 +49,7 @@ export function useOrganizations(options: UseOrganizationsOptions = {}) {
     } finally {
       setIsLoading(false);
     }
-  }, [options.search, options.is_active, options.page, options.limit]);
+  }, [options.search, options.is_active, options.include_deleted, options.page, options.limit]);
 
   useEffect(() => {
     fetchOrganizations();

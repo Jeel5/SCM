@@ -80,6 +80,27 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  async findByTrackingNumberWithCarrier(trackingNumber, organizationId = undefined, client = null) {
+    let query = `
+      SELECT s.*, COALESCE(s.carrier_id, ca.carrier_id) AS authenticated_carrier_id
+      FROM shipments s
+      LEFT JOIN carrier_assignments ca ON s.carrier_assignment_id = ca.id
+      WHERE s.tracking_number = $1
+    `;
+    const params = [trackingNumber];
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 's');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$2`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
+    return result.rows[0] || null;
+  }
+
   /**
    * Find shipments with carrier, order and warehouse details (for list views).
    */

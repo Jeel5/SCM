@@ -34,7 +34,7 @@ export const createOrganizationSchema = Joi.object({
   admin_user: Joi.object({
     name: Joi.string().min(2).max(255).required(),
     email: Joi.string().email().required(),
-    password: Joi.string().min(8).required(),
+    password: Joi.string().min(8).optional().allow(null, ''),
     phone: Joi.string().pattern(/^\+?[\d\s\-()]+$/).optional().allow(null, '')
   }).required()
 });
@@ -69,5 +69,43 @@ export const listOrganizationsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
   is_active: Joi.boolean().optional(),
+  include_deleted: Joi.boolean().optional().default(false),
   search: Joi.string().max(100).optional().allow('')
 });
+
+export const listGlobalUsersQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(200).default(50),
+  search: Joi.string().max(100).optional().allow(''),
+});
+
+export const orgAuditQuerySchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(500).default(100),
+});
+
+export const orgBillingQuerySchema = Joi.object({
+  range_days: Joi.number().integer().min(7).max(365).default(90),
+});
+
+export const impersonationStartSchema = Joi.object({
+  user_id: Joi.string().uuid().required(),
+});
+
+export const createIncidentBannerSchema = Joi.object({
+  title: Joi.string().min(3).max(120).required(),
+  message: Joi.string().min(3).max(1000).required(),
+  severity: Joi.string().valid('info', 'warning', 'critical').default('warning'),
+  starts_at: Joi.date().iso().optional(),
+  ends_at: Joi.date().iso().optional(),
+  is_active: Joi.boolean().default(true),
+  organization_id: Joi.string().uuid().optional().allow(null),
+});
+
+export const updateIncidentBannerSchema = Joi.object({
+  title: Joi.string().min(3).max(120).optional(),
+  message: Joi.string().min(3).max(1000).optional(),
+  severity: Joi.string().valid('info', 'warning', 'critical').optional(),
+  starts_at: Joi.date().iso().optional().allow(null),
+  ends_at: Joi.date().iso().optional().allow(null),
+  is_active: Joi.boolean().optional(),
+}).min(1);

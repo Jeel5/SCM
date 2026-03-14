@@ -15,6 +15,9 @@ export interface Organization {
   logoUrl?: string;
   subscriptionTier?: 'starter' | 'standard' | 'enterprise';
   isActive: boolean;
+  isDeleted?: boolean;
+  suspendedAt?: string | null;
+  suspensionReason?: string | null;
   createdAt: string;
   updatedAt?: string;
   stats?: {

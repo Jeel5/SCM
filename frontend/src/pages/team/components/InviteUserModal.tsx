@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserPlus, Lock, Mail, Phone } from 'lucide-react';
+import { UserPlus, Mail, Phone } from 'lucide-react';
 import { Button, Input, Modal, Select } from '@/components/ui';
 import { post } from '@/api/client';
 import { toast } from '@/stores/toastStore';
@@ -31,7 +31,6 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
   const [form, setForm] = useState({
     name: '',
     email: '',
-    password: '',
     phone: '',
     role: 'operations_manager',
   });
@@ -40,32 +39,32 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const handleClose = () => {
-    setForm({ name: '', email: '', password: '', phone: '', role: 'operations_manager' });
+    setForm({ name: '', email: '', phone: '', role: 'operations_manager' });
     onClose();
   };
 
   const handleSubmit = async () => {
-    if (!form.name || !form.email || !form.password) {
-      toast.error('Validation Error', 'Name, email and password are required');
+    if (!form.name || !form.email) {
+      toast.error('Validation Error', 'Name and email are required');
       return;
     }
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       toast.error('Validation Error', 'Invalid email address');
-      return;
-    }
-    if (form.password.length < 8) {
-      toast.error('Validation Error', 'Password must be at least 8 characters');
-      return;
-    }
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.password)) {
-      toast.error('Validation Error', 'Password needs uppercase, lowercase, and a number');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await post('/users', form);
-      toast.success('User Added', `${form.name} has been added to your team`);
+      const response = await post<{ success: boolean; data?: { temporary_password?: string } }>('/users', form);
+      const tempPassword = response?.data?.temporary_password;
+
+      if (tempPassword) {
+        toast.success('User Added', `Temporary password: ${tempPassword}`);
+      } else {
+        toast.success('User Added', `${form.name} has been added to your team`);
+      }
+
       onSuccess();
       handleClose();
     } catch (err: unknown) {
@@ -79,7 +78,6 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Add Team Member" size="md">
       <div className="space-y-4">
-        {/* Role selector first so user thinks about intent */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Role <span className="text-red-500">*</span>
@@ -136,20 +134,9 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Temporary Password <span className="text-red-500">*</span>
-          </label>
-          <Input
-            type="password"
-            placeholder="Min 8 chars, upper + lower + number"
-            value={form.password}
-            onChange={(e) => set('password', e.target.value)}
-            leftIcon={<Lock className="h-4 w-4 text-gray-400" />}
-            autoComplete="new-password"
-          />
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            The user should change this on first login.
+        <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-3">
+          <p className="text-xs text-blue-700 dark:text-blue-300">
+            A strong temporary password will be auto-generated and shown once after user creation.
           </p>
         </div>
       </div>

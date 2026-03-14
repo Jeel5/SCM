@@ -11,7 +11,10 @@ import {
   RefreshCw,
   CheckCircle,
   XCircle,
-  Globe,
+  PauseCircle,
+  PlayCircle,
+  ClipboardList,
+  Receipt,
 } from 'lucide-react';
 import {
   Button,
@@ -23,11 +26,36 @@ import {
 } from '@/components/ui';
 import { formatDate, formatNumber } from '@/lib/utils';
 import { del } from '@/api/client';
+import { superAdminApi } from '@/api/services';
 import { toast } from '@/stores/toastStore';
 import { useOrganizations } from './hooks/useOrganizations';
 import { CreateOrgModal } from './components/CreateOrgModal';
 import { EditOrgModal } from './components/EditOrgModal';
 import type { Organization } from './types';
+
+interface OrgAuditLog {
+  id: string;
+  action: string;
+  performed_by_role?: string | null;
+  performed_by_name?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+interface OrgBillingSummary {
+  rangeDays: number;
+  invoiceCount: number;
+  billedAmount: number;
+  paidAmount: number;
+  openAmount: number;
+  refundsAmount: number;
+  avgInvoiceAmount: number;
+  lastInvoice: {
+    invoiceNumber: string;
+    status: string;
+    createdAt: string;
+  } | null;
+}
 
 const TIER_BADGE: Record<string, 'default' | 'info' | 'warning' | 'success'> = {
   starter: 'default',
@@ -38,14 +66,26 @@ const TIER_BADGE: Record<string, 'default' | 'info' | 'warning' | 'success'> = {
 export function CompaniesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<boolean | undefined>(undefined);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
   const [deletingOrg, setDeletingOrg] = useState<Organization | null>(null);
+  const [suspendOrg, setSuspendOrg] = useState<Organization | null>(null);
+  const [reactivateOrg, setReactivateOrg] = useState<Organization | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  const [auditOrg, setAuditOrg] = useState<Organization | null>(null);
+  const [auditLogs, setAuditLogs] = useState<OrgAuditLog[]>([]);
+  const [isAuditLoading, setIsAuditLoading] = useState(false);
+  const [billingOrg, setBillingOrg] = useState<Organization | null>(null);
+  const [billingSummary, setBillingSummary] = useState<OrgBillingSummary | null>(null);
+  const [isBillingLoading, setIsBillingLoading] = useState(false);
 
   const { organizations, total, isLoading, refetch } = useOrganizations({
     search: searchQuery || undefined,
     is_active: activeFilter,
+    include_deleted: showDeleted,
   });
 
   const handleDelete = async () => {
@@ -65,6 +105,69 @@ export function CompaniesPage() {
 
   const activeCount = organizations.filter((o) => o.isActive).length;
   const inactiveCount = organizations.filter((o) => !o.isActive).length;
+  const suspendedCount = organizations.filter((o) => !!o.suspendedAt).length;
+
+  const handleSuspend = async () => {
+    if (!suspendOrg) return;
+    if (!suspendReason.trim()) {
+      toast.error('Validation Error', 'Suspension reason is required');
+      return;
+    }
+
+    try {
+      setIsSubmittingAction(true);
+      await superAdminApi.suspendCompany(suspendOrg.id, suspendReason.trim());
+      toast.success('Organization Suspended', `${suspendOrg.name} was suspended`);
+      setSuspendOrg(null);
+      setSuspendReason('');
+      refetch();
+    } catch {
+      // handled by interceptor
+    } finally {
+      setIsSubmittingAction(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!reactivateOrg) return;
+    try {
+      setIsSubmittingAction(true);
+      await superAdminApi.reactivateCompany(reactivateOrg.id);
+      toast.success('Organization Reactivated', `${reactivateOrg.name} is active again`);
+      setReactivateOrg(null);
+      refetch();
+    } catch {
+      // handled by interceptor
+    } finally {
+      setIsSubmittingAction(false);
+    }
+  };
+
+  const openAuditViewer = async (org: Organization) => {
+    setAuditOrg(org);
+    setIsAuditLoading(true);
+    try {
+      const response = await superAdminApi.getOrganizationAudit(org.id, 120);
+      setAuditLogs((response.data || []) as OrgAuditLog[]);
+    } catch {
+      setAuditLogs([]);
+    } finally {
+      setIsAuditLoading(false);
+    }
+  };
+
+  const openBillingViewer = async (org: Organization) => {
+    setBillingOrg(org);
+    setIsBillingLoading(true);
+    try {
+      const response = await superAdminApi.getOrganizationBilling(org.id, 90);
+      setBillingSummary((response.data || null) as OrgBillingSummary | null);
+    } catch {
+      setBillingSummary(null);
+    } finally {
+      setIsBillingLoading(false);
+    }
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -112,7 +215,7 @@ export function CompaniesPage() {
           { label: 'Total Organizations', value: total, icon: Building2, color: 'blue' },
           { label: 'Active', value: activeCount, icon: CheckCircle, color: 'green' },
           { label: 'Inactive', value: inactiveCount, icon: XCircle, color: 'red' },
-          { label: 'Enterprise Tier', value: organizations.filter((o) => o.subscriptionTier === 'enterprise').length, icon: Globe, color: 'purple' },
+          { label: 'Suspended', value: suspendedCount, icon: PauseCircle, color: 'amber' },
         ].map((stat) => (
           <Card key={stat.label} className="p-4">
             <div className="flex items-center gap-3">
@@ -158,6 +261,16 @@ export function CompaniesPage() {
                   {f.label}
                 </button>
               ))}
+              <button
+                onClick={() => setShowDeleted((v) => !v)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  showDeleted
+                    ? 'bg-rose-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                {showDeleted ? 'Hide Deleted' : 'Show Deleted'}
+              </button>
             </div>
           </div>
         </div>
@@ -214,7 +327,7 @@ export function CompaniesPage() {
                     {/* Organization */}
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
+                        <div className="w-10 h-10 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
                           {(org.code || org.name).substring(0, 2).toUpperCase()}
                         </div>
                         <div>
@@ -248,9 +361,12 @@ export function CompaniesPage() {
 
                     {/* Status */}
                     <td className="py-4 px-6">
-                      <Badge variant={org.isActive ? 'success' : 'warning'}>
-                        {org.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={org.suspendedAt ? 'error' : org.isActive ? 'success' : 'warning'}>
+                          {org.suspendedAt ? 'Suspended' : org.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                        {org.isDeleted && <Badge variant="error">Deleted</Badge>}
+                      </div>
                     </td>
 
                     {/* Created */}
@@ -261,6 +377,8 @@ export function CompaniesPage() {
                     {/* Actions */}
                     <td className="py-4 px-6">
                       <Dropdown
+                        align="right"
+                        side="top"
                         trigger={
                           <Button variant="ghost" size="sm">
                             <MoreVertical className="h-4 w-4" />
@@ -271,6 +389,26 @@ export function CompaniesPage() {
                             label: 'Manage Users',
                             value: 'users',
                             icon: <Users className="h-4 w-4" />,
+                          },
+                          {
+                            label: 'Suspend',
+                            value: 'suspend',
+                            icon: <PauseCircle className="h-4 w-4" />,
+                          },
+                          {
+                            label: 'Reactivate',
+                            value: 'reactivate',
+                            icon: <PlayCircle className="h-4 w-4" />,
+                          },
+                          {
+                            label: 'View Audit Log',
+                            value: 'audit',
+                            icon: <ClipboardList className="h-4 w-4" />,
+                          },
+                          {
+                            label: 'View Billing',
+                            value: 'billing',
+                            icon: <Receipt className="h-4 w-4" />,
                           },
                           {
                             label: 'Edit',
@@ -286,6 +424,10 @@ export function CompaniesPage() {
                         ]}
                         onSelect={(value) => {
                           if (value === 'edit') setEditingOrg(org);
+                          if (value === 'audit') void openAuditViewer(org);
+                          if (value === 'billing') void openBillingViewer(org);
+                          if (value === 'suspend' && !org.suspendedAt && !org.isDeleted) setSuspendOrg(org);
+                          if (value === 'reactivate' && !!org.suspendedAt && !org.isDeleted) setReactivateOrg(org);
                           if (value === 'delete' && org.isActive) setDeletingOrg(org);
                         }}
                       />
@@ -332,6 +474,138 @@ export function CompaniesPage() {
             <Button variant="destructive" onClick={handleDelete} isLoading={isDeleting}>
               Deactivate
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!suspendOrg}
+        onClose={() => {
+          setSuspendOrg(null);
+          setSuspendReason('');
+        }}
+        title="Suspend Organization"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Suspend <span className="font-semibold">{suspendOrg?.name}</span>. Users will be blocked from login until reactivation.
+          </p>
+          <Input
+            label="Reason *"
+            value={suspendReason}
+            onChange={(e) => setSuspendReason(e.target.value)}
+            placeholder="Compliance hold, payment issue, policy breach..."
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setSuspendOrg(null)} disabled={isSubmittingAction}>Cancel</Button>
+            <Button variant="destructive" onClick={handleSuspend} isLoading={isSubmittingAction}>Suspend</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!reactivateOrg}
+        onClose={() => setReactivateOrg(null)}
+        title="Reactivate Organization"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Reactivate <span className="font-semibold">{reactivateOrg?.name}</span> and restore tenant access.
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setReactivateOrg(null)} disabled={isSubmittingAction}>Cancel</Button>
+            <Button variant="primary" onClick={handleReactivate} isLoading={isSubmittingAction}>Reactivate</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!auditOrg}
+        onClose={() => setAuditOrg(null)}
+        title={`Audit Log${auditOrg ? ` - ${auditOrg.name}` : ''}`}
+        size="lg"
+      >
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+          {isAuditLoading ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loading audit timeline...</p>
+          ) : auditLogs.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No audit records available for this organization.</p>
+          ) : (
+            <div className="space-y-2">
+              {auditLogs.map((log) => (
+                <div key={log.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Badge variant="info">{log.action}</Badge>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {formatDate(new Date(log.created_at), 'MMM dd, yyyy HH:mm')}
+                    </span>
+                  </div>
+                  <p className="text-sm mt-2 text-gray-700 dark:text-gray-300">
+                    Actor: {log.performed_by_name || 'System'} ({log.performed_by_role || 'unknown'})
+                  </p>
+                  {log.metadata && Object.keys(log.metadata).length > 0 && (
+                    <pre className="mt-2 text-xs bg-gray-100 dark:bg-gray-800 rounded p-2 overflow-x-auto text-gray-700 dark:text-gray-300">
+                      {JSON.stringify(log.metadata, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" onClick={() => setAuditOrg(null)}>Close</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!billingOrg}
+        onClose={() => setBillingOrg(null)}
+        title={`Billing Summary${billingOrg ? ` - ${billingOrg.name}` : ''}`}
+        size="md"
+      >
+        <div className="space-y-4">
+          {isBillingLoading ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loading billing summary...</p>
+          ) : !billingSummary ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No billing data available.</p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Last {billingSummary.rangeDays} days</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Card className="p-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Invoices</p>
+                  <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatNumber(billingSummary.invoiceCount)}</p>
+                </Card>
+                <Card className="p-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Billed</p>
+                  <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatNumber(billingSummary.billedAmount)}</p>
+                </Card>
+                <Card className="p-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Paid</p>
+                  <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{formatNumber(billingSummary.paidAmount)}</p>
+                </Card>
+                <Card className="p-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Open</p>
+                  <p className="text-lg font-semibold text-amber-600 dark:text-amber-400">{formatNumber(billingSummary.openAmount)}</p>
+                </Card>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-sm">
+                <p className="text-gray-600 dark:text-gray-300">Refunds: <span className="font-medium">{formatNumber(billingSummary.refundsAmount)}</span></p>
+                <p className="text-gray-600 dark:text-gray-300 mt-1">Avg invoice: <span className="font-medium">{formatNumber(billingSummary.avgInvoiceAmount)}</span></p>
+                <p className="text-gray-600 dark:text-gray-300 mt-1">
+                  Last invoice: <span className="font-medium">{billingSummary.lastInvoice?.invoiceNumber || '—'}</span>
+                  {billingSummary.lastInvoice ? ` (${billingSummary.lastInvoice.status})` : ''}
+                </p>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setBillingOrg(null)}>Close</Button>
           </div>
         </div>
       </Modal>

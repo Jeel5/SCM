@@ -289,7 +289,7 @@ class WarehouseRepository extends BaseRepository {
   // Get warehouse statistics
   async getWarehouseStats(id, client = null) {
     const query = `
-      SELECT 
+      SELECT
         w.id,
         w.name,
         w.capacity,
@@ -299,13 +299,12 @@ class WarehouseRepository extends BaseRepository {
         COALESCE(SUM(i.available_quantity), 0) as available_quantity,
         COALESCE(SUM(i.reserved_quantity), 0) as reserved_quantity,
         COUNT(DISTINCT CASE WHEN i.available_quantity <= i.reorder_point THEN i.id END) as low_stock_items,
-        COUNT(DISTINCT pl.id) as total_pick_lists,
-        COUNT(DISTINCT CASE WHEN pl.status = 'pending' THEN pl.id END) as pending_pick_lists,
-        COUNT(DISTINCT CASE WHEN pl.status = 'in_progress' THEN pl.id END) as active_pick_lists,
-        COUNT(DISTINCT CASE WHEN pl.status = 'completed' THEN pl.id END) as completed_pick_lists
+        0::bigint as total_pick_lists,
+        0::bigint as pending_pick_lists,
+        0::bigint as active_pick_lists,
+        0::bigint as completed_pick_lists
       FROM warehouses w
       LEFT JOIN inventory i ON w.id = i.warehouse_id
-      LEFT JOIN pick_lists pl ON w.id = pl.warehouse_id
       WHERE w.id = $1
       GROUP BY w.id, w.name, w.capacity, w.current_utilization
     `;

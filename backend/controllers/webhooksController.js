@@ -67,6 +67,7 @@ export const handleOrderWebhook = asyncHandler(async (req, res) => {
         source,
         event_type,
         order: processedOrder,
+        webhook_channel_id: req.webhookChannelId || null,
         organization_id: req.webhookOrganizationId || null,
         received_at: timestamp || new Date().toISOString()
       },

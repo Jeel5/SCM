@@ -15,6 +15,13 @@ export interface User {
   avatar?: string;
   role: UserRole;
   organizationId: string | null; // null for superadmin
+  impersonation?: {
+    isImpersonating: boolean;
+    byUserId: string;
+    byEmail?: string;
+    byRole?: string;
+    startedAt?: string;
+  } | null;
   createdAt: string;
   lastLogin: string;
 }
@@ -41,7 +48,7 @@ export type OrderStatus =
   | 'cancelled'
   | 'on_hold';
 
-export type OrderPriority = 'express' | 'standard' | 'bulk';
+export type OrderPriority = 'express' | 'standard' | 'bulk' | 'same_day';
 
 export interface OrderItem {
   id: string;
@@ -51,6 +58,15 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   weight: number;
+  discount?: number;
+  tax?: number;
+  totalPrice?: number;
+  isFragile?: boolean;
+  isHazardous?: boolean;
+  isPerishable?: boolean;
+  requiresColdStorage?: boolean;
+  itemType?: string;
+  packageType?: string;
   warehouseId?: string;
 }
 
@@ -158,7 +174,7 @@ export interface Warehouse {
     lat: number;
     lng: number;
   };
-  status: 'active' | 'inactive' | 'maintenance';
+  status: 'active' | 'inactive';
   contactEmail: string;
   contactPhone: string;
   operatingHours: {
@@ -266,7 +282,6 @@ export interface Carrier {
   code: string;
   name: string;
   logo?: string;
-  type: 'ground' | 'air' | 'sea' | 'rail' | 'multimodal';
   status: 'active' | 'inactive' | 'suspended';
   rating: number;
   onTimeDeliveryRate: number;
@@ -313,8 +328,6 @@ export interface SLAPolicy {
   carrierName?: string | null;
   originZoneType?: string | null;
   destinationZoneType?: string | null;
-  /** Legacy label combining zone info; kept for display convenience */
-  region: string;
   targetDeliveryHours: number;
   warningThresholdPercent: number;
   warningThresholdHours: number;
@@ -356,20 +369,18 @@ export interface SLADashboardData {
 
 // Return Types
 export type ReturnStatus =
-  | 'pending'
   | 'requested'
   | 'approved'
   | 'rejected'
-  | 'processing'
   | 'pickup_scheduled'
   | 'picked_up'
   | 'in_transit'
   | 'received'
-  | 'inspected'
-  | 'completed'
+  | 'inspecting'
+  | 'inspection_passed'
+  | 'inspection_failed'
   | 'refunded'
-  | 'replaced'
-  | 'closed';
+;
 
 export type ReturnReason =
   | 'damaged'
@@ -390,7 +401,6 @@ export interface Return {
   customerEmail?: string;
   status: ReturnStatus;
   reason: ReturnReason;
-  type?: 'refund' | 'exchange' | 'store_credit';
   reasonDetail?: string;
   notes?: string;
   items: ReturnItem[];
@@ -475,6 +485,7 @@ export interface DashboardMetrics {
   ordersChange: number;
   activeShipments: number;
   shipmentsChange: number;
+  lowStockAlerts?: number;
   deliveryRate: number;
   deliveryRateChange: number;
   slaCompliance: number;

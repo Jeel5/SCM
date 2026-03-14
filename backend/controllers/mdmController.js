@@ -369,13 +369,17 @@ export const getWarehouseInventory = asyncHandler(async (req, res) => {
 
 /** Transform a carrier DB row into a consistent frontend shape. */
 function formatCarrier(c) {
+  const effectiveStatus = !c.is_active
+    ? 'inactive'
+    : (c.availability_status === 'suspended' ? 'suspended' : 'active');
+
   return {
     id: c.id,
     code: c.code,
     name: c.name,
     serviceType: c.service_type || 'standard',
     serviceAreas: c.service_areas || [],
-    status: c.is_active ? 'active' : 'inactive',
+    status: effectiveStatus,
     availabilityStatus: c.availability_status || 'available',
     reliabilityScore: c.reliability_score ? parseFloat(c.reliability_score) : null,
     avgDeliveryDays: c.avg_delivery_days ? parseFloat(c.avg_delivery_days) : null,
@@ -444,6 +448,19 @@ export const getCarrier = asyncHandler(async (req, res) => {
 // POST /carriers
 export const createCarrier = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
+  const payload = { ...req.body };
+
+  // Support frontend status field: active | inactive | suspended
+  if (payload.status === 'inactive') {
+    payload.is_active = false;
+    payload.availability_status = 'offline';
+  } else if (payload.status === 'suspended') {
+    payload.is_active = true;
+    payload.availability_status = 'suspended';
+  } else if (payload.status === 'active') {
+    payload.is_active = true;
+    payload.availability_status = 'available';
+  }
 
   // Use provided code or auto-generate one from the sequence
   let code;
@@ -461,9 +478,9 @@ export const createCarrier = asyncHandler(async (req, res) => {
   if (existing) throw new BusinessLogicError(`Carrier code '${code}' already exists`);
 
   const carrier = await CarrierRepository.createCarrier({
-    ...req.body,
+    ...payload,
     code,
-    organization_id: organizationId || req.body.organization_id || null
+    organization_id: organizationId || payload.organization_id || null
   });
 
   logger.info('Carrier created', {
@@ -479,11 +496,23 @@ export const createCarrier = asyncHandler(async (req, res) => {
 export const updateCarrier = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const organizationId = req.orgContext?.organizationId;
+  const payload = { ...req.body };
+
+  if (payload.status === 'inactive') {
+    payload.is_active = false;
+    payload.availability_status = 'offline';
+  } else if (payload.status === 'suspended') {
+    payload.is_active = true;
+    payload.availability_status = 'suspended';
+  } else if (payload.status === 'active') {
+    payload.is_active = true;
+    payload.availability_status = 'available';
+  }
 
   const existing = await CarrierRepository.findByIdWithDetails(id, organizationId);
   if (!existing) throw new NotFoundError('Carrier');
 
-  const carrier = await CarrierRepository.updateCarrier(id, req.body);
+  const carrier = await CarrierRepository.updateCarrier(id, payload);
 
   logger.info('Carrier updated', { carrierId: id, userId: req.user?.userId });
 

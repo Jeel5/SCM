@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { carriersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
@@ -10,11 +10,17 @@ export function useCarriers() {
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const isSoftRefresh = useRef(false);
+  const refetch = useCallback(() => {
+    isSoftRefresh.current = true;
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
+    const isSoft = isSoftRefresh.current;
+    isSoftRefresh.current = false;
     const fetchCarriers = async () => {
-      setIsLoading(true);
+      if (!isSoft) setIsLoading(true);
       try {
         const response = useMockApi
           ? await mockApi.getCarriers()

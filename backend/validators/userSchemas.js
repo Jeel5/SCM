@@ -57,9 +57,6 @@ const ORG_ROLES = Joi.string().valid(
 export const createOrgUserSchema = Joi.object({
   name: Joi.string().min(2).max(255).required(),
   email: Joi.string().email().required(),
-  password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required().messages({
-    'string.pattern.base': 'Password must contain uppercase, lowercase, and a number'
-  }),
   role: ORG_ROLES.required(),
   phone: Joi.string().min(10).max(20).allow('', null)
 });

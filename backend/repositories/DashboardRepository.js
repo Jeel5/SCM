@@ -2,6 +2,31 @@
 // a proper domain boundary without duplicating complex SQL into the controller.
 import BaseRepository from './BaseRepository.js';
 
+function toDateString(value) {
+  return value.toISOString().slice(0, 10);
+}
+
+function getDateWindow(days) {
+  const end = new Date();
+  end.setUTCHours(0, 0, 0, 0);
+
+  const currentStart = new Date(end);
+  currentStart.setUTCDate(currentStart.getUTCDate() - Math.max(days - 1, 0));
+
+  const prevEnd = new Date(currentStart);
+  prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+
+  const prevStart = new Date(prevEnd);
+  prevStart.setUTCDate(prevStart.getUTCDate() - Math.max(days - 1, 0));
+
+  return {
+    currentStart: toDateString(currentStart),
+    currentEnd: toDateString(end),
+    prevStart: toDateString(prevStart),
+    prevEnd: toDateString(prevEnd),
+  };
+}
+
 class DashboardRepository extends BaseRepository {
   constructor() {
     super('orders');
@@ -26,23 +51,22 @@ class DashboardRepository extends BaseRepository {
    * Also returns the previous-period totals so the controller can compute % change.
    */
   async getOrderStats(organizationId = null, days = 30, client = null) {
-    const { orgClause, args, intIdx } = this._buildParams(organizationId, days);
+    const { currentStart, currentEnd, prevStart, prevEnd } = getDateWindow(days);
     const result = await this.query(
       `SELECT
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL)                                                   AS total,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL AND status IN ('created','confirmed'))              AS pending,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL AND status IN ('allocated','processing'))           AS processing,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL AND status IN ('shipped','in_transit','out_for_delivery')) AS shipped,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL AND status = 'delivered')                           AS delivered,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL AND status IN ('cancelled'))                        AS cancelled,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL AND status IN ('returned'))                         AS returned,
-         COALESCE(SUM(total_amount) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL), 0)                              AS total_value,
-         -- previous period
-         COUNT(*) FILTER (WHERE created_at >= NOW() - ($${intIdx}::INTERVAL * 2) AND created_at < NOW() - $${intIdx}::INTERVAL) AS prev_total,
-         COALESCE(SUM(total_amount) FILTER (WHERE created_at >= NOW() - ($${intIdx}::INTERVAL * 2) AND created_at < NOW() - $${intIdx}::INTERVAL), 0) AS prev_total_value
-       FROM orders
-       WHERE created_at >= NOW() - ($${intIdx}::INTERVAL * 2)${orgClause}`,
-      args, client
+         COALESCE(SUM(orders_total) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS total,
+         COALESCE(SUM(orders_pending) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS pending,
+         COALESCE(SUM(orders_processing) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS processing,
+         COALESCE(SUM(orders_shipped) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS shipped,
+         COALESCE(SUM(orders_delivered) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS delivered,
+         COALESCE(SUM(orders_cancelled) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS cancelled,
+         COALESCE(SUM(orders_returned) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS returned,
+         COALESCE(SUM(orders_value) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS total_value,
+         COALESCE(SUM(orders_total) FILTER (WHERE stat_date BETWEEN $4::date AND $5::date), 0) AS prev_total,
+         COALESCE(SUM(orders_value) FILTER (WHERE stat_date BETWEEN $4::date AND $5::date), 0) AS prev_total_value
+       FROM analytics_daily_stats
+       WHERE organization_id = $1 AND stat_date BETWEEN $4::date AND $3::date`,
+      [organizationId, currentStart, currentEnd, prevStart, prevEnd], client
     );
     return result.rows[0];
   }
@@ -52,36 +76,21 @@ class DashboardRepository extends BaseRepository {
    * Includes previous period for % change.
    */
   async getShipmentStats(organizationId = null, days = 30, client = null) {
-    const { orgClause, args, intIdx } = this._buildParams(organizationId, days, 's');
+    const { currentStart, currentEnd, prevStart, prevEnd } = getDateWindow(days);
     const result = await this.query(
       `SELECT
-         COUNT(*) FILTER (WHERE s.created_at >= NOW() - $${intIdx}::INTERVAL) AS total,
-         COUNT(*) FILTER (WHERE s.created_at >= NOW() - $${intIdx}::INTERVAL AND s.status IN ('picked_up','in_transit','at_hub','out_for_delivery')) AS in_transit,
-         COUNT(*) FILTER (WHERE s.created_at >= NOW() - $${intIdx}::INTERVAL AND s.status = 'delivered') AS delivered,
-         COUNT(*) FILTER (WHERE s.created_at >= NOW() - $${intIdx}::INTERVAL
-           AND o.actual_delivery IS NOT NULL AND o.estimated_delivery IS NOT NULL
-           AND o.actual_delivery <= o.estimated_delivery) AS on_time,
-         -- avg delivery time in days (only for delivered shipments in current period)
-         COALESCE(
-           AVG(EXTRACT(EPOCH FROM (o.actual_delivery - s.created_at)) / 86400)
-             FILTER (WHERE s.created_at >= NOW() - $${intIdx}::INTERVAL AND s.status = 'delivered' AND o.actual_delivery IS NOT NULL),
-           0
-         ) AS avg_delivery_days,
-         -- previous period
-         COUNT(*) FILTER (WHERE s.created_at >= NOW() - ($${intIdx}::INTERVAL * 2) AND s.created_at < NOW() - $${intIdx}::INTERVAL) AS prev_total,
-         COUNT(*) FILTER (WHERE s.created_at >= NOW() - ($${intIdx}::INTERVAL * 2) AND s.created_at < NOW() - $${intIdx}::INTERVAL AND s.status = 'delivered') AS prev_delivered,
-         COUNT(*) FILTER (WHERE s.created_at >= NOW() - ($${intIdx}::INTERVAL * 2) AND s.created_at < NOW() - $${intIdx}::INTERVAL
-           AND o.actual_delivery IS NOT NULL AND o.estimated_delivery IS NOT NULL
-           AND o.actual_delivery <= o.estimated_delivery) AS prev_on_time,
-         COALESCE(
-           AVG(EXTRACT(EPOCH FROM (o.actual_delivery - s.created_at)) / 86400)
-             FILTER (WHERE s.created_at >= NOW() - ($${intIdx}::INTERVAL * 2) AND s.created_at < NOW() - $${intIdx}::INTERVAL AND s.status = 'delivered' AND o.actual_delivery IS NOT NULL),
-           0
-         ) AS prev_avg_delivery_days
-       FROM shipments s
-       LEFT JOIN orders o ON o.id = s.order_id
-       WHERE s.created_at >= NOW() - ($${intIdx}::INTERVAL * 2)${orgClause}`,
-      args, client
+         COALESCE(SUM(shipments_total) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS total,
+         COALESCE(SUM(shipments_in_transit + shipments_out_for_delivery) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS in_transit,
+         COALESCE(SUM(shipments_delivered) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS delivered,
+         COALESCE(SUM(shipments_on_time) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS on_time,
+         COALESCE(AVG(avg_delivery_days) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date AND shipments_delivered > 0), 0) AS avg_delivery_days,
+         COALESCE(SUM(shipments_total) FILTER (WHERE stat_date BETWEEN $4::date AND $5::date), 0) AS prev_total,
+         COALESCE(SUM(shipments_delivered) FILTER (WHERE stat_date BETWEEN $4::date AND $5::date), 0) AS prev_delivered,
+         COALESCE(SUM(shipments_on_time) FILTER (WHERE stat_date BETWEEN $4::date AND $5::date), 0) AS prev_on_time,
+         COALESCE(AVG(avg_delivery_days) FILTER (WHERE stat_date BETWEEN $4::date AND $5::date AND shipments_delivered > 0), 0) AS prev_avg_delivery_days
+       FROM analytics_daily_stats
+       WHERE organization_id = $1 AND stat_date BETWEEN $4::date AND $3::date`,
+      [organizationId, currentStart, currentEnd, prevStart, prevEnd], client
     );
     return result.rows[0];
   }
@@ -105,15 +114,14 @@ class DashboardRepository extends BaseRepository {
    * Count pending returns (status in pending / approved / processing) + previous period.
    */
   async getPendingReturnsCount(organizationId = null, days = 30, client = null) {
-    const { orgClause, args, intIdx } = this._buildParams(organizationId, days);
+    const { currentStart, currentEnd, prevStart, prevEnd } = getDateWindow(days);
     const result = await this.query(
       `SELECT
-         COUNT(*) FILTER (WHERE created_at >= NOW() - $${intIdx}::INTERVAL) AS pending_returns,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - ($${intIdx}::INTERVAL * 2) AND created_at < NOW() - $${intIdx}::INTERVAL) AS prev_pending_returns
-       FROM returns
-       WHERE status IN ('pending', 'approved', 'processing')
-         AND created_at >= NOW() - ($${intIdx}::INTERVAL * 2)${orgClause}`,
-      args, client
+         COALESCE(SUM(returns_pending) FILTER (WHERE stat_date BETWEEN $2::date AND $3::date), 0) AS pending_returns,
+         COALESCE(SUM(returns_pending) FILTER (WHERE stat_date BETWEEN $4::date AND $5::date), 0) AS prev_pending_returns
+       FROM analytics_daily_stats
+       WHERE organization_id = $1 AND stat_date BETWEEN $4::date AND $3::date`,
+      [organizationId, currentStart, currentEnd, prevStart, prevEnd], client
     );
     return result.rows[0];
   }
@@ -139,15 +147,13 @@ class DashboardRepository extends BaseRepository {
    * Daily / hourly order volume for trend chart, scoped to the selected period.
    */
   async getOrdersTrend(organizationId = null, days = 30, client = null) {
-    const { orgClause, args, intIdx } = this._buildParams(organizationId, days);
-    // For 1-day use hourly buckets, for <=7 use daily, for >7 use daily as well
-    const bucket = days <= 1 ? "DATE_TRUNC('hour', created_at)" : "DATE(created_at)";
+    const { currentStart, currentEnd } = getDateWindow(days);
     const result = await this.query(
-      `SELECT ${bucket} AS date, COUNT(*) AS count, COALESCE(SUM(total_amount),0) AS value
-       FROM orders
-       WHERE created_at >= NOW() - $${intIdx}::INTERVAL${orgClause}
-       GROUP BY 1 ORDER BY 1`,
-      args, client
+      `SELECT stat_date AS date, orders_total AS count, orders_value AS value
+       FROM analytics_daily_stats
+       WHERE organization_id = $1 AND stat_date BETWEEN $2::date AND $3::date
+       ORDER BY stat_date ASC`,
+      [organizationId, currentStart, currentEnd], client
     );
     return result.rows;
   }
@@ -195,21 +201,20 @@ class DashboardRepository extends BaseRepository {
    * Falls back to shipment-based counts if stock_movements is empty.
    */
   async getWarehouseActivity(organizationId = null, days = 30, client = null) {
-    // stock_movements has no organization_id — filter through warehouses table
-    const { orgClause, args, intIdx } = this._buildParams(organizationId, days, 'w');
+    const { currentStart, currentEnd } = getDateWindow(days);
     const result = await this.query(
       `SELECT
-         sm.warehouse_id,
+         a.warehouse_id,
          w.name AS warehouse_name,
-         COUNT(*) FILTER (WHERE sm.movement_type IN ('inbound','transfer_in','add'))  AS inbound_count,
-         COUNT(*) FILTER (WHERE sm.movement_type IN ('outbound','transfer_out','remove')) AS outbound_count,
-         COALESCE(SUM(sm.quantity) FILTER (WHERE sm.movement_type IN ('inbound','transfer_in','add')),  0) AS inbound_units,
-         COALESCE(SUM(sm.quantity) FILTER (WHERE sm.movement_type IN ('outbound','transfer_out','remove')), 0) AS outbound_units
-       FROM stock_movements sm
-       JOIN warehouses w ON w.id = sm.warehouse_id
-       WHERE sm.created_at >= NOW() - $${intIdx}::INTERVAL${orgClause}
-       GROUP BY sm.warehouse_id, w.name`,
-      args, client
+         COALESCE(SUM(a.inbound_count), 0) AS inbound_count,
+         COALESCE(SUM(a.outbound_count), 0) AS outbound_count,
+         COALESCE(SUM(a.inbound_units), 0) AS inbound_units,
+         COALESCE(SUM(a.outbound_units), 0) AS outbound_units
+       FROM analytics_daily_warehouse_activity a
+       JOIN warehouses w ON w.id = a.warehouse_id
+       WHERE a.organization_id = $1 AND a.stat_date BETWEEN $2::date AND $3::date
+       GROUP BY a.warehouse_id, w.name`,
+      [organizationId, currentStart, currentEnd], client
     );
     return result.rows;
   }

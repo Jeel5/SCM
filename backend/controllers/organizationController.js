@@ -1,14 +1,20 @@
 // Organization Controller - handles multi-tenant organization management
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import OrganizationRepository from '../repositories/OrganizationRepository.js';
 import userRepo from '../repositories/UserRepository.js';
+import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError, AuthorizationError, ValidationError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 
-// Password must be ≥8 chars with at least one uppercase, one digit, one symbol
-const PASSWORD_STRENGTH_RE = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()?!_\-+=])/;
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  path: '/',
+};
 
 // Defense-in-depth superadmin check — applied inside every mutation handler
 // so that a misconfigured route cannot bypass it (T1-05)
@@ -23,12 +29,13 @@ const assertSuperadmin = (req) => {
 // Get organizations list with filters
 export const listOrganizations = asyncHandler(async (req, res) => {
   const queryParams = req.validatedQuery || req.query;
-  const { page, limit, is_active, search } = queryParams;
+  const { page, limit, is_active, include_deleted, search } = queryParams;
 
   const { organizations, totalCount } = await OrganizationRepository.findOrganizations({
     page,
     limit,
     is_active,
+    include_deleted,
     search
   });
 
@@ -50,6 +57,9 @@ export const listOrganizations = asyncHandler(async (req, res) => {
     logoUrl: org.logo_url,
     subscriptionTier: org.subscription_tier,
     isActive: org.is_active,
+      isDeleted: org.is_deleted,
+      suspendedAt: org.suspended_at,
+      suspensionReason: org.suspension_reason,
     createdAt: org.created_at,
     updatedAt: org.updated_at
   }));
@@ -95,6 +105,9 @@ export const getOrganization = asyncHandler(async (req, res) => {
     logoUrl: organization.logo_url,
     subscriptionTier: organization.subscription_tier,
     isActive: organization.is_active,
+      isDeleted: organization.is_deleted,
+      suspendedAt: organization.suspended_at,
+      suspensionReason: organization.suspension_reason,
     createdAt: organization.created_at,
     updatedAt: organization.updated_at,
     stats: {
@@ -156,15 +169,11 @@ export const createOrganization = asyncHandler(async (req, res) => {
       throw new BusinessLogicError(`User with email '${adminData.email}' already exists`);
     }
 
-    // Validate password strength before hashing (T2-01)
-    if (!adminData.password || adminData.password.length < 8 || !PASSWORD_STRENGTH_RE.test(adminData.password)) {
-      throw new ValidationError(
-        'Admin password must be ≥8 characters and contain at least one uppercase letter, one digit, and one symbol (e.g. ! @ # $ % & *)'
-      );
-    }
+    // Auto-generate an initial admin password so superadmin does not need to enter one.
+    const temporaryPassword = `Org@${crypto.randomBytes(6).toString('hex')}`;
 
     // Hash password
-    const passwordHash = await bcrypt.hash(adminData.password, 10);
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
     // Create admin user
     const adminUser = await userRepo.createUser({
@@ -177,7 +186,25 @@ export const createOrganization = asyncHandler(async (req, res) => {
       is_active: true,
     }, tx);
 
-    return { organization, adminUser };
+    await OrganizationRepository.logAuditAction({
+      orgId: organization.id,
+      action: 'created',
+      performedBy: req.user.userId,
+      performedByRole: req.user.role,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      beforeState: null,
+      afterState: {
+        id: organization.id,
+        code: organization.code,
+        name: organization.name,
+        subscription_tier: organization.subscription_tier,
+        is_active: organization.is_active,
+      },
+      metadata: { adminUserId: adminUser.id },
+    }, tx);
+
+    return { organization, adminUser, temporaryPassword };
   });
 
   // Audit log (T2-02)
@@ -213,7 +240,8 @@ export const createOrganization = asyncHandler(async (req, res) => {
       id: result.adminUser.id,
       email: result.adminUser.email,
       name: result.adminUser.name,
-      role: result.adminUser.role
+      role: result.adminUser.role,
+      temporaryPassword: result.temporaryPassword,
     }
   };
 
@@ -241,6 +269,29 @@ export const updateOrganization = asyncHandler(async (req, res) => {
   }
 
   const updated = await OrganizationRepository.updateOrganization(id, value);
+  await OrganizationRepository.logAuditAction({
+    orgId: id,
+    action: 'updated',
+    performedBy: req.user.userId,
+    performedByRole: req.user.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    beforeState: {
+      name: existing.name,
+      email: existing.email,
+      phone: existing.phone,
+      subscription_tier: existing.subscription_tier,
+      is_active: existing.is_active,
+    },
+    afterState: {
+      name: updated.name,
+      email: updated.email,
+      phone: updated.phone,
+      subscription_tier: updated.subscription_tier,
+      is_active: updated.is_active,
+    },
+    metadata: { changedFields: Object.keys(value) },
+  });
 
   // Audit log (T2-02)
   logger.info('Organization updated', {
@@ -287,17 +338,387 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
     throw new NotFoundError('Organization not found');
   }
 
-  await OrganizationRepository.deleteOrganization(id);
+  const deleted = await OrganizationRepository.softDeleteOrganization(id, req.user.userId);
+  if (!deleted) {
+    throw new BusinessLogicError('Organization is already deleted');
+  }
 
-  // Audit log (T2-02)
-  logger.info('Organization deleted (soft)', {
+  await OrganizationRepository.logAuditAction({
+    orgId: id,
+    action: 'deleted',
+    performedBy: req.user.userId,
+    performedByRole: req.user.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    beforeState: { name: organization.name, is_active: organization.is_active, is_deleted: false },
+    afterState: { is_deleted: true },
+  });
+
+  logger.info('Organization soft-deleted', {
     action: 'organization.delete',
     orgId: id,
     actorId: req.user?.userId,
-    actorEmail: req.user?.email,
     ip: req.ip,
     timestamp: new Date().toISOString()
   });
 
-  res.json({ success: true, message: 'Organization deactivated successfully' });
+  res.json({ success: true, message: 'Organization deleted successfully' });
+});
+
+// Suspend a tenant (blocks all logins for that org)
+export const suspendOrganization = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  if (!reason?.trim()) {
+    throw new ValidationError('Suspension reason is required');
+  }
+
+  const organization = await OrganizationRepository.findById(id);
+  if (!organization) throw new NotFoundError('Organization not found');
+  if (organization.suspended_at) throw new BusinessLogicError('Organization is already suspended');
+
+  const suspended = await OrganizationRepository.suspendOrganization(id, req.user.userId, reason.trim());
+
+  await OrganizationRepository.logAuditAction({
+    orgId: id,
+    action: 'suspended',
+    performedBy: req.user.userId,
+    performedByRole: req.user.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    beforeState: { is_active: organization.is_active, suspended_at: null },
+    afterState: { is_active: false, suspended_at: suspended.suspended_at },
+    metadata: { reason },
+  });
+
+  logger.info('Organization suspended', { orgId: id, reason, actorId: req.user.userId });
+  res.json({ success: true, data: { id, suspendedAt: suspended.suspended_at, reason } });
+});
+
+// Reactivate a suspended tenant
+export const reactivateOrganization = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const { id } = req.params;
+
+  const organization = await OrganizationRepository.findById(id);
+  if (!organization) throw new NotFoundError('Organization not found');
+  if (!organization.suspended_at) throw new BusinessLogicError('Organization is not suspended');
+
+  const reactivated = await OrganizationRepository.reactivateOrganization(id, req.user.userId);
+
+  await OrganizationRepository.logAuditAction({
+    orgId: id,
+    action: 'reactivated',
+    performedBy: req.user.userId,
+    performedByRole: req.user.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    beforeState: { suspended_at: organization.suspended_at, suspension_reason: organization.suspension_reason },
+    afterState: { suspended_at: null, is_active: true },
+  });
+
+  logger.info('Organization reactivated', { orgId: id, actorId: req.user.userId });
+  res.json({ success: true, data: { id, reactivatedAt: new Date().toISOString() } });
+});
+
+// Get users belonging to an organization
+export const getOrganizationUsers = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const { id } = req.params;
+
+  const org = await OrganizationRepository.findById(id);
+  if (!org) throw new NotFoundError('Organization not found');
+
+  const users = await OrganizationRepository.getUsersByOrganization(id);
+  res.json({ success: true, data: users });
+});
+
+// Global platform statistics for the superadmin dashboard
+export const getGlobalStats = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+
+  const [stats, atRiskTenants] = await Promise.all([
+    OrganizationRepository.getGlobalStats(),
+    OrganizationRepository.getAtRiskTenants(5),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      tenants: {
+        total: parseInt(stats.total_tenants),
+        active: parseInt(stats.active_tenants),
+        suspended: parseInt(stats.suspended_tenants),
+        deleted: parseInt(stats.deleted_tenants),
+      },
+      users: {
+        totalActive: parseInt(stats.total_active_users),
+      },
+      orders: {
+        total: parseInt(stats.total_orders),
+        last30d: parseInt(stats.orders_last_30d),
+      },
+      shipments: {
+        active: parseInt(stats.active_shipments),
+        last30d: parseInt(stats.shipments_last_30d),
+      },
+      alerts: {
+        active: parseInt(stats.active_alerts),
+      },
+      revenue: {
+        last30d: parseFloat(stats.revenue_last_30d) || 0,
+      },
+      atRiskTenants: atRiskTenants.map(t => ({
+        id: t.id,
+        name: t.name,
+        code: t.code,
+        subscriptionTier: t.subscription_tier,
+        isActive: t.is_active,
+        suspendedAt: t.suspended_at,
+        slaViolations30d: parseInt(t.sla_violations_30d),
+        openExceptions: parseInt(t.open_exceptions),
+        activeUsers: parseInt(t.active_users),
+        lastUserLogin: t.last_user_login,
+      })),
+    },
+  });
+});
+
+// Global users listing for superadmin control plane
+export const getGlobalUsers = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+
+  const { page = 1, limit = 50, search = '' } = req.validatedQuery ?? req.query;
+  const result = await OrganizationRepository.getGlobalUsers({
+    page: Number(page),
+    limit: Number(limit),
+    search: String(search || ''),
+  });
+
+  res.json({
+    success: true,
+    data: result.users,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total: result.totalCount,
+      pages: Math.ceil(result.totalCount / Number(limit)),
+    },
+  });
+});
+
+// Audit timeline per organization
+export const getOrganizationAuditLogs = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const { id } = req.params;
+  const { limit = 100 } = req.validatedQuery ?? req.query;
+
+  const org = await OrganizationRepository.findById(id);
+  if (!org) throw new NotFoundError('Organization not found');
+
+  const logs = await OrganizationRepository.getOrganizationAuditLogs(id, Number(limit));
+  res.json({ success: true, data: logs });
+});
+
+// Billing summary per organization (superadmin)
+export const getOrganizationBillingSummary = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const { id } = req.params;
+  const { range_days = 90 } = req.validatedQuery ?? req.query;
+
+  const org = await OrganizationRepository.findById(id);
+  if (!org) throw new NotFoundError('Organization not found');
+
+  const summary = await OrganizationRepository.getOrganizationBillingSummary(id, Number(range_days));
+  res.json({
+    success: true,
+    data: {
+      rangeDays: Number(range_days),
+      invoiceCount: parseInt(summary?.invoice_count || 0, 10),
+      billedAmount: parseFloat(summary?.billed_amount || 0),
+      paidAmount: parseFloat(summary?.paid_amount || 0),
+      openAmount: parseFloat(summary?.open_amount || 0),
+      refundsAmount: parseFloat(summary?.refunds_amount || 0),
+      avgInvoiceAmount: parseFloat(summary?.avg_invoice_amount || 0),
+      lastInvoice: summary?.last_invoice_number ? {
+        invoiceNumber: summary.last_invoice_number,
+        status: summary.last_invoice_status,
+        createdAt: summary.last_invoice_created_at,
+      } : null,
+    },
+  });
+});
+
+export const startImpersonation = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+
+  const { user_id: targetUserId } = req.body;
+  const targetUser = await userRepo.findWithOrg(targetUserId);
+  if (!targetUser || !targetUser.is_active) throw new NotFoundError('Target user');
+  if (targetUser.role === 'superadmin') {
+    throw new ValidationError('Impersonating another superadmin is not allowed');
+  }
+
+  const impersonation = {
+    isImpersonating: true,
+    byUserId: req.user.userId,
+    byEmail: req.user.email,
+    byRole: req.user.role,
+    startedAt: new Date().toISOString(),
+  };
+
+  const tokenPayload = {
+    userId: targetUser.id,
+    role: targetUser.role,
+    email: targetUser.email,
+    organizationId: targetUser.organization_id,
+    impersonation,
+  };
+
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload);
+  await userRepo.createSession(targetUser.id, refreshToken, req.ip, req.headers['user-agent']);
+
+  await OrganizationRepository.logAuditAction({
+    orgId: targetUser.organization_id,
+    action: 'impersonated',
+    performedBy: req.user.userId,
+    performedByRole: req.user.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    metadata: {
+      targetUserId: targetUser.id,
+      targetUserEmail: targetUser.email,
+      targetRole: targetUser.role,
+    },
+  });
+
+  res
+    .cookie('accessToken', accessToken, { ...COOKIE_OPTS, maxAge: 15 * 60 * 1000 })
+    .cookie('refreshToken', refreshToken, { ...COOKIE_OPTS, maxAge: 7 * 24 * 60 * 60 * 1000 })
+    .json({
+      success: true,
+      data: {
+        user: {
+          id: targetUser.id,
+          email: targetUser.email,
+          name: targetUser.name,
+          role: targetUser.role,
+          organizationId: targetUser.organization_id,
+          avatar: targetUser.avatar,
+          lastLogin: targetUser.last_login,
+          createdAt: targetUser.created_at,
+          impersonation,
+        },
+      },
+    });
+});
+
+export const stopImpersonation = asyncHandler(async (req, res) => {
+  const impersonation = req.user?.impersonation;
+  if (!impersonation?.isImpersonating || !impersonation.byUserId) {
+    throw new ValidationError('No active impersonation session');
+  }
+
+  const superadminUser = await userRepo.findById(impersonation.byUserId);
+  if (!superadminUser || !superadminUser.is_active || superadminUser.role !== 'superadmin') {
+    throw new AuthorizationError('Original superadmin account unavailable');
+  }
+
+  const tokenPayload = {
+    userId: superadminUser.id,
+    role: superadminUser.role,
+    email: superadminUser.email,
+    organizationId: superadminUser.organization_id,
+  };
+
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload);
+  await userRepo.createSession(superadminUser.id, refreshToken, req.ip, req.headers['user-agent']);
+
+  await OrganizationRepository.logAuditAction({
+    orgId: req.user.organizationId || null,
+    action: 'impersonation_stopped',
+    performedBy: superadminUser.id,
+    performedByRole: superadminUser.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    metadata: {
+      previousImpersonatedUserId: req.user.userId,
+      previousImpersonatedEmail: req.user.email,
+    },
+  });
+
+  res
+    .cookie('accessToken', accessToken, { ...COOKIE_OPTS, maxAge: 15 * 60 * 1000 })
+    .cookie('refreshToken', refreshToken, { ...COOKIE_OPTS, maxAge: 7 * 24 * 60 * 60 * 1000 })
+    .json({
+      success: true,
+      data: {
+        user: {
+          id: superadminUser.id,
+          email: superadminUser.email,
+          name: superadminUser.name,
+          role: superadminUser.role,
+          organizationId: superadminUser.organization_id,
+          avatar: superadminUser.avatar,
+          lastLogin: superadminUser.last_login,
+          createdAt: superadminUser.created_at,
+          impersonation: null,
+        },
+      },
+    });
+});
+
+export const getActiveIncidentBanner = asyncHandler(async (req, res) => {
+  const orgId = req.orgContext?.organizationId || null;
+  const banner = await OrganizationRepository.getActiveIncidentBanner(orgId);
+  res.json({ success: true, data: banner || null });
+});
+
+export const listIncidentBanners = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const banners = await OrganizationRepository.listIncidentBanners();
+  res.json({ success: true, data: banners });
+});
+
+export const createIncidentBanner = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const banner = await OrganizationRepository.createIncidentBanner({
+    ...req.body,
+    actor_id: req.user.userId,
+  });
+
+  await OrganizationRepository.logAuditAction({
+    orgId: banner.organization_id,
+    action: 'incident_banner_created',
+    performedBy: req.user.userId,
+    performedByRole: req.user.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    metadata: { bannerId: banner.id, severity: banner.severity },
+  });
+
+  res.status(201).json({ success: true, data: banner });
+});
+
+export const updateIncidentBanner = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const { id } = req.params;
+  const banner = await OrganizationRepository.updateIncidentBanner(id, req.body, req.user.userId);
+  if (!banner) throw new NotFoundError('Incident banner not found');
+
+  await OrganizationRepository.logAuditAction({
+    orgId: banner.organization_id,
+    action: 'incident_banner_updated',
+    performedBy: req.user.userId,
+    performedByRole: req.user.role,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    metadata: { bannerId: banner.id, changes: Object.keys(req.body || {}) },
+  });
+
+  res.json({ success: true, data: banner });
 });

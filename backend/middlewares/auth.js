@@ -40,6 +40,7 @@ export async function authenticate(req, res, next) {
       role: decoded.role,
       email: decoded.email,
       organizationId: decoded.organizationId,
+      impersonation: decoded.impersonation || null,
       jti: decoded.jti || null,
       exp: decoded.exp || null
     };

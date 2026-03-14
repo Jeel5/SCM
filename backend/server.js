@@ -36,7 +36,6 @@ import webhooksRoutes from './routes/webhooks.js';
 import assignmentsRoutes from './routes/assignments.js';
 import shippingRoutes from './routes/shipping.js';
 import carriersRoutes from './routes/carriers.js';
-import companiesRoutes from './routes/companies.js';
 import organizationsRoutes from './routes/organizations.js';
 import partnersRoutes from './routes/partners.js';
 import notificationRoutes from './routes/notifications.js';
@@ -120,7 +119,7 @@ app.use(API_PREFIX, jobsRoutes);
 app.use(API_PREFIX, financeRoutes);
 app.use(API_PREFIX, shippingRoutes); // Shipping quote routes
 app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
-app.use(API_PREFIX, companiesRoutes); // Superadmin company management
+// NOTE: /companies routes have been removed. All superadmin org management is under /organizations.
 app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization management (superadmin)
 app.use(API_PREFIX, partnersRoutes); // Sales channels & suppliers
 app.use(API_PREFIX, notificationRoutes); // In-app notifications

@@ -339,7 +339,8 @@ class OrderRepository extends BaseRepository {
   async findById(orderId, client = null) {
     const result = await this.query(
       `SELECT id, customer_name, customer_email, customer_phone, priority,
-              status, shipping_address, total_amount, created_at, order_number
+              status, shipping_address, total_amount, created_at, order_number,
+              external_order_id, tags, organization_id
        FROM orders WHERE id = $1`,
       [orderId], client
     );

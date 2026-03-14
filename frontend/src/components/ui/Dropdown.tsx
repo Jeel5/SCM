@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,17 +17,57 @@ interface DropdownProps {
   items: DropdownItem[];
   onSelect: (value: string) => void;
   align?: 'left' | 'right';
+  side?: 'top' | 'bottom';
   className?: string;
   onOpenChange?: (isOpen: boolean) => void;
 }
 
-export function Dropdown({ trigger, items, onSelect, align = 'left', className, onOpenChange }: DropdownProps) {
+export function Dropdown({ trigger, items, onSelect, align = 'left', side = 'bottom', className, onOpenChange }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; minWidth: number } | null>(null);
+  const [resolvedSide, setResolvedSide] = useState<'top' | 'bottom'>(side);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updateMenuPosition = () => {
+    const triggerEl = triggerRef.current;
+    const menuEl = menuRef.current;
+    if (!triggerEl || !menuEl) return;
+
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const menuRect = menuEl.getBoundingClientRect();
+    const spacing = 8;
+
+    const menuWidth = Math.max(menuRect.width || 180, 180);
+    const menuHeight = Math.max(menuRect.height || 40, 40);
+
+    const hasRoomAbove = triggerRect.top >= menuHeight + spacing;
+    const hasRoomBelow = window.innerHeight - triggerRect.bottom >= menuHeight + spacing;
+
+    let nextSide: 'top' | 'bottom' = side;
+    if (side === 'top' && !hasRoomAbove && hasRoomBelow) nextSide = 'bottom';
+    if (side === 'bottom' && !hasRoomBelow && hasRoomAbove) nextSide = 'top';
+
+    let left = align === 'right' ? triggerRect.right - menuWidth : triggerRect.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+
+    let top = nextSide === 'bottom'
+      ? triggerRect.bottom + spacing
+      : triggerRect.top - menuHeight - spacing;
+    top = Math.max(8, Math.min(top, window.innerHeight - menuHeight - 8));
+
+    setResolvedSide(nextSide);
+    setMenuStyle({ top, left, minWidth: Math.max(triggerRect.width, 180) });
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const clickedInsideTrigger = dropdownRef.current?.contains(target);
+      const clickedInsideMenu = menuRef.current?.contains(target);
+
+      if (!clickedInsideTrigger && !clickedInsideMenu) {
         setIsOpen(false);
         onOpenChange?.(false);
       }
@@ -36,6 +77,21 @@ export function Dropdown({ trigger, items, onSelect, align = 'left', className, 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onOpenChange]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const update = () => updateMenuPosition();
+    update();
+
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [isOpen, align, side]);
+
   const handleToggle = () => {
     const newState = !isOpen;
     setIsOpen(newState);
@@ -44,58 +100,62 @@ export function Dropdown({ trigger, items, onSelect, align = 'left', className, 
 
   return (
     <div ref={dropdownRef} className={cn('relative inline-block', className)}>
-      <div onClick={handleToggle} className="cursor-pointer">
+      <div ref={triggerRef} onClick={handleToggle} className="cursor-pointer">
         {trigger}
       </div>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ duration: 0.15, type: 'spring', damping: 25, stiffness: 300 }}
-            className={cn(
-              'absolute z-[9999] mt-2 min-w-[180px] rounded-xl border shadow-2xl overflow-hidden',
-              align === 'left' ? 'left-0' : 'right-0'
-            )}
-            style={{ 
-              backgroundColor: 'var(--dropdown-bg, #ffffff)',
-              borderColor: 'var(--dropdown-border, #e5e7eb)',
-              zIndex: 9999,
-            }}
-          >
-            <div className="py-1">
-              {items.map((item, index) => (
-                <motion.button
-                  key={item.value}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                  onClick={() => {
-                    if (!item.disabled) {
-                      onSelect(item.value);
-                      setIsOpen(false);
-                      onOpenChange?.(false);
-                    }
-                  }}
-                  disabled={item.disabled}
-                  className={cn(
-                    'w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors',
-                    item.disabled
-                      ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                      : item.danger
-                      ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                  )}
-                >
-                  {item.icon && <span className="text-gray-400 dark:text-gray-500">{item.icon}</span>}
-                  {item.label}
-                </motion.button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              ref={menuRef}
+              initial={{ opacity: 0, y: resolvedSide === 'bottom' ? -6 : 6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: resolvedSide === 'bottom' ? -6 : 6, scale: 0.96 }}
+              transition={{ duration: 0.14 }}
+              className="fixed z-10000 rounded-xl border shadow-2xl overflow-hidden"
+              style={{
+                top: menuStyle?.top,
+                left: menuStyle?.left,
+                minWidth: menuStyle?.minWidth,
+                backgroundColor: 'var(--dropdown-bg, #ffffff)',
+                borderColor: 'var(--dropdown-border, #e5e7eb)',
+              }}
+            >
+              <div className="py-1">
+                {items.map((item, index) => (
+                  <motion.button
+                    key={item.value}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.02 }}
+                    onClick={() => {
+                      if (!item.disabled) {
+                        onSelect(item.value);
+                        setIsOpen(false);
+                        onOpenChange?.(false);
+                      }
+                    }}
+                    disabled={item.disabled}
+                    className={cn(
+                      'w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors',
+                      item.disabled
+                        ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                        : item.danger
+                        ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    )}
+                  >
+                    {item.icon && <span className="text-gray-400 dark:text-gray-500">{item.icon}</span>}
+                    {item.label}
+                  </motion.button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }
