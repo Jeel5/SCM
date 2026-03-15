@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { Plus, Package, Pencil, Trash2, Eye } from 'lucide-react';
 import { Button, Badge, DataTable, Modal, Input, Select, PermissionGate } from '@/components/ui';
-import { suppliersApi } from '@/api/services';
-import { readCsvFile } from '@/lib/csvImport';
+import { importApi, suppliersApi } from '@/api/services';
 import { toast } from '@/stores/toastStore';
 
 interface Supplier {
@@ -122,43 +121,9 @@ export function SuppliersTab() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await suppliersApi.createSupplier({
-            name: row.name,
-            contact_name: row.contact_name || null,
-            contact_email: row.contact_email || null,
-            contact_phone: row.contact_phone || null,
-            website: row.website || null,
-            address: row.address || null,
-            city: row.city || null,
-            state: row.state || null,
-            country: row.country || 'India',
-            postal_code: row.postal_code || null,
-            lead_time_days: Number(row.lead_time_days) || 7,
-            payment_terms: row.payment_terms || null,
-            reliability_score: row.reliability_score ? Number(row.reliability_score) : 0.85,
-          });
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-
-      if (created > 0) {
-        toast.success('Suppliers import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        fetchSuppliers(true);
-      } else {
-        toast.error('Suppliers import failed', 'No rows were imported. Check CSV columns.');
-      }
+      const resp = await importApi.upload(file, 'suppliers');
+      toast.success('Suppliers import started', `Job queued (${resp.totalRows} rows).`);
+      setTimeout(() => fetchSuppliers(true), 1500);
     } catch (e: any) {
       toast.error('Import failed', e?.message || 'Could not read CSV file');
     }

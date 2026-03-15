@@ -1,0 +1,101 @@
+name,sku,category,brand,selling_price,cost_price,weight,currency,is_active
+"Samsung 55"" 4K Smart TV",ELEC-TV-001,Electronics,Samsung,54990,42000,18.5,INR,true
+LG 1.5 Ton 5-Star Inverter AC,ELEC-AC-002,Electronics,LG,45999,34000,36.0,INR,true
+Sony WH-1000XM5 Headphones,ELEC-HP-003,Electronics,Sony,29990,18000,0.25,INR,true
+"Apple iPad Air 11"" WiFi 128GB",ELEC-TAB-004,Electronics,Apple,59900,45000,0.46,INR,true
+Bosch 7kg Front Load Washing Machine,ELEC-WM-005,Electronics,Bosch,39999,28000,70.0,INR,true
+HP Pavilion i5 Gaming Laptop,ELEC-LT-006,Electronics,HP,74999,55000,2.1,INR,true
+Samsung Galaxy S24 128GB,ELEC-PH-007,Electronics,Samsung,64999,48000,0.17,INR,true
+Whirlpool 340L Double Door Fridge,ELEC-RF-008,Electronics,Whirlpool,34999,24000,68.0,INR,true
+Philips Air Purifier AC2887,ELEC-AP-009,Electronics,Philips,12999,8500,3.8,INR,true
+Godrej 1.5 Ton Window AC,ELEC-WAC-010,Electronics,Godrej,29999,20000,30.0,INR,true
+"Dell 27"" QHD Monitor S2722DC",ELEC-MON-011,Electronics,Dell,22999,16000,4.5,INR,true
+JBL Charge 5 Bluetooth Speaker,ELEC-SPK-012,Electronics,JBL,14999,9500,0.96,INR,true
+Panasonic 5.1 Home Theatre,ELEC-HT-013,Electronics,Panasonic,18999,12000,12.0,INR,true
+Canon EOS R50 Mirrorless Camera,ELEC-CAM-014,Electronics,Canon,69990,52000,0.39,INR,true
+Xiaomi Mi Robot Vacuum S10+,ELEC-VAC-015,Electronics,Xiaomi,21999,14000,3.8,INR,true
+Haier 99L Personal Fridge,ELEC-MF-016,Electronics,Haier,10999,7000,22.0,INR,true
+Toshiba 8kg Top Load Washer,ELEC-WM-017,Electronics,Toshiba,28999,20000,45.0,INR,true
+Nest Hub Max Smart Display,ELEC-SDH-018,Electronics,Google,19999,13000,1.19,INR,true
+Realme Narzo 70 Pro 5G,ELEC-PH-019,Electronics,Realme,22999,15000,0.21,INR,true
+iRobot Roomba i3 Robot Cleaner,ELEC-RC-020,Electronics,iRobot,34999,25000,3.5,INR,true
+Men's Slim Fit Chinos 32x30,CLTH-MC-001,Clothing,Levis,2499,900,0.4,INR,true
+Women's Floral Kurta Set,CLTH-WK-002,Clothing,W,1799,650,0.35,INR,true
+Kids Unisex Hoodie 8-9Y,CLTH-KH-003,Clothing,H&M,999,350,0.28,INR,true
+Men's Formal Shirt White L,CLTH-MS-004,Clothing,Van Heusen,1499,550,0.3,INR,true
+Women's Sports Leggings M,CLTH-WL-005,Clothing,Adidas,2299,900,0.25,INR,true
+Men's Printed Round-Neck Tee XL,CLTH-MT-006,Clothing,US Polo,799,250,0.22,INR,true
+Girls Embroidered Salwar Set 10Y,CLTH-GS-007,Clothing,FabIndia,1299,500,0.38,INR,true
+Men's Denim Jacket 40,CLTH-MJ-008,Clothing,Pepe Jeans,3499,1400,0.65,INR,true
+Women's Silk Saree,CLTH-SS-009,Clothing,FabIndia,4999,2200,0.8,INR,true
+Men's Track Suit M,CLTH-TS-010,Clothing,Puma,2999,1100,0.55,INR,true
+Women's Formal Blazer 38,CLTH-BZ-011,Clothing,Allen Solly,3999,1700,0.6,INR,true
+Infant Romper Set 0-3M,CLTH-IR-012,Clothing,FirstCry,599,200,0.15,INR,true
+Men's Woolen Sweater L,CLTH-SW-013,Clothing,Monte Carlo,1799,700,0.5,INR,true
+Women's Casual Sneakers 7,CLTH-CS-014,Clothing,Bata,1499,600,0.55,INR,true
+Men's Leather Belt 36,CLTH-MB-015,Clothing,Woodland,899,300,0.18,INR,true
+Tata Tea Premium 1kg,FOOD-TEA-001,Food & Beverage,Tata,349,200,1.05,INR,true
+Amul Butter 500g (Pack of 4),FOOD-BTR-002,Food & Beverage,Amul,499,320,2.0,INR,true
+Quaker Oats Jumbo 2kg,FOOD-OAT-003,Food & Beverage,Quaker,599,380,2.1,INR,true
+Nescafe Classic Coffee 200g,FOOD-COF-004,Food & Beverage,Nestle,499,300,0.22,INR,true
+Basmati Rice Heritage 5kg,FOOD-RIC-005,Food & Beverage,India Gate,799,550,5.1,INR,true
+Cold Pressed Coconut Oil 1L,FOOD-OIL-006,Food & Beverage,Parachute,449,280,1.1,INR,true
+Protein Powder Whey Vanilla 1kg,FOOD-PWD-007,Food & Beverage,Optimum Nutrition,2999,1800,1.15,INR,true
+Honey Raw Organic 500g,FOOD-HON-008,Food & Beverage,Dabur,449,280,0.55,INR,true
+Energy Drink 4-Pack 250ml,FOOD-ENG-009,Food & Beverage,Red Bull,499,280,1.0,INR,true
+Dark Chocolate 70% 200g,FOOD-CHC-010,Food & Beverage,Lindt,649,400,0.22,INR,true
+Ergonomic Office Chair Lumbar,FURN-CH-001,Furniture,Green Soul,14999,8000,18.0,INR,true
+6-Seater Dining Table Oak,FURN-DT-002,Furniture,Godrej Interio,39999,22000,90.0,INR,true
+King-Size Platform Bed with Storage,FURN-BD-003,Furniture,Pepperfry,29999,16000,120.0,INR,true
+3-Seater Fabric Sofa Grey,FURN-SF-004,Furniture,Urban Ladder,24999,13000,75.0,INR,true
+Bookshelf 5-Tier White,FURN-BS-005,Furniture,IKEA,4999,2500,22.0,INR,true
+L-Shape Corner Desk 160cm,FURN-DS-006,Furniture,Durian,18999,10000,55.0,INR,true
+Wardrobe 3-Door Mirror Finish,FURN-WD-007,Furniture,Spacewood,22999,12000,85.0,INR,true
+Bedside Table with Drawer Pair,FURN-NW-008,Furniture,HomeTown,5999,3000,12.0,INR,true
+Dove Deep Moisture Body Lotion 400ml,HB-LT-001,Health & Beauty,Dove,399,210,0.42,INR,true
+Lakme 9to5 Foundation 30ml,HB-FN-002,Health & Beauty,Lakme,699,380,0.05,INR,true
+Neutrogena Hydro Boost Face Gel 50g,HB-FC-003,Health & Beauty,Neutrogena,1099,600,0.06,INR,true
+Himalaya Neem Foaming Face Wash 150ml,HB-FW-004,Health & Beauty,Himalaya,249,120,0.16,INR,true
+Oral-B iO Series 5 Electric Toothbrush,HB-TB-005,Health & Beauty,Oral-B,4999,2800,0.34,INR,true
+Gillette Fusion ProGlide Razor,HBBR-006,Health & Beauty,Gillette,799,430,0.12,INR,true
+Lakme Eyeconic Kajal,HB-KJ-007,Health & Beauty,Lakme,349,160,0.03,INR,true
+Sunscreen SPF 50+ PA+++ 60g,HB-SS-008,Health & Beauty,Lotus,499,270,0.065,INR,true
+Vitamin C Serum 30ml,HB-SR-009,Health & Beauty,Minimalist,799,400,0.04,INR,true
+Hair Dryer 2000W Professional,HB-HD-010,Health & Beauty,Philips,2499,1400,0.55,INR,true
+A4 Paper Ream 500 Sheets 75gsm,OFF-PP-001,Office Supplies,JK Copier,499,300,2.5,INR,true
+Stapler Heavy Duty 70-Sheet,OFF-ST-002,Office Supplies,Kangaro,799,450,0.38,INR,true
+Whiteboard 4x3 ft Magnetic,OFF-WB-003,Office Supplies,Bi-Silque,3499,1800,4.2,INR,true
+Gel Pen Blue Box 12,OFF-PB-004,Office Supplies,Reynolds,149,60,0.12,INR,true
+Sticky Notes 3x3 100-Sheet 12-Pack,OFF-SN-005,Office Supplies,3M Post-it,599,320,0.4,INR,true
+Lever Arch File A4 Pack of 6,OFF-LF-006,Office Supplies,Camlin,699,380,0.6,INR,true
+Desk Organiser 5-Section,OFF-DO-007,Office Supplies,Deli,999,550,0.45,INR,true
+Calculator Scientific FX-991EX,OFF-CL-008,Office Supplies,Casio,1499,900,0.14,INR,true
+Yoga Mat Anti-Slip 6mm TPE,SPT-YM-001,Sports & Outdoors,Decathlon,1499,700,1.0,INR,true
+Dumbbell Pair 5kg Rubber Coated,SPT-DB-002,Sports & Outdoors,Decathlon,1299,600,10.1,INR,true
+Badminton Racket Carbon Fiber,SPT-BR-003,Sports & Outdoors,Yonex,3499,1800,0.09,INR,true
+Cycle Helmet Adult Adjustable,SPT-CH-004,Sports & Outdoors,Trek,2999,1400,0.38,INR,true
+Swimming Goggles UV Protection,SPT-SG-005,Sports & Outdoors,Speedo,1099,550,0.05,INR,true
+Running Shoes Men 42,SPT-RS-006,Sports & Outdoors,Asics,6999,3800,0.65,INR,true
+Skipping Rope Adjustable Steel,SPT-SR-007,Sports & Outdoors,Strauss,499,220,0.22,INR,true
+Water Bottle Insulated 750ml,SPT-WB-008,Sports & Outdoors,Cirkul,1299,650,0.3,INR,true
+Car Dash Camera 4K Sony Sensor,AUTO-DC-001,Automotive,70mai,8999,5500,0.28,INR,true
+Car Vacuum Cleaner 120W,AUTO-VC-002,Automotive,Black & Decker,3499,1800,0.95,INR,true
+Tyre Pressure Gauge Digital,AUTO-TG-003,Automotive,Bosch,1299,700,0.18,INR,true
+Seat Organiser Back Pocket Set,AUTO-SO-004,Automotive,AmazonBasics,899,450,0.5,INR,true
+Car Wax Polish Kit 500ml,AUTO-WX-005,Automotive,3M,1499,800,0.55,INR,true
+Phone Mount Dashboard Universal,AUTO-PM-006,Automotive,Aukey,799,380,0.12,INR,true
+Atomic Habits – James Clear,BOOK-AH-001,Books & Media,Penguin,599,320,0.33,INR,true
+Rich Dad Poor Dad – Robert Kiyosaki,BOOK-RD-002,Books & Media,Plata,449,240,0.29,INR,true
+Python Crash Course 3rd Ed,BOOK-PY-003,Books & Media,No Starch Press,1999,1100,0.65,INR,true
+Harry Potter Boxset 7 Books,BOOK-HP-004,Books & Media,Bloomsbury,3499,2000,3.5,INR,true
+Design of Everyday Things,BOOK-DE-005,Books & Media,Basic Books,899,500,0.38,INR,true
+Stainless Steel Lunch Box 3 Tier,OTH-LB-001,Other,Milton,999,520,0.75,INR,true
+Scented Candle Set Lavender 3-Pack,OTH-SC-002,Other,Ikea,799,380,0.45,INR,true
+Bluetooth Tracker Tag 4-Pack,OTH-BT-003,Other,Apple AirTag,9999,6500,0.11,INR,true
+Umbrella Auto-Open XL,OTH-UM-004,Other,Stormking,999,480,0.55,INR,true
+Rain Poncho Reusable Adult,OTH-RP-005,Other,Decathlon,599,280,0.12,INR,true
+Pet Feeder Automatic 4L,OTH-PF-006,Other,PetSafe,3999,2200,1.8,INR,true
+Wall Clock Minimalist 30cm,OTH-WC-007,Other,Ticking Classics,1299,650,0.8,INR,true
+Extension Cord 6-Socket 2m,OTH-EX-008,Other,Wipro,899,450,0.38,INR,true
+Reusable Grocery Bag Set 5,OTH-GB-009,Other,EcoHold,449,200,0.3,INR,true
+Gift Wrap Kit Ribbon and Tags,OTH-GW-010,Other,Hallmark,299,130,0.25,INR,true

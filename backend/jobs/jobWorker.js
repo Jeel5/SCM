@@ -66,6 +66,8 @@ async function processJob(bullJob) {
 
   logger.info(`🔄 Processing job ${dbJobId}`, { type: jobType });
   const parsedPayload = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
+  // Inject the DB job id so handlers can emit socket progress events (e.g. import jobs).
+  parsedPayload._jobId = dbJobId;
 
   const result = await handler(parsedPayload);
 

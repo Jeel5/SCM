@@ -41,6 +41,43 @@ export const authApi = {
   },
 };
 
+// ==================== ASYNC IMPORT ====================
+export const importApi = {
+  async upload(file: File, type: string): Promise<{ success: boolean; jobId: string; totalRows: number; message: string }> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('type', type);
+
+    // Use fetch directly so browser sets multipart boundaries automatically.
+    const apiUrl = import.meta.env.VITE_API_URL || '/api';
+    const res = await fetch(`${apiUrl}/import/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.message || 'Failed to start import');
+    }
+    return data;
+  },
+
+  async getStatus(jobId: string): Promise<{
+    success: boolean;
+    job: {
+      id: string;
+      status: string;
+      result: unknown;
+      error: string | null;
+      createdAt: string;
+      completedAt: string | null;
+    };
+  }> {
+    return get(`/import/jobs/${jobId}`);
+  },
+};
+
 // ==================== ORDERS ====================
 export const ordersApi = {
   async getOrders(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Order>> {

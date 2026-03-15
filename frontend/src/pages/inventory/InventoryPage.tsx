@@ -3,8 +3,7 @@ import { motion } from 'framer-motion';
 import { Package, Download, Upload, Plus, Eye } from 'lucide-react';
 import { Card, Button, DataTable, Badge, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { inventoryApi } from '@/api/services';
-import { readCsvFile } from '@/lib/csvImport';
+import { importApi, inventoryApi } from '@/api/services';
 import type { InventoryItem } from '@/types';
 import {
   StockLevelIndicator,
@@ -33,39 +32,9 @@ export function InventoryPage() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await inventoryApi.createInventoryItem({
-            product_id: row.product_id || undefined,
-            sku: row.sku,
-            product_name: row.product_name,
-            warehouse_id: row.warehouse_id,
-            quantity: Number(row.quantity) || 0,
-            available_quantity: Number(row.available_quantity || row.quantity) || 0,
-            reserved_quantity: Number(row.reserved_quantity) || 0,
-            reorder_point: Number(row.reorder_point) || 0,
-            unit_cost: row.unit_cost ? Number(row.unit_cost) : undefined,
-          } as any);
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-
-      if (created > 0) {
-        success('Inventory import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        refetch();
-      } else {
-        error('Inventory import failed', 'No rows were imported. Check CSV columns.');
-      }
+      const resp = await importApi.upload(file, 'inventory');
+      success('Inventory import started', `Job queued (${resp.totalRows} rows).`);
+      setTimeout(() => refetch(), 1500);
     } catch (e: any) {
       error('Import failed', e?.message || 'Could not read CSV file');
     }

@@ -39,6 +39,7 @@ import carriersRoutes from './routes/carriers.js';
 import organizationsRoutes from './routes/organizations.js';
 import partnersRoutes from './routes/partners.js';
 import notificationRoutes from './routes/notifications.js';
+import importRoutes from './routes/import.js';
 
 // Trust the first proxy hop (Nginx) so IP-based rate limiting sees the real client IP
 app.set('trust proxy', 1);
@@ -123,6 +124,7 @@ app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
 app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization management (superadmin)
 app.use(API_PREFIX, partnersRoutes); // Sales channels & suppliers
 app.use(API_PREFIX, notificationRoutes); // In-app notifications
+app.use(API_PREFIX, importRoutes); // Async CSV import endpoints
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes

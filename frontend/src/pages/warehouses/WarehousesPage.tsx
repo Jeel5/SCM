@@ -5,9 +5,8 @@ import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Card, Button, Badge, DataTable, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
-import { readCsvFile } from '@/lib/csvImport';
 import type { Warehouse } from '@/types';
-import { warehousesApi } from '@/api/services';
+import { importApi, warehousesApi } from '@/api/services';
 import { WarehouseCard } from './components/WarehouseCard';
 import { WarehouseDetailsModal } from './components/WarehouseDetailsModal';
 import { AddWarehouseModal } from './components/AddWarehouseModal';
@@ -55,44 +54,9 @@ export function WarehousesPage() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await warehousesApi.createWarehouse({
-            name: row.name,
-            code: row.code || undefined,
-            type: row.type || 'fulfillment',
-            capacity: Number(row.capacity) || 0,
-            address: {
-              street: row.street || '',
-              city: row.city || '',
-              state: row.state || '',
-              postalCode: row.postal_code || '',
-              country: row.country || 'India',
-            },
-            contactEmail: row.contact_email || undefined,
-            contactPhone: row.contact_phone || undefined,
-            status: row.status || 'active',
-          } as any);
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-
-      if (created > 0) {
-        success('Warehouses import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        refetch();
-      } else {
-        error('Warehouses import failed', 'No rows were imported. Check CSV columns.');
-      }
+      const resp = await importApi.upload(file, 'warehouses');
+      success('Warehouses import started', `Job queued (${resp.totalRows} rows). Updates will appear shortly.`);
+      setTimeout(() => refetch(), 1500);
     } catch (e: any) {
       error('Import failed', e?.message || 'Could not read CSV file');
     }

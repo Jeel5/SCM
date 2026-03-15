@@ -403,7 +403,7 @@ function formatCarrier(c) {
 // GET /carriers
 export const listCarriers = asyncHandler(async (req, res) => {
   const { is_active, availability_status, service_type, search, code, page = 1, limit = 50 } = req.query;
-  const organizationId = req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId || req.user?.organizationId;
 
   // If filtering by code, do a single lookup
   if (code) {
@@ -437,7 +437,7 @@ export const listCarriers = asyncHandler(async (req, res) => {
 // GET /carriers/:id
 export const getCarrier = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const organizationId = req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId || req.user?.organizationId;
 
   const carrier = await CarrierRepository.findByIdWithDetails(id, organizationId);
   if (!carrier) throw new NotFoundError('Carrier');
@@ -447,7 +447,7 @@ export const getCarrier = asyncHandler(async (req, res) => {
 
 // POST /carriers
 export const createCarrier = asyncHandler(async (req, res) => {
-  const organizationId = req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId || req.user?.organizationId;
   const payload = { ...req.body };
 
   // Support frontend status field: active | inactive | suspended
@@ -495,7 +495,7 @@ export const createCarrier = asyncHandler(async (req, res) => {
 // PUT /carriers/:id
 export const updateCarrier = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const organizationId = req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId || req.user?.organizationId;
   const payload = { ...req.body };
 
   if (payload.status === 'inactive') {
@@ -522,7 +522,7 @@ export const updateCarrier = asyncHandler(async (req, res) => {
 // DELETE /carriers/:id  (soft delete)
 export const deleteCarrier = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const organizationId = req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId || req.user?.organizationId;
 
   const existing = await CarrierRepository.findByIdWithDetails(id, organizationId);
   if (!existing) throw new NotFoundError('Carrier');
@@ -541,7 +541,7 @@ export const deleteCarrier = asyncHandler(async (req, res) => {
 // GET /carriers/:id/rate-cards
 export const getCarrierRateCards = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const organizationId = req.orgContext?.organizationId;
+  const organizationId = req.orgContext?.organizationId || req.user?.organizationId;
 
   const carrier = await CarrierRepository.findByIdWithDetails(id, organizationId);
   if (!carrier) throw new NotFoundError('Carrier');

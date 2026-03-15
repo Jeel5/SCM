@@ -48,6 +48,13 @@ const authLimiter = makeRedisLimiter({
   blockDuration: 15 * 60, // block the IP for 15 min after exhaustion
 });
 
+/** 5 file imports / 5 minutes per userId — applied on import upload route */
+const importLimiter = makeRedisLimiter({
+  keyPrefix:  'rl:import',
+  points:     5,
+  duration:   5 * 60,
+});
+
 /** 500 requests / 60 seconds per userId — applied on authenticated routes */
 const userLimiter = makeRedisLimiter({
   keyPrefix:  'rl:user',
@@ -118,6 +125,22 @@ export async function userRateLimit(req, res, next) {
       return next();
     }
     logger.warn('User rate limit exceeded', { userId: req.user.userId });
+    return rateLimitResponse(res, rateLimiterRes);
+  }
+}
+
+/** Apply to /import/upload — 5 imports/5 min per userId, prevents bulk abuse */
+export async function importRateLimit(req, res, next) {
+  if (!req.user?.userId) return next();
+  try {
+    await importLimiter.consume(req.user.userId);
+    next();
+  } catch (rateLimiterRes) {
+    if (rateLimiterRes instanceof Error) {
+      logger.warn('Import rate limiter error (fail-open):', rateLimiterRes.message);
+      return next();
+    }
+    logger.warn('Import rate limit exceeded', { userId: req.user.userId });
     return rateLimitResponse(res, rateLimiterRes);
   }
 }

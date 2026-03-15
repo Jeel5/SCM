@@ -1,0 +1,11 @@
+name,code,type,capacity,street,city,state,postal_code,country,contact_email,contact_phone,status
+Delhi Main Fulfillment Center,WH-DEL-01,fulfillment,10000,"Plot 42, Sector 18, Noida",Noida,Uttar Pradesh,201301,India,delhi.wh@croma.com,+919810001001,active
+Mumbai Express Hub,WH-MUM-01,cross-dock,7500,"Unit 7, Bhiwandi Logistics Park, NH-3",Bhiwandi,Maharashtra,421302,India,mumbai.wh@croma.com,+919820002002,active
+Bangalore Tech Warehouse,WH-BLR-01,fulfillment,8000,"Survey No. 55, Hoskote Industrial Area",Bangalore,Karnataka,562114,India,blr.wh@croma.com,+919830003003,active
+Chennai Port Logistics,WH-CHE-01,staging,5000,"No. 12, Harbour Estate, Ennore Road",Chennai,Tamil Nadu,600057,India,chennai.wh@croma.com,+919840004004,active
+Hyderabad Distribution Center,WH-HYD-01,fulfillment,9000,"Gaddapotharam Industrial Area, IDA Phase 1",Hyderabad,Telangana,502319,India,hyd.wh@croma.com,+919850005005,active
+Pune Forward Warehouse,WH-PNQ-01,fulfillment,4000,"Plot B-14, Chakan Industrial Area",Pune,Maharashtra,410501,India,pune.wh@croma.com,+919860006006,active
+Kolkata Regional Hub,WH-CCU-01,cross-dock,6000,"Leather Complex, Bantala, EM Bypass",Kolkata,West Bengal,700159,India,kolkata.wh@croma.com,+919870007007,active
+Ahmedabad Textile Hub,WH-AMD-01,fulfillment,7000,"Odhav Industrial Estate, Odhav Road",Ahmedabad,Gujarat,382415,India,amd.wh@croma.com,+919880008008,active
+Jaipur Returns Center,WH-JAI-01,returns,3000,"Sitapura Industrial Area, Phase 2",Jaipur,Rajasthan,302022,India,jaipur.wh@croma.com,+919890009009,active
+Kochi Cold-Chain Warehouse,WH-COK-01,fulfillment,2500,"Kinfra Export Promotion Zone, Kakkanad",Kochi,Kerala,682030,India,kochi.wh@croma.com,+919900010010,active

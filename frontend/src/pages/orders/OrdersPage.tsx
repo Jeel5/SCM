@@ -2,8 +2,8 @@ import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Download, Upload, Eye } from 'lucide-react';
 import { exportToCSV } from '@/lib/export';
-import { readCsvFile } from '@/lib/csvImport';
-import { ordersApi } from '@/api/services';
+import { importApi, ordersApi } from '@/api/services';
+import { useSocketEvent } from '@/hooks';
 import { useToast } from '@/components/ui';
 import {
   Card,
@@ -22,6 +22,7 @@ import { useOrders } from './hooks';
 
 export function OrdersPage() {
   const [page, setPage] = useState(1);
+  const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -50,52 +51,54 @@ export function OrdersPage() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await ordersApi.createOrder({
-            customer_name: row.customer_name,
-            customer_email: row.customer_email,
-            customer_phone: row.customer_phone || null,
-            priority: row.priority || 'standard',
-            shipping_address: {
-              street: row.street || 'N/A',
-              city: row.city || 'N/A',
-              state: row.state || 'N/A',
-              postal_code: row.postal_code || '',
-              country: row.country || 'India',
-            },
-            items: [
-              {
-                sku: row.sku,
-                product_name: row.product_name || row.sku,
-                quantity: Number(row.quantity) || 1,
-                unit_price: Number(row.unit_price) || 0,
-              },
-            ],
-          } as any);
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-      if (created > 0) {
-        success('Orders import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        refetch();
-      } else {
-        error('Orders import failed', 'No rows were imported. Check CSV column names and values.');
-      }
+      const resp = await importApi.upload(file, 'orders');
+      setActiveImportJobId(resp.jobId);
+      success('Orders import started', `Job queued (${resp.totalRows} rows). Job ID: ${resp.jobId}`);
     } catch (e: any) {
       error('Import failed', e?.message || 'Could not read CSV file');
     }
   };
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    done: number;
+    total: number;
+    created: number;
+    failed: number;
+  }>('import:progress', (evt) => {
+    if (evt.importType !== 'orders') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+
+    // Keep the current page live while import is running.
+    if (evt.done === evt.total || evt.done % 100 === 0) {
+      refetch();
+    }
+  });
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    total: number;
+    created: number;
+    failed: number;
+    errorMessage?: string;
+  }>('import:complete', (evt) => {
+    if (evt.importType !== 'orders') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+
+    if (evt.created > 0) {
+      success(
+        'Orders import completed',
+        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}`
+      );
+    } else {
+      error('Orders import failed', evt.errorMessage || `0/${evt.total} created. Check import errors in job logs.`);
+    }
+
+    setActiveImportJobId(null);
+    refetch();
+  });
 
   // Count orders per status for tab badges
   const statusCounts = orders.reduce<Record<string, number>>((acc, order) => {

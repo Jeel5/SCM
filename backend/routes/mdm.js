@@ -36,9 +36,9 @@ router.get('/warehouses/:id/stats', authenticate, requirePermission('warehouses.
 router.get('/warehouses/:id/inventory', authenticate, requirePermission('warehouses.view'), validateUUIDParams, validateQuery(warehouseInventoryQuerySchema), getWarehouseInventory);
 
 // Carriers
-// GET /carriers and GET /carriers/:id are public - needed by simulation/demo site and external carrier portals
-router.get('/carriers', listCarriers);
-router.get('/carriers/:id', validateUUIDParams, getCarrier);
+// Carrier master data is tenant-scoped and must never be exposed publicly.
+router.get('/carriers', authenticate, requirePermission('carriers.view'), listCarriers);
+router.get('/carriers/:id', authenticate, requirePermission('carriers.view'), validateUUIDParams, getCarrier);
 router.post('/carriers', authenticate, requirePermission('carriers.manage'), validateRequest(createCarrierSchema), createCarrier);
 router.put('/carriers/:id', authenticate, requirePermission('carriers.manage'), validateUUIDParams, validateRequest(updateCarrierSchema), updateCarrier);
 router.delete('/carriers/:id', authenticate, requirePermission('carriers.manage'), validateUUIDParams, deleteCarrier);

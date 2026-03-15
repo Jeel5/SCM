@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { Truck, Star, Clock, Package, Plus, Upload, Eye, Edit, Trash2, LayoutGrid, List } from 'lucide-react';
 import { Card, Button, Badge, Progress, DataTable, Tabs, PermissionGate } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
-import { readCsvFile } from '@/lib/csvImport';
 import type { Carrier } from '@/types';
 import { RatingStars } from './components/RatingStars';
 import { CarrierCard } from './components/CarrierCard';
@@ -11,7 +10,7 @@ import { CarrierDetailsModal } from './components/CarrierDetailsModal';
 import { AddCarrierModal } from './components/AddCarrierModal';
 import { EditCarrierModal } from './components/EditCarrierModal';
 import { useCarriers } from './hooks/useCarriers';
-import { carriersApi } from '@/api/services';
+import { carriersApi, importApi } from '@/api/services';
 import { toast } from '@/stores/toastStore';
 
 // Main Carriers Page
@@ -27,37 +26,9 @@ export function CarriersPage() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await carriersApi.createCarrier({
-            name: row.name,
-            status: (row.status as any) || 'active',
-            contactEmail: row.contact_email || undefined,
-            contactPhone: row.contact_phone || undefined,
-            website: row.website || undefined,
-            servicesOffered: row.services ? row.services.split('|').map((s) => s.trim()).filter(Boolean) : [],
-            serviceType: row.service_type || undefined,
-          });
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-
-      if (created > 0) {
-        toast.success('Carriers import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        refetch();
-      } else {
-        toast.error('Carriers import failed', 'No rows were imported. Check CSV columns.');
-      }
+      const resp = await importApi.upload(file, 'carriers');
+      toast.success('Carriers import started', `Job queued (${resp.totalRows} rows).`);
+      setTimeout(() => refetch(), 1500);
     } catch (e: any) {
       toast.error('Import failed', e?.message || 'Could not read CSV file');
     }

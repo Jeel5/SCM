@@ -1,0 +1,16 @@
+name,status,contact_email,contact_phone,website,services,service_type
+BlueDart Express,active,ops@bluedart.com,+918001234567,https://www.bluedart.com,standard|express|overnight,express
+Delhivery Logistics,active,support@delhivery.com,+918888888888,https://www.delhivery.com,standard|express|heavy_freight,standard
+Ecom Express,active,care@ecomexpress.in,+911800200555,https://www.ecomexpress.in,standard|express,standard
+DTDC Courier,active,service@dtdc.com,+916000555000,https://www.dtdc.com,standard|express|same_day,standard
+XpressBees,active,cs@xpressbees.com,+918880004444,https://www.xpressbees.com,standard|express,standard
+Shadowfax Technologies,active,support@shadowfax.in,+917899999999,https://shadowfax.in,same_day|express,same_day
+FedEx India,active,custservice@fedex.com,+911800209994,https://www.fedex.com/in,express|overnight|heavy_freight,express
+DHL Express India,active,cs.in@dhl.com,+912240484848,https://www.dhl.com/in-en,express|overnight,express
+India Post EMS,active,pmg@indiapost.gov.in,+1800112011,https://www.indiapost.gov.in,standard,standard
+Amazon Logistics,active,logistics@amazon.in,+911800110000,https://logistics.amazon.in,standard|same_day,same_day
+Rivigo Freight,active,ops@rivigo.com,+919999999001,https://rivigo.com,heavy_freight|standard,heavy_freight
+Gati Limited,active,customercare@gati.com,+914066700000,https://www.gati.com,standard|heavy_freight,standard
+Safexpress,active,care@safexpress.com,+911244015000,https://safexpress.com,standard|heavy_freight,heavy_freight
+Mahindra Logistics,active,solutions@mahindralogistics.com,+912261490000,https://www.mahindralogistics.com,heavy_freight|standard,heavy_freight
+TCI Express,active,care@tciexpress.in,+911244015100,https://www.tciexpress.in,standard|express,standard

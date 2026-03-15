@@ -14,9 +14,9 @@ import {
 } from 'lucide-react';
 import { Button, Input, Badge, Dropdown } from '@/components/ui';
 import { get, del, post } from '@/api/client';
+import { importApi } from '@/api/services';
 import { toast } from '@/stores/toastStore';
 import { useAuthStore } from '@/stores';
-import { readCsvFile } from '@/lib/csvImport';
 import { InviteUserModal } from './components/InviteUserModal';
 import { EditUserModal } from './components/EditUserModal';
 
@@ -81,34 +81,9 @@ export function TeamPage() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await post('/users', {
-            name: row.name,
-            email: row.email,
-            phone: row.phone || '',
-            role: row.role || 'operations_manager',
-          });
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-
-      if (created > 0) {
-        toast.success('Team import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        fetchUsers(true);
-      } else {
-        toast.error('Team import failed', 'No rows were imported. Check CSV columns.');
-      }
+      const resp = await importApi.upload(file, 'team');
+      toast.success('Team import started', `Job queued (${resp.totalRows} rows).`);
+      setTimeout(() => fetchUsers(true), 1500);
     } catch (e: any) {
       toast.error('Import failed', e?.message || 'Could not read CSV file');
     }

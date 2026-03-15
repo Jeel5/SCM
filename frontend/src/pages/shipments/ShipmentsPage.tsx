@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Truck,
   Package,
   Download,
+  Upload,
   Eye,
   Navigation,
   CheckCircle2,
 } from 'lucide-react';
 import { exportToCSV } from '@/lib/export';
+import { importApi } from '@/api/services';
+import { useSocketEvent } from '@/hooks';
 import { useToast } from '@/components/ui';
 import {
   Card,
@@ -24,13 +27,15 @@ import type { Shipment } from '@/types';
 
 export function ShipmentsPage() {
   const [page, setPage] = useState(1);
+  const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
-  const { success } = useToast();
+  const { success, error } = useToast();
+  const importRef = useRef<HTMLInputElement | null>(null);
 
   const pageSize = 10;
-  const { shipments, totalShipments, isLoading } = useShipments(page, pageSize);
+  const { shipments, totalShipments, isLoading, refetch } = useShipments(page, pageSize);
 
   const handleExport = () => {
     const exportData = filteredShipments.map(shipment => ({
@@ -47,6 +52,54 @@ export function ShipmentsPage() {
     exportToCSV(exportData, `shipments_${new Date().toISOString().split('T')[0]}`);
     success('Shipments exported successfully!');
   };
+
+  const handleImportCsv = async (file: File) => {
+    try {
+      const resp = await importApi.upload(file, 'shipments');
+      setActiveImportJobId(resp.jobId);
+      success('Shipments import started', `Job queued (${resp.totalRows} rows). Job ID: ${resp.jobId}`);
+    } catch (e: any) {
+      error('Import failed', e?.message || 'Could not read CSV file');
+    }
+  };
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    done: number;
+    total: number;
+  }>('import:progress', (evt) => {
+    if (evt.importType !== 'shipments') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+
+    if (evt.done === evt.total || evt.done % 100 === 0) {
+      refetch();
+    }
+  });
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    total: number;
+    created: number;
+    failed: number;
+    errorMessage?: string;
+  }>('import:complete', (evt) => {
+    if (evt.importType !== 'shipments') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+
+    if (evt.created > 0) {
+      success(
+        'Shipments import completed',
+        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}`
+      );
+    } else {
+      error('Shipments import failed', evt.errorMessage || `0/${evt.total} created. Check import errors in job logs.`);
+    }
+
+    setActiveImportJobId(null);
+    refetch();
+  });
 
   // Count shipments per status for tab badges
   const statusCounts = shipments.reduce<Record<string, number>>((acc, shipment) => {
@@ -145,6 +198,9 @@ export function ShipmentsPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Track and manage all shipments in real-time</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => importRef.current?.click()}>
+            Import CSV
+          </Button>
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export CSV
           </Button>
@@ -209,6 +265,17 @@ export function ShipmentsPage() {
         onClose={() => {
           setIsDetailsOpen(false);
           setSelectedShipment(null);
+        }}
+      />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
         }}
       />
     </div>

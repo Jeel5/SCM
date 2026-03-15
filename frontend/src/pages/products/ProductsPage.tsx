@@ -6,11 +6,10 @@ import {
 } from 'lucide-react';
 import { Card, Button, Badge, DataTable, useToast } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
-import { readCsvFile } from '@/lib/csvImport';
 import type { Product } from '@/types';
 import { AddEditProductModal, ProductDetailsModal } from './components';
 import { useProducts } from './hooks';
-import { productsApi } from '@/api/services';
+import { importApi, productsApi } from '@/api/services';
 
 const PAGE_SIZE = 20;
 const CATEGORIES = [
@@ -58,39 +57,9 @@ export function ProductsPage() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await productsApi.createProduct({
-            name: row.name,
-            sku: row.sku,
-            category: row.category || null,
-            brand: row.brand || null,
-            sellingPrice: row.selling_price ? Number(row.selling_price) : null,
-            costPrice: row.cost_price ? Number(row.cost_price) : null,
-            weight: row.weight ? Number(row.weight) : null,
-            currency: row.currency || 'INR',
-            isActive: row.is_active ? row.is_active === 'true' : true,
-          });
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-
-      if (created > 0) {
-        success('Products import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        refetch();
-      } else {
-        error('Products import failed', 'No rows were imported. Check CSV columns.');
-      }
+      const resp = await importApi.upload(file, 'products');
+      success('Products import started', `Job queued (${resp.totalRows} rows).`);
+      setTimeout(() => refetch(), 1500);
     } catch (e: any) {
       error('Import failed', e?.message || 'Could not read CSV file');
     }

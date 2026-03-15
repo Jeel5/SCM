@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { Plus, Store, Pencil, Trash2, Copy, CheckCircle, Eye } from 'lucide-react';
 import { Button, Badge, DataTable, Modal, Input, Select, PermissionGate } from '@/components/ui';
-import { channelsApi, warehousesApi } from '@/api/services';
-import { readCsvFile } from '@/lib/csvImport';
+import { channelsApi, importApi, warehousesApi } from '@/api/services';
 import { toast } from '@/stores/toastStore';
 
 interface Channel {
@@ -133,37 +132,9 @@ export function ChannelsTab() {
 
   const handleImportCsv = async (file: File) => {
     try {
-      const rows = await readCsvFile(file);
-      if (!rows.length) {
-        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
-        return;
-      }
-
-      let created = 0;
-      let failed = 0;
-      for (const row of rows) {
-        try {
-          await channelsApi.createChannel({
-            name: row.name,
-            platform_type: row.platform_type || 'd2c',
-            api_endpoint: row.api_endpoint || null,
-            contact_name: row.contact_name || null,
-            contact_email: row.contact_email || null,
-            contact_phone: row.contact_phone || null,
-            default_warehouse_id: row.default_warehouse_id || null,
-          });
-          created += 1;
-        } catch {
-          failed += 1;
-        }
-      }
-
-      if (created > 0) {
-        toast.success('Channels import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
-        fetchChannels(true);
-      } else {
-        toast.error('Channels import failed', 'No rows were imported. Check CSV columns.');
-      }
+      const resp = await importApi.upload(file, 'channels');
+      toast.success('Channels import started', `Job queued (${resp.totalRows} rows).`);
+      setTimeout(() => fetchChannels(true), 1500);
     } catch (e: any) {
       toast.error('Import failed', e?.message || 'Could not read CSV file');
     }

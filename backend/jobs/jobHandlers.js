@@ -1,4 +1,6 @@
 // Job Handlers - Define handlers for each job type
+import pool from '../config/db.js';
+import bcrypt from 'bcrypt';
 import slaService from '../services/slaService.js';
 import exceptionService from '../services/exceptionService.js';
 import invoiceService from '../services/invoiceService.js';
@@ -16,6 +18,7 @@ import slaRepo from '../repositories/SlaRepository.js';
 import financeRepo from '../repositories/FinanceRepository.js';
 import warehouseRepo from '../repositories/WarehouseRepository.js';
 import shipmentRepo from '../repositories/ShipmentRepository.js';
+import { emitToOrg } from '../sockets/emitter.js';
 
 /**
  * SLA Monitoring Job
@@ -57,6 +60,720 @@ async function handleExceptionEscalation(payload) {
     logger.error('Exception escalation job failed:', error);
     throw error;
   }
+}
+
+// ─── Import helpers ───────────────────────────────────────────────────────────
+
+const IMPORT_CHUNK_SIZE = 100; // rows between progress emits
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Shared runner: iterates rows, catches per-row errors, emits socket events.
+ * Handlers inject `_jobId` via jobWorker (see processJob).
+ */
+async function runImport({ jobId, organizationId, rows, importType, processRow }) {
+  const startTime = Date.now();
+  const total = rows.length;
+  let created = 0;
+  let failed  = 0;
+  const errors = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      await processRow(rows[i]);
+      created++;
+    } catch (err) {
+      failed++;
+      if (errors.length < 20) errors.push({ row: i + 1, message: err.message });
+    }
+    if ((i + 1) % IMPORT_CHUNK_SIZE === 0 || i === rows.length - 1) {
+      emitToOrg(organizationId, 'import:progress', {
+        jobId, importType, done: i + 1, total, created, failed,
+      });
+    }
+  }
+
+  const result = {
+    success:    failed < total, // at least one row must succeed
+    importType, total, created, failed, errors,
+    duration:   `${Date.now() - startTime}ms`,
+  };
+
+  if (created === 0) {
+    const errorSummary = errors.length > 0
+      ? errors
+          .slice(0, 3)
+          .map(({ row, message }) => `row ${row}: ${message}`)
+          .join('; ')
+      : 'All rows failed during import';
+
+    emitToOrg(organizationId, 'import:complete', {
+      jobId,
+      importType,
+      ...result,
+      errorMessage: errorSummary,
+    });
+
+    logger.error(`❌ Import ${importType} failed`, { jobId, total, failed, errorSummary });
+    throw new Error(errorSummary);
+  }
+
+  emitToOrg(organizationId, 'import:complete', { jobId, importType, ...result });
+  logger.info(`✅ Import ${importType} complete`, { jobId, total, created, failed });
+  return result;
+}
+
+function parseJsonObject(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeShipmentStatus(rawStatus) {
+  const status = String(rawStatus || 'delivered').toLowerCase().trim();
+  const statusMap = {
+    pickup_scheduled: 'pending',
+    created: 'pending',
+    at_hub: 'in_transit',
+    failed_delivery: 'exception',
+    failed: 'exception',
+    exception: 'exception',
+  };
+  const normalized = statusMap[status] || status;
+  const validStatuses = [
+    'pending', 'picked_up', 'in_transit', 'out_for_delivery',
+    'delivered', 'cancelled', 'exception', 'returned',
+  ];
+  return validStatuses.includes(normalized) ? normalized : 'delivered';
+}
+
+function buildAddress(prefix, row, fallback = null) {
+  const street = row[`${prefix}_street`] || row[`${prefix}_address`] || fallback?.street || 'N/A';
+  const city = row[`${prefix}_city`] || fallback?.city || 'Unknown';
+  const state = row[`${prefix}_state`] || fallback?.state || '';
+  const postalCode = row[`${prefix}_postal_code`] || row[`${prefix}_postalCode`] || fallback?.postal_code || '';
+  const country = row[`${prefix}_country`] || fallback?.country || 'India';
+
+  return {
+    street,
+    city,
+    state,
+    postal_code: postalCode,
+    country,
+  };
+}
+
+function buildShipmentEvents(status, origin, destination, currentLocation, pickupActual, deliveryActual) {
+  const baseTime = new Date();
+  const pickupTime = pickupActual ? new Date(pickupActual) : new Date(baseTime.getTime() - 2 * 24 * 3_600_000);
+  const transitTime = new Date(pickupTime.getTime() + 12 * 3_600_000);
+  const outForDeliveryTime = new Date(transitTime.getTime() + 24 * 3_600_000);
+  const deliveredTime = deliveryActual ? new Date(deliveryActual) : new Date(outForDeliveryTime.getTime() + 6 * 3_600_000);
+
+  const eventSets = {
+    pending: [],
+    picked_up: [
+      { event_type: 'picked_up', description: 'Shipment picked up from origin', location: origin, event_timestamp: pickupTime },
+    ],
+    in_transit: [
+      { event_type: 'picked_up', description: 'Shipment picked up from origin', location: origin, event_timestamp: pickupTime },
+      { event_type: 'in_transit', description: 'Shipment is in transit', location: currentLocation || origin, event_timestamp: transitTime },
+    ],
+    out_for_delivery: [
+      { event_type: 'picked_up', description: 'Shipment picked up from origin', location: origin, event_timestamp: pickupTime },
+      { event_type: 'in_transit', description: 'Shipment is in transit', location: currentLocation || origin, event_timestamp: transitTime },
+      { event_type: 'out_for_delivery', description: 'Shipment is out for delivery', location: currentLocation || destination, event_timestamp: outForDeliveryTime },
+    ],
+    delivered: [
+      { event_type: 'picked_up', description: 'Shipment picked up from origin', location: origin, event_timestamp: pickupTime },
+      { event_type: 'in_transit', description: 'Shipment is in transit', location: currentLocation || origin, event_timestamp: transitTime },
+      { event_type: 'out_for_delivery', description: 'Shipment is out for delivery', location: destination, event_timestamp: outForDeliveryTime },
+      { event_type: 'delivered', description: 'Shipment delivered successfully', location: destination, event_timestamp: deliveredTime },
+    ],
+    returned: [
+      { event_type: 'picked_up', description: 'Shipment picked up from origin', location: origin, event_timestamp: pickupTime },
+      { event_type: 'in_transit', description: 'Shipment is in transit', location: currentLocation || origin, event_timestamp: transitTime },
+      { event_type: 'returned', description: 'Shipment returned to sender', location: origin, event_timestamp: deliveredTime },
+    ],
+    cancelled: [
+      { event_type: 'cancelled', description: 'Shipment cancelled before delivery', location: origin, event_timestamp: pickupTime },
+    ],
+    exception: [
+      { event_type: 'picked_up', description: 'Shipment picked up from origin', location: origin, event_timestamp: pickupTime },
+      { event_type: 'exception', description: 'Shipment hit an exception in transit', location: currentLocation || destination, event_timestamp: deliveredTime },
+    ],
+  };
+
+  return eventSets[status] || [];
+}
+
+// ─── 1. Warehouses ────────────────────────────────────────────────────────────
+async function handleImportWarehouses(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+  return runImport({
+    jobId, organizationId, rows, importType: 'warehouses',
+    processRow: async (row) => {
+      const typeMap = {
+        'cross-dock': 'distribution', staging: 'distribution', retail: 'standard',
+        fulfillment: 'fulfillment', distribution: 'distribution', standard: 'standard',
+        cold_storage: 'cold_storage', hazmat: 'hazmat',
+        bonded_customs: 'bonded_customs', returns: 'returns_center', returns_center: 'returns_center',
+      };
+      const wType = typeMap[String(row.type || row.warehouse_type || 'standard').toLowerCase()] || 'standard';
+      const isActive = String(row.status || 'active').toLowerCase() !== 'inactive'
+        && String(row.is_active || 'true').toLowerCase() !== 'false';
+      const rawEmail = String(row.contact_email || '').trim();
+      const email = rawEmail.includes('@') ? rawEmail
+        : `${String(row.code || row.name || 'wh').toLowerCase().replace(/[^a-z0-9]+/g, '.')}@import.local`;
+      const address = JSON.stringify({
+        street:      row.street      || row.address_street || '',
+        city:        row.city        || row.address_city   || '',
+        state:       row.state       || row.address_state  || '',
+        postal_code: row.postal_code || row.postalCode     || '',
+        country:     row.country     || 'India',
+      });
+      await pool.query(
+        `INSERT INTO warehouses
+           (organization_id, name, code, warehouse_type, capacity, address, contact_email, contact_phone, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
+         ON CONFLICT (organization_id, code) DO UPDATE SET
+           name = EXCLUDED.name, warehouse_type = EXCLUDED.warehouse_type,
+           capacity = EXCLUDED.capacity, address = EXCLUDED.address,
+           contact_email = EXCLUDED.contact_email, updated_at = NOW()`,
+        [organizationId, row.name, row.code || null, wType, Number(row.capacity) || 0,
+         address, email, row.contact_phone || null, isActive]
+      );
+    },
+  });
+}
+
+// ─── 2. Carriers ─────────────────────────────────────────────────────────────
+async function handleImportCarriers(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+  return runImport({
+    jobId, organizationId, rows, importType: 'carriers',
+    processRow: async (row) => {
+      const validSvcTypes = ['express','standard','economy','overnight','two_day','surface','air','all'];
+      const svcType = validSvcTypes.includes(row.service_type) ? row.service_type : 'standard';
+      const baseCode = String(row.code || row.name || 'carrier')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40);
+      const code = baseCode || await carrierRepo.generateCarrierCode();
+      await pool.query(
+        `INSERT INTO carriers
+           (organization_id, code, name, service_type, contact_email, contact_phone, website,
+            reliability_score, avg_delivery_days, is_active, availability_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (organization_id, code) DO UPDATE SET
+           name = EXCLUDED.name,
+           service_type = EXCLUDED.service_type, contact_email = EXCLUDED.contact_email,
+           contact_phone = EXCLUDED.contact_phone, website = EXCLUDED.website,
+           updated_at = NOW()`,
+        [organizationId, code, row.name, svcType,
+         row.contact_email || null, row.contact_phone || null, row.website || null,
+         row.reliability_score ? parseFloat(row.reliability_score) : 0.85,
+         row.avg_delivery_days ? parseInt(row.avg_delivery_days) : 3,
+         String(row.is_active || 'true').toLowerCase() !== 'false',
+         'available']
+      );
+    },
+  });
+}
+
+// ─── 3. Suppliers ─────────────────────────────────────────────────────────────
+async function handleImportSuppliers(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+  return runImport({
+    jobId, organizationId, rows, importType: 'suppliers',
+    processRow: async (row) => {
+      await pool.query(
+        `INSERT INTO suppliers
+           (organization_id, name, contact_name, contact_email, contact_phone,
+            website, address, city, state, country, postal_code,
+            lead_time_days, reliability_score, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         ON CONFLICT (organization_id, name) DO UPDATE SET
+           contact_email = EXCLUDED.contact_email, updated_at = NOW()`,
+        [organizationId, row.name, row.contact_name || null,
+         row.contact_email || null, row.contact_phone || null, row.website || null,
+         row.address || null, row.city || null, row.state || null,
+         row.country || 'India', row.postal_code || null,
+         row.lead_time_days ? parseInt(row.lead_time_days) : 7,
+         row.reliability_score ? parseFloat(row.reliability_score) : 0.85,
+         String(row.is_active || 'true').toLowerCase() !== 'false']
+      );
+    },
+  });
+}
+
+// ─── 4. Sales Channels ────────────────────────────────────────────────────────
+async function handleImportChannels(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+  return runImport({
+    jobId, organizationId, rows, importType: 'channels',
+    processRow: async (row) => {
+      const validTypes = ['marketplace','d2c','b2b','wholesale','internal'];
+      const platformType = validTypes.includes(row.platform_type) ? row.platform_type : 'marketplace';
+      const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const code = (row.code ||
+        String(row.name || 'CH').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 36)
+      ) + '-' + suffix;
+      await pool.query(
+        `INSERT INTO sales_channels
+           (organization_id, name, code, platform_type, contact_name, contact_email, contact_phone, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (organization_id, code) DO UPDATE SET
+           name = EXCLUDED.name, updated_at = NOW()`,
+        [organizationId, row.name, code, platformType,
+         row.contact_name || null, row.contact_email || null, row.contact_phone || null,
+         String(row.is_active || 'true').toLowerCase() !== 'false']
+      );
+    },
+  });
+}
+
+// ─── 5. Team (Org users) ──────────────────────────────────────────────────────
+async function handleImportTeam(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+  // Placeholder password — users must reset via forgot-password flow
+  const placeholderHash = await bcrypt.hash(`Import@${Date.now()}!`, 12);
+  return runImport({
+    jobId, organizationId, rows, importType: 'team',
+    processRow: async (row) => {
+      if (!row.email || !row.email.includes('@')) throw new Error('Missing or invalid email');
+      const validRoles = ['operations_manager','warehouse_manager','carrier_partner','finance','customer_support'];
+      const role = validRoles.includes(row.role) ? row.role : 'operations_manager';
+      await pool.query(
+        `INSERT INTO users
+           (organization_id, name, email, phone, role, password_hash, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (email) DO NOTHING`,
+        [organizationId, row.name || row.email,
+         row.email.toLowerCase().trim(), row.phone || null,
+         role, placeholderHash, true]
+      );
+    },
+  });
+}
+
+// ─── 6. Products ──────────────────────────────────────────────────────────────
+async function handleImportProducts(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+  return runImport({
+    jobId, organizationId, rows, importType: 'products',
+    processRow: async (row) => {
+      const { v4: uuidv4 } = await import('uuid');
+      const sku = row.sku || `SKU-${uuidv4().substring(0, 8).toUpperCase()}`;
+      await pool.query(
+        `INSERT INTO products
+           (organization_id, name, sku, category, description, weight,
+            selling_price, cost_price, currency, is_active, brand)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (organization_id, sku) DO UPDATE SET
+           name = EXCLUDED.name, updated_at = NOW()`,
+        [organizationId, row.name, sku, row.category || null,
+         row.description || null,
+         row.weight       ? parseFloat(row.weight)       : null,
+         row.selling_price ? parseFloat(row.selling_price) : null,
+         row.cost_price    ? parseFloat(row.cost_price)    : null,
+         row.currency || 'INR',
+         String(row.is_active || 'true').toLowerCase() !== 'false',
+         row.brand || null]
+      );
+    },
+  });
+}
+
+// ─── 7. Inventory ─────────────────────────────────────────────────────────────
+async function handleImportInventory(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+
+  // Build lookup maps once (before row loop)
+  const whRes = await pool.query(
+    `SELECT id, code, name FROM warehouses WHERE organization_id = $1`, [organizationId]);
+  const byWhCode = new Map(whRes.rows.map((w) => [w.code?.toLowerCase(), w.id]));
+  const byWhName = new Map(whRes.rows.map((w) => [w.name?.toLowerCase(), w.id]));
+
+  const prRes = await pool.query(
+    `SELECT id, sku, name FROM products WHERE organization_id = $1`, [organizationId]);
+  const byPrSku  = new Map(prRes.rows.map((p) => [p.sku?.toLowerCase(),  p.id]));
+  const byPrName = new Map(prRes.rows.map((p) => [p.name?.toLowerCase(), p.id]));
+
+  return runImport({
+    jobId, organizationId, rows, importType: 'inventory',
+    processRow: async (row) => {
+      let warehouseId = UUID_RE.test(row.warehouse_id) ? row.warehouse_id : null;
+      if (!warehouseId) {
+        const placeholder = String(row.warehouse_id || '').match(/^REPLACE_WITH_UUID_FOR_(.+)$/i)?.[1]?.toLowerCase();
+        warehouseId = (placeholder && byWhCode.get(placeholder))
+          || byWhCode.get(String(row.warehouse_id || '').toLowerCase())
+          || byWhCode.get(String(row.warehouse_code || '').toLowerCase())
+          || byWhName.get(String(row.warehouse_name || '').toLowerCase())
+          || null;
+      }
+      if (!warehouseId) throw new Error(`Cannot resolve warehouse for SKU '${row.sku}'`);
+
+      let productId = UUID_RE.test(row.product_id) ? row.product_id : null;
+      if (!productId) {
+        productId = byPrSku.get(String(row.sku || '').toLowerCase())
+          || byPrName.get(String(row.product_name || '').toLowerCase())
+          || null;
+      }
+      if (!productId) throw new Error(`Cannot resolve product for SKU '${row.sku}'`);
+
+      const qty = parseInt(row.quantity) || 0;
+      await pool.query(
+        `INSERT INTO inventory
+           (organization_id, warehouse_id, product_id, sku, product_name,
+            quantity, available_quantity, reserved_quantity, reorder_point, unit_cost)
+         VALUES ($1,$2,$3,$4,$5,$6,$6,0,$7,$8)
+         ON CONFLICT (organization_id, warehouse_id, sku) DO UPDATE SET
+           quantity           = EXCLUDED.quantity,
+           available_quantity = EXCLUDED.quantity,
+           updated_at         = NOW()`,
+        [organizationId, warehouseId, productId,
+         row.sku, row.product_name || row.sku, qty,
+         row.reorder_point ? parseInt(row.reorder_point) : null,
+         row.unit_cost     ? parseFloat(row.unit_cost)   : null]
+      );
+    },
+  });
+}
+
+// ─── 9. Shipments (historical — linked to existing orders by order_number) ──
+async function handleImportShipments(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+
+  const [ordersRes, carriersRes, warehousesRes] = await Promise.all([
+    pool.query(
+      `SELECT id, order_number, shipping_address FROM orders WHERE organization_id = $1`,
+      [organizationId]
+    ),
+    pool.query(
+      `SELECT id, code, name FROM carriers WHERE organization_id = $1`,
+      [organizationId]
+    ),
+    pool.query(
+      `SELECT id, code, name, address FROM warehouses WHERE organization_id = $1`,
+      [organizationId]
+    ),
+  ]);
+
+  const ordersById = new Map(ordersRes.rows.map((order) => [order.id, order]));
+  const ordersByNumber = new Map(ordersRes.rows.map((order) => [String(order.order_number || '').toLowerCase(), order]));
+  const carriersById = new Map(carriersRes.rows.map((carrier) => [carrier.id, carrier]));
+  const carriersByCode = new Map(carriersRes.rows.map((carrier) => [String(carrier.code || '').toLowerCase(), carrier]));
+  const carriersByName = new Map(carriersRes.rows.map((carrier) => [String(carrier.name || '').toLowerCase(), carrier]));
+  const warehousesById = new Map(warehousesRes.rows.map((warehouse) => [warehouse.id, warehouse]));
+  const warehousesByCode = new Map(warehousesRes.rows.map((warehouse) => [String(warehouse.code || '').toLowerCase(), warehouse]));
+  const warehousesByName = new Map(warehousesRes.rows.map((warehouse) => [String(warehouse.name || '').toLowerCase(), warehouse]));
+
+  return runImport({
+    jobId,
+    organizationId,
+    rows,
+    importType: 'shipments',
+    processRow: async (row) => {
+      const order = (row.order_id && ordersById.get(row.order_id))
+        || (row.order_number && ordersByNumber.get(String(row.order_number).toLowerCase()));
+      if (!order) {
+        throw new Error(`Cannot resolve order '${row.order_number || row.order_id || 'unknown'}'`);
+      }
+
+      const carrier = (row.carrier_id && carriersById.get(row.carrier_id))
+        || (row.carrier_code && carriersByCode.get(String(row.carrier_code).toLowerCase()))
+        || (row.carrier_name && carriersByName.get(String(row.carrier_name).toLowerCase()));
+      if (!carrier) {
+        throw new Error(`Cannot resolve carrier '${row.carrier_code || row.carrier_name || row.carrier_id || 'unknown'}'`);
+      }
+
+      const warehouse = (row.warehouse_id && UUID_RE.test(row.warehouse_id) && warehousesById.get(row.warehouse_id))
+        || (row.warehouse_code && warehousesByCode.get(String(row.warehouse_code).toLowerCase()))
+        || (row.warehouse_name && warehousesByName.get(String(row.warehouse_name).toLowerCase()))
+        || null;
+
+      const destinationAddress = parseJsonObject(order.shipping_address) || {
+        street: 'N/A',
+        city: 'Unknown',
+        state: '',
+        postal_code: '',
+        country: 'India',
+      };
+      const warehouseAddress = parseJsonObject(warehouse?.address) || null;
+      const originAddress = buildAddress('origin', row, warehouseAddress);
+      const currentLocation = row.current_city || row.current_state || row.current_country
+        ? buildAddress('current', row, null)
+        : null;
+      const status = normalizeShipmentStatus(row.status);
+      const trackingNumber = row.tracking_number
+        || row.carrier_tracking_number
+        || `IMP-SHP-${String(order.order_number || order.id).slice(-10)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const deliveryScheduled = row.delivery_scheduled || row.estimated_delivery || null;
+      const pickupScheduled = row.pickup_scheduled || null;
+      const pickupActual = row.pickup_actual || null;
+      const deliveryActual = row.delivery_actual || row.actual_delivery || (status === 'delivered' ? deliveryScheduled || new Date().toISOString() : null);
+      const shippingCost = row.shipping_cost ? parseFloat(row.shipping_cost) : (row.cost ? parseFloat(row.cost) : 0);
+      const carrierTrackingNumber = row.carrier_tracking_number || null;
+      const timelineEvents = buildShipmentEvents(status, originAddress, destinationAddress, currentLocation, pickupActual, deliveryActual);
+
+      const client = await pool.connect();
+      let shipmentId;
+      let eventName = 'shipment:created';
+
+      try {
+        await client.query('BEGIN');
+
+        const existingRes = await client.query(
+          `SELECT id FROM shipments WHERE organization_id = $1 AND tracking_number = $2 ORDER BY created_at ASC LIMIT 1`,
+          [organizationId, trackingNumber]
+        );
+        const existingShipment = existingRes.rows[0] || null;
+
+        if (existingShipment) {
+          eventName = 'shipment:updated';
+          const updatedRes = await client.query(
+            `UPDATE shipments
+             SET order_id = $1,
+                 carrier_id = $2,
+                 warehouse_id = $3,
+                 carrier_tracking_number = $4,
+                 status = $5,
+                 origin_address = $6::jsonb,
+                 destination_address = $7::jsonb,
+                 current_location = $8::jsonb,
+                 pickup_scheduled = $9,
+                 pickup_actual = $10,
+                 delivery_scheduled = $11,
+                 delivery_actual = $12,
+                 shipping_cost = $13,
+                 updated_at = NOW()
+             WHERE id = $14
+             RETURNING id`,
+            [
+              order.id,
+              carrier.id,
+              warehouse?.id || null,
+              carrierTrackingNumber,
+              status,
+              JSON.stringify(originAddress),
+              JSON.stringify(destinationAddress),
+              currentLocation ? JSON.stringify(currentLocation) : null,
+              pickupScheduled,
+              pickupActual,
+              deliveryScheduled,
+              deliveryActual,
+              shippingCost,
+              existingShipment.id,
+            ]
+          );
+          shipmentId = updatedRes.rows[0].id;
+        } else {
+          const insertedRes = await client.query(
+            `INSERT INTO shipments (
+               organization_id, tracking_number, carrier_tracking_number, order_id, carrier_id,
+               warehouse_id, status, origin_address, destination_address, current_location,
+               pickup_scheduled, pickup_actual, delivery_scheduled, delivery_actual, shipping_cost
+             ) VALUES (
+               $1,$2,$3,$4,$5,
+               $6,$7,$8::jsonb,$9::jsonb,$10::jsonb,
+               $11,$12,$13,$14,$15
+             )
+             RETURNING id`,
+            [
+              organizationId,
+              trackingNumber,
+              carrierTrackingNumber,
+              order.id,
+              carrier.id,
+              warehouse?.id || null,
+              status,
+              JSON.stringify(originAddress),
+              JSON.stringify(destinationAddress),
+              currentLocation ? JSON.stringify(currentLocation) : null,
+              pickupScheduled,
+              pickupActual,
+              deliveryScheduled,
+              deliveryActual,
+              shippingCost,
+            ]
+          );
+          shipmentId = insertedRes.rows[0].id;
+
+          await client.query(
+            `INSERT INTO shipment_events (shipment_id, event_type, location, description, event_timestamp)
+             VALUES ($1, 'created', $2::jsonb, $3, $4)`,
+            [
+              shipmentId,
+              JSON.stringify(originAddress),
+              row.notes || 'Shipment imported from CSV',
+              pickupScheduled || pickupActual || deliveryScheduled || deliveryActual || new Date().toISOString(),
+            ]
+          );
+
+          for (const event of timelineEvents) {
+            await client.query(
+              `INSERT INTO shipment_events (shipment_id, event_type, location, description, event_timestamp)
+               VALUES ($1, $2, $3::jsonb, $4, $5)`,
+              [
+                shipmentId,
+                event.event_type,
+                JSON.stringify(event.location),
+                event.description,
+                event.event_timestamp,
+              ]
+            );
+          }
+        }
+
+        if (status === 'delivered') {
+          await client.query(
+            `UPDATE orders
+             SET status = 'delivered', actual_delivery = COALESCE($1, actual_delivery, NOW()), updated_at = NOW()
+             WHERE id = $2`,
+            [deliveryActual, order.id]
+          );
+        } else if (status === 'returned') {
+          await client.query(
+            `UPDATE orders SET status = 'returned', updated_at = NOW() WHERE id = $1`,
+            [order.id]
+          );
+        } else if (status === 'cancelled') {
+          await client.query(
+            `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+            [order.id]
+          );
+        } else {
+          await client.query(
+            `UPDATE orders SET status = 'shipped', updated_at = NOW() WHERE id = $1`,
+            [order.id]
+          );
+        }
+
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      emitToOrg(organizationId, eventName, {
+        id: shipmentId,
+        orderId: order.id,
+        trackingNumber,
+        status,
+      });
+    },
+  });
+}
+
+// ─── 8. Orders (historical — no carrier assignment or inventory reservation) ──
+async function handleImportOrders(payload) {
+  const { rows, organizationId, _jobId: jobId } = payload;
+  return runImport({
+    jobId, organizationId, rows, importType: 'orders',
+    processRow: async (row) => {
+      if (!row.customer_name) throw new Error('customer_name is required');
+      if (!row.sku) throw new Error('sku is required');
+      const unitPrice = parseFloat(row.unit_price) || 0;
+      const qty       = parseInt(row.quantity) || 1;
+      const lineTotal = unitPrice * qty;
+
+      // Live DB check constraints differ from older code assumptions:
+      // - order_type must be one of: outbound|transfer|inbound_restock
+      // - priority must be one of: express|standard|bulk|same_day
+      const rawPriority = String(row.priority || 'standard').toLowerCase();
+      const priorityMap = { urgent: 'express', normal: 'standard' };
+      const normalizedPriority = priorityMap[rawPriority] || rawPriority;
+      const validPriorities = ['express', 'standard', 'bulk', 'same_day'];
+      const priority = validPriorities.includes(normalizedPriority) ? normalizedPriority : 'standard';
+
+      const rawStatus = String(row.status || 'delivered').toLowerCase();
+      const validStatuses = [
+        'created','confirmed','processing','allocated','ready_to_ship','shipped',
+        'in_transit','out_for_delivery','delivered','returned','cancelled','on_hold','pending_carrier_assignment',
+      ];
+      const status = validStatuses.includes(rawStatus) ? rawStatus : 'delivered';
+
+      const shippingAddress = {
+        street:      row.street      || 'N/A',
+        city:        row.city        || 'N/A',
+        state:       row.state       || '',
+        postal_code: row.postal_code || '000000',
+        country:     row.country     || 'India',
+      };
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const providedOrderNumber = String(row.order_number || '').trim();
+        const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const fallbackSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
+        const orderNumber = providedOrderNumber || `IMP-${datePart}-${fallbackSuffix}`;
+
+        const orderRes = await client.query(
+          `INSERT INTO orders (
+             organization_id, order_number, customer_name, customer_email, customer_phone,
+             status, priority, order_type, currency, shipping_address,
+             subtotal, tax_amount, shipping_amount, discount_amount, total_amount,
+             notes, platform, tags
+           ) VALUES (
+             $1,$2,$3,$4,$5,
+             $6,$7,$8,$9,$10::jsonb,
+             $11,0,0,0,$12,
+             $13,$14,$15::jsonb
+           ) RETURNING id`,
+          [
+            organizationId,
+            orderNumber,
+            row.customer_name,
+            row.customer_email || null,
+            row.customer_phone || null,
+            status,
+            priority,
+            'outbound',
+            row.currency || 'INR',
+            JSON.stringify(shippingAddress),
+            lineTotal,
+            lineTotal,
+            row.notes || 'Historical import',
+            'import',
+            JSON.stringify({ imported: true, import_job: jobId }),
+          ]
+        );
+
+        await client.query(
+          `INSERT INTO order_items (
+             order_id, sku, product_name, quantity, unit_price,
+             total_price, item_type, package_type
+           ) VALUES ($1,$2,$3,$4,$5,$6,'general','box')`,
+          [
+            orderRes.rows[0].id,
+            row.sku,
+            row.product_name || row.sku,
+            qty,
+            unitPrice,
+            lineTotal,
+          ]
+        );
+
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    },
+  });
 }
 
 /**
@@ -679,6 +1396,16 @@ export const jobHandlers = {
   'process_return': handleProcessReturn,
   'process_rates': handleProcessRates,
   'carrier_assignment_retry': handleCarrierAssignmentRetry,
+  // CSV import handlers
+  'import:warehouses': handleImportWarehouses,
+  'import:carriers':   handleImportCarriers,
+  'import:suppliers':  handleImportSuppliers,
+  'import:channels':   handleImportChannels,
+  'import:team':       handleImportTeam,
+  'import:products':   handleImportProducts,
+  'import:inventory':  handleImportInventory,
+  'import:orders':     handleImportOrders,
+  'import:shipments':  handleImportShipments,
 };
 
 export default jobHandlers;
