@@ -1,0 +1,140 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+.header { text-align: center; color: white; margin-bottom: 30px; }
+.header h1 { font-size: 2.5em; margin-bottom: 10px; }
+.card {
+    background: white;
+    border-radius: 12px;
+    padding: 30px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+}
+.section-title {
+    font-size: 1.5em;
+    color: #667eea;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #667eea;
+}
+.products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+.product-card {
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.product-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+}
+.product-card.selected { border-color: #667eea; background: #f7faff; }
+.product-name { font-size: 1.2em; font-weight: bold; color: #2d3748; margin-bottom: 10px; }
+.product-price { font-size: 1.5em; color: #667eea; font-weight: bold; margin: 10px 0; }
+.product-details { font-size: 0.9em; color: #718096; }
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #2d3748; }
+.form-group input, .form-group select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 1em;
+}
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #667eea; }
+.btn {
+    padding: 15px 30px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    width: 100%;
+    margin-top: 10px;
+}
+.btn-primary { background: #667eea; color: white; }
+.btn-primary:hover:not(:disabled) { background: #5568d3; }
+.btn-success { background: #28a745; color: white; }
+.btn-success:hover:not(:disabled) { background: #218838; }
+.btn:disabled { background: #cbd5e0; cursor: not-allowed; }
+.result-box {
+    background: #f7faff;
+    border: 2px solid #667eea;
+    border-radius: 8px;
+    padding: 25px;
+    margin: 20px 0;
+}
+.result-box h3 { color: #667eea; margin-bottom: 15px; font-size: 1.3em; }
+.price-display { font-size: 2.5em; color: #667eea; font-weight: bold; margin: 15px 0; }
+.price-range { color: #718096; font-size: 1.1em; margin-bottom: 15px; }
+.badge {
+    display: inline-block;
+    padding: 8px 15px;
+    background: #e6fffa;
+    color: #047857;
+    border-radius: 20px;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+.data-section { margin-top: 25px; }
+.data-section h4 { color: #667eea; margin-bottom: 10px; }
+.json-display {
+    background: #2d3748;
+    color: #e2e8f0;
+    padding: 15px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    overflow-x: auto;
+    white-space: pre;
+}
+.loading { text-align: center; padding: 30px; }
+.spinner {
+    border: 4px solid #f3f4f6;
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 15px;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.hidden { display: none !important; }
+.success-message {
+    background: #d4edda;
+    border: 2px solid #28a745;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+}
+.success-message h3 { color: #155724; margin-bottom: 10px; }
+.error-message {
+    background: #f8d7da;
+    border: 2px solid #dc3545;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+    color: #721c24;
+}
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+.status-badge.connected { background: #d4edda; color: #155724; }

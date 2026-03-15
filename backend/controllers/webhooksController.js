@@ -3,6 +3,7 @@ import { jobsService } from '../services/jobsService.js';
 import { asyncHandler, ValidationError, NotFoundError } from '../errors/index.js';
 import ProductRepository from '../repositories/ProductRepository.js';
 import InventoryRepository from '../repositories/InventoryRepository.js';
+import WarehouseRepository from '../repositories/WarehouseRepository.js';
 // ProductRepository and InventoryRepository are singleton instances (not classes)
 
 /**
@@ -477,6 +478,9 @@ export const handleStockCheck = asyncHandler(async (req, res) => {
   const qty = Math.max(1, parseInt(quantity) || 1);
   const warehouseId = await InventoryRepository.findBestWarehouseForSku(sku, orgId, qty);
   const inStock = warehouseId !== null;
+  const warehouse = warehouseId
+    ? await WarehouseRepository.findByIdWithDetails(warehouseId, orgId)
+    : null;
 
   res.json({
     success: true,
@@ -484,6 +488,13 @@ export const handleStockCheck = asyncHandler(async (req, res) => {
     quantity_requested: qty,
     in_stock: inStock,
     fulfillable: inStock,
+    warehouse: warehouse ? {
+      id: warehouse.id,
+      code: warehouse.code,
+      name: warehouse.name,
+      address: warehouse.address || null,
+      coordinates: warehouse.coordinates || null,
+    } : null,
     message: inStock
       ? `SKU "${sku}" has sufficient stock for quantity ${qty}.`
       : `SKU "${sku}" does not have sufficient stock for quantity ${qty}. Check /catalog for available products.`,
