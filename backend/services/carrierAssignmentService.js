@@ -6,6 +6,7 @@ import deliveryChargeService from './deliveryChargeService.js';
 import { matchSlaPolicyForShipment } from './slaPolicyMatchingService.js';
 import { NotFoundError, AppError, AuthorizationError } from '../errors/AppError.js';
 import carrierAssignmentRepo from '../repositories/CarrierAssignmentRepository.js';
+import WarehouseRepository from '../repositories/WarehouseRepository.js';
 
 class CarrierAssignmentService {
   /**
@@ -184,23 +185,55 @@ class CarrierAssignmentService {
     try {
       const rows = await carrierAssignmentRepo.findPendingByCarrier(carrierId, filters);
 
-      const assignments = rows.map(row => ({
-        id: row.id,
-        orderId: row.order_id,
-        carrierId: row.carrier_id,
-        serviceType: row.service_type,
-        status: row.status,
-        orderNumber: row.order_number,
-        customerName: row.customer_name,
-        customerEmail: row.customer_email,
-        totalAmount: parseFloat(row.total_amount),
-        shippingAddress: row.shipping_address,
-        requestedAt: row.requested_at,
-        expiresAt: row.expires_at,
-        orderData: row.request_payload,
-        hoursUntilExpiry: Math.round(
-          (new Date(row.expires_at).getTime() - Date.now()) / (1000 * 60 * 60)
-        )
+      const assignments = await Promise.all(rows.map(async (row) => {
+        const rawName = row.customer_name || '';
+        const looksBroken = rawName.toLowerCase().includes('undefined');
+
+        let payload = row.request_payload;
+        if (typeof row.request_payload === 'string') {
+          try {
+            payload = JSON.parse(row.request_payload);
+          } catch {
+            payload = null;
+          }
+        }
+
+        let customerName = rawName;
+        if (looksBroken || !rawName.trim()) {
+          let from = payload?.transfer?.fromWarehouseName || null;
+          let to = payload?.transfer?.toWarehouseName || null;
+
+          // Recover names for historical broken rows via warehouse IDs in payload.
+          if ((!from || !to) && payload?.transfer?.fromWarehouseId && payload?.transfer?.toWarehouseId) {
+            const [fromWarehouse, toWarehouse] = await Promise.all([
+              WarehouseRepository.findByIdWithDetails(payload.transfer.fromWarehouseId),
+              WarehouseRepository.findByIdWithDetails(payload.transfer.toWarehouseId),
+            ]);
+            from = from || fromWarehouse?.name || null;
+            to = to || toWarehouse?.name || null;
+          }
+
+          customerName = `Transfer: ${from || 'Source Warehouse'} -> ${to || 'Destination Warehouse'}`;
+        }
+
+        return {
+          customerName,
+          id: row.id,
+          orderId: row.order_id,
+          carrierId: row.carrier_id,
+          serviceType: row.service_type,
+          status: row.status,
+          orderNumber: row.order_number,
+          customerEmail: row.customer_email,
+          totalAmount: parseFloat(row.total_amount),
+          shippingAddress: row.shipping_address,
+          requestedAt: row.requested_at,
+          expiresAt: row.expires_at,
+          orderData: row.request_payload,
+          hoursUntilExpiry: Math.round(
+            (new Date(row.expires_at).getTime() - Date.now()) / (1000 * 60 * 60)
+          )
+        };
       }));
 
       return assignments;

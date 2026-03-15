@@ -142,8 +142,15 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
 
     setLoading(true);
     try {
+      const fromWarehouse = warehouses.find((wh) => wh.id === formData.from_warehouse_id);
+      const toWarehouse = warehouses.find((wh) => wh.id === formData.to_warehouse_id);
+
       await ordersApi.createTransferOrder({
         ...formData,
+        from_warehouse_name: fromWarehouse?.name,
+        to_warehouse_name: toWarehouse?.name,
+        from_warehouse_code: fromWarehouse?.code,
+        to_warehouse_code: toWarehouse?.code,
         items: items.map(item => ({
           product_id: item.product_id,
           sku: item.sku,

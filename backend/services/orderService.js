@@ -502,6 +502,11 @@ class OrderService {
         assertExists(fromWarehouse, 'Source warehouse');
         assertExists(toWarehouse, 'Destination warehouse');
 
+        const fromWarehouseName = fromWarehouse.name || fromWarehouse.warehouse_name || 'Source Warehouse';
+        const toWarehouseName = toWarehouse.name || toWarehouse.warehouse_name || 'Destination Warehouse';
+        const fromWarehouseCode = fromWarehouse.code || fromWarehouse.warehouse_code || null;
+        const toWarehouseCode = toWarehouse.code || toWarehouse.warehouse_code || null;
+
         if (!fromWarehouse.is_active) {
           throw new BusinessLogicError('Source warehouse is not active');
         }
@@ -539,7 +544,7 @@ class OrderService {
         const orderData = {
           order_number: `TRF-${trnSeq}`,
           order_type: 'transfer',
-          customer_name: `Transfer: ${fromWarehouse.warehouse_name} → ${toWarehouse.warehouse_name}`,
+          customer_name: `Transfer: ${fromWarehouseName} → ${toWarehouseName}`,
           customer_email: toWarehouse.contact_email || 'transfers@system.local',
           customer_phone: toWarehouse.contact_phone || null,
           status: 'created',
@@ -630,18 +635,79 @@ class OrderService {
             destinationAddress: toWarehouse.address,
             estimatedPickup: pickupDate,
             estimatedDelivery: transferData.expected_delivery_date || deliveryDate,
-            notes: `Transfer from ${fromWarehouse.warehouse_name} to ${toWarehouse.warehouse_name}`,
+            notes: `Transfer from ${fromWarehouseName} to ${toWarehouseName}`,
           },
           tx
         );
+
+        // 7. Create a pending assignment for the internal/demo carrier so it appears
+        // in the carrier portal flow as well.
+        let transferAssignment = null;
+        let targetCarrier = await CarrierRepository.findByCode('INTERNAL', organizationId, tx);
+        if (!targetCarrier) {
+          const fallbackCarriers = await CarrierRepository.findEligibleCarriers(
+            transferData.priority || 'standard',
+            1,
+            tx
+          );
+          targetCarrier = fallbackCarriers[0] || null;
+        }
+
+        if (targetCarrier) {
+          const expiresAt = new Date();
+          expiresAt.setHours(expiresAt.getHours() + 24);
+
+          const requestPayload = {
+            orderId: order.id,
+            orderNumber: order.order_number,
+            orderType: 'transfer',
+            serviceType: transferData.priority || 'standard',
+            customerName: order.customer_name,
+            totalAmount: parseFloat(order.total_amount),
+            transfer: {
+              fromWarehouseId: fromWarehouse.id,
+              fromWarehouseCode: fromWarehouseCode,
+              fromWarehouseName: fromWarehouseName,
+              toWarehouseId: toWarehouse.id,
+              toWarehouseCode: toWarehouseCode,
+              toWarehouseName: toWarehouseName,
+            },
+            shipment: {
+              id: shipment.id,
+              trackingNumber: shipment.tracking_number,
+              estimatedDelivery: shipment.estimated_delivery_date,
+            },
+            items: transferData.items || [],
+            requestedAt: new Date(),
+          };
+
+          transferAssignment = await CarrierRepository.createCarrierAssignment(
+            {
+              orderId: order.id,
+              carrierId: targetCarrier.id,
+              organizationId: organizationId || null,
+              serviceType: transferData.priority || 'standard',
+              status: 'pending',
+              pickupAddress: fromWarehouse.address,
+              deliveryAddress: toWarehouse.address,
+              estimatedPickup: pickupDate,
+              estimatedDelivery: transferData.expected_delivery_date || deliveryDate,
+              requestPayload,
+              expiresAt,
+              idempotencyKey: `${order.id}-carrier-${targetCarrier.id}-transfer-${Date.now()}`,
+            },
+            tx
+          );
+        }
 
         // Log event
         logger.info('Transfer order created', {
           orderId: order.id,
           orderNumber: order.order_number,
           shipmentId: shipment.id,
-          fromWarehouse: fromWarehouse.warehouse_name,
-          toWarehouse: toWarehouse.warehouse_name,
+          assignmentId: transferAssignment?.id || null,
+          fromWarehouse: fromWarehouseName,
+          toWarehouse: toWarehouseName,
           itemCount: transferData.items.length,
           totalAmount
         });
@@ -649,15 +715,16 @@ class OrderService {
         return {
           order,
           shipment,
+          assignment: transferAssignment,
           fromWarehouse: {
             id: fromWarehouse.id,
-            name: fromWarehouse.warehouse_name,
-            code: fromWarehouse.warehouse_code
+            name: fromWarehouseName,
+            code: fromWarehouseCode
           },
           toWarehouse: {
             id: toWarehouse.id,
-            name: toWarehouse.warehouse_name,
-            code: toWarehouse.warehouse_code
+            name: toWarehouseName,
+            code: toWarehouseCode
           }
         };
       });

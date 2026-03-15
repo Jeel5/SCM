@@ -557,19 +557,25 @@ class ShipmentRepository extends BaseRepository {
       client
     );
     const seq = seqResult.rows[0].seq;
+    const trackingNumber = `SHP-TRF-${seq}`;
 
     const result = await this.query(
       `INSERT INTO shipments
-         (shipment_number, order_id, warehouse_id, carrier_id, status,
+         (tracking_number, order_id, warehouse_id, carrier_id, status,
           origin_address, destination_address,
-          estimated_pickup_date, estimated_delivery_date,
-          tracking_notes, created_at, updated_at)
+          pickup_scheduled, delivery_scheduled,
+          delivery_notes, created_at, updated_at)
        VALUES ($1, $2, $3,
                (SELECT id FROM carriers WHERE code = 'INTERNAL' LIMIT 1),
                $4, $5, $6, $7, $8, $9, NOW(), NOW())
-       RETURNING id, shipment_number, status, estimated_delivery_date`,
+       RETURNING id,
+                 tracking_number,
+                 tracking_number AS shipment_number,
+                 status,
+                 delivery_scheduled,
+                 delivery_scheduled AS estimated_delivery_date`,
       [
-        `SHP-TRF-${seq}`,
+        trackingNumber,
         data.orderId,
         data.warehouseId,
         'pending',

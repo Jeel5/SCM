@@ -113,6 +113,10 @@ export const createTransferOrderSchema = Joi.object({
   to_warehouse_id: Joi.string().required().invalid(Joi.ref('from_warehouse_id')).messages({
     'any.invalid': 'Destination warehouse must be different from source warehouse'
   }),
+  from_warehouse_name: Joi.string().max(255).optional().allow(''),
+  to_warehouse_name: Joi.string().max(255).optional().allow(''),
+  from_warehouse_code: Joi.string().max(100).optional().allow(''),
+  to_warehouse_code: Joi.string().max(100).optional().allow(''),
   items: Joi.array().items(
     Joi.object({
       product_id: Joi.string().required(),
