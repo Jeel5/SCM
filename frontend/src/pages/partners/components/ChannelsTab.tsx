@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
-import { Plus, Store, Pencil, Trash2, Copy, CheckCircle } from 'lucide-react';
+import { Plus, Store, Pencil, Trash2, Copy, CheckCircle, Eye } from 'lucide-react';
 import { Button, Badge, DataTable, Modal, Input, Select, PermissionGate } from '@/components/ui';
 import { channelsApi, warehousesApi } from '@/api/services';
+import { readCsvFile } from '@/lib/csvImport';
 import { toast } from '@/stores/toastStore';
 
 interface Channel {
@@ -42,6 +43,8 @@ export function ChannelsTab() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [viewingChannel, setViewingChannel] = useState<Channel | null>(null);
+  const importRef = useRef<HTMLInputElement | null>(null);
 
   const hasLoaded = useRef(false);
 
@@ -128,6 +131,44 @@ export function ChannelsTab() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await channelsApi.createChannel({
+            name: row.name,
+            platform_type: row.platform_type || 'd2c',
+            api_endpoint: row.api_endpoint || null,
+            contact_name: row.contact_name || null,
+            contact_email: row.contact_email || null,
+            contact_phone: row.contact_phone || null,
+            default_warehouse_id: row.default_warehouse_id || null,
+          });
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (created > 0) {
+        toast.success('Channels import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        fetchChannels(true);
+      } else {
+        toast.error('Channels import failed', 'No rows were imported. Check CSV columns.');
+      }
+    } catch (e: any) {
+      toast.error('Import failed', e?.message || 'Could not read CSV file');
+    }
+  };
+
   const columns = [
     {
       key: 'name',
@@ -189,10 +230,17 @@ export function ChannelsTab() {
     {
       key: 'actions',
       header: '',
-      width: '100px',
+      width: '130px',
       render: (ch: Channel) => (
-        <PermissionGate permission="channels.manage">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); setViewingChannel(ch); }}
+            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
+            title="View"
+          >
+            <Eye className="h-4 w-4" />
+          </button>
+          <PermissionGate permission="channels.manage">
             <button
               onClick={(e) => { e.stopPropagation(); openEditModal(ch); }}
               className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
@@ -205,8 +253,8 @@ export function ChannelsTab() {
             >
               <Trash2 className="h-4 w-4" />
             </button>
-          </div>
-        </PermissionGate>
+          </PermissionGate>
+        </div>
       ),
     },
   ];
@@ -218,9 +266,14 @@ export function ChannelsTab() {
           E-commerce platforms and marketplaces that send orders via webhooks
         </p>
         <PermissionGate permission="channels.manage">
-          <Button variant="primary" size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={openAddModal}>
-            Add Channel
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}>
+              Import
+            </Button>
+            <Button variant="primary" size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={openAddModal}>
+              Add Channel
+            </Button>
+          </div>
         </PermissionGate>
       </div>
 
@@ -232,6 +285,39 @@ export function ChannelsTab() {
         emptyMessage="No sales channels configured yet"
         className="border-0 rounded-none"
       />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
+        }}
+      />
+
+      <Modal
+        isOpen={!!viewingChannel}
+        onClose={() => setViewingChannel(null)}
+        title="Channel Details"
+        size="md"
+      >
+        {viewingChannel && (
+          <div className="space-y-2 text-sm">
+            <p><strong>Name:</strong> {viewingChannel.name}</p>
+            <p><strong>Code:</strong> {viewingChannel.code}</p>
+            <p><strong>Type:</strong> {viewingChannel.platform_type}</p>
+            <p><strong>Warehouse:</strong> {viewingChannel.warehouse_name || '—'}</p>
+            <p><strong>Contact:</strong> {viewingChannel.contact_name || '—'} ({viewingChannel.contact_email || '—'})</p>
+            <p><strong>Webhook Token:</strong></p>
+            <code className="block p-2 rounded bg-gray-100 dark:bg-gray-700 break-all text-xs">{viewingChannel.webhook_token}</code>
+            <div className="flex justify-end pt-3">
+              <Button variant="outline" onClick={() => setViewingChannel(null)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Add/Edit Modal */}
       <Modal

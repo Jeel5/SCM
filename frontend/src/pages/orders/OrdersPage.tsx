@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Download, Eye } from 'lucide-react';
+import { Plus, Download, Upload, Eye } from 'lucide-react';
 import { exportToCSV } from '@/lib/export';
+import { readCsvFile } from '@/lib/csvImport';
+import { ordersApi } from '@/api/services';
 import { useToast } from '@/components/ui';
 import {
   Card,
@@ -24,7 +26,8 @@ export function OrdersPage() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
-  const { success } = useToast();
+  const { success, error } = useToast();
+  const importRef = useRef<HTMLInputElement | null>(null);
 
   const pageSize = 10;
   const { orders, totalOrders, isLoading, refetch } = useOrders(page, pageSize);
@@ -43,6 +46,55 @@ export function OrdersPage() {
     }));
     exportToCSV(exportData, `orders_${new Date().toISOString().split('T')[0]}`);
     success('Orders exported successfully!');
+  };
+
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await ordersApi.createOrder({
+            customer_name: row.customer_name,
+            customer_email: row.customer_email,
+            customer_phone: row.customer_phone || null,
+            priority: row.priority || 'standard',
+            shipping_address: {
+              street: row.street || 'N/A',
+              city: row.city || 'N/A',
+              state: row.state || 'N/A',
+              postal_code: row.postal_code || '',
+              country: row.country || 'India',
+            },
+            items: [
+              {
+                sku: row.sku,
+                product_name: row.product_name || row.sku,
+                quantity: Number(row.quantity) || 1,
+                unit_price: Number(row.unit_price) || 0,
+              },
+            ],
+          } as any);
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      if (created > 0) {
+        success('Orders import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        refetch();
+      } else {
+        error('Orders import failed', 'No rows were imported. Check CSV column names and values.');
+      }
+    } catch (e: any) {
+      error('Import failed', e?.message || 'Could not read CSV file');
+    }
   };
 
   // Count orders per status for tab badges
@@ -149,6 +201,9 @@ export function OrdersPage() {
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage and track all customer orders</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
+          <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => importRef.current?.click()}>
+            Import
+          </Button>
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
@@ -202,6 +257,17 @@ export function OrdersPage() {
         }}
       />
       <CreateOrderModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={refetch} />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
+        }}
+      />
     </div>
   );
 }

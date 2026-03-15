@@ -1,11 +1,141 @@
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, CreditCard, TrendingUp, AlertTriangle, Download, RefreshCw } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent, Button, DataTable, PermissionGate } from '@/components/ui';
+import { DollarSign, CreditCard, TrendingUp, AlertTriangle, Download, RefreshCw, Upload, Plus } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent, Button, DataTable, PermissionGate, Modal, Input, Select, useToast } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
+import { carriersApi, financeApi } from '@/api/services';
 import { useFinance } from './hooks/useFinance';
 
 export function FinancePage() {
   const { data, isLoading, refetch } = useFinance();
+  const { success, error } = useToast();
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [carriers, setCarriers] = useState<Array<{ id: string; name: string }>>([]);
+  const [form, setForm] = useState({
+    invoice_number: '',
+    carrier_id: '',
+    billing_period_start: '',
+    billing_period_end: '',
+    total_shipments: '0',
+    base_amount: '0',
+    penalties: '0',
+    adjustments: '0',
+    final_amount: '0',
+    status: 'pending',
+  });
+
+  const resetForm = () => {
+    setForm({
+      invoice_number: '',
+      carrier_id: '',
+      billing_period_start: '',
+      billing_period_end: '',
+      total_shipments: '0',
+      base_amount: '0',
+      penalties: '0',
+      adjustments: '0',
+      final_amount: '0',
+      status: 'pending',
+    });
+  };
+
+  const openAddRecord = async () => {
+    try {
+      const res = await carriersApi.getCarriers({ limit: 200 });
+      setCarriers((res.data || []).map((c: any) => ({ id: c.id, name: c.name })));
+      setIsAddOpen(true);
+    } catch {
+      error('Could not load carriers', 'Please refresh and try again');
+    }
+  };
+
+  const handleCreateInvoice = async () => {
+    if (!form.invoice_number || !form.carrier_id || !form.billing_period_start || !form.billing_period_end) {
+      error('Missing required fields', 'Invoice number, carrier and billing period are required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await financeApi.createInvoice({
+        invoice_number: form.invoice_number,
+        carrier_id: form.carrier_id,
+        billing_period_start: new Date(form.billing_period_start).toISOString(),
+        billing_period_end: new Date(form.billing_period_end).toISOString(),
+        total_shipments: Number(form.total_shipments) || 0,
+        base_amount: Number(form.base_amount) || 0,
+        penalties: Number(form.penalties) || 0,
+        adjustments: Number(form.adjustments) || 0,
+        final_amount: Number(form.final_amount) || 0,
+        status: form.status as 'pending' | 'approved' | 'disputed' | 'paid' | 'cancelled',
+      });
+      success('Record added', 'Invoice created successfully');
+      setIsAddOpen(false);
+      resetForm();
+      refetch();
+    } catch (e: any) {
+      error('Failed to add record', e?.response?.data?.error || e?.message || 'Please check input data');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const parseCsv = (text: string) => {
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return [] as Record<string, string>[];
+    const headers = lines[0].split(',').map((h) => h.trim());
+    return lines.slice(1).map((line) => {
+      const cells = line.split(',').map((c) => c.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = (cells[i] || '').replace(/^"|"$/g, '');
+      });
+      return row;
+    });
+  };
+
+  const handleCsvUpload = async (file: File) => {
+    const text = await file.text();
+    const rows = parseCsv(text);
+    if (!rows.length) {
+      error('CSV is empty', 'Please upload a valid CSV file with header row');
+      return;
+    }
+
+    setIsSubmitting(true);
+    let created = 0;
+    let failed = 0;
+
+    for (const row of rows) {
+      try {
+        await financeApi.createInvoice({
+          invoice_number: row.invoice_number,
+          carrier_id: row.carrier_id,
+          billing_period_start: new Date(row.billing_period_start).toISOString(),
+          billing_period_end: new Date(row.billing_period_end).toISOString(),
+          total_shipments: Number(row.total_shipments) || 0,
+          base_amount: Number(row.base_amount) || 0,
+          penalties: Number(row.penalties) || 0,
+          adjustments: Number(row.adjustments) || 0,
+          final_amount: Number(row.final_amount) || 0,
+          status: (row.status as any) || 'pending',
+        });
+        created += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    setIsSubmitting(false);
+    if (created > 0) {
+      success('CSV import completed', `${created} invoices imported${failed ? `, ${failed} failed` : ''}`);
+      refetch();
+    } else {
+      error('CSV import failed', 'No records were imported. Check required columns and values.');
+    }
+  };
 
   const handleExport = async () => {
     try {
@@ -142,7 +272,14 @@ export function FinancePage() {
             Export
           </Button>
           <PermissionGate permission="settings.organization">
-            <Button variant="primary">Add Record</Button>
+            <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>
+              Upload CSV
+            </Button>
+          </PermissionGate>
+          <PermissionGate permission="settings.organization">
+            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={openAddRecord}>
+              Add Record
+            </Button>
           </PermissionGate>
         </div>
       </motion.div>
@@ -227,12 +364,128 @@ export function FinancePage() {
                 <li>Track disputes and chargebacks alongside shipments</li>
               </ul>
               <div className="flex gap-3 pt-2">
-                <Button variant="primary">Upload CSV</Button>
+                <Button variant="primary" onClick={() => fileInputRef.current?.click()}>Upload CSV</Button>
                 <Button variant="outline">Configure Integration</Button>
               </div>
             </CardContent>
           </Card>
         )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleCsvUpload(file);
+          e.currentTarget.value = '';
+        }}
+      />
+
+      <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Add Finance Record" size="lg">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Invoice Number"
+              value={form.invoice_number}
+              onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))}
+              placeholder="INV-2026-001"
+            />
+            <Select
+              label="Carrier"
+              value={form.carrier_id}
+              onChange={(e) => setForm((p) => ({ ...p, carrier_id: e.target.value }))}
+              options={[
+                { value: '', label: 'Select carrier' },
+                ...carriers.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Billing Start"
+              type="date"
+              value={form.billing_period_start}
+              onChange={(e) => setForm((p) => ({ ...p, billing_period_start: e.target.value }))}
+            />
+            <Input
+              label="Billing End"
+              type="date"
+              value={form.billing_period_end}
+              onChange={(e) => setForm((p) => ({ ...p, billing_period_end: e.target.value }))}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <Input
+              label="Total Shipments"
+              type="number"
+              min="0"
+              value={form.total_shipments}
+              onChange={(e) => setForm((p) => ({ ...p, total_shipments: e.target.value }))}
+            />
+            <Input
+              label="Base Amount"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.base_amount}
+              onChange={(e) => setForm((p) => ({ ...p, base_amount: e.target.value }))}
+            />
+            <Input
+              label="Final Amount"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.final_amount}
+              onChange={(e) => setForm((p) => ({ ...p, final_amount: e.target.value }))}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <Input
+              label="Penalties"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.penalties}
+              onChange={(e) => setForm((p) => ({ ...p, penalties: e.target.value }))}
+            />
+            <Input
+              label="Adjustments"
+              type="number"
+              step="0.01"
+              value={form.adjustments}
+              onChange={(e) => setForm((p) => ({ ...p, adjustments: e.target.value }))}
+            />
+            <Select
+              label="Status"
+              value={form.status}
+              onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+              options={[
+                { value: 'pending', label: 'Pending' },
+                { value: 'approved', label: 'Approved' },
+                { value: 'disputed', label: 'Disputed' },
+                { value: 'paid', label: 'Paid' },
+                { value: 'cancelled', label: 'Cancelled' },
+              ]}
+            />
+          </div>
+
+          <div className="text-xs text-gray-500">
+            CSV columns supported: `invoice_number,carrier_id,billing_period_start,billing_period_end,total_shipments,base_amount,penalties,adjustments,final_amount,status`
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+            <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button variant="primary" onClick={handleCreateInvoice} disabled={isSubmitting}>
+              {isSubmitting ? 'Saving...' : 'Save Record'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

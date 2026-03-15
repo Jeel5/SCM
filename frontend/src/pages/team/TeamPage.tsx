@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   UserPlus,
+  Upload,
   Search,
   Users,
   Shield,
@@ -12,9 +13,10 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Button, Input, Badge, Dropdown } from '@/components/ui';
-import { get, del } from '@/api/client';
+import { get, del, post } from '@/api/client';
 import { toast } from '@/stores/toastStore';
 import { useAuthStore } from '@/stores';
+import { readCsvFile } from '@/lib/csvImport';
 import { InviteUserModal } from './components/InviteUserModal';
 import { EditUserModal } from './components/EditUserModal';
 
@@ -74,7 +76,43 @@ export function TeamPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editUser, setEditUser] = useState<OrgUser | null>(null);
-    const hasLoaded = useRef(false);
+  const hasLoaded = useRef(false);
+  const importRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await post('/users', {
+            name: row.name,
+            email: row.email,
+            phone: row.phone || '',
+            role: row.role || 'operations_manager',
+          });
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (created > 0) {
+        toast.success('Team import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        fetchUsers(true);
+      } else {
+        toast.error('Team import failed', 'No rows were imported. Check CSV columns.');
+      }
+    } catch (e: any) {
+      toast.error('Import failed', e?.message || 'Could not read CSV file');
+    }
+  };
 
     const fetchUsers = useCallback(async (soft = false) => {
       if (!soft && !hasLoaded.current) setIsLoading(true);
@@ -124,9 +162,14 @@ export function TeamPage() {
             Manage users and their access roles in your organization
           </p>
         </div>
-        <Button onClick={() => setInviteOpen(true)} leftIcon={<UserPlus className="h-4 w-4" />}>
-          Add Member
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => importRef.current?.click()} leftIcon={<Upload className="h-4 w-4" />}>
+            Import
+          </Button>
+          <Button onClick={() => setInviteOpen(true)} leftIcon={<UserPlus className="h-4 w-4" />}>
+            Add Member
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -319,6 +362,17 @@ export function TeamPage() {
         onClose={() => setEditUser(null)}
           onSuccess={() => fetchUsers(true)}
         user={editUser}
+      />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
+        }}
       />
     </div>
   );

@@ -1,0 +1,72 @@
+-Finance Page: Upload CSV and Add Record is not working
+-2026-03-14 10:28:06 [error]: Shipment not found {
+  "name": "NotFoundError",
+  "statusCode": 404,
+  "path": "/api/shipments/fb3898da-7417-4a99-9b45-94c24ff9607b",
+  "method": "GET",
+  "requestId": "d758108a-695d-4ca3-8d91-9ac4e0d1d023",
+  "ip": "::1"
+}
+
+-this type of text shows in all toast message &quot;now&quot;
+
+-2026-03-14 10:33:38 [error]: Failed to create transfer order {
+  "error": "new row for relation \"orders\" violates check constraint \"orders_status_check\"",
+  "transferData": {
+    "from": "86920ed4-4940-4399-8f35-f708471e971c",
+    "to": "d03acd47-5776-4c5f-a647-0e8b39635b26",
+    "itemCount": 1
+  }
+}
+2026-03-14 10:33:38 [error]: new row for relation "orders" violates check constraint "orders_status_check" {
+  "name": "error",
+  "statusCode": 500,
+  "path": "/api/orders/transfer",
+  "method": "POST",
+  "requestId": "71b83cdf-0d37-49ba-ac16-f374b86f9dc4",
+  "ip": "::ffff:127.0.0.1"
+}
+2026-03-14 10:33:38 [http]: HTTP Request {
+  "method": "POST",
+  "url": "/api/orders/transfer",
+  "status": 500,
+  "responseTime": "47ms",
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0"
+}
+
+-
+2026-03-14 10:35:53 [debug]: Transaction started
+2026-03-14 10:35:53 [debug]: Transaction rolled back
+2026-03-14 10:35:53 [error]: Transaction failed and rolled back {
+  "error": "Unexpected end of JSON input",
+  "stack": "SyntaxError: Unexpected end of JSON input\n    at JSON.parse (<anonymous>)\n    at file:///home/manav/Desktop/SCM/backend/services/shipmentTrackingService.js:63:37\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async withTransaction (file:///home/manav/Desktop/SCM/backend/utils/dbTransaction.js:104:20)\n    at async ShipmentTrackingService.updateShipmentTracking (file:///home/manav/Desktop/SCM/backend/services/shipmentTrackingService.js:58:22)\n    at async file:///home/manav/Desktop/SCM/backend/controllers/trackingController.js:52:27"
+}
+2026-03-14 10:35:53 [error]: Failed to update shipment tracking {
+  "shipmentId": "abcae1fb-eb84-4aea-b3ea-4b6d52228686",
+  "error": "Unexpected end of JSON input"
+}
+2026-03-14 10:35:53 [error]: Unexpected end of JSON input {
+  "name": "SyntaxError",
+  "statusCode": 500,
+  "path": "/api/shipments/TRACK-1773334034939-yf0q5sqcl/update-tracking",
+  "method": "POST",
+  "requestId": "9cd705cf-8f5c-4b36-9ec1-f5f9fc709e2b",
+  "ip": "::ffff:127.0.0.1"
+}
+2026-03-14 10:35:53 [http]: HTTP Request {
+  "method": "POST",
+  "url": "/api/shipments/TRACK-1773334034939-yf0q5sqcl/update-tracking",
+  "status": 500,
+  "responseTime": "35ms",
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0"
+}
+
+
+dashboard: in warehouse overview card there is inbound and outbound orders are showing but till now we just have outbound orders then it is showing in inbound and also the persentage is 0
+
+-add working import button in order, warehouse, inventory, carriers, products, patners, team page where admin can import csv data
+this is for example a company takes our services and they may previous data which they would want to enter in all this is only data entry
+
+-Patners Page: Add view button for each

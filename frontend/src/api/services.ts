@@ -596,6 +596,21 @@ export const financeApi = {
   }> {
     return get('/finance/disputes', { page, limit });
   },
+
+  async createInvoice(data: {
+    invoice_number: string;
+    carrier_id: string;
+    billing_period_start: string;
+    billing_period_end: string;
+    total_shipments: number;
+    base_amount: number;
+    penalties?: number;
+    adjustments?: number;
+    final_amount: number;
+    status?: 'pending' | 'approved' | 'disputed' | 'paid' | 'cancelled';
+  }): Promise<ApiResponse<any>> {
+    return post('/finance/invoices', data);
+  },
 };
 
 // ==================== EXCEPTIONS ====================
@@ -731,8 +746,8 @@ export const dashboardApi = {
       capacity: wh.capacity || 0,
       used: wh.currentUtilization || 0,
       utilizationRate: Number(wh.utilizationPercentage) || 0,
-      inboundToday: _warehouseActivityCache[wh.id]?.inbound ?? 0,
-      outboundToday: _warehouseActivityCache[wh.id]?.outbound ?? 0,
+      inboundToday: Math.max(0, Number(_warehouseActivityCache[wh.id]?.inbound ?? 0)),
+      outboundToday: Math.max(0, Number(_warehouseActivityCache[wh.id]?.outbound ?? 0)),
     }));
     return { data: utilization, success: true };
   },

@@ -11,16 +11,6 @@ export interface Toast {
   duration?: number;
 }
 
-// Simple HTML sanitization to prevent XSS
-function sanitizeText(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 interface ToastStore {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, 'id'>) => void;
@@ -36,8 +26,9 @@ export const useToastStore = create<ToastStore>((set) => ({
     const newToast: Toast = { 
       ...toast, 
       id,
-      title: sanitizeText(toast.title),
-      message: toast.message ? sanitizeText(toast.message) : undefined,
+      // React escapes text by default, so keep raw text to avoid rendering HTML entities.
+      title: toast.title,
+      message: toast.message,
     };
     
     set((state) => ({

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Truck, Star, Clock, Package, Plus, Eye, Edit, Trash2 } from 'lucide-react';
+import { Truck, Star, Clock, Package, Plus, Upload, Eye, Edit, Trash2, LayoutGrid, List } from 'lucide-react';
 import { Card, Button, Badge, Progress, DataTable, Tabs, PermissionGate } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
+import { readCsvFile } from '@/lib/csvImport';
 import type { Carrier } from '@/types';
 import { RatingStars } from './components/RatingStars';
 import { CarrierCard } from './components/CarrierCard';
@@ -22,6 +23,45 @@ export function CarriersPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [activeTab, setActiveTab] = useState('all');
+  const importRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await carriersApi.createCarrier({
+            name: row.name,
+            status: (row.status as any) || 'active',
+            contactEmail: row.contact_email || undefined,
+            contactPhone: row.contact_phone || undefined,
+            website: row.website || undefined,
+            servicesOffered: row.services ? row.services.split('|').map((s) => s.trim()).filter(Boolean) : [],
+            serviceType: row.service_type || undefined,
+          });
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (created > 0) {
+        toast.success('Carriers import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        refetch();
+      } else {
+        toast.error('Carriers import failed', 'No rows were imported. Check CSV columns.');
+      }
+    } catch (e: any) {
+      toast.error('Import failed', e?.message || 'Could not read CSV file');
+    }
+  };
 
   const handleEdit = (carrier: Carrier) => {
     setSelectedCarrier(carrier);
@@ -171,30 +211,35 @@ export function CarriersPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Manage shipping carriers and track performance</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center rounded-lg border border-gray-200 p-1">
+          <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode('grid')}
               className={cn(
-                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                'p-2 transition-colors',
                 viewMode === 'grid'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500'
               )}
+              title="Grid view"
             >
-              Grid
+              <LayoutGrid className="h-4 w-4" />
             </button>
             <button
               onClick={() => setViewMode('table')}
               className={cn(
-                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                'p-2 transition-colors',
                 viewMode === 'table'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500'
               )}
+              title="Table view"
             >
-              Table
+              <List className="h-4 w-4" />
             </button>
           </div>
+          <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => importRef.current?.click()}>
+            Import
+          </Button>
           <PermissionGate permission="settings.organization">
             <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setIsAddOpen(true)}>
               Add Carrier
@@ -324,6 +369,17 @@ export function CarriersPage() {
         }}
         onSuccess={refetch}
         carrier={selectedCarrier}
+      />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
+        }}
       />
     </div>
   );

@@ -269,10 +269,28 @@ async function refreshWarehouseActivity(organizationId, startDate, endDate, tx) 
        SELECT
          DATE(sm.created_at) AS stat_date,
          sm.warehouse_id,
-         COUNT(*) FILTER (WHERE sm.movement_type IN ('inbound', 'transfer_in', 'add')) AS inbound_count,
-         COUNT(*) FILTER (WHERE sm.movement_type IN ('outbound', 'transfer_out', 'remove')) AS outbound_count,
-         COALESCE(SUM(sm.quantity) FILTER (WHERE sm.movement_type IN ('inbound', 'transfer_in', 'add')), 0) AS inbound_units,
-         COALESCE(SUM(sm.quantity) FILTER (WHERE sm.movement_type IN ('outbound', 'transfer_out', 'remove')), 0) AS outbound_units
+         COUNT(*) FILTER (
+           WHERE sm.movement_type IN ('inbound', 'transfer_in', 'return')
+              OR (sm.movement_type = 'adjustment' AND sm.quantity > 0)
+         ) AS inbound_count,
+         COUNT(*) FILTER (
+           WHERE sm.movement_type IN ('outbound', 'transfer_out', 'damaged', 'expired')
+              OR (sm.movement_type = 'adjustment' AND sm.quantity < 0)
+         ) AS outbound_count,
+         COALESCE(SUM(
+           CASE
+             WHEN sm.movement_type IN ('inbound', 'transfer_in', 'return') THEN ABS(sm.quantity)
+             WHEN sm.movement_type = 'adjustment' AND sm.quantity > 0 THEN ABS(sm.quantity)
+             ELSE 0
+           END
+         ), 0) AS inbound_units,
+         COALESCE(SUM(
+           CASE
+             WHEN sm.movement_type IN ('outbound', 'transfer_out', 'damaged', 'expired') THEN ABS(sm.quantity)
+             WHEN sm.movement_type = 'adjustment' AND sm.quantity < 0 THEN ABS(sm.quantity)
+             ELSE 0
+           END
+         ), 0) AS outbound_units
        FROM stock_movements sm
        JOIN warehouses w ON w.id = sm.warehouse_id
        WHERE w.organization_id = $1

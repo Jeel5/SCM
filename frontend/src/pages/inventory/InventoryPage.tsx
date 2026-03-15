@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Package, Download, Plus, Eye } from 'lucide-react';
-import { Card, Button, DataTable, Badge, Tabs, PermissionGate } from '@/components/ui';
+import { Package, Download, Upload, Plus, Eye } from 'lucide-react';
+import { Card, Button, DataTable, Badge, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
+import { inventoryApi } from '@/api/services';
+import { readCsvFile } from '@/lib/csvImport';
 import type { InventoryItem } from '@/types';
 import {
   StockLevelIndicator,
@@ -23,9 +25,51 @@ export function InventoryPage() {
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const importRef = useRef<HTMLInputElement | null>(null);
+  const { success, error } = useToast();
 
   const pageSize = 10;
   const { inventory, warehouses, totalItems, stats, isLoading, refetch } = useInventory(page, pageSize);
+
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await inventoryApi.createInventoryItem({
+            product_id: row.product_id || undefined,
+            sku: row.sku,
+            product_name: row.product_name,
+            warehouse_id: row.warehouse_id,
+            quantity: Number(row.quantity) || 0,
+            available_quantity: Number(row.available_quantity || row.quantity) || 0,
+            reserved_quantity: Number(row.reserved_quantity) || 0,
+            reorder_point: Number(row.reorder_point) || 0,
+            unit_cost: row.unit_cost ? Number(row.unit_cost) : undefined,
+          } as any);
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (created > 0) {
+        success('Inventory import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        refetch();
+      } else {
+        error('Inventory import failed', 'No rows were imported. Check CSV columns.');
+      }
+    } catch (e: any) {
+      error('Import failed', e?.message || 'Could not read CSV file');
+    }
+  };
 
   const handleExport = () => {
     if (!inventory.length) return;
@@ -166,6 +210,9 @@ export function InventoryPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Track stock levels and manage inventory across warehouses</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => importRef.current?.click()}>
+            Import
+          </Button>
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
@@ -271,6 +318,17 @@ export function InventoryPage() {
         onSuccess={() => {
           setIsAddOpen(false);
           refetch();
+        }}
+      />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
         }}
       />
     </div>

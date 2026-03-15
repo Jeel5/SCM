@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Package2, Plus, AlertTriangle, Snowflake, Zap,
+  Package2, Plus, Upload, AlertTriangle, Snowflake, Zap,
   CheckCircle, XCircle, Tag, Edit2, Eye, Trash2, Flame,
 } from 'lucide-react';
-import { Card, Button, Badge, DataTable } from '@/components/ui';
+import { Card, Button, Badge, DataTable, useToast } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
+import { readCsvFile } from '@/lib/csvImport';
 import type { Product } from '@/types';
 import { AddEditProductModal, ProductDetailsModal } from './components';
 import { useProducts } from './hooks';
@@ -26,6 +27,8 @@ export function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const importRef = useRef<HTMLInputElement | null>(null);
+  const { success, error } = useToast();
 
   const filters: Record<string, unknown> = {};
   if (search) filters.search = search;
@@ -53,13 +56,53 @@ export function ProductsPage() {
     }
   };
 
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await productsApi.createProduct({
+            name: row.name,
+            sku: row.sku,
+            category: row.category || null,
+            brand: row.brand || null,
+            sellingPrice: row.selling_price ? Number(row.selling_price) : null,
+            costPrice: row.cost_price ? Number(row.cost_price) : null,
+            weight: row.weight ? Number(row.weight) : null,
+            currency: row.currency || 'INR',
+            isActive: row.is_active ? row.is_active === 'true' : true,
+          });
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (created > 0) {
+        success('Products import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        refetch();
+      } else {
+        error('Products import failed', 'No rows were imported. Check CSV columns.');
+      }
+    } catch (e: any) {
+      error('Import failed', e?.message || 'Could not read CSV file');
+    }
+  };
+
   const columns = [
     {
       key: 'name',
       header: 'Product',
       render: (p: Product) => (
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+          <div className="h-9 w-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
             <Package2 className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
           </div>
           <div>
@@ -196,9 +239,14 @@ export function ProductsPage() {
             <p className="text-sm text-gray-500 dark:text-gray-400">Manage your product master data</p>
           </div>
         </div>
-        <Button variant="primary" onClick={openAdd} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" /> Add Product
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => importRef.current?.click()} className="flex items-center gap-2">
+            <Upload className="h-4 w-4" /> Import
+          </Button>
+          <Button variant="primary" onClick={openAdd} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" /> Add Product
+          </Button>
+        </div>
       </motion.div>
 
       {/* Stats */}
@@ -282,6 +330,17 @@ export function ProductsPage() {
         onClose={() => setIsDetailsOpen(false)}
         onEdit={selectedProduct ? () => openEdit(selectedProduct) : undefined}
         product={selectedProduct}
+      />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
+        }}
       />
     </div>
   );

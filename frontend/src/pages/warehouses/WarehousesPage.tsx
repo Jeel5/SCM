@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Package, Plus, Clock, ArrowRightLeft, Eye, MapPin, LayoutGrid, List } from 'lucide-react';
+import { Building2, Package, Plus, Clock, ArrowRightLeft, Eye, MapPin, LayoutGrid, List, Upload } from 'lucide-react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Card, Button, Badge, DataTable, Tabs, PermissionGate } from '@/components/ui';
+import { Card, Button, Badge, DataTable, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
+import { readCsvFile } from '@/lib/csvImport';
 import type { Warehouse } from '@/types';
 import { warehousesApi } from '@/api/services';
 import { WarehouseCard } from './components/WarehouseCard';
@@ -49,6 +50,53 @@ export function WarehousesPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [isDeleting, setIsDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const importRef = useRef<HTMLInputElement | null>(null);
+  const { success, error } = useToast();
+
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await warehousesApi.createWarehouse({
+            name: row.name,
+            code: row.code || undefined,
+            type: row.type || 'fulfillment',
+            capacity: Number(row.capacity) || 0,
+            address: {
+              street: row.street || '',
+              city: row.city || '',
+              state: row.state || '',
+              postalCode: row.postal_code || '',
+              country: row.country || 'India',
+            },
+            contactEmail: row.contact_email || undefined,
+            contactPhone: row.contact_phone || undefined,
+            status: row.status || 'active',
+          } as any);
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (created > 0) {
+        success('Warehouses import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        refetch();
+      } else {
+        error('Warehouses import failed', 'No rows were imported. Check CSV columns.');
+      }
+    } catch (e: any) {
+      error('Import failed', e?.message || 'Could not read CSV file');
+    }
+  };
 
   const handleDelete = async (id: string) => {
     setIsDeleting(true);
@@ -207,6 +255,9 @@ export function WarehousesPage() {
               <List className="h-4 w-4" />
             </button>
           </div>
+          <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => importRef.current?.click()}>
+            Import
+          </Button>
           <Button
             variant={showMap ? 'outline' : 'secondary'}
             onClick={() => setShowMap(!showMap)}
@@ -390,6 +441,17 @@ export function WarehousesPage() {
         onSuccess={() => {
           refetch();
           setIsTransferOpen(false);
+        }}
+      />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
         }}
       />
     </div>

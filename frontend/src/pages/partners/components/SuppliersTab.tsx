@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
-import { Plus, Package, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Package, Pencil, Trash2, Eye } from 'lucide-react';
 import { Button, Badge, DataTable, Modal, Input, Select, PermissionGate } from '@/components/ui';
 import { suppliersApi } from '@/api/services';
+import { readCsvFile } from '@/lib/csvImport';
 import { toast } from '@/stores/toastStore';
 
 interface Supplier {
@@ -37,6 +38,8 @@ export function SuppliersTab() {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [formData, setFormData] = useState(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
+  const importRef = useRef<HTMLInputElement | null>(null);
 
     const hasLoaded = useRef(false);
 
@@ -114,6 +117,50 @@ export function SuppliersTab() {
         fetchSuppliers(true);
     } catch {
       toast.error('Failed to delete supplier');
+    }
+  };
+
+  const handleImportCsv = async (file: File) => {
+    try {
+      const rows = await readCsvFile(file);
+      if (!rows.length) {
+        toast.error('CSV is empty', 'Please upload a valid CSV file with headers');
+        return;
+      }
+
+      let created = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await suppliersApi.createSupplier({
+            name: row.name,
+            contact_name: row.contact_name || null,
+            contact_email: row.contact_email || null,
+            contact_phone: row.contact_phone || null,
+            website: row.website || null,
+            address: row.address || null,
+            city: row.city || null,
+            state: row.state || null,
+            country: row.country || 'India',
+            postal_code: row.postal_code || null,
+            lead_time_days: Number(row.lead_time_days) || 7,
+            payment_terms: row.payment_terms || null,
+            reliability_score: row.reliability_score ? Number(row.reliability_score) : 0.85,
+          });
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (created > 0) {
+        toast.success('Suppliers import completed', `${created} created${failed ? `, ${failed} failed` : ''}`);
+        fetchSuppliers(true);
+      } else {
+        toast.error('Suppliers import failed', 'No rows were imported. Check CSV columns.');
+      }
+    } catch (e: any) {
+      toast.error('Import failed', e?.message || 'Could not read CSV file');
     }
   };
 
@@ -199,10 +246,17 @@ export function SuppliersTab() {
     {
       key: 'actions',
       header: '',
-      width: '100px',
+      width: '130px',
       render: (s: Supplier) => (
-        <PermissionGate permission="suppliers.manage">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); setViewingSupplier(s); }}
+            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
+            title="View"
+          >
+            <Eye className="h-4 w-4" />
+          </button>
+          <PermissionGate permission="suppliers.manage">
             <button
               onClick={(e) => { e.stopPropagation(); openEditModal(s); }}
               className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
@@ -215,8 +269,8 @@ export function SuppliersTab() {
             >
               <Trash2 className="h-4 w-4" />
             </button>
-          </div>
-        </PermissionGate>
+          </PermissionGate>
+        </div>
       ),
     },
   ];
@@ -228,9 +282,14 @@ export function SuppliersTab() {
           Inbound vendors for purchase orders and inventory replenishment
         </p>
         <PermissionGate permission="suppliers.manage">
-          <Button variant="primary" size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={openAddModal}>
-            Add Supplier
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}>
+              Import
+            </Button>
+            <Button variant="primary" size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={openAddModal}>
+              Add Supplier
+            </Button>
+          </div>
         </PermissionGate>
       </div>
 
@@ -242,6 +301,39 @@ export function SuppliersTab() {
         emptyMessage="No suppliers configured yet"
         className="border-0 rounded-none"
       />
+      <input
+        ref={importRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportCsv(file);
+          e.currentTarget.value = '';
+        }}
+      />
+
+      <Modal
+        isOpen={!!viewingSupplier}
+        onClose={() => setViewingSupplier(null)}
+        title="Supplier Details"
+        size="md"
+      >
+        {viewingSupplier && (
+          <div className="space-y-2 text-sm">
+            <p><strong>Name:</strong> {viewingSupplier.name}</p>
+            <p><strong>Code:</strong> {viewingSupplier.code}</p>
+            <p><strong>Contact:</strong> {viewingSupplier.contact_name || '—'}</p>
+            <p><strong>Email:</strong> {viewingSupplier.contact_email || '—'}</p>
+            <p><strong>Phone:</strong> {viewingSupplier.contact_phone || '—'}</p>
+            <p><strong>Lead Time:</strong> {viewingSupplier.lead_time_days} days</p>
+            <p><strong>Reliability:</strong> {Math.round(Number(viewingSupplier.reliability_score) * 100)}%</p>
+            <div className="flex justify-end pt-3">
+              <Button variant="outline" onClick={() => setViewingSupplier(null)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Add/Edit Modal */}
       <Modal

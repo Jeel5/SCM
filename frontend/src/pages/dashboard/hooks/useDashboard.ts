@@ -41,8 +41,11 @@ export function useDashboard() {
       if (useRealApi) {
         // getDashboardStats now returns ordersTrend + warehouseActivity in a single call
         // so getOrdersChart and getWarehouseUtilization can read from cache
-        const [metricsRes, shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
-          dashboardApi.getDashboardStats(period),
+        // Fetch dashboard stats first because getWarehouseUtilization depends on
+        // cached warehouse activity populated by getDashboardStats.
+        const metricsRes = await dashboardApi.getDashboardStats(period);
+
+        const [shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
           shipmentsApi.getShipments(1, 10),
           dashboardApi.getCarrierPerformance(),
           canViewWarehouses ? dashboardApi.getWarehouseUtilization() : Promise.resolve({ data: [] }),

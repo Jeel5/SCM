@@ -542,7 +542,7 @@ class OrderService {
           customer_name: `Transfer: ${fromWarehouse.warehouse_name} → ${toWarehouse.warehouse_name}`,
           customer_email: toWarehouse.contact_email || 'transfers@system.local',
           customer_phone: toWarehouse.contact_phone || null,
-          status: 'pending',
+          status: 'created',
           priority: transferData.priority || 'standard',
           total_amount: totalAmount,
           currency: 'INR',
