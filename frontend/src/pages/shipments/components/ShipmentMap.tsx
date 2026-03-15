@@ -70,21 +70,49 @@ export function ShipmentMap({ shipment: initialShipment }: { shipment: Shipment 
     if (data?.id === shipment.id) refreshShipmentData();
   });
   
+  const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+    mumbai: { lat: 19.0760, lng: 72.8777 },
+    anand: { lat: 22.5645, lng: 72.9289 },
+    pune: { lat: 18.5204, lng: 73.8567 },
+    delhi: { lat: 28.6139, lng: 77.2090 },
+    ahmedabad: { lat: 23.0225, lng: 72.5714 },
+    surat: { lat: 21.1702, lng: 72.8311 },
+    vadodara: { lat: 22.3072, lng: 73.1812 },
+  };
+
+  const cityFallback = (
+    address: { city?: string | null } | null | undefined,
+    hardFallback: { lat: number; lng: number }
+  ) => {
+    const city = (address?.city || '').trim().toLowerCase();
+    return CITY_COORDS[city] || hardFallback;
+  };
+
   // Guard against null/NaN coordinates (DB may have partial or missing coordinate data)
   const toCoord = (
-    c: { lat?: number | null; lng?: number | null } | null | undefined,
+    c: { lat?: number | null; lng?: number | null; lon?: number | null; latitude?: number | null; longitude?: number | null } | null | undefined,
     fallback: { lat: number; lng: number }
   ) => {
-    if (c && !isNaN(Number(c.lat)) && !isNaN(Number(c.lng)) && c.lat !== null && c.lng !== null)
-      return { lat: Number(c.lat), lng: Number(c.lng) };
+    if (!c) return fallback;
+    const lat = c.lat ?? c.latitude;
+    const lng = c.lng ?? c.lon ?? c.longitude;
+    if (!isNaN(Number(lat)) && !isNaN(Number(lng)) && lat !== null && lng !== null) {
+      return { lat: Number(lat), lng: Number(lng) };
+    }
     return fallback;
   };
 
-  const origin      = toCoord(shipment.origin?.coordinates,      { lat: 28.6139, lng: 77.2090 }); // Default: Delhi
-  const destination = toCoord(shipment.destination?.coordinates, { lat: 19.0760, lng: 72.8777 }); // Default: Mumbai
+  const origin = toCoord(
+    shipment.origin?.coordinates,
+    cityFallback(shipment.origin, { lat: 20.5937, lng: 78.9629 })
+  );
+  const destination = toCoord(
+    shipment.destination?.coordinates,
+    cityFallback(shipment.destination, { lat: 20.5937, lng: 78.9629 })
+  );
   const rawCurrent  = currentLocation
-    ? { lat: currentLocation.lat, lng: currentLocation.lng }
-    : (shipment.currentLocation as { lat?: number; lng?: number } | null) ?? null;
+    ? { lat: currentLocation.lat, lng: currentLocation.lng, lon: currentLocation.lng }
+    : (shipment.currentLocation as { lat?: number; lng?: number; lon?: number } | null) ?? null;
   const current = toCoord(rawCurrent, origin);
 
   const centerLat = (origin.lat + destination.lat) / 2;

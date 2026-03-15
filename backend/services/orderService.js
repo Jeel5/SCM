@@ -236,6 +236,27 @@ class OrderService {
         
         if (requestCarrierAssignment) {
           const serviceType = order.priority || 'standard';
+
+          const primaryWarehouseId = enrichedItems.find(i => i.warehouse_id)?.warehouse_id || null;
+          const pickupWarehouse = primaryWarehouseId
+            ? await WarehouseRepository.findByIdWithDetails(primaryWarehouseId, orgId, tx)
+            : null;
+
+          const deliveryAddress = typeof order.shipping_address === 'string'
+            ? JSON.parse(order.shipping_address)
+            : order.shipping_address;
+
+          const pickupAddress = pickupWarehouse
+            ? {
+                ...(pickupWarehouse.address || {}),
+                coordinates: pickupWarehouse.coordinates
+                  ? {
+                      lat: Number(pickupWarehouse.coordinates.lat),
+                      lng: Number(pickupWarehouse.coordinates.lng),
+                    }
+                  : undefined,
+              }
+            : deliveryAddress;
           
           // Find eligible carriers (only available ones)
           const eligibleCarriers = await CarrierRepository.findEligibleCarriers(serviceType, 3, tx);
@@ -259,7 +280,9 @@ class OrderService {
               customerPhone: order.customer_phone,
               serviceType,
               totalAmount: parseFloat(order.total_amount),
-              shippingAddress: order.shipping_address,
+              shippingAddress: deliveryAddress,
+              pickupAddress,
+              deliveryAddress,
               items: orderData.items || [],
               requestedAt: new Date()
             };
@@ -273,8 +296,8 @@ class OrderService {
                 organizationId: orgId || null,
                 serviceType,
                 status: 'pending',
-                pickupAddress: order.shipping_address,
-                deliveryAddress: order.shipping_address,
+                pickupAddress,
+                deliveryAddress,
                 estimatedPickup: new Date(Date.now() + 2 * 60 * 60 * 1000),
                 estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000),
                 requestPayload,
@@ -631,8 +654,24 @@ class OrderService {
           {
             orderId: order.id,
             warehouseId: transferData.from_warehouse_id,
-            originAddress: fromWarehouse.address,
-            destinationAddress: toWarehouse.address,
+            originAddress: {
+              ...(fromWarehouse.address || {}),
+              coordinates: fromWarehouse.coordinates
+                ? {
+                    lat: Number(fromWarehouse.coordinates.lat),
+                    lng: Number(fromWarehouse.coordinates.lng),
+                  }
+                : undefined,
+            },
+            destinationAddress: {
+              ...(toWarehouse.address || {}),
+              coordinates: toWarehouse.coordinates
+                ? {
+                    lat: Number(toWarehouse.coordinates.lat),
+                    lng: Number(toWarehouse.coordinates.lng),
+                  }
+                : undefined,
+            },
             estimatedPickup: pickupDate,
             estimatedDelivery: transferData.expected_delivery_date || deliveryDate,
             notes: `Transfer from ${fromWarehouseName} to ${toWarehouseName}`,
@@ -688,8 +727,24 @@ class OrderService {
               organizationId: organizationId || null,
               serviceType: transferData.priority || 'standard',
               status: 'pending',
-              pickupAddress: fromWarehouse.address,
-              deliveryAddress: toWarehouse.address,
+              pickupAddress: {
+                ...(fromWarehouse.address || {}),
+                coordinates: fromWarehouse.coordinates
+                  ? {
+                      lat: Number(fromWarehouse.coordinates.lat),
+                      lng: Number(fromWarehouse.coordinates.lng),
+                    }
+                  : undefined,
+              },
+              deliveryAddress: {
+                ...(toWarehouse.address || {}),
+                coordinates: toWarehouse.coordinates
+                  ? {
+                      lat: Number(toWarehouse.coordinates.lat),
+                      lng: Number(toWarehouse.coordinates.lng),
+                    }
+                  : undefined,
+              },
               estimatedPickup: pickupDate,
               estimatedDelivery: transferData.expected_delivery_date || deliveryDate,
               requestPayload,
