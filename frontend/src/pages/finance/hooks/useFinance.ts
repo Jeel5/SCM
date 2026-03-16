@@ -88,7 +88,6 @@ export function useFinance() {
           });
         }
       } catch (error) {
-        console.error('Failed to fetch finance data:', error);
         if (!isSoft) notifyLoadError('finance data', error);
         setData({
           outstandingInvoices: 0,

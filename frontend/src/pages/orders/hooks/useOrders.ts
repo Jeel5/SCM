@@ -32,7 +32,6 @@ export function useOrders(page: number, pageSize: number) {
         setOrders(response.data);
         setTotalOrders(response.total);
       } catch (error) {
-        console.error('Failed to fetch orders:', error);
         if (!isSoft) notifyLoadError('orders', error);
         setOrders([]);
         setTotalOrders(0);

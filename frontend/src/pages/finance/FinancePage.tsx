@@ -4,6 +4,7 @@ import { DollarSign, CreditCard, TrendingUp, AlertTriangle, Download, RefreshCw,
 import { Card, CardHeader, CardTitle, CardContent, Button, DataTable, PermissionGate, Modal, Input, Select, useToast } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
 import { carriersApi, financeApi } from '@/api/services';
+import { downloadApiFile, notifyError } from '@/lib/apiErrors';
 import { useFinance } from './hooks/useFinance';
 
 export function FinancePage() {
@@ -139,20 +140,12 @@ export function FinancePage() {
 
   const handleExport = async () => {
     try {
-      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-      const resp = await fetch(`${apiBase}/analytics/export?type=orders&range=month`, {
-        credentials: 'include',
-      });
-      if (!resp.ok) throw new Error('Export failed');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `finance-export-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadApiFile(
+        '/analytics/export?type=orders&range=month',
+        `finance-export-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
     } catch (err) {
-      console.error('Export failed:', err);
+      notifyError('Export failed', err, 'Could not export finance data');
     }
   };
 

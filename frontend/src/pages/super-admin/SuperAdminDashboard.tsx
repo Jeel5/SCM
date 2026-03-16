@@ -14,6 +14,7 @@ import { formatCurrency, formatNumber, formatDate } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import { superAdminApi } from '@/api/services';
+import { notifyLoadError } from '@/lib/apiErrors';
 import { useOrganizations } from './hooks/useOrganizations';
 
 interface DashboardStats {
@@ -68,7 +69,7 @@ export function SuperAdminDashboard() {
         const response = await superAdminApi.getGlobalStats();
         if (mounted) setStats(response.data as DashboardStats);
       } catch (error) {
-        console.error('Failed to load superadmin stats', error);
+        notifyLoadError('statistics', error);
       } finally {
         if (mounted) setLoadingStats(false);
       }

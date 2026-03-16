@@ -3,6 +3,7 @@ import { dashboardApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
+import { notifyLoadError } from '@/lib/apiErrors';
 
 // ── Rich interfaces to match ALL backend data ──────────────────────────
 
@@ -327,7 +328,7 @@ export function useAnalytics(timeRange: string) {
           ]);
         }
       } catch (error) {
-        console.error('Failed to load analytics:', error);
+        if (!isSoft) notifyLoadError('analytics', error);
         setOrderTrendData([]);
         setCarrierData([]);
         setWarehouseData([]);

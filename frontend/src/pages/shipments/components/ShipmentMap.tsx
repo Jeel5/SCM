@@ -6,6 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { cn } from '@/lib/utils';
 import { getRoute, formatDistance, formatDuration, type RouteInfo } from '@/lib/routing';
 import { useShipmentTracking, useSocketEvent } from '@/hooks/useSocket';
+import { notifyError } from '@/lib/apiErrors';
 import type { Shipment } from '@/types';
 import { shipmentsApi } from '@/api/services';
 
@@ -59,7 +60,7 @@ export function ShipmentMap({ shipment: initialShipment }: { shipment: Shipment 
       setShipment(response.data);
       setLastUpdate(new Date());
     } catch (error) {
-      console.error('Failed to refresh shipment data:', error);
+      notifyError('Shipment refresh failed', error, 'Could not update shipment data');
     } finally {
       setIsRefreshing(false);
     }
@@ -138,7 +139,7 @@ export function ShipmentMap({ shipment: initialShipment }: { shipment: Shipment 
         setCompletedRoute(completed);
       }
     } catch (error) {
-      console.error('Failed to fetch route:', error);
+      // Route fetch failure is non-critical — map falls back to straight-line route
     } finally {
       setIsLoadingRoute(false);
     }

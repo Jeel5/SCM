@@ -47,7 +47,6 @@ export function useOrganizations(options: UseOrganizationsOptions = {}) {
     } catch (err) {
       setError(extractSafeErrorMessage(err, 'Failed to load organizations'));
       notifyLoadError('organizations', err);
-      console.error('useOrganizations error:', err);
     } finally {
       setIsLoading(false);
     }

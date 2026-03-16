@@ -28,7 +28,6 @@ export function useCarriers() {
           : await carriersApi.getCarriers();
         setCarriers(response.data);
       } catch (error) {
-        console.error('Failed to fetch carriers:', error);
         if (!isSoft) notifyLoadError('carriers', error);
         setCarriers([]);
       } finally {

@@ -31,7 +31,6 @@ export function useShipments(page: number, pageSize: number) {
         setShipments(response.data);
         setTotalShipments(response.total);
       } catch (error) {
-        console.error('Failed to fetch shipments:', error);
         if (!isSoft) notifyLoadError('shipments', error);
         setShipments([]);
         setTotalShipments(0);

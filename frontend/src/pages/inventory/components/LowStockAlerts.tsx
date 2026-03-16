@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, X, Package, ArrowRight } from 'lucide-react';
 import { Card, Badge, Button } from '@/components/ui';
 import { inventoryApi } from '@/api/services';
+import { notifyLoadError } from '@/lib/apiErrors';
 import { formatNumber } from '@/lib/utils';
 import type { InventoryItem } from '@/types';
 
@@ -23,7 +24,7 @@ export function LowStockAlerts({ onViewAll, warehouseId }: LowStockAlertsProps) 
       const response = await inventoryApi.getLowStockItems(warehouseId);
       setLowStockItems(response.data);
     } catch (error) {
-      console.error('Failed to fetch low stock items:', error);
+      notifyLoadError('low stock alerts', error);
       setLowStockItems([]);
     } finally {
       setLoading(false);

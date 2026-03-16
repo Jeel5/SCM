@@ -27,7 +27,6 @@ export function useWarehouses() {
         : await warehousesApi.getWarehouses();
       setWarehouses(response.data);
     } catch (error) {
-      console.error('Failed to fetch warehouses:', error);
       if (!isSoft) notifyLoadError('warehouses', error);
       setWarehouses([]);
     } finally {

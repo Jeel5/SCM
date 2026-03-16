@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { warehousesApi } from '@/api/services';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { InventoryItem } from '@/types';
 
 export function useWarehouseInventory(warehouseId: string | undefined) {
@@ -21,7 +22,7 @@ export function useWarehouseInventory(warehouseId: string | undefined) {
                 setInventory(response.data);
                 setTotalItems(response.total);
             } catch (error) {
-                console.error('Failed to fetch warehouse inventory:', error);
+                notifyLoadError('warehouse inventory', error);
                 setInventory([]);
                 setTotalItems(0);
             } finally {

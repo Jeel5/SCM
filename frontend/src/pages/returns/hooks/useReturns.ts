@@ -30,7 +30,6 @@ export function useReturns(page: number, pageSize: number) {
         setReturns(response.data);
         setTotalReturns(response.total);
       } catch (error) {
-        console.error('Failed to fetch returns:', error);
         if (!isSoft) notifyLoadError('returns', error);
         setReturns([]);
         setTotalReturns(0);

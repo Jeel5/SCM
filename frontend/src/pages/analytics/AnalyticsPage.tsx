@@ -11,6 +11,7 @@ import {
 import type { TooltipProps } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent, Button, Select, Tabs } from '@/components/ui';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
+import { downloadApiFile, notifyError } from '@/lib/apiErrors';
 import { KPICard } from './components/KPICard';
 import { useAnalytics } from './hooks/useAnalytics';
 
@@ -69,24 +70,14 @@ export function AnalyticsPage() {
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
       const exportType = typeMap[activeTab] ?? 'orders';
       const exportRange = rangeMap[timeRange] ?? 'month';
-      const resp = await fetch(`${apiBase}/analytics/export?type=${exportType}&range=${exportRange}`, {
-        credentials: 'include',
-      });
-      if (!resp.ok) throw new Error(`Export failed: ${resp.status}`);
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${exportType}-export-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadApiFile(
+        `/analytics/export?type=${exportType}&range=${exportRange}`,
+        `${exportType}-export-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
     } catch (err) {
-      console.error('Export failed', err);
+      notifyError('Export failed', err, 'Could not export analytics data');
     } finally {
       setIsExporting(false);
     }

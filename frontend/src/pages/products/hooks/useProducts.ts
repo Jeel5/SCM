@@ -33,7 +33,6 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
       setProducts(res.data);
       setTotalItems(res.total);
     } catch (error) {
-      console.error('Failed to fetch products:', error);
       if (!isSoft) notifyLoadError('products', error);
       setProducts([]);
       setTotalItems(0);

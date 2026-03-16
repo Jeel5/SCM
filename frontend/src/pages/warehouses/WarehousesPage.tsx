@@ -5,6 +5,7 @@ import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Card, Button, Badge, DataTable, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
+import { extractSafeErrorMessage } from '@/lib/apiErrors';
 import type { Warehouse } from '@/types';
 import { importApi, warehousesApi } from '@/api/services';
 import { WarehouseCard } from './components/WarehouseCard';
@@ -69,8 +70,8 @@ export function WarehousesPage() {
       setIsDetailsOpen(false);
       setSelectedWarehouse(null);
       refetch();
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete warehouse');
+    } catch (err: unknown) {
+      error('Failed to delete warehouse', extractSafeErrorMessage(err, 'Could not delete the warehouse'));
     } finally {
       setIsDeleting(false);
     }

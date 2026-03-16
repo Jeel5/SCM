@@ -30,7 +30,6 @@ export function useExceptions(page: number, pageSize: number) {
         setExceptions(response.data);
         setTotalExceptions(response.total);
       } catch (error) {
-        console.error('Failed to fetch exceptions:', error);
         if (!isSoft) notifyLoadError('exceptions', error);
         setExceptions([]);
         setTotalExceptions(0);

@@ -62,7 +62,6 @@ export function useSLA(page: number, pageSize: number) {
           });
         }
       } catch (error) {
-        console.error('Failed to fetch SLA data:', error);
         if (!isSoft) notifyLoadError('SLA data', error);
         setPolicies([]);
         setViolations([]);

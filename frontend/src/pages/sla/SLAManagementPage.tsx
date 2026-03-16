@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Timer, AlertTriangle, CheckCircle, Clock, Download, RefreshCw, TrendingUp, TrendingDown, Plus } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Button, Tabs, DataTable, StatusBadge, PermissionGate } from '@/components/ui';
 import { formatDate, formatPercentage } from '@/lib/utils';
+import { downloadApiFile, notifyError } from '@/lib/apiErrors';
 import type { SLAPolicy, SLAViolation } from '@/types';
 import { useSLA } from './hooks/useSLA';
 import { CreateSLAPolicyModal } from './components/CreateSLAPolicyModal';
@@ -21,20 +22,12 @@ export function SLAManagementPage() {
 
   const handleExport = async () => {
     try {
-      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-      const resp = await fetch(`${apiBase}/analytics/export?type=violations&range=month`, {
-        credentials: 'include',
-      });
-      if (!resp.ok) throw new Error('Export failed');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sla-violations-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadApiFile(
+        '/analytics/export?type=violations&range=month',
+        `sla-violations-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
     } catch (err) {
-      console.error('Export failed:', err);
+      notifyError('Export failed', err, 'Could not export SLA data');
     }
   };
 

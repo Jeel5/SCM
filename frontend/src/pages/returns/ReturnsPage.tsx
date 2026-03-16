@@ -20,6 +20,7 @@ import {
   PermissionGate,
 } from '@/components/ui';
 import { formatCurrency, formatRelativeTime, cn } from '@/lib/utils';
+import { downloadApiFile, notifyError } from '@/lib/apiErrors';
 import type { Return } from '@/types';
 import { ReturnDetailsModal, CreateReturnModal } from './components';
 import { useReturns } from './hooks';
@@ -40,20 +41,12 @@ export function ReturnsPage() {
 
   const handleExport = async () => {
     try {
-      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-      const resp = await fetch(`${apiBase}/analytics/export?type=returns&range=month`, {
-        credentials: 'include',
-      });
-      if (!resp.ok) throw new Error('Export failed');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `returns-export-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadApiFile(
+        '/analytics/export?type=returns&range=month',
+        `returns-export-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
     } catch (err) {
-      console.error('Export failed:', err);
+      notifyError('Export failed', err, 'Could not export returns data');
     }
   };
 

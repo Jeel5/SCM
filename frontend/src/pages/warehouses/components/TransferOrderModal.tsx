@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Package, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { Modal, Button, Input } from '@/components/ui';
 import { ordersApi, warehousesApi, inventoryApi } from '@/api/services';
+import { notifyError } from '@/lib/apiErrors';
 import type { Warehouse } from '@/types';
 
 interface TransferOrderModalProps {
@@ -45,7 +46,7 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
         const response = await warehousesApi.getWarehouses();
         setWarehouses(response.data);
       } catch (err) {
-        console.error('Failed to fetch warehouses:', err);
+        notifyError('Failed to load warehouses', err, 'Could not retrieve warehouse list');
       }
     };
     fetchWarehouses();
@@ -62,7 +63,7 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
         });
         setAvailableProducts(response.data as unknown[]);
       } catch (err) {
-        console.error('Failed to fetch inventory:', err);
+        notifyError('Failed to load inventory', err, 'Could not retrieve available products');
       }
     };
     fetchInventory();

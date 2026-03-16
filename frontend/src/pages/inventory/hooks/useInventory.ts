@@ -3,6 +3,7 @@ import { inventoryApi, warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { InventoryItem, Warehouse } from '@/types';
 
 export function useInventory(page: number, pageSize: number) {
@@ -55,13 +56,26 @@ export function useInventory(page: number, pageSize: number) {
           } else {
             setInventory([]);
             setTotalItems(0);
+            if (!isSoft) notifyLoadError('inventory', inventoryRes.reason);
           }
-          if (warehouseRes.status === 'fulfilled') setWarehouses(warehouseRes.value.data);
-          if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
-          if (lowStockRes.status === 'fulfilled') setLowStockItems(lowStockRes.value.data);
+          if (warehouseRes.status === 'fulfilled') {
+            setWarehouses(warehouseRes.value.data);
+          } else if (!isSoft) {
+            notifyLoadError('warehouses', warehouseRes.reason);
+          }
+          if (statsRes.status === 'fulfilled') {
+            setStats(statsRes.value.data);
+          } else if (!isSoft) {
+            notifyLoadError('inventory stats', statsRes.reason);
+          }
+          if (lowStockRes.status === 'fulfilled') {
+            setLowStockItems(lowStockRes.value.data);
+          } else if (!isSoft) {
+            notifyLoadError('low stock alerts', lowStockRes.reason);
+          }
         }
       } catch (error) {
-        console.error('Failed to fetch inventory:', error);
+        if (!isSoft) notifyLoadError('inventory', error);
         setInventory([]);
         setTotalItems(0);
         setWarehouses([]);

@@ -77,7 +77,6 @@ export function useDashboard() {
         setTopProducts([]);
       }
     } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
       if (!isSoft) notifyLoadError('dashboard data', error);
       if (useRealApi) {
         setMetrics(null);

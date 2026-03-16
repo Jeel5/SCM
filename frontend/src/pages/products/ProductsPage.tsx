@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Card, Button, Badge, DataTable, useToast } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
+import { extractSafeErrorMessage } from '@/lib/apiErrors';
 import type { Product } from '@/types';
 import { AddEditProductModal, ProductDetailsModal } from './components';
 import { useProducts } from './hooks';
@@ -48,10 +49,10 @@ export function ProductsPage() {
     if (!window.confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
     try {
       await productsApi.deleteProduct(p.id);
+      success('Product deleted', `"${p.name}" has been removed.`);
       refetch();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } }; message?: string };
-      alert(e?.response?.data?.message || e?.message || 'Failed to delete product');
+      error('Failed to delete product', extractSafeErrorMessage(err, 'Could not delete the product'));
     }
   };
 
