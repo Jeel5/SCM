@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { warehousesApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { Warehouse } from '@/types';
 
 export function useWarehouses() {
@@ -27,6 +28,7 @@ export function useWarehouses() {
       setWarehouses(response.data);
     } catch (error) {
       console.error('Failed to fetch warehouses:', error);
+      if (!isSoft) notifyLoadError('warehouses', error);
       setWarehouses([]);
     } finally {
       setIsLoading(false);

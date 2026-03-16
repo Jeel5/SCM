@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import { carriersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { Carrier } from '@/types';
 
 export function useCarriers() {
@@ -28,6 +29,7 @@ export function useCarriers() {
         setCarriers(response.data);
       } catch (error) {
         console.error('Failed to fetch carriers:', error);
+        if (!isSoft) notifyLoadError('carriers', error);
         setCarriers([]);
       } finally {
         setIsLoading(false);

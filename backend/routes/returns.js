@@ -13,10 +13,10 @@ import {
 
 const router = express.Router();
 
-router.get('/returns', authenticate, authorize('returns:read'), validateQuery(listReturnsQuerySchema), listReturns);
-router.get('/returns/stats', authenticate, authorize('returns:read'), getReturnStats);
-router.get('/returns/:id', authenticate, authorize('returns:read'), validateUUIDParams, getReturn);
-router.post('/returns', authenticate, authorize('returns:create'), validateRequest(createReturnSchema), createReturn);
-router.patch('/returns/:id', authenticate, authorize('returns:update'), validateUUIDParams, validateRequest(updateReturnStatusSchema), updateReturn);
+router.get('/returns', authenticate, authorize('returns.view'), validateQuery(listReturnsQuerySchema), listReturns);
+router.get('/returns/stats', authenticate, authorize('returns.view'), getReturnStats);
+router.get('/returns/:id', authenticate, authorize('returns.view'), validateUUIDParams, getReturn);
+router.post('/returns', authenticate, authorize('returns.create'), validateRequest(createReturnSchema), createReturn);
+router.patch('/returns/:id', authenticate, authorize('returns.update'), validateUUIDParams, validateRequest(updateReturnStatusSchema), updateReturn);
 
 export default router;

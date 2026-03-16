@@ -37,6 +37,17 @@ function forceLogout() {
   window.location.href = '/login';
 }
 
+function shouldSkipRefresh(url?: string) {
+  if (!url) return false;
+  return [
+    '/auth/login',
+    '/auth/register',
+    '/auth/refresh',
+    '/auth/logout',
+    '/auth/google',
+  ].some((path) => url.includes(path));
+}
+
 // Response interceptor for handling errors
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
@@ -44,7 +55,7 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
     // ---- 401: attempt a silent refresh before logging out ----
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !shouldSkipRefresh(originalRequest.url)) {
       // Don't retry the refresh endpoint itself
       if (originalRequest.url?.includes('/auth/refresh')) {
         forceLogout();
@@ -87,6 +98,7 @@ api.interceptors.response.use(
     const data = error.response?.data as Record<string, unknown> | undefined;
     const extractMessage = (): string => {
       if (data?.message && typeof data.message === 'string') return data.message;
+      if (data?.error && typeof data.error === 'string') return data.error;
       if (data?.error && typeof data.error === 'object' && (data.error as Record<string, unknown>).message) {
         return (data.error as Record<string, unknown>).message as string;
       }
@@ -94,9 +106,32 @@ api.interceptors.response.use(
     };
 
     const extractDetails = (): string => {
-      if (Array.isArray(data?.details) && data.details.length > 0) {
-        return data.details
-          .map((d: Record<string, unknown>) => d.message || d.field)
+      const details = data?.details;
+      if (Array.isArray(details) && details.length > 0) {
+        return details
+          .map((d: unknown) => {
+            if (typeof d === 'string') return d;
+            if (d && typeof d === 'object') {
+              const item = d as Record<string, unknown>;
+              return String(item.message || item.field || '');
+            }
+            return '';
+          })
+          .filter(Boolean)
+          .join('; ');
+      }
+
+      const errorObj = data?.error;
+      if (errorObj && typeof errorObj === 'object' && Array.isArray((errorObj as Record<string, unknown>).errors)) {
+        return ((errorObj as Record<string, unknown>).errors as unknown[])
+          .map((d: unknown) => {
+            if (typeof d === 'string') return d;
+            if (d && typeof d === 'object') {
+              const item = d as Record<string, unknown>;
+              return String(item.message || item.field || '');
+            }
+            return '';
+          })
           .filter(Boolean)
           .join('; ');
       }
@@ -127,8 +162,13 @@ api.interceptors.response.use(
         .replace(/must be a boolean/gi, 'must be true or false');
     };
 
+    // Handle authentication failures
+    if (error.response?.status === 401) {
+      toast.error('Authentication Failed', serverMessage || 'Please sign in and try again');
+    }
+
     // Handle authorization errors
-    if (error.response?.status === 403) {
+    else if (error.response?.status === 403) {
       toast.error('Access Denied', serverMessage || 'You don\'t have permission to perform this action');
     }
     
@@ -145,8 +185,8 @@ api.interceptors.response.use(
     // Handle validation errors
     else if (error.response?.status === 400 || error.response?.status === 422) {
       // Prefer per-field detail messages; fall back to top-level message
-      const rawMessages: string[] = Array.isArray((data as any)?.details) && (data as any).details.length > 0
-        ? (data as any).details.map((d: Record<string, unknown>) => String(d.message || d.field || ''))
+      const rawMessages: string[] = fieldDetails
+        ? fieldDetails.split(';').map((x) => x.trim()).filter(Boolean)
         : serverMessage ? [serverMessage] : [];
       const readable = [...new Set(rawMessages.map(humanize))].join(' • ');
       toast.error('Please check your input', readable || 'Invalid request data');

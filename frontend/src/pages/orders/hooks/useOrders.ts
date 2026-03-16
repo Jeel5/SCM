@@ -3,6 +3,7 @@ import { ordersApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { Order } from '@/types';
 
 export function useOrders(page: number, pageSize: number) {
@@ -32,6 +33,7 @@ export function useOrders(page: number, pageSize: number) {
         setTotalOrders(response.total);
       } catch (error) {
         console.error('Failed to fetch orders:', error);
+        if (!isSoft) notifyLoadError('orders', error);
         setOrders([]);
         setTotalOrders(0);
       } finally {

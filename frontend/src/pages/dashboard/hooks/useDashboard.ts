@@ -5,6 +5,7 @@ import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
 import { useAuthStore } from '@/stores';
 import { checkPermission } from '@/lib/permissions';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { DashboardMetrics, ChartDataPoint, Shipment, CarrierPerformance, WarehouseUtilization } from '@/types';
 
 export type DashboardPeriod = '1d' | '7d' | '30d' | '90d' | '365d';
@@ -77,6 +78,7 @@ export function useDashboard() {
       }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      if (!isSoft) notifyLoadError('dashboard data', error);
       if (useRealApi) {
         setMetrics(null);
         setOrdersChart([]);

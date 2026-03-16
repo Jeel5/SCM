@@ -51,6 +51,6 @@ router.put('/products/:id', authenticate, requirePermission('inventory.manage'),
 router.delete('/products/:id', authenticate, requirePermission('inventory.manage'), validateUUIDParams, deleteProduct);
 
 // SLA Policies (org-level templates; violations are in sla.js)
-router.get('/sla-policies', authenticate, authorize('sla:read'), listSlaPolicies);
+router.get('/sla-policies', authenticate, authorize('sla.view'), listSlaPolicies);
 
 export default router;

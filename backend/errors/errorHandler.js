@@ -81,6 +81,18 @@ function handleDatabaseError(err) {
     return new AppError('Invalid data format', 400, true);
   }
 
+  // PostgreSQL check constraint violation
+  if (err.code === '23514') {
+    const detail = typeof err.detail === 'string' ? err.detail : null;
+    const constraint = typeof err.constraint === 'string' ? err.constraint : 'check constraint';
+    return new AppError(detail || `Value violates ${constraint}`, 400, true);
+  }
+
+  // PostgreSQL value too long for column type
+  if (err.code === '22001') {
+    return new AppError('One or more fields exceed allowed length', 400, true);
+  }
+
   // Generic database error
   return new AppError('Database operation failed', 500, false);
 }
@@ -118,7 +130,9 @@ export function errorHandler(err, req, res, next) {
   // Handle specific error types
   if (err.name === 'JsonWebTokenError') error = handleJWTError();
   if (err.name === 'TokenExpiredError') error = handleJWTExpiredError();
-  if (err.code && err.code.startsWith('23')) error = handleDatabaseError(err);
+  if (err.code && (err.code.startsWith('23') || err.code === '22P02' || err.code === '22001')) {
+    error = handleDatabaseError(err);
+  }
 
   // Send response based on environment
   if (process.env.NODE_ENV === 'development') {

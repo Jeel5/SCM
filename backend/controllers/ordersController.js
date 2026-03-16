@@ -1,16 +1,10 @@
 import orderService from '../services/orderService.js';
-import { asyncHandler, AppError } from '../errors/index.js';
+import { asyncHandler, AppError, ValidationError } from '../errors/index.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
+import logger from '../utils/logger.js';
 
 // Orders Controller - handles HTTP requests and delegates to service layer
-
-// Whitelist of valid order status values (TASK-R10-003)
-const VALID_ORDER_STATUSES = [
-  'created', 'confirmed', 'allocated', 'processing',
-  'shipped', 'in_transit', 'out_for_delivery', 'delivered',
-  'cancelled', 'returned', 'on_hold', 'failed',
-];
 
 // List orders with filters and pagination
 export const listOrders = asyncHandler(async (req, res) => {

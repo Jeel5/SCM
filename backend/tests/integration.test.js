@@ -20,7 +20,14 @@
 
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { describe, it } from 'vitest';
 dotenv.config();
+
+// This file is a manual full-system harness, not a CI-ready deterministic test suite.
+// Keep one skipped test so Vitest recognizes the file without failing with "No test suite found".
+describe.skip('manual integration harness', () => {
+  it('is executed manually via node when needed', () => {});
+});
 
 const { Pool } = pg;
 
@@ -1470,4 +1477,6 @@ async function main() {
   process.exit(failed > 0 ? 1 : 0);
 }
 
-main();
+if (process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
+  main();
+}

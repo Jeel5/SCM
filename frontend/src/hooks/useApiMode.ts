@@ -6,12 +6,18 @@ import { useState, useEffect } from 'react';
  * Centralizes the localStorage check that was duplicated across all hooks
  */
 export function useApiMode() {
+  const allowMockApi = import.meta.env.DEV;
   const [useMockApi, setUseMockApi] = useState(() => {
+    if (!allowMockApi) return false;
     return localStorage.getItem('useMockApi') === 'true';
   });
 
   useEffect(() => {
     const handleStorageChange = () => {
+      if (!allowMockApi) {
+        setUseMockApi(false);
+        return;
+      }
       setUseMockApi(localStorage.getItem('useMockApi') === 'true');
     };
 
@@ -24,6 +30,10 @@ export function useApiMode() {
   }, []);
 
   const toggleApiMode = (mode: boolean) => {
+    if (!allowMockApi) {
+      setUseMockApi(false);
+      return;
+    }
     localStorage.setItem('useMockApi', mode.toString());
     setUseMockApi(mode);
     window.dispatchEvent(new Event('storage')); // Trigger update in other hooks

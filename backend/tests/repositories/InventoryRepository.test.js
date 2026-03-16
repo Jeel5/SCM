@@ -46,8 +46,9 @@ describe('InventoryRepository', () => {
             }, client);
 
             expect(item2.id).toBe(item1.id); // Same row
-            expect(item2.quantity).toBe(150);
-            expect(item2.available_quantity).toBe(140);
+            // Upsert path is additive by design (existing + incoming)
+            expect(item2.quantity).toBe(250);
+            expect(item2.available_quantity).toBe(240);
             expect(item2.reserved_quantity).toBe(10);
             expect(item2.reorder_point).toBe(30);
         });

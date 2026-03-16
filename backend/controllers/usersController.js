@@ -190,7 +190,11 @@ export const updateProfile = asyncHandler(async (req, res) => {
   // In production, send a verification email here. For now log the link.
   if (updatedUser._emailChangeToken) {
     const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${updatedUser._emailChangeToken}`;
-    console.info(`[EMAIL-VERIFY] Send to ${updatedUser._pendingEmail}: ${verifyUrl}`);
+    logger.info('[EMAIL-VERIFY] Staged email verification link generated', {
+      pendingEmail: updatedUser._pendingEmail,
+      verifyUrl,
+      userId,
+    });
     // TODO: replace with real email via nodemailer / SES / SendGrid
     delete updatedUser._emailChangeToken;
     delete updatedUser._pendingEmail;

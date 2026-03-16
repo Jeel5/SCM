@@ -12,7 +12,6 @@ export { default as AnalyticsRepository } from './AnalyticsRepository.js';
 export { default as DashboardRepository } from './DashboardRepository.js';
 export { default as JobsRepository } from './JobsRepository.js';
 export { default as SlaRepository } from './SlaRepository.js';
-export { default as CompaniesRepository } from './CompaniesRepository.js';
 export { default as ProductRepository } from './ProductRepository.js';
 export { default as PostalZoneRepository } from './PostalZoneRepository.js';
 export { default as AllocationRepository } from './AllocationRepository.js';

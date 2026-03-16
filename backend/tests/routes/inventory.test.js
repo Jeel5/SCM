@@ -27,7 +27,7 @@ describe('Inventory Routes API', () => {
         // Create token mirroring the app's standard JWT layout
         // We assume JWT_SECRET is available in test environment, or fallback matching the code
         authToken = jwt.sign(
-            { userId: 'test-admin', organizationId: orgId, role: 'system_admin' },
+            { userId: 'test-admin', organizationId: orgId, role: 'admin' },
             process.env.JWT_SECRET || 'your_jwt_secret_here', // server.js or auth.js uses process.env.JWT_SECRET
             { expiresIn: '1h' }
         );
@@ -50,16 +50,9 @@ describe('Inventory Routes API', () => {
             .get('/api/inventory')
             .set('Authorization', `Bearer ${authToken}`);
 
-        // If auth succeeds, should return 200
-        // Note: If permissions.js or auth.js uses a different JWT_SECRET locally, this might 401/403.
-        // Assuming 'your_jwt_secret_here' fallback is standard across the app.
-        if (res.status === 401 || res.status === 403) {
-            console.warn('Auth token rejected in test - verify JWT_SECRET');
-        } else {
-            expect(res.status).toBe(200);
-            expect(res.body.success).toBe(true);
-            expect(res.body.data.length).toBe(1);
-            expect(res.body.data[0].sku).toBe('MOCK-1');
-        }
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.data.length).toBe(1);
+        expect(res.body.data[0].sku).toBe('MOCK-1');
     });
 });

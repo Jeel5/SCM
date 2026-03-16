@@ -55,8 +55,12 @@ export const requestCarrierAssignment = asyncHandler(async (req, res) => {
  * GET /api/carriers/assignments/pending
  */
 export const getPendingAssignments = asyncHandler(async (req, res) => {
-  // carrierId is validated by the query schema (pendingAssignmentsQuerySchema)
-  const { carrierId } = req.validatedQuery ?? req.query;
+  // Prefer HMAC-authenticated carrier identity; only fall back to query param for controlled internal callers.
+  const query = req.validatedQuery ?? req.query;
+  const carrierId = req.authenticatedCarrier?.id || query.carrierId;
+  if (!carrierId) {
+    throw new ValidationError('Carrier identity is required');
+  }
 
   // Check if carrierId is a code (e.g., "DHL-001") or numeric ID
   let actualCarrierId = carrierId;
