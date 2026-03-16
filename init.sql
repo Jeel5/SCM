@@ -5218,7 +5218,7 @@ ALTER TABLE ONLY public.webhook_logs
 INSERT INTO users (email, password_hash, name, role, organization_id, is_active)
 VALUES (
     'superadmin@twinchain.in',
-    '$2b$10$w.dQMHPbM.X4tvmaof9JJOGPNK4EBa9NSM5B/5g0H4QC11Ci1Z.WC',
+    '$2b$10$5J.QGjlu1Cr2iH.pbVwIoO/WOqsaO0PgBRgv.HaovZgqYc62arliO',
     'Super Admin',
     'superadmin',
     NULL,

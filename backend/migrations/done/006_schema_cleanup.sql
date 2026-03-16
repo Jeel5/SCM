@@ -88,14 +88,14 @@ COMMENT ON COLUMN public.warehouses.warehouse_type IS 'standard | fulfillment | 
 -- Drop old CHECK constraint
 ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_order_type_check;
 
+-- Update existing values from deprecated names BEFORE adding the new constraint
+UPDATE public.orders SET order_type = 'outbound' WHERE order_type IN ('regular', 'cod');
+UPDATE public.orders SET order_type = 'inbound_restock' WHERE order_type = 'replacement';
+
 -- Add new simplified CHECK (outbound = customer sale; transfer = warehouse-to-warehouse; inbound_restock = supplier inbound)
 ALTER TABLE public.orders
     ADD CONSTRAINT orders_order_type_check
     CHECK (order_type IN ('outbound', 'transfer', 'inbound_restock'));
-
--- Update existing values from deprecated names
-UPDATE public.orders SET order_type = 'outbound' WHERE order_type IN ('regular', 'cod');
-UPDATE public.orders SET order_type = 'inbound_restock' WHERE order_type = 'replacement';
 
 ALTER TABLE public.orders ALTER COLUMN order_type SET DEFAULT 'outbound';
 
