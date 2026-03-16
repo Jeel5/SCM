@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { exceptionsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { Exception } from '@/types';
 
 export function useExceptions(page: number, pageSize: number) {
@@ -30,6 +31,7 @@ export function useExceptions(page: number, pageSize: number) {
         setTotalExceptions(response.total);
       } catch (error) {
         console.error('Failed to fetch exceptions:', error);
+        if (!isSoft) notifyLoadError('exceptions', error);
         setExceptions([]);
         setTotalExceptions(0);
       } finally {

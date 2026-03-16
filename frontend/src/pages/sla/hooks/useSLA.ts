@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import { slaApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { SLAPolicy, SLAViolation, SLADashboardData } from '@/types';
 
 export function useSLA(page: number, pageSize: number) {
@@ -62,6 +63,7 @@ export function useSLA(page: number, pageSize: number) {
         }
       } catch (error) {
         console.error('Failed to fetch SLA data:', error);
+        if (!isSoft) notifyLoadError('SLA data', error);
         setPolicies([]);
         setViolations([]);
         setTotalViolations(0);

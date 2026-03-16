@@ -3,6 +3,7 @@ import { shipmentsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { Shipment } from '@/types';
 
 export function useShipments(page: number, pageSize: number) {
@@ -31,6 +32,7 @@ export function useShipments(page: number, pageSize: number) {
         setTotalShipments(response.total);
       } catch (error) {
         console.error('Failed to fetch shipments:', error);
+        if (!isSoft) notifyLoadError('shipments', error);
         setShipments([]);
         setTotalShipments(0);
       } finally {

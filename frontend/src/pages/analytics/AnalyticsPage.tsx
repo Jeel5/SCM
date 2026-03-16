@@ -7,8 +7,8 @@ import {
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell, Legend, LineChart, Line,
-  TooltipProps,
 } from 'recharts';
+import type { TooltipProps } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent, Button, Select, Tabs } from '@/components/ui';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
 import { KPICard } from './components/KPICard';

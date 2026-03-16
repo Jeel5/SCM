@@ -7,6 +7,15 @@ import crypto from 'crypto';
 import carrierRepo from '../repositories/CarrierRepository.js';
 import logger from '../utils/logger.js';
 
+function sendWebhookError(res, statusCode, message, error, extra = {}) {
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    error,
+    ...extra,
+  });
+}
+
 /**
  * Verify webhook signature using HMAC-SHA256
  * Prevents:
@@ -53,11 +62,13 @@ export function verifyWebhookSignature(options = {}) {
           });
         }
         
-        return res.status(401).json({ 
-          error: 'Unauthorized',
-          message: 'Missing required authentication headers',
-          required: ['x-carrier-id', 'x-webhook-signature', 'x-webhook-timestamp']
-        });
+        return sendWebhookError(
+          res,
+          401,
+          'Missing required authentication headers',
+          'Unauthorized',
+          { required: ['x-carrier-id', 'x-webhook-signature', 'x-webhook-timestamp'] }
+        );
       }
 
       // Validate timestamp (prevent replay attacks)
@@ -83,11 +94,13 @@ export function verifyWebhookSignature(options = {}) {
           });
         }
 
-        return res.status(401).json({ 
-          error: 'Unauthorized',
-          message: 'Request timestamp too old or too far in future',
-          tolerance: `${timestampToleranceSec} seconds`
-        });
+        return sendWebhookError(
+          res,
+          401,
+          'Request timestamp too old or too far in future',
+          'Unauthorized',
+          { tolerance: `${timestampToleranceSec} seconds` }
+        );
       }
 
       // Get carrier's webhook secret from database
@@ -105,10 +118,7 @@ export function verifyWebhookSignature(options = {}) {
           });
         }
 
-        return res.status(401).json({ 
-          error: 'Unauthorized',
-          message: 'Unknown carrier'
-        });
+        return sendWebhookError(res, 401, 'Unknown carrier', 'Unauthorized');
       }
 
       // Check if webhooks are enabled for this carrier
@@ -128,10 +138,7 @@ export function verifyWebhookSignature(options = {}) {
           });
         }
 
-        return res.status(403).json({ 
-          error: 'Forbidden',
-          message: 'Webhooks are disabled for this carrier'
-        });
+        return sendWebhookError(res, 403, 'Webhooks are disabled for this carrier', 'Forbidden');
       }
 
       // Optional: IP whitelist check
@@ -152,10 +159,7 @@ export function verifyWebhookSignature(options = {}) {
             });
           }
 
-          return res.status(403).json({ 
-            error: 'Forbidden',
-            message: 'IP address not authorized'
-          });
+          return sendWebhookError(res, 403, 'IP address not authorized', 'Forbidden');
         }
       }
 
@@ -167,10 +171,12 @@ export function verifyWebhookSignature(options = {}) {
           carrierCode: carrier.code
         });
 
-        return res.status(500).json({ 
-          error: 'Internal Server Error',
-          message: 'Webhook authentication not configured for this carrier'
-        });
+        return sendWebhookError(
+          res,
+          500,
+          'Webhook authentication not configured for this carrier',
+          'Internal Server Error'
+        );
       }
 
       // Recreate the signed payload (timestamp.rawBody).
@@ -213,10 +219,7 @@ export function verifyWebhookSignature(options = {}) {
           });
         }
 
-        return res.status(401).json({ 
-          error: 'Unauthorized',
-          message: 'Invalid webhook signature'
-        });
+        return sendWebhookError(res, 401, 'Invalid webhook signature', 'Unauthorized');
       }
 
       // Success! Signature is valid
@@ -252,10 +255,7 @@ export function verifyWebhookSignature(options = {}) {
         path: req.path
       });
 
-      return res.status(500).json({ 
-        error: 'Internal Server Error',
-        message: 'Webhook authentication failed'
-      });
+      return sendWebhookError(res, 500, 'Webhook authentication failed', 'Internal Server Error');
     }
   };
 }

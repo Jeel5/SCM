@@ -26,19 +26,19 @@ const router = express.Router();
 // ========== INTERNAL ASSIGNMENT ROUTES (JWT authenticated) ==========
 
 // Request carrier assignment for an order
-router.post('/orders/:orderId/request-carriers', authenticate, authorize('shipments:update'), requestCarrierAssignment);
+router.post('/orders/:orderId/request-carriers', authenticate, authorize('shipments.update'), requestCarrierAssignment);
 
 // Get assignments for an order
-router.get('/orders/:orderId/assignments', authenticate, authorize('shipments:read'), getOrderAssignments);
+router.get('/orders/:orderId/assignments', authenticate, authorize('shipments.view'), getOrderAssignments);
 
 // Carrier notifies availability (HMAC — called from carrier system)
 router.post('/carriers/:code/availability', verifyWebhookSignature(), validateRequest(updateCarrierAvailabilitySchema), updateCarrierAvailability);
 
-// Carrier portal - get pending assignments (carrier-facing, no JWT — carriers identify by carrierId param)
-router.get('/carriers/assignments/pending', validateQuery(pendingAssignmentsQuerySchema), getPendingAssignments);
+// Carrier portal - get pending assignments (carrier-facing, HMAC authenticated)
+router.get('/carriers/assignments/pending', verifyWebhookSignature(), validateQuery(pendingAssignmentsQuerySchema), getPendingAssignments);
 
 // Get assignment details
-router.get('/assignments/:assignmentId', authenticate, authorize('shipments:read'), getAssignmentDetails);
+router.get('/assignments/:assignmentId', authenticate, authorize('shipments.view'), getAssignmentDetails);
 
 // ========== WEBHOOK-PROTECTED CARRIER ENDPOINTS (HMAC Authenticated) ==========
 

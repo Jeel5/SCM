@@ -30,7 +30,7 @@ const router = express.Router();
 // List inventory (with filters + pagination)
 router.get(
   '/inventory',
-  authenticate, authorize('inventory:read'),
+  authenticate, authorize('inventory.view'),
   validateQuery(listInventoryQuerySchema),
   getInventory
 );
@@ -38,21 +38,21 @@ router.get(
 // Aggregate stats for dashboard / warehouse view
 router.get(
   '/inventory/stats',
-  authenticate, authorize('inventory:read'),
+  authenticate, authorize('inventory.view'),
   getInventoryStats
 );
 
 // All items at or below reorder_point
 router.get(
   '/inventory/low-stock',
-  authenticate, authorize('inventory:read'),
+  authenticate, authorize('inventory.view'),
   getLowStockItems
 );
 
 // Single inventory item (must come AFTER static routes like /stats, /low-stock)
 router.get(
   '/inventory/:id',
-  authenticate, authorize('inventory:read'),
+  authenticate, authorize('inventory.view'),
   validateUUIDParams,
   getInventoryItem
 );
@@ -60,7 +60,7 @@ router.get(
 // Stock movement history for one item
 router.get(
   '/inventory/:id/movements',
-  authenticate, authorize('inventory:read'),
+  authenticate, authorize('inventory.view'),
   validateUUIDParams,
   getStockMovements
 );
@@ -70,7 +70,7 @@ router.get(
 // Create new inventory record (or upsert via unique idx)
 router.post(
   '/inventory',
-  authenticate, authorize('inventory:create'),
+  authenticate, authorize('inventory.create'),
   validateRequest(createInventorySchema),
   createInventoryItem
 );
@@ -78,7 +78,7 @@ router.post(
 // Transfer stock between warehouses (simple, no order created)
 router.post(
   '/inventory/transfer',
-  authenticate, authorize('inventory:update'),
+  authenticate, authorize('inventory.update'),
   validateRequest(transferInventorySchema),
   transferInventory
 );
@@ -86,7 +86,7 @@ router.post(
 // Adjust stock (add / remove / set / damaged)
 router.post(
   '/inventory/:id/adjust',
-  authenticate, authorize('inventory:update'),
+  authenticate, authorize('inventory.update'),
   validateUUIDParams,
   validateRequest(adjustInventorySchema),
   adjustStock
@@ -95,7 +95,7 @@ router.post(
 // Update metadata (thresholds, unit_cost)
 router.put(
   '/inventory/:id',
-  authenticate, authorize('inventory:update'),
+  authenticate, authorize('inventory.update'),
   validateUUIDParams,
   validateRequest(updateInventorySchema),
   updateInventoryItem

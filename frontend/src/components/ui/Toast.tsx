@@ -107,8 +107,9 @@ export function ToastContainer({ toasts, onClose }: ToastContainerProps) {
 }
 
 // Toast Hook
-import { useState, useCallback, createContext, useContext } from 'react';
+import { useCallback, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
+import { useToastStore } from '@/stores/toastStore';
 
 interface ToastState {
   id: string;
@@ -118,21 +119,7 @@ interface ToastState {
 }
 
 export function useToast() {
-  const [toasts, setToasts] = useState<ToastState[]>([]);
-
-  const addToast = useCallback((toast: Omit<ToastState, 'id'>) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { ...toast, id }]);
-
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  const { toasts, addToast, removeToast } = useToastStore();
 
   const success = useCallback(
     (title: string, message?: string) => addToast({ type: 'success', title, message }),
@@ -167,6 +154,9 @@ export function useToast() {
 
 // Toast Context
 interface ToastContextType {
+  toasts: ToastState[];
+  addToast: (toast: Omit<ToastState, 'id'>) => void;
+  removeToast: (id: string) => void;
   success: (title: string, message?: string) => void;
   error: (title: string, message?: string) => void;
   warning: (title: string, message?: string) => void;
@@ -176,20 +166,17 @@ interface ToastContextType {
 const ToastContext = createContext<ToastContextType | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const { toasts, removeToast, success, error, warning, info } = useToast();
+  const toastApi = useToast();
 
   return (
-    <ToastContext.Provider value={{ success, error, warning, info }}>
+    <ToastContext.Provider value={toastApi}>
       {children}
-      <ToastContainer toasts={toasts} onClose={removeToast} />
     </ToastContext.Provider>
   );
 }
 
 export function useToastContext() {
+  const fallback = useToast();
   const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error('useToastContext must be used within a ToastProvider');
-  }
-  return context;
+  return context ?? fallback;
 }

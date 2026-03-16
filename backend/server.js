@@ -19,7 +19,7 @@ dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 const API_PREFIX = '/api';
 
 // Import route modules
@@ -133,12 +133,7 @@ app.use(notFoundHandler);
 // Global error handler - must be last
 app.use(errorHandler);
 
-// Start server and listen on specified port
-httpServer.listen(PORT, async () => {
-	logger.info(`🚀 Server running on http://localhost:${PORT}`);
-	logger.info(`📚 API available at http://localhost:${PORT}${API_PREFIX}`);
-	logger.info(`🌍 Environment: ${process.env.NODE_ENV}`);
-	
+async function startBackgroundWorkers() {
 	// Start background job worker
 	try {
 		await jobWorker.start();
@@ -146,7 +141,7 @@ httpServer.listen(PORT, async () => {
 	} catch (error) {
 		logger.error('Failed to start Job Worker:', error);
 	}
-	
+
 	// Start cron scheduler — sync active DB schedules into BullMQ repeatable jobs
 	try {
 		const initialSchedules = await jobsService.getCronSchedules();
@@ -155,7 +150,24 @@ httpServer.listen(PORT, async () => {
 	} catch (error) {
 		logger.error('Failed to start Cron Scheduler:', error);
 	}
-});
+}
+
+export async function startServer() {
+	return new Promise((resolve) => {
+		httpServer.listen(PORT, async () => {
+			logger.info(`🚀 Server running on http://localhost:${PORT}`);
+			logger.info(`📚 API available at http://localhost:${PORT}${API_PREFIX}`);
+			logger.info(`🌍 Environment: ${process.env.NODE_ENV}`);
+			await startBackgroundWorkers();
+			resolve(httpServer);
+		});
+	});
+}
+
+const shouldStartServer = process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true';
+if (shouldStartServer) {
+	startServer();
+}
 
 // Graceful shutdown handler
 process.on('SIGTERM', async () => {
@@ -202,3 +214,6 @@ process.on('unhandledRejection', (reason, promise) => {
 	logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
 	process.exit(1);
 });
+
+export { app, httpServer };
+export default app;

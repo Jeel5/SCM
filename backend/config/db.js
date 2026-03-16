@@ -1,5 +1,6 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import logger from '../utils/logger.js';
 
 dotenv.config();
 
@@ -19,7 +20,7 @@ const pool = new Pool({
 
 // Log unexpected errors from idle database connections
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
+  logger.error('Unexpected error on idle database client', err);
 });
 
 // Test database connection on startup
@@ -28,10 +29,10 @@ export async function testConnection() {
     const client = await pool.connect();
     await client.query('SELECT 1');
     client.release();
-    console.log('✅ Database connected successfully');
+    logger.info('Database connected successfully');
     return true;
   } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
+    logger.error('Database connection failed', { message: error.message });
     return false;
   }
 }

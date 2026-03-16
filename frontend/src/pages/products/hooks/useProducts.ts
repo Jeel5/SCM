@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { productsApi } from '@/api/services';
 import { useApiMode } from '@/hooks';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { Product } from '@/types';
 
 export function useProducts(page: number, pageSize: number, filters?: Record<string, unknown>) {
@@ -33,6 +34,7 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
       setTotalItems(res.total);
     } catch (error) {
       console.error('Failed to fetch products:', error);
+      if (!isSoft) notifyLoadError('products', error);
       setProducts([]);
       setTotalItems(0);
     } finally {

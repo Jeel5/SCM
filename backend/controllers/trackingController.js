@@ -135,7 +135,7 @@ export const simulateTrackingUpdate = asyncHandler(async (req, res) => {
 
 /**
  * Get shipment tracking events timeline
- * GET /api/shipments/{trackingNumber}/timeline
+ * GET /api/shipments/tracking/{trackingNumber}/timeline
  */
 export const getTrackingTimeline = asyncHandler(async (req, res) => {
   const { trackingNumber } = req.params;

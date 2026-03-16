@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { get } from '@/api/client';
+import { extractSafeErrorMessage, notifyLoadError } from '@/lib/apiErrors';
 import type { Organization } from '../types';
 
 interface OrganizationsResponse {
@@ -44,7 +45,8 @@ export function useOrganizations(options: UseOrganizationsOptions = {}) {
       setOrganizations(response.data);
       setTotal(response.pagination.total);
     } catch (err) {
-      setError('Failed to load organizations');
+      setError(extractSafeErrorMessage(err, 'Failed to load organizations'));
+      notifyLoadError('organizations', err);
       console.error('useOrganizations error:', err);
     } finally {
       setIsLoading(false);

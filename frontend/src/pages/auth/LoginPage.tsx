@@ -6,6 +6,8 @@ import { Truck, Shield, BarChart3, Globe, Mail, Lock } from 'lucide-react';
 import { useAuthStore, useUIStore } from '@/stores';
 import { authApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
+import { toast } from '@/stores/toastStore';
+import { extractSafeErrorMessage } from '@/lib/apiErrors';
 
 const features = [
   { icon: <Truck className="h-6 w-6" />, title: 'Real-time Tracking', desc: 'Monitor all shipments in real-time' },
@@ -31,16 +33,22 @@ export function LoginPage() {
       
       // TODO: Implement Google OAuth backend validation
       // For now, show a message that Google login will be available soon
-      setError('Google OAuth will be available soon. Please use email/password login.');
+      const message = 'Google OAuth will be available soon. Please use email/password login.';
+      setError(message);
+      toast.info('Google sign-in unavailable', message);
     } catch (err) {
-      setError('Authentication failed. Please try again.');
+      const message = extractSafeErrorMessage(err, 'Authentication failed. Please try again.');
+      setError(message);
+      toast.error('Authentication failed', message);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleError = () => {
-    setError('Google sign-in failed. Please try again.');
+    const message = 'Google sign-in failed. Please try again.';
+    setError(message);
+    toast.error('Google sign-in failed', message);
   };
 
   // Email/Password login
@@ -48,7 +56,9 @@ export function LoginPage() {
     e.preventDefault();
     
     if (!email || !password) {
-      setError('Please enter email and password');
+      const message = 'Please enter email and password';
+      setError(message);
+      toast.error('Missing credentials', message);
       return;
     }
     
@@ -64,9 +74,8 @@ export function LoginPage() {
         navigate('/dashboard');
       }
     } catch (err: unknown) {
-      const errData = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
-      const errorMessage = errData?.error || errData?.message || 'Login failed. Please check your credentials.';
-      setError(typeof errorMessage === 'string' ? errorMessage : 'Login failed. Please check your credentials.');
+      const errorMessage = extractSafeErrorMessage(err, 'Login failed. Please check your credentials.');
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -87,8 +96,9 @@ export function LoginPage() {
         navigate('/dashboard');
       }
     } catch (err: unknown) {
-      const errorMessage = 'Demo login failed. Please try again.';
+      const errorMessage = extractSafeErrorMessage(err, 'Demo login failed. Please try again.');
       setError(errorMessage);
+      toast.error('Demo login failed', errorMessage);
     } finally {
       setIsLoading(false);
     }

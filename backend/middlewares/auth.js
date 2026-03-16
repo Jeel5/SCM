@@ -17,20 +17,20 @@ export async function authenticate(req, res, next) {
     }
 
     if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
+      return res.status(401).json({ success: false, message: 'No token provided' });
     }
 
     const decoded = verifyAccessToken(token);
     
     if (!decoded) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
 
     // Check token blocklist (revoked sessions / password changes)
     if (decoded.jti) {
       const revoked = await userRepo.isTokenRevoked(decoded.jti);
       if (revoked) {
-        return res.status(401).json({ error: 'Token has been revoked' });
+        return res.status(401).json({ success: false, message: 'Token has been revoked' });
       }
     }
     
@@ -58,7 +58,7 @@ export async function authenticate(req, res, next) {
     next();
   } catch (error) {
     logger.error('Auth middleware error:', error);
-    return res.status(401).json({ error: 'Authentication failed' });
+    return res.status(401).json({ success: false, message: 'Authentication failed' });
   }
 }
 
@@ -66,11 +66,11 @@ export async function authenticate(req, res, next) {
 export function authorize(...roles) {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+      return res.status(403).json({ success: false, message: 'Insufficient permissions' });
     }
     
     next();

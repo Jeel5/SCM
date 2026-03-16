@@ -1,72 +1,2275 @@
--Finance Page: Upload CSV and Add Record is not working
--2026-03-14 10:28:06 [error]: Shipment not found {
-  "name": "NotFoundError",
-  "statusCode": 404,
-  "path": "/api/shipments/fb3898da-7417-4a99-9b45-94c24ff9607b",
-  "method": "GET",
-  "requestId": "d758108a-695d-4ca3-8d91-9ac4e0d1d023",
-  "ip": "::1"
-}
+below is the text chat with chatgpt itd not instruction this is a discussion you give you solutions dont blindly follow anyone crtically analyze all things from all angles as industry expert
 
--this type of text shows in all toast message &quot;now&quot;
+my prompt:
+I had a question i have import button in each page for importing past data for example if a company takes our subscription  and they want to import their past data then we can i got a other question while i was writing this should we allow it? And the main question is because of imports have  probably millons of data if order shipment return or finance as we have rate limiting I will get rate limited if we don't have system goes down if we add higher for bulk APIs like those the system gets throttled and that's one company if sometimes we have higher usage and two or more companies does this our system would explode i thought about bullmq and queuing it etc but that will delegate regular data too right
 
--2026-03-14 10:33:38 [error]: Failed to create transfer order {
-  "error": "new row for relation \"orders\" violates check constraint \"orders_status_check\"",
-  "transferData": {
-    "from": "86920ed4-4940-4399-8f35-f708471e971c",
-    "to": "d03acd47-5776-4c5f-a647-0e8b39635b26",
-    "itemCount": 1
-  }
-}
-2026-03-14 10:33:38 [error]: new row for relation "orders" violates check constraint "orders_status_check" {
-  "name": "error",
-  "statusCode": 500,
-  "path": "/api/orders/transfer",
-  "method": "POST",
-  "requestId": "71b83cdf-0d37-49ba-ac16-f374b86f9dc4",
-  "ip": "::ffff:127.0.0.1"
-}
-2026-03-14 10:33:38 [http]: HTTP Request {
-  "method": "POST",
-  "url": "/api/orders/transfer",
-  "status": 500,
-  "responseTime": "47ms",
-  "ip": "::ffff:127.0.0.1",
-  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0"
-}
+chatgpt answer:
+Yes — this is exactly the kind of question real SaaS architects must solve 👏🚀
 
--
-2026-03-14 10:35:53 [debug]: Transaction started
-2026-03-14 10:35:53 [debug]: Transaction rolled back
-2026-03-14 10:35:53 [error]: Transaction failed and rolled back {
-  "error": "Unexpected end of JSON input",
-  "stack": "SyntaxError: Unexpected end of JSON input\n    at JSON.parse (<anonymous>)\n    at file:///home/manav/Desktop/SCM/backend/services/shipmentTrackingService.js:63:37\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async withTransaction (file:///home/manav/Desktop/SCM/backend/utils/dbTransaction.js:104:20)\n    at async ShipmentTrackingService.updateShipmentTracking (file:///home/manav/Desktop/SCM/backend/services/shipmentTrackingService.js:58:22)\n    at async file:///home/manav/Desktop/SCM/backend/controllers/trackingController.js:52:27"
-}
-2026-03-14 10:35:53 [error]: Failed to update shipment tracking {
-  "shipmentId": "abcae1fb-eb84-4aea-b3ea-4b6d52228686",
-  "error": "Unexpected end of JSON input"
-}
-2026-03-14 10:35:53 [error]: Unexpected end of JSON input {
-  "name": "SyntaxError",
-  "statusCode": 500,
-  "path": "/api/shipments/TRACK-1773334034939-yf0q5sqcl/update-tracking",
-  "method": "POST",
-  "requestId": "9cd705cf-8f5c-4b36-9ec1-f5f9fc709e2b",
-  "ip": "::ffff:127.0.0.1"
-}
-2026-03-14 10:35:53 [http]: HTTP Request {
-  "method": "POST",
-  "url": "/api/shipments/TRACK-1773334034939-yf0q5sqcl/update-tracking",
-  "status": 500,
-  "responseTime": "35ms",
-  "ip": "::ffff:127.0.0.1",
-  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0"
-}
+Your instinct is correct:
 
+> **bulk import must NEVER behave like normal API traffic**
 
-dashboard: in warehouse overview card there is inbound and outbound orders are showing but till now we just have outbound orders then it is showing in inbound and also the persentage is 0
+Because if you treat import like normal API:
 
--add working import button in order, warehouse, inventory, carriers, products, patners, team page where admin can import csv data
-this is for example a company takes our services and they may previous data which they would want to enter in all this is only data entry
+❌ millions of inserts block DB
+❌ API workers freeze
+❌ queue starvation
+❌ other tenants slow down
+❌ rate limiter becomes meaningless
 
--Patners Page: Add view button for each
+So let’s answer both questions clearly.
+
+---
+
+# 1️⃣ Should You Allow Past Data Import?
+
+## ✅ Yes — absolutely in real SaaS
+
+Most companies switching systems expect:
+
+✅ past orders
+✅ past shipments
+✅ finance records
+✅ inventory
+✅ customer data
+
+Without import:
+
+many companies reject product.
+
+---
+
+## Real-world products all allow import
+
+Shopify
+Zoho
+SAP
+
+all support import.
+
+---
+
+# But import must be controlled ⚠️
+
+Not:
+
+```text id="5h2m8q"
+POST /orders x 1,000,000
+```
+
+Never.
+
+---
+
+# 2️⃣ Correct Architecture = Async Bulk Import Pipeline
+
+---
+
+## User uploads file
+
+CSV / Excel / JSON.
+
+---
+
+## API only does:
+
+✅ validate file
+✅ store file
+✅ create import job
+
+Then immediately return:
+
+```json id="j2w9k3"
+{
+  "status": "queued"
+}
+```
+
+---
+
+## Heavy work moves to queue
+
+Use BullMQ
+
+---
+
+# Flow
+
+```text id="x8m4vp"
+Upload file
+↓
+Create BullMQ job
+↓
+Worker processes in chunks
+↓
+DB insert batches
+↓
+Progress tracked
+```
+
+---
+
+# 3️⃣ Why Queue Solves Your Fear
+
+Because API finishes fast.
+
+User request becomes:
+
+```text id="4v7q1z"
+small lightweight request
+```
+
+Heavy DB work happens separately.
+
+---
+
+# 4️⃣ Very Important: Chunk Processing
+
+Never insert 1 million rows at once.
+
+---
+
+## Correct
+
+```text id="1r8m2d"
+1000 rows
+1000 rows
+1000 rows
+```
+
+Batch insert.
+
+---
+
+## Example
+
+```ts id="7k1n6b"
+for each 1000 rows:
+  insert batch
+```
+
+---
+
+This protects:
+
+✅ DB memory
+✅ locks
+✅ transaction size
+
+---
+
+# 5️⃣ Multi-Company Safety (Critical)
+
+This is where many systems fail.
+
+---
+
+## Each company import gets own queue job
+
+```text id="n3p7xf"
+company_1_import
+company_2_import
+company_3_import
+```
+
+---
+
+## BullMQ concurrency controls worker count
+
+Example:
+
+```ts id="0q5m8r"
+concurrency: 2
+```
+
+Means only 2 imports simultaneously.
+
+Others wait.
+
+---
+
+This protects system.
+
+---
+
+# 6️⃣ Does Queue Block Normal Traffic?
+
+## ❌ No if separated properly
+
+Use dedicated queue worker.
+
+---
+
+## Architecture
+
+```text id="u6w4ta"
+API server
+↓
+normal traffic
+
+Worker server
+↓
+imports only
+```
+
+---
+
+Even same machine works if isolated.
+
+---
+
+# 7️⃣ Important: Separate Queues
+
+Never mix import with real-time operations.
+
+---
+
+## Good queues
+
+```text id="f2m9ke"
+imports_queue
+shipment_queue
+notifications_queue
+sla_queue
+```
+
+---
+
+Because imports are slow.
+
+Shipment events are urgent.
+
+---
+
+# 8️⃣ Rate Limiting for Import Endpoint
+
+Still needed.
+
+But rate limit by file upload frequency, not rows.
+
+---
+
+Example:
+
+```text id="g1k7pu"
+3 imports / hour / company
+```
+
+Enough.
+
+---
+
+Not row-based.
+
+---
+
+# 9️⃣ DB Insert Strategy
+
+For millions rows:
+
+Use bulk insert.
+
+If Prisma:
+
+```ts id="5q8v1d"
+createMany()
+```
+
+---
+
+Even better for huge loads:
+
+raw SQL COPY.
+
+With PostgreSQL:
+
+```sql id="2n4x7a"
+COPY table FROM file
+```
+
+Much faster.
+
+---
+
+# 🔟 Progress Tracking (Very Important UX)
+
+Company must see:
+
+```text id="y8t3kc"
+23% imported
+45000 rows done
+120 errors
+```
+
+---
+
+Store import job table:
+
+```text id="0m6p2r"
+import_jobs
+```
+
+---
+
+Fields:
+
+```text id="4q9w7n"
+status
+processed_rows
+failed_rows
+started_at
+finished_at
+```
+
+---
+
+# 1️⃣1️⃣ Validation Before Insert
+
+Critical.
+
+Never blindly insert.
+
+---
+
+Validate:
+
+✅ required fields
+✅ duplicates
+✅ foreign keys
+✅ company ownership
+
+---
+
+Otherwise imported garbage destroys DB.
+
+---
+
+# 1️⃣2️⃣ Best Enterprise Pattern
+
+---
+
+## API accepts file
+
+## queue processes
+
+## chunk inserts
+
+## progress visible
+
+## errors downloadable
+
+---
+
+---
+
+# 🚀 Your Exact Best Design
+
+```text id="5t2n8x"
+POST /imports/orders
+↓
+file uploaded
+↓
+BullMQ job created
+↓
+worker reads chunks
+↓
+insert batches
+↓
+update progress
+↓
+UI polls status
+```
+
+---
+
+# ⭐ Final Verdict
+
+> Bulk import must be isolated from normal API traffic through queue workers and chunked inserts. Never process imports synchronously.
+
+---
+
+# 🔥 One More Critical Thing
+
+Imports should have:
+
+## dry-run mode
+
+Before real insert:
+
+```text id="3w7q1m"
+show 500 errors before import starts
+```
+
+This is what enterprise products do.
+
+---
+
+If you want, next I can also explain:
+
+👉 **how real SaaS systems stop one tenant from killing all tenants during huge imports (tenant isolation strategy)** — which is exactly the next production problem here 🧠🚀
+
+my prompt:
+But all in all it would still slow down the system even if we use seprate queue as bullmq or job workers run on same memory right or cpu
+Also if we use different queue for all things does it not get close to kafka like I know this is not 0.1% of it but nichest idea of it like something very ar base I know it's kafkaa so don't shout that kafka is very different and such
+
+chatgpt answer:
+Yes — and this is a **very mature systems question** 🔥
+You are now thinking beyond “queue = solved,” which is exactly correct.
+
+Because:
+
+> **A queue does not create resources. It only controls how resources are consumed.**
+
+So yes:
+
+## If worker runs on same machine:
+
+it still uses same:
+
+✅ CPU
+✅ RAM
+✅ disk I/O
+✅ DB connections
+
+Queue only prevents sudden chaos — not resource cost.
+
+---
+
+# 1️⃣ Why Queue Still Helps If Same Machine?
+
+Because without queue:
+
+---
+
+## 1 million rows arrive immediately
+
+```text id="5r1k8m"
+API threads blocked
+DB hammered instantly
+memory spikes
+timeouts
+```
+
+---
+
+## With queue
+
+You force:
+
+```text id="8n4q2v"
+controlled pace
+```
+
+Example:
+
+```text id="3x7p1k"
+1000 rows every few seconds
+```
+
+---
+
+So instead of explosion:
+
+you get predictable load.
+
+---
+
+# Queue does:
+
+## smooth pressure
+
+not remove pressure.
+
+---
+
+# 2️⃣ Yes — Same Machine Still Slows Under Heavy Import
+
+Absolutely true.
+
+If:
+
+```text id="9w2m6t"
+backend + redis + postgres + worker
+same server
+```
+
+Heavy import will still impact latency.
+
+Because CPU shared.
+
+---
+
+# Real fix = worker isolation
+
+---
+
+## Better architecture later
+
+```text id="6k3p9a"
+API server
+Worker server
+Redis
+DB
+```
+
+Now import load isolated.
+
+---
+
+But for college / early SaaS:
+
+same machine + controlled concurrency is enough.
+
+---
+
+# 3️⃣ The Most Important Protection = Worker Concurrency Limit
+
+BullMQ allows:
+
+```ts id="1m8r4q"
+concurrency: 1
+```
+
+or
+
+```ts id="7q5v2n"
+concurrency: 2
+```
+
+---
+
+This means:
+
+Even if 5 companies upload huge imports:
+
+only limited workers execute.
+
+Others wait safely.
+
+---
+
+# This is huge protection
+
+Because without it:
+
+5 imports × million rows = death.
+
+---
+
+# 4️⃣ Also Add Import Priority
+
+Very important.
+
+---
+
+## Low priority queue
+
+Imports should always be lowest priority.
+
+---
+
+## Example
+
+```text id="2v9k1x"
+shipment updates = priority 1
+imports = priority 10
+```
+
+---
+
+Urgent operational flows always win.
+
+---
+
+# 5️⃣ Your Kafka Observation = Correct Thinking 👏
+
+Yes:
+
+multiple queues begin to resemble message systems conceptually.
+
+You are seeing the architecture direction correctly.
+
+---
+
+# But BullMQ vs Kafka difference:
+
+---
+
+# BullMQ = Job Queue
+
+Focus:
+
+```text id="8c4m7j"
+task execution
+```
+
+Example:
+
+```text id="0r6q2w"
+import file
+send email
+recalculate SLA
+```
+
+---
+
+# Kafka = Event Streaming System
+
+Focus:
+
+```text id="4m1t9n"
+durable event streams
+```
+
+Example:
+
+```text id="3k8v5p"
+order created
+shipment assigned
+payment completed
+inventory changed
+```
+
+---
+
+# BullMQ
+
+Tasks pulled and consumed.
+
+---
+
+# Kafka
+
+Events persist and many consumers read independently.
+
+---
+
+# Example
+
+---
+
+## BullMQ
+
+```text id="9x7q3m"
+job done once
+```
+
+---
+
+## Kafka
+
+```text id="2p4w8k"
+same event used by:
+analytics
+billing
+notifications
+audit
+```
+
+---
+
+---
+
+# 6️⃣ Why BullMQ Is Correct For You Now
+
+Because your imports are:
+
+## tasks
+
+not event streams.
+
+---
+
+Use BullMQ.
+
+Do NOT jump to Kafka.
+
+Kafka too heavy now.
+
+---
+
+# 7️⃣ Enterprise Evolution Path
+
+---
+
+## Stage 1
+
+BullMQ
+
+---
+
+## Stage 2
+
+BullMQ + separate workers
+
+---
+
+## Stage 3
+
+Kafka only if event scale huge
+
+---
+
+Most systems never truly need Kafka.
+
+---
+
+# 8️⃣ Best Practical Protection For Your Current SCM
+
+---
+
+## imports queue
+
+```text id="6n1r7v"
+concurrency 1
+```
+
+---
+
+## shipment queue
+
+```text id="4q2m9x"
+concurrency 5
+```
+
+---
+
+## notification queue
+
+```text id="1w8k3p"
+concurrency 10
+```
+
+---
+
+Different workloads controlled differently.
+
+---
+
+# 9️⃣ Critical Real Rule
+
+Queue workers should never saturate DB.
+
+So also limit DB batch size:
+
+---
+
+```text id="0t5v2m"
+500 rows
+1000 rows
+```
+
+not huge batches.
+
+---
+
+---
+
+# 🔥 Final Professional Verdict
+
+> BullMQ controls resource pressure, but does not remove hardware limits. Real scalability comes from concurrency control, queue priority, chunked DB writes, and eventually worker isolation.
+
+---
+
+# ⭐ One sentence for viva / interview
+
+> Queues convert uncontrolled spikes into controlled throughput, protecting core APIs while allowing heavy background workloads to execute safely.
+
+---
+
+If you want, next I can explain:
+
+👉 **exactly when a system knows it must move from BullMQ to Kafka / RabbitMQ / Temporal**
+because that boundary is rarely explained clearly 🧠🚀
+
+my prompt:
+Can you give prompt explaining the last few chats about the import problem so I can give it to GitHub copilot 
+
+chatgpt answer:
+We need to design enterprise-grade bulk import architecture for our multi-tenant SCM SaaS system (orders, shipments, returns, finance, inventory imports).
+
+Current concern:
+Import endpoints may receive very large files (CSV/Excel/JSON) containing hundreds of thousands or millions of rows from one company migrating historical data into our system.
+
+Requirements:
+
+* Bulk import must NOT run synchronously inside normal API request lifecycle.
+* Bulk import must NOT use normal per-row API inserts.
+* Bulk import must NOT block normal traffic (orders, shipments, sockets, auth, dashboard).
+* System must remain safe even if multiple companies import simultaneously.
+
+Architectural decision:
+Use BullMQ with Redis-backed background jobs.
+
+Correct flow:
+
+1. User uploads file via import endpoint.
+2. API validates file metadata only.
+3. Store file temporarily.
+4. Create BullMQ import job.
+5. Return immediate response:
+   { status: "queued", jobId: "..." }
+
+Worker design:
+
+* Dedicated import worker processes jobs asynchronously.
+* Read file in chunks (e.g. 500 or 1000 rows per batch).
+* Validate each chunk before insert.
+* Use bulk inserts (Prisma createMany / raw SQL batch insert).
+* Never insert entire file in one transaction.
+* Update progress after each chunk.
+
+Concurrency rules:
+
+* Import queue must have low concurrency (start with concurrency: 1).
+* Imports are low priority compared to shipment, notification, SLA, and operational jobs.
+* Separate queues:
+
+  * imports_queue
+  * shipments_queue
+  * notifications_queue
+  * sla_queue
+
+Reason:
+Queue smooths load but does NOT remove CPU/RAM pressure.
+Even on same machine, worker still uses resources, so throughput must be controlled.
+
+Important:
+Queue protects system by converting traffic spike into controlled processing pace.
+
+Need implementation:
+
+* import_jobs table:
+  id, company_id, type, status, total_rows, processed_rows, failed_rows, started_at, finished_at, error_log
+* import worker service
+* chunk parser utility
+* progress update service
+* failure retry strategy
+* import status endpoint:
+  GET /imports/:jobId/status
+
+Add dry-run mode:
+Before actual import, allow validation-only mode:
+
+* parse file
+* report errors
+* do not insert rows
+
+Security:
+
+* enforce tenant isolation
+* every imported row must belong to company_id
+* validate foreign keys before insert
+
+Performance:
+
+* chunk inserts
+* avoid giant transactions
+* avoid blocking main DB connection pool
+
+Important architecture note:
+BullMQ here is used as task queue, not event streaming.
+Do NOT introduce Kafka.
+Kafka is unnecessary for this use case.
+
+Goal:
+Generate clean scalable implementation with service/repository separation and production-ready import worker structure.
+
+my prompt:
+Any other architectural problem which can be encountered in real world under load I want to stress test automatically how system would work under pressure concurrency resources time etc this is testing paart but i want to also discuss another architectural problems there may be cancelled you guess any that may happen not just under load but basic problems as well
+
+chatgot answer:
+Excellent mindset — this is exactly how systems become **real systems instead of demo systems** 🧠🚀
+
+What you're asking is:
+
+> **"What breaks in production even when code looks correct?"**
+
+That is the heart of architecture.
+
+Because under real life, failures usually come from:
+
+❌ concurrency
+❌ timing
+❌ retries
+❌ partial failure
+❌ stale state
+❌ duplicate actions
+❌ human edge cases
+
+—not from syntax.
+
+So I’ll give you the **real production failure map** for your SCM system.
+
+---
+
+# 🧨 1. Duplicate Actions (Very Common)
+
+This breaks systems constantly.
+
+---
+
+## Example
+
+Customer clicks:
+
+```text id="4r7k1p"
+Place Order
+```
+
+twice because internet lagged.
+
+Now:
+
+❌ 2 orders created
+❌ 2 payments maybe captured
+❌ 2 shipments triggered
+
+---
+
+## Fix
+
+Use idempotency key.
+
+---
+
+## Example
+
+```text id="8n2v5m"
+Idempotency-Key: abc123
+```
+
+Same request → same result.
+
+---
+
+This is critical for:
+
+✅ payments
+✅ shipment creation
+✅ imports
+✅ returns
+
+---
+
+---
+
+# 🧨 2. Partial Failure Between Systems
+
+Extremely dangerous.
+
+---
+
+## Example
+
+Order paid successfully.
+
+Then shipment creation fails.
+
+Now:
+
+```text id="6k1x8q"
+payment exists
+shipment absent
+```
+
+Broken business state.
+
+---
+
+## Fix
+
+Compensating logic.
+
+---
+
+Example:
+
+```text id="1m4q9t"
+payment success
+shipment fail
+→ retry / alert / rollback
+```
+
+---
+
+Never assume external system always succeeds.
+
+---
+
+---
+
+# 🧨 3. Race Conditions
+
+Very common under concurrency.
+
+---
+
+## Example
+
+Two warehouse users reserve same inventory simultaneously.
+
+Both read:
+
+```text id="3p7w2n"
+stock = 1
+```
+
+Both allocate.
+
+Now stock becomes:
+
+```text id="0r5m8k"
+-1
+```
+
+---
+
+## Fix
+
+DB transaction + row lock.
+
+---
+
+Use:
+
+```sql id="9v2q6a"
+FOR UPDATE
+```
+
+for critical stock operations.
+
+---
+
+---
+
+# 🧨 4. Queue Retry Duplication
+
+Very dangerous.
+
+---
+
+## Example
+
+BullMQ retries shipment assignment.
+
+Job executes twice.
+
+Now:
+
+❌ duplicate shipment created
+
+---
+
+## Fix
+
+Jobs must be idempotent too.
+
+---
+
+Before create shipment:
+
+check existing shipment first.
+
+---
+
+---
+
+# 🧨 5. Stale Read Problem
+
+Very common.
+
+---
+
+## Example
+
+Ops sees carrier quote.
+
+Quote expired 5 minutes later.
+
+Still uses old quote.
+
+Carrier rejects.
+
+---
+
+## Fix
+
+Always revalidate critical external state before commit.
+
+---
+
+---
+
+# 🧨 6. Slow Query Under Growth
+
+Looks fine initially.
+
+Dies later.
+
+---
+
+## Example
+
+```sql id="5t1m7v"
+JOIN orders + shipments + returns + carriers + users
+```
+
+At 10 rows okay.
+
+At 10 million rows:
+
+dead.
+
+---
+
+## Fix
+
+Stress test query plans early.
+
+Use:
+
+```sql id="2n8q4x"
+EXPLAIN ANALYZE
+```
+
+---
+
+---
+
+# 🧨 7. Connection Pool Exhaustion
+
+Very common.
+
+---
+
+## Example
+
+Many requests open DB connections.
+
+Pool full.
+
+Everything waits.
+
+---
+
+## Fix
+
+Tune connection pool carefully.
+
+---
+
+Too many connections = DB dies.
+
+Too few = API waits.
+
+---
+
+---
+
+# 🧨 8. Socket Event Flood
+
+You already use sockets.
+
+Danger:
+
+---
+
+## Example
+
+Every shipment emits every tiny update.
+
+1000 shipments:
+
+socket storm.
+
+---
+
+## Fix
+
+Emit meaningful state changes only.
+
+Not every internal change.
+
+---
+
+---
+
+# 🧨 9. Long Transactions
+
+Huge killer.
+
+---
+
+## Example
+
+Import starts giant transaction.
+
+Locks table.
+
+Orders slow down.
+
+---
+
+## Fix
+
+Short transactions only.
+
+Chunk commits.
+
+---
+
+---
+
+# 🧨 10. Deadlocks
+
+Real production nightmare.
+
+---
+
+## Example
+
+Transaction A locks orders then shipments.
+
+Transaction B locks shipments then orders.
+
+Deadlock.
+
+---
+
+## Fix
+
+Always lock resources in same order.
+
+---
+
+---
+
+# 🧨 11. Tenant Isolation Mistakes (Critical SaaS Risk)
+
+---
+
+## Example
+
+Wrong query:
+
+```sql id="7q1m5z"
+SELECT * FROM orders WHERE id = ?
+```
+
+Forgot:
+
+```sql id="4k9v2n"
+company_id
+```
+
+Now tenant sees another tenant data.
+
+Severe breach.
+
+---
+
+## Fix
+
+Every query tenant-aware.
+
+Always.
+
+---
+
+---
+
+# 🧨 12. Background Job Starvation
+
+---
+
+## Example
+
+Huge imports occupy workers.
+
+Shipment jobs delayed.
+
+---
+
+## Fix
+
+Separate queues + priorities.
+
+You already thinking correctly here.
+
+---
+
+---
+
+# 🧨 13. External API Cascading Failure
+
+Carrier API slow.
+
+Your API waits.
+
+Everything slows.
+
+---
+
+## Fix
+
+Timeout + circuit breaker.
+
+---
+
+## Example
+
+After repeated failure:
+
+temporarily stop calling bad carrier.
+
+---
+
+---
+
+# 🧨 14. Memory Leak
+
+Node danger.
+
+---
+
+## Example
+
+Large file parsing stays in RAM.
+
+Eventually crash.
+
+---
+
+## Fix
+
+Streaming parser.
+
+Never full file memory.
+
+---
+
+---
+
+# 🧨 15. Wrong Retry Policy
+
+---
+
+## Example
+
+Carrier timeout retries instantly 10 times.
+
+Now external API worse.
+
+---
+
+## Fix
+
+Exponential backoff.
+
+---
+
+---
+
+# 🧨 16. Cancelled Workflow Inconsistency
+
+You mentioned cancellation — extremely important.
+
+---
+
+## Example
+
+Order cancelled after shipment assigned but before pickup.
+
+Need:
+
+---
+
+## System must decide:
+
+```text id="8m4q1p"
+cancel shipment?
+refund?
+release inventory?
+notify carrier?
+```
+
+---
+
+This is workflow consistency problem.
+
+---
+
+---
+
+# 🧨 17. Clock / Time Problems
+
+Often ignored.
+
+---
+
+## Example
+
+SLA breach depends on timezone.
+
+Wrong timezone:
+
+wrong penalties.
+
+---
+
+## Fix
+
+Always UTC internally.
+
+---
+
+---
+
+# 🧨 18. Logging Explosion Under Load
+
+---
+
+## Example
+
+Every request logs giant payload.
+
+Disk fills.
+
+---
+
+## Fix
+
+Structured minimal logs.
+
+You already use Pino — good choice.
+
+---
+
+---
+
+# 🚀 What You Should Stress Test Automatically
+
+---
+
+## Simulate:
+
+✅ concurrent order creation
+✅ duplicate clicks
+✅ bulk imports
+✅ carrier API timeout
+✅ socket burst
+✅ DB slow query
+✅ queue retries
+✅ inventory race condition
+✅ cancellation mid-flow
+
+---
+
+---
+
+# Best Tools
+
+---
+
+## Backend load
+
+k6
+
+Best modern choice.
+
+---
+
+## API stress
+
+Apache JMeter
+
+Older but powerful.
+
+---
+
+## DB profiling
+
+Use PostgreSQL slow query logs.
+
+---
+
+---
+
+# 🏆 Most Important Senior Rule
+
+> Under load, systems usually fail at boundaries between components, not inside single components.
+
+Meaning:
+
+API ↔ DB
+API ↔ queue
+queue ↔ external carrier
+auth ↔ socket
+import ↔ tenant rules
+
+---
+
+If you want, next I can give you:
+
+👉 **Top 25 failure scenarios your SCM should simulate before demo / viva / production**
+with exact test cases like a real architecture review checklist 📋🔥
+
+my prompt:
+1. Exists haven't tested but idempotency is there
+2. There are retries i think haven't tested though
+3. I don't know about this one have to check it probably doesn't happens i have checks but have to test
+4. I don't know about this one though 
+5. What do you mean can you specify 
+6. Yes that problem I fixed for time wise queries if we have 1m orders and I want last 30 day or toay data or last week data that will be costly so I made aggregate queries with stats tables like  monthly daily weekly etc
+7. What should you use pg bouncer?
+8. Yeah can you give more info about this when I import the sockets are not working i have to reload 
+9. I have to discuss this with GitHub copilot later give prompt of this
+10. We have shipment lock so I don't think that would be a problem and carrier sends quotes in a window and we send best speed/cost ratio quote only
+11. Nah that's working 
+12. Yes as we discussed have to do this
+13. I think that's in place and hav retries later
+14. Don't know about this
+15. Don't understand this one
+16. Yes cancellation logic is remaining
+17. Right now it's india specific but that's a valid thing if we had been global 
+18. Yes that too I delete logs if more than 5mb
+
+chatgpt answer:
+Good — your answers already show you’re thinking like someone doing **architecture review instead of just coding** 🔥
+Now let me clarify the ones you marked uncertain, because these are exactly the bugs that appear only later under real traffic.
+
+---
+
+# 3️⃣ Race Condition (You said: “I have checks but need to test”)
+
+Checks alone often fail under concurrency.
+
+---
+
+## Why checks fail
+
+Two requests arrive same millisecond:
+
+```text id="8f3k1p"
+Request A checks stock = 1
+Request B checks stock = 1
+```
+
+Both pass check.
+
+Then both decrement.
+
+Now:
+
+```text id="4m7q2v"
+stock = -1
+```
+
+---
+
+## Correct protection
+
+Use DB transaction + row lock:
+
+```sql id="1n8r5x"
+SELECT * FROM inventory
+WHERE product_id = ?
+FOR UPDATE
+```
+
+This locks row until transaction finishes.
+
+---
+
+## Test it
+
+Run 20 concurrent purchase requests on same stock.
+
+If stock breaks → race exists.
+
+---
+
+---
+
+# 4️⃣ Queue Retry Duplication (You said unknown)
+
+Very dangerous.
+
+---
+
+## Example
+
+BullMQ shipment job:
+
+```text id="6q2v8m"
+create shipment
+```
+
+Carrier API succeeds.
+
+But worker crashes before marking job done.
+
+BullMQ retries.
+
+Now second shipment created.
+
+---
+
+## Fix
+
+Before create shipment:
+
+always check:
+
+```text id="2p9m4k"
+shipment already exists?
+```
+
+---
+
+## Rule
+
+Every retryable job must be idempotent.
+
+---
+
+---
+
+# 5️⃣ Stale Read Problem (You asked explain)
+
+Very important.
+
+---
+
+## Meaning:
+
+Data looked valid when read, but became invalid before action.
+
+---
+
+## Example
+
+Carrier quote:
+
+```text id="9t1w6r"
+₹185 valid until 10:30
+```
+
+Ops reads at 10:29.
+
+Clicks assign at 10:31.
+
+Quote expired.
+
+---
+
+## System mistake:
+
+Uses stale quote.
+
+---
+
+## Fix
+
+Before final assignment:
+
+revalidate quote:
+
+```text id="7k3m1v"
+still valid?
+still available?
+```
+
+---
+
+---
+
+## Another example
+
+Inventory:
+
+---
+
+User A sees:
+
+```text id="5q8n2x"
+5 units available
+```
+
+Before checkout, another user buys all.
+
+User A still tries purchase.
+
+Need recheck before commit.
+
+---
+
+---
+
+# 7️⃣ Connection Pool (You asked pgBouncer?)
+
+## Yes — PgBouncer is excellent when scale grows.
+
+---
+
+## Why needed
+
+PostgreSQL connections are expensive.
+
+Too many:
+
+❌ memory waste
+❌ context switching
+❌ DB slowdown
+
+---
+
+## Without pooler
+
+1000 requests may try many connections.
+
+---
+
+## With PgBouncer
+
+Small controlled pool:
+
+```text id="4r1k9m"
+20–50 shared connections
+```
+
+---
+
+## For your current project
+
+Not mandatory now.
+
+But production-ready good addition later.
+
+---
+
+---
+
+# 8️⃣ Socket issue during import (Very important)
+
+You said:
+
+> import happens → sockets stop until reload
+
+This usually means event loop blocked.
+
+---
+
+## Cause
+
+Heavy import parsing inside same Node thread.
+
+Node is single-threaded.
+
+Heavy CPU work blocks socket heartbeat.
+
+---
+
+## Result
+
+Socket appears frozen.
+
+---
+
+## Fix
+
+Move import parsing fully into worker.
+
+Never parse huge file inside API process.
+
+---
+
+## Also use streaming parser
+
+Not:
+
+```text id="3m7q5v"
+read whole file into memory
+```
+
+---
+
+## Use stream:
+
+```text id="1x8n4p"
+read chunk by chunk
+```
+
+---
+
+Because heavy memory parsing blocks event loop.
+
+---
+
+---
+
+# Copilot Prompt for Socket Freeze During Import
+
+We discovered a production architecture issue:
+
+During bulk imports, Socket.IO realtime updates stop working until browser reload.
+
+Likely cause:
+Heavy import parsing or processing is blocking Node.js event loop.
+
+Need architecture correction:
+
+1. Bulk imports must never parse full file inside API request process.
+
+2. File upload endpoint should:
+
+   * accept file
+   * store temporarily
+   * enqueue BullMQ job
+   * return immediately
+
+3. Import worker must:
+
+   * process file asynchronously
+   * stream file chunk-by-chunk
+   * avoid loading full file into memory
+   * insert DB rows in batches
+
+4. Keep socket server responsive:
+
+   * main API process must remain lightweight
+   * import CPU-heavy work isolated from socket event loop
+
+5. If needed:
+
+   * use stream-based CSV parser
+   * update import progress after each chunk
+
+Goal:
+Prevent imports from blocking Socket.IO heartbeats and realtime shipment updates.
+
+---
+
+# 14️⃣ Memory Leak (You said unknown)
+
+Very dangerous because Node can slowly die.
+
+---
+
+## Common cause in your system
+
+Large arrays retained:
+
+```text id="2w6m9q"
+all imported rows stored
+```
+
+Not released.
+
+---
+
+## Another cause
+
+Sockets storing stale references.
+
+---
+
+## Test
+
+Run:
+
+```text id="8k3v1n"
+long import repeatedly
+```
+
+Watch RAM.
+
+If RAM never drops:
+
+possible leak.
+
+---
+
+---
+
+# 15️⃣ Wrong Retry Policy (You said unclear)
+
+Means retries can worsen failures.
+
+---
+
+## Bad retry
+
+Carrier API fails.
+
+Immediately retry:
+
+```text id="0q7m4x"
+10 times instantly
+```
+
+Now carrier API under more pressure.
+
+---
+
+## Good retry = exponential backoff
+
+---
+
+Example:
+
+```text id="4p1k8n"
+1 sec
+2 sec
+4 sec
+8 sec
+```
+
+---
+
+BullMQ supports this.
+
+Very important.
+
+---
+
+---
+
+# 18️⃣ Logs rotation
+
+You delete after 5MB — good start ✅
+
+Better:
+
+Rotate automatically.
+
+Not manual delete.
+
+Because deleting can lose useful failure history.
+
+---
+
+---
+
+# ⚡ Biggest Immediate Risk In Your Current System
+
+From your answers:
+
+## socket blocking during import is highest-priority real issue now.
+
+Because that means event loop pressure already visible.
+
+---
+
+# 🏆 Your next strongest test
+
+Run:
+
+---
+
+## simultaneous:
+
+✅ import
+✅ socket updates
+✅ order creation
+✅ shipment quote requests
+
+and observe:
+
+---
+
+## metrics:
+
+✅ response time
+✅ socket delay
+✅ CPU
+✅ memory
+✅ DB latency
+
+---
+
+If you want, next I can give you:
+
+👉 **a brutal production stress-test checklist for your SCM (20 scenarios + exact expected breakpoints)** 🔥
+
+my prompt:
+I have Intel i5 11 and G at end don't remember perfect name and 16gb ram and my cpu spiked to 60-80%+ up and down to 20-30% during imports is that concerning as in context of real production spikes this imitates right I am on linux fedora so there is that my normal cpu is around 1%
+
+chatgpt prompt:
+What you saw is **not automatically bad** — but the meaning depends on **what exactly was consuming CPU** 🔍⚙️
+
+With your machine:
+
+* **11th gen Intel i5 U/G-series** (likely 4 cores / 8 threads)
+* **16 GB RAM**
+* Fedora Linux
+
+that CPU spike during import is actually **expected** if you are doing:
+
+✅ parsing file
+✅ validation
+✅ JSON transforms
+✅ batching inserts
+✅ socket updates
+✅ logging
+
+---
+
+# ✅ Is 60–80% CPU During Import Concerning?
+
+## Short answer:
+
+> **No, if system remains responsive.** ✅
+
+Because imports are intentionally heavy work.
+
+---
+
+# What matters more than CPU %
+
+Ask:
+
+## During spike, did these still work normally?
+
+✅ API still responds fast
+✅ sockets still alive
+✅ DB not timing out
+✅ no event loop freeze
+✅ no RAM runaway
+
+If yes → acceptable.
+
+---
+
+# ⚠️ When CPU spike becomes concerning
+
+If during import:
+
+❌ sockets freeze
+❌ requests delay badly
+❌ UI hangs
+❌ event loop blocked
+❌ CPU pinned near 100% continuously
+
+then architecture needs adjustment.
+
+---
+
+# Your Spike Pattern Looks Healthy
+
+You said:
+
+```text id="2f4r9m"
+80%
+↓
+30%
+↓
+60%
+↓
+20%
+```
+
+This usually means:
+
+## chunk processing
+
+Very good sign 👍
+
+Because:
+
+```text id="8k1v6p"
+process chunk
+pause
+DB write
+process chunk
+pause
+```
+
+That oscillation means system breathing.
+
+---
+
+# If It Was Dangerous, You’d See
+
+```text id="0m7q2x"
+100% locked for long time
+```
+
+continuous.
+
+That means event loop saturation.
+
+---
+
+# 🧠 Important: Laptop ≠ Production Meaning Directly
+
+Your laptop has:
+
+limited cores
+limited thermal headroom
+shared desktop processes
+
+Production server behaves differently.
+
+---
+
+## Example small server
+
+4 vCPU cloud server often handles cleaner than laptop because:
+
+✅ dedicated resources
+✅ no GUI overhead
+✅ better sustained load
+
+---
+
+# But yes — laptop spike is useful simulation
+
+It tells you:
+
+## where bottleneck likely appears first.
+
+---
+
+# In real production, same import issue becomes:
+
+## one tenant uploads huge file
+
+Then CPU spike similar happens on worker node.
+
+That is realistic.
+
+---
+
+# What you should observe next (much more important than CPU)
+
+---
+
+## 1 Event loop lag
+
+Critical for Node.js
+
+Because CPU high is okay, event loop lag is danger.
+
+---
+
+## 2 DB latency
+
+Check if inserts slow normal reads.
+
+---
+
+## 3 Memory growth
+
+Very important.
+
+---
+
+## 4 Socket heartbeat delay
+
+Since you already saw socket reload issue.
+
+---
+
+# 🔥 Simple Real Test You Should Run
+
+During import:
+
+---
+
+## simultaneously:
+
+* open dashboard
+* trigger socket events
+* query orders list
+* query shipment status
+
+---
+
+If all remain smooth:
+
+architecture acceptable.
+
+---
+
+# ⚠️ Real Production Concern = sustained concurrency
+
+One import is easy.
+
+Hard case:
+
+```text id="3t8k1q"
+3 companies import simultaneously
+```
+
+That is real test.
+
+---
+
+# Then CPU matters.
+
+Because one import at 80% means:
+
+3 imports may saturate.
+
+---
+
+# Fix there = concurrency control
+
+Which we discussed:
+
+```text id="5p2m7n"
+BullMQ concurrency 1
+```
+
+or 2 max.
+
+---
+
+# 🧠 Professional Interpretation
+
+> CPU spikes during background jobs are normal. Danger begins when spikes cause event loop lag, latency growth, or starvation of critical traffic.
+
+---
+
+# ⭐ For your machine specifically
+
+60–80% spike on 11th gen i5 during import is **very believable and not alarming**.
+
+Actually useful signal.
+
+---
+
+# 🚀 Best next step
+
+Use:
+
+htop
+
+Watch:
+
+---
+
+## CPU per process
+
+See who consumes:
+
+```text id="6v4q8m"
+node
+postgres
+redis
+browser
+```
+
+---
+
+That tells real bottleneck.
+
+---
+
+If you want, I can also explain:
+
+👉 **what exact CPU %, RAM %, DB latency, and queue delay become dangerous in real production systems**
+(very practical production thresholds engineers actually watch) 📊🔥

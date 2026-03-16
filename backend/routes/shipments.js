@@ -24,24 +24,24 @@ const router = express.Router();
 // Carrier portal — carriers filter by carrier_id param; authenticated users see org-scoped results
 router.get('/shipments', optionalAuth, validateQuery(listShipmentsQuerySchema), listShipments);
 
-router.get('/shipments/:id', authenticate, authorize('shipments:read'), validateUUIDParams, getShipment);
-router.get('/shipments/:id/timeline', authenticate, authorize('shipments:read'), validateUUIDParams, getShipmentTimeline);
-router.post('/shipments', authenticate, authorize('shipments:create'), validateRequest(createShipmentSchema), createShipment);
-router.patch('/shipments/:id/status', authenticate, authorize('shipments:update'), validateUUIDParams, validateRequest(updateShipmentStatusSchema), updateShipmentStatus);
+router.get('/shipments/:id', authenticate, authorize('shipments.view'), validateUUIDParams, getShipment);
+router.get('/shipments/:id/timeline', authenticate, authorize('shipments.view'), validateUUIDParams, getShipmentTimeline);
+router.post('/shipments', authenticate, authorize('shipments.create'), validateRequest(createShipmentSchema), createShipment);
+router.patch('/shipments/:id/status', authenticate, authorize('shipments.update'), validateUUIDParams, validateRequest(updateShipmentStatusSchema), updateShipmentStatus);
 
 // Carrier-only endpoint: Confirm pickup (Method A - Carrier Only Control)
 // Protected with HMAC signature verification
 router.post('/shipments/:id/confirm-pickup', verifyWebhookSignature(), confirmPickup);
 
 // Tracking endpoints — write endpoints protected with webhook signature, reads require auth
-router.get('/shipments/:trackingNumber/details', authenticate, authorize('shipments:read'), getShipmentDetails);
-router.get('/shipments/:trackingNumber/timeline', authenticate, authorize('shipments:read'), getTrackingTimeline);
+router.get('/shipments/:trackingNumber/details', authenticate, authorize('shipments.view'), getShipmentDetails);
+router.get('/shipments/tracking/:trackingNumber/timeline', authenticate, authorize('shipments.view'), getTrackingTimeline);
 router.post('/shipments/:trackingNumber/update-tracking', verifyWebhookSignature(), updateShipmentTracking);
-router.post('/shipments/:trackingNumber/calculate-route', authenticate, authorize('shipments:update'), calculateRoute);
+router.post('/shipments/:trackingNumber/calculate-route', authenticate, authorize('shipments.update'), calculateRoute);
 // Only expose the simulate-update endpoint in non-production environments.
 // This endpoint writes fake tracking events and must never be reachable in production.
 if (process.env.NODE_ENV !== 'production') {
-  router.post('/shipments/:trackingNumber/simulate-update', authenticate, authorize('shipments:update'), simulateTrackingUpdate);
+  router.post('/shipments/:trackingNumber/simulate-update', authenticate, authorize('shipments.update'), simulateTrackingUpdate);
 }
 
 export default router;

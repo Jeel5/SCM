@@ -37,27 +37,27 @@ import {
 const router = express.Router();
 
 // Jobs
-router.get('/jobs', authenticate, authorize('jobs:read'), validateQuery(listJobsQuerySchema), listJobs);
-router.get('/jobs/stats', authenticate, authorize('jobs:read'), getJobStats);
-router.get('/jobs/:id', authenticate, authorize('jobs:read'), getJobDetails);
-router.post('/jobs', authenticate, authorize('jobs:create'), validateRequest(createJobSchema), createJob);
-router.post('/jobs/:id/cancel', authenticate, authorize('jobs:update'), cancelJob);
-router.post('/jobs/:id/retry', authenticate, authorize('jobs:update'), retryJob);
+router.get('/jobs', authenticate, authorize('jobs.view'), validateQuery(listJobsQuerySchema), listJobs);
+router.get('/jobs/stats', authenticate, authorize('jobs.view'), getJobStats);
+router.get('/jobs/:id', authenticate, authorize('jobs.view'), getJobDetails);
+router.post('/jobs', authenticate, authorize('jobs.create'), validateRequest(createJobSchema), createJob);
+router.post('/jobs/:id/cancel', authenticate, authorize('jobs.update'), cancelJob);
+router.post('/jobs/:id/retry', authenticate, authorize('jobs.update'), retryJob);
 
 // Cron schedules
-router.get('/cron', authenticate, authorize('jobs:read'), listCronSchedules);
-router.post('/cron', authenticate, authorize('jobs:create'), validateRequest(createCronScheduleSchema), createCronSchedule);
-router.patch('/cron/:id', authenticate, authorize('jobs:update'), validateRequest(updateCronScheduleSchema), updateCronSchedule);
-router.delete('/cron/:id', authenticate, authorize('jobs:delete'), deleteCronSchedule);
+router.get('/cron', authenticate, authorize('jobs.view'), listCronSchedules);
+router.post('/cron', authenticate, authorize('jobs.create'), validateRequest(createCronScheduleSchema), createCronSchedule);
+router.patch('/cron/:id', authenticate, authorize('jobs.update'), validateRequest(updateCronScheduleSchema), updateCronSchedule);
+router.delete('/cron/:id', authenticate, authorize('jobs.delete'), deleteCronSchedule);
 
 // Dead Letter Queue
-router.get('/dead-letter-queue', authenticate, authorize('jobs:read'), validateQuery(listDLQQuerySchema), getDeadLetterQueue);
-router.post('/dead-letter-queue/:id/retry', authenticate, authorize('jobs:update'), retryFromDeadLetterQueue);
-router.delete('/dead-letter-queue/purge', authenticate, authorize('jobs:delete'), purgeDeadLetterQueue);
+router.get('/dead-letter-queue', authenticate, authorize('jobs.view'), validateQuery(listDLQQuerySchema), getDeadLetterQueue);
+router.post('/dead-letter-queue/:id/retry', authenticate, authorize('jobs.update'), retryFromDeadLetterQueue);
+router.delete('/dead-letter-queue/purge', authenticate, authorize('jobs.delete'), purgeDeadLetterQueue);
 
 // Dashboard & Analytics — org-scoped data; req.orgContext is set by authenticate()
-router.get('/dashboard/stats', authenticate, authorize('dashboard:read'), getDashboardStats);
-router.get('/analytics', authenticate, authorize('analytics:read'), validateQuery(analyticsQuerySchema), getAnalytics);
-router.get('/analytics/export', authenticate, authorize('analytics:read'), validateQuery(analyticsExportQuerySchema), getAnalyticsExport);
+router.get('/dashboard/stats', authenticate, authorize('dashboard.view'), getDashboardStats);
+router.get('/analytics', authenticate, authorize('analytics.view'), validateQuery(analyticsQuerySchema), getAnalytics);
+router.get('/analytics/export', authenticate, authorize('analytics.view'), validateQuery(analyticsExportQuerySchema), getAnalyticsExport);
 
 export default router;

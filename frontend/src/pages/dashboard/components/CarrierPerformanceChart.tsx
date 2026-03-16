@@ -7,8 +7,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  TooltipProps,
 } from 'recharts';
+import type { TooltipProps } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui';
 import type { CarrierPerformance } from '@/types';
 

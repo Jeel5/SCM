@@ -37,7 +37,7 @@ export const updateCarrierAvailabilitySchema = Joi.object({
 
 /** GET /carriers/assignments/pending */
 export const pendingAssignmentsQuerySchema = Joi.object({
-  carrierId: Joi.string().required(),
+  carrierId: Joi.string().optional(),
   status: Joi.string().max(50).optional(),
   serviceType: Joi.string().max(100).optional()
 });

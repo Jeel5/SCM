@@ -22,6 +22,6 @@ const router = express.Router();
 router.post('/carriers/webhook/:carrierId', verifyWebhookSignature(), validateRequest(carrierWebhookSchema), handleCarrierWebhook);
 
 // View accepted quotes and rejections recorded for a given order.
-router.get('/carriers/orders/:orderId/quote-status', authenticate, authorize('orders:read'), getCarrierQuoteStatus);
+router.get('/carriers/orders/:orderId/quote-status', authenticate, authorize('orders.view'), getCarrierQuoteStatus);
 
 export default router;

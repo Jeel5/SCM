@@ -1,4 +1,4 @@
-import { get, post, patch, put, del } from './client';
+import { api, get, post, patch, put, del } from './client';
 import type {
   User,
   Order,
@@ -48,19 +48,13 @@ export const importApi = {
     form.append('file', file);
     form.append('type', type);
 
-    // Use fetch directly so browser sets multipart boundaries automatically.
-    const apiUrl = import.meta.env.VITE_API_URL || '/api';
-    const res = await fetch(`${apiUrl}/import/upload`, {
-      method: 'POST',
-      credentials: 'include',
-      body: form,
-    });
-
-    const data = await res.json();
-    if (!res.ok || !data?.success) {
-      throw new Error(data?.message || 'Failed to start import');
-    }
-    return data;
+    // Use the shared axios client so refresh/401 logic and toast handling stay consistent.
+    const response = await api.post<{ success: boolean; jobId: string; totalRows: number; message: string }>(
+      '/import/upload',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
   },
 
   async getStatus(jobId: string): Promise<{
@@ -228,7 +222,7 @@ export const inventoryApi = {
   },
 
   async updateInventoryItem(id: string, data: Partial<InventoryItem>): Promise<ApiResponse<InventoryItem>> {
-    return patch(`/inventory/${id}`, data);
+    return put(`/inventory/${id}`, data);
   },
 
   async adjustStock(id: string, adjustmentType: string, quantity: number, reason: string): Promise<ApiResponse<InventoryItem>> {

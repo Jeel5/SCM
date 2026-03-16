@@ -5,6 +5,7 @@ import parser from 'cron-parser';
 import { NotFoundError, ValidationError } from '../errors/index.js';
 import { enqueueJob } from '../queues/index.js';
 import { cronScheduler } from '../jobs/cronScheduler.js';
+import logger from '../utils/logger.js';
 
 export const jobsService = {
   // Create a new background job; idempotencyKey prevents duplicate processing of the same event.
@@ -22,7 +23,11 @@ export const jobsService = {
       await enqueueJob(jobType, dbJob.id, dbJob.payload, { priority, delay });
     } catch (err) {
       // Non-fatal: job is in DB, worker will retry via queue on reconnect
-      console.warn('[jobsService] BullMQ enqueue failed (job is in DB):', err.message);
+      logger.warn('[jobsService] BullMQ enqueue failed; job remains in DB for retry', {
+        jobId: dbJob.id,
+        jobType,
+        error: err.message,
+      });
     }
 
     return dbJob;

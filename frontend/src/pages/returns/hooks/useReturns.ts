@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { returnsApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
+import { notifyLoadError } from '@/lib/apiErrors';
 import type { Return } from '@/types';
 
 export function useReturns(page: number, pageSize: number) {
@@ -30,6 +31,7 @@ export function useReturns(page: number, pageSize: number) {
         setTotalReturns(response.total);
       } catch (error) {
         console.error('Failed to fetch returns:', error);
+        if (!isSoft) notifyLoadError('returns', error);
         setReturns([]);
         setTotalReturns(0);
       } finally {

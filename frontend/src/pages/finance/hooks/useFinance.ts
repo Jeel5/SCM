@@ -3,6 +3,7 @@ import { financeApi } from '@/api/services';
 import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
+import { notifyLoadError } from '@/lib/apiErrors';
 
 interface FinanceData {
   outstandingInvoices: number;
@@ -88,6 +89,7 @@ export function useFinance() {
         }
       } catch (error) {
         console.error('Failed to fetch finance data:', error);
+        if (!isSoft) notifyLoadError('finance data', error);
         setData({
           outstandingInvoices: 0,
           refundsProcessed: 0,

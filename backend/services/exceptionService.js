@@ -1,7 +1,7 @@
 // Exception Management Service - Priority handling and escalation
 import { withTransaction } from '../utils/dbTransaction.js';
 import { NotFoundError } from '../errors/index.js';
-import { logEvent } from '../utils/logger.js';
+import logger, { logEvent } from '../utils/logger.js';
 import exceptionRepo from '../repositories/ExceptionRepository.js';
 
 class ExceptionService {
@@ -137,7 +137,10 @@ class ExceptionService {
         );
         escalated.push(escalatedEx);
       } catch (error) {
-        console.error(`Failed to escalate exception ${exception.id}:`, error);
+        logger.error('Failed to auto-escalate exception', {
+          exceptionId: exception.id,
+          error: error.message,
+        });
       }
     }
 
@@ -260,7 +263,10 @@ class ExceptionService {
 
         createdExceptions.push(exception);
       } catch (error) {
-        console.error(`Failed to create delay exception for shipment ${shipment.id}:`, error);
+        logger.error('Failed to create delay exception for shipment', {
+          shipmentId: shipment.id,
+          error: error.message,
+        });
       }
     }
 
