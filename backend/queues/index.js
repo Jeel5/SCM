@@ -1,37 +1,53 @@
 /**
- * BullMQ Queues
- *
- * All background jobs go through a single queue: 'background_jobs'.
- * This includes both manually-triggered jobs and cron-fired jobs.
- *
- * Priority mapping (BullMQ uses 1=highest, DB uses 1=highest too):
- *   DB priority 1  → BullMQ priority 1  (critical)
- *   DB priority 10 → BullMQ priority 10 (lowest)
- *
- * Cron jobs are enqueued as repeatable jobs with a pattern.
- * Regular jobs are enqueued once with optional delay.
+ * BullMQ queues split by workload to avoid import jobs starving operational traffic.
  */
 import { Queue } from 'bullmq';
 import { createRedisConnection } from '../config/redis.js';
 import logger from '../utils/logger.js';
 
-export const QUEUE_NAME = 'background_jobs';
+export const QUEUE_NAMES = {
+  operations: 'background_jobs',
+  imports: 'imports_queue',
+  notifications: 'notifications_queue',
+};
 
-// One queue instance shared across the app
-export const jobQueue = new Queue(QUEUE_NAME, {
-  connection: createRedisConnection(),
-  defaultJobOptions: {
-    attempts: parseInt(process.env.JOB_MAX_RETRIES) || 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000, // 5s, 25s, 125s
+function createQueue(name) {
+  return new Queue(name, {
+    connection: createRedisConnection(),
+    defaultJobOptions: {
+      attempts: parseInt(process.env.JOB_MAX_RETRIES) || 3,
+      backoff: {
+        type: 'exponential',
+        delay: 5000, // 5s, 25s, 125s
+      },
+      removeOnComplete: { count: 2000 },
+      removeOnFail: { count: 10000 },
     },
-    removeOnComplete: { count: 2000 },
-    removeOnFail: { count: 10000 },
-  },
+  });
+}
+
+export const operationsQueue = createQueue(QUEUE_NAMES.operations);
+export const importsQueue = createQueue(QUEUE_NAMES.imports);
+export const notificationsQueue = createQueue(QUEUE_NAMES.notifications);
+
+// Backward compatible export used by cronScheduler.
+export const jobQueue = operationsQueue;
+
+[operationsQueue, importsQueue, notificationsQueue].forEach((queue) => {
+  queue.on('error', (err) => logger.error(`Queue error (${queue.name}): ${err.message}`));
 });
 
-jobQueue.on('error', (err) => logger.error(`Queue error: ${err.message}`));
+function resolveQueueByJobType(jobType) {
+  if (jobType?.startsWith('import:')) return importsQueue;
+  if (jobType === 'notification_dispatch' || jobType === 'return_pickup_reminder') {
+    return notificationsQueue;
+  }
+  return operationsQueue;
+}
+
+export function queueNameForJobType(jobType) {
+  return resolveQueueByJobType(jobType).name;
+}
 
 /**
  * Enqueue a one-off job that already has a DB record.
@@ -42,7 +58,8 @@ jobQueue.on('error', (err) => logger.error(`Queue error: ${err.message}`));
  * @param {object} [opts]      - override BullMQ job options
  */
 export async function enqueueJob(jobType, jobId, payload, opts = {}) {
-  return jobQueue.add(
+  const queue = resolveQueueByJobType(jobType);
+  return queue.add(
     jobType,
     { jobId, jobType, payload },
     {
@@ -54,4 +71,10 @@ export async function enqueueJob(jobType, jobId, payload, opts = {}) {
   );
 }
 
-export default jobQueue;
+export const allQueues = {
+  operationsQueue,
+  importsQueue,
+  notificationsQueue,
+};
+
+export default operationsQueue;

@@ -1,5 +1,7 @@
 // Job Handlers - Define handlers for each job type
 import pool from '../config/db.js';
+import fs from 'fs';
+import readline from 'readline';
 import bcrypt from 'bcrypt';
 import slaService from '../services/slaService.js';
 import exceptionService from '../services/exceptionService.js';
@@ -66,6 +68,7 @@ async function handleExceptionEscalation(payload) {
 // ─── Import helpers ───────────────────────────────────────────────────────────
 
 const IMPORT_CHUNK_SIZE = 100; // rows between progress emits
+const DEFAULT_MAX_IMPORT_ROWS = 200_000;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -73,56 +76,143 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
  * Shared runner: iterates rows, catches per-row errors, emits socket events.
  * Handlers inject `_jobId` via jobWorker (see processJob).
  */
-async function runImport({ jobId, organizationId, rows, importType, processRow }) {
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+async function* iterCsvRows(filePath, maxRows = DEFAULT_MAX_IMPORT_ROWS) {
+  const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+  let headers = null;
+  let seenRows = 0;
+
+  for await (const rawLine of rl) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    if (!headers) {
+      const normalized = rawLine.charCodeAt(0) === 0xfeff ? rawLine.slice(1) : rawLine;
+      headers = parseCsvLine(normalized).map((h) => h.trim());
+      continue;
+    }
+
+    const values = parseCsvLine(rawLine);
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h] = (values[idx] ?? '').trim();
+    });
+
+    if (Object.values(row).every((v) => !v)) continue;
+
+    seenRows++;
+    if (seenRows > maxRows) {
+      throw new Error(`CSV too large: exceeds ${maxRows} rows`);
+    }
+
+    yield row;
+  }
+}
+
+async function runImport({ jobId, organizationId, rows, filePath, importType, processRow, dryRun = false, maxRows = DEFAULT_MAX_IMPORT_ROWS }) {
   const startTime = Date.now();
-  const total = rows.length;
+  const useRows = Array.isArray(rows);
+  const total = useRows ? rows.length : null;
   let created = 0;
   let failed  = 0;
   const errors = [];
+  let processed = 0;
 
-  for (let i = 0; i < rows.length; i++) {
-    try {
-      await processRow(rows[i]);
-      created++;
-    } catch (err) {
-      failed++;
-      if (errors.length < 20) errors.push({ row: i + 1, message: err.message });
+  const sourceRows = useRows ? rows : iterCsvRows(filePath, maxRows);
+
+  try {
+    for await (const row of sourceRows) {
+      processed++;
+      try {
+        await processRow(row, { dryRun });
+        created++;
+      } catch (err) {
+        failed++;
+        if (errors.length < 20) errors.push({ row: processed, message: err.message });
+      }
+
+      if (processed % IMPORT_CHUNK_SIZE === 0 || (total !== null && processed === total)) {
+        emitToOrg(organizationId, 'import:progress', {
+          jobId,
+          importType,
+          done: processed,
+          total,
+          created,
+          failed,
+          dryRun,
+        });
+      }
     }
-    if ((i + 1) % IMPORT_CHUNK_SIZE === 0 || i === rows.length - 1) {
-      emitToOrg(organizationId, 'import:progress', {
-        jobId, importType, done: i + 1, total, created, failed,
-      });
-    }
-  }
 
-  const result = {
-    success:    failed < total, // at least one row must succeed
-    importType, total, created, failed, errors,
-    duration:   `${Date.now() - startTime}ms`,
-  };
-
-  if (created === 0) {
-    const errorSummary = errors.length > 0
-      ? errors
-          .slice(0, 3)
-          .map(({ row, message }) => `row ${row}: ${message}`)
-          .join('; ')
-      : 'All rows failed during import';
-
-    emitToOrg(organizationId, 'import:complete', {
-      jobId,
+    const result = {
+      success: failed < processed,
       importType,
-      ...result,
-      errorMessage: errorSummary,
-    });
+      total: total ?? processed,
+      processed,
+      created,
+      failed,
+      dryRun,
+      errors,
+      duration: `${Date.now() - startTime}ms`,
+    };
 
-    logger.error(`❌ Import ${importType} failed`, { jobId, total, failed, errorSummary });
-    throw new Error(errorSummary);
+    if (created === 0) {
+      const errorSummary = errors.length > 0
+        ? errors
+            .slice(0, 3)
+            .map(({ row, message }) => `row ${row}: ${message}`)
+            .join('; ')
+        : 'All rows failed during import';
+
+      emitToOrg(organizationId, 'import:complete', {
+        jobId,
+        importType,
+        ...result,
+        errorMessage: errorSummary,
+      });
+
+      logger.error(`❌ Import ${importType} failed`, { jobId, total: result.total, failed, dryRun, errorSummary });
+      throw new Error(errorSummary);
+    }
+
+    emitToOrg(organizationId, 'import:complete', { jobId, importType, ...result });
+    logger.info(`✅ Import ${importType} complete`, { jobId, total: result.total, created, failed, dryRun });
+    return result;
+  } finally {
+    if (!useRows && filePath) {
+      try {
+        await fs.promises.unlink(filePath);
+      } catch {
+        // best-effort cleanup
+      }
+    }
   }
-
-  emitToOrg(organizationId, 'import:complete', { jobId, importType, ...result });
-  logger.info(`✅ Import ${importType} complete`, { jobId, total, created, failed });
-  return result;
 }
 
 function parseJsonObject(value) {
@@ -215,10 +305,11 @@ function buildShipmentEvents(status, origin, destination, currentLocation, picku
 
 // ─── 1. Warehouses ────────────────────────────────────────────────────────────
 async function handleImportWarehouses(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   return runImport({
-    jobId, organizationId, rows, importType: 'warehouses',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'warehouses',
+    processRow: async (row, ctx) => {
+      if (!row.name) throw new Error('name is required');
       const typeMap = {
         'cross-dock': 'distribution', staging: 'distribution', retail: 'standard',
         fulfillment: 'fulfillment', distribution: 'distribution', standard: 'standard',
@@ -238,6 +329,7 @@ async function handleImportWarehouses(payload) {
         postal_code: row.postal_code || row.postalCode     || '',
         country:     row.country     || 'India',
       });
+      if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO warehouses
            (organization_id, name, code, warehouse_type, capacity, address, contact_email, contact_phone, is_active)
@@ -255,10 +347,11 @@ async function handleImportWarehouses(payload) {
 
 // ─── 2. Carriers ─────────────────────────────────────────────────────────────
 async function handleImportCarriers(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   return runImport({
-    jobId, organizationId, rows, importType: 'carriers',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'carriers',
+    processRow: async (row, ctx) => {
+      if (!row.name) throw new Error('name is required');
       const validSvcTypes = ['express','standard','economy','overnight','two_day','surface','air','all'];
       const svcType = validSvcTypes.includes(row.service_type) ? row.service_type : 'standard';
       const baseCode = String(row.code || row.name || 'carrier')
@@ -267,6 +360,7 @@ async function handleImportCarriers(payload) {
         .replace(/^-+|-+$/g, '')
         .slice(0, 40);
       const code = baseCode || await carrierRepo.generateCarrierCode();
+      if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO carriers
            (organization_id, code, name, service_type, contact_email, contact_phone, website,
@@ -290,10 +384,12 @@ async function handleImportCarriers(payload) {
 
 // ─── 3. Suppliers ─────────────────────────────────────────────────────────────
 async function handleImportSuppliers(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   return runImport({
-    jobId, organizationId, rows, importType: 'suppliers',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'suppliers',
+    processRow: async (row, ctx) => {
+      if (!row.name) throw new Error('name is required');
+      if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO suppliers
            (organization_id, name, contact_name, contact_email, contact_phone,
@@ -316,16 +412,18 @@ async function handleImportSuppliers(payload) {
 
 // ─── 4. Sales Channels ────────────────────────────────────────────────────────
 async function handleImportChannels(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   return runImport({
-    jobId, organizationId, rows, importType: 'channels',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'channels',
+    processRow: async (row, ctx) => {
+      if (!row.name) throw new Error('name is required');
       const validTypes = ['marketplace','d2c','b2b','wholesale','internal'];
       const platformType = validTypes.includes(row.platform_type) ? row.platform_type : 'marketplace';
       const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
       const code = (row.code ||
         String(row.name || 'CH').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 36)
       ) + '-' + suffix;
+      if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO sales_channels
            (organization_id, name, code, platform_type, contact_name, contact_email, contact_phone, is_active)
@@ -342,15 +440,16 @@ async function handleImportChannels(payload) {
 
 // ─── 5. Team (Org users) ──────────────────────────────────────────────────────
 async function handleImportTeam(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   // Placeholder password — users must reset via forgot-password flow
   const placeholderHash = await bcrypt.hash(`Import@${Date.now()}!`, 12);
   return runImport({
-    jobId, organizationId, rows, importType: 'team',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'team',
+    processRow: async (row, ctx) => {
       if (!row.email || !row.email.includes('@')) throw new Error('Missing or invalid email');
       const validRoles = ['operations_manager','warehouse_manager','carrier_partner','finance','customer_support'];
       const role = validRoles.includes(row.role) ? row.role : 'operations_manager';
+      if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO users
            (organization_id, name, email, phone, role, password_hash, is_active)
@@ -366,12 +465,14 @@ async function handleImportTeam(payload) {
 
 // ─── 6. Products ──────────────────────────────────────────────────────────────
 async function handleImportProducts(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   return runImport({
-    jobId, organizationId, rows, importType: 'products',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'products',
+    processRow: async (row, ctx) => {
+      if (!row.name && !row.sku) throw new Error('name or sku is required');
       const { v4: uuidv4 } = await import('uuid');
       const sku = row.sku || `SKU-${uuidv4().substring(0, 8).toUpperCase()}`;
+      if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO products
            (organization_id, name, sku, category, description, weight,
@@ -394,7 +495,7 @@ async function handleImportProducts(payload) {
 
 // ─── 7. Inventory ─────────────────────────────────────────────────────────────
 async function handleImportInventory(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
 
   // Build lookup maps once (before row loop)
   const whRes = await pool.query(
@@ -408,8 +509,8 @@ async function handleImportInventory(payload) {
   const byPrName = new Map(prRes.rows.map((p) => [p.name?.toLowerCase(), p.id]));
 
   return runImport({
-    jobId, organizationId, rows, importType: 'inventory',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'inventory',
+    processRow: async (row, ctx) => {
       let warehouseId = UUID_RE.test(row.warehouse_id) ? row.warehouse_id : null;
       if (!warehouseId) {
         const placeholder = String(row.warehouse_id || '').match(/^REPLACE_WITH_UUID_FOR_(.+)$/i)?.[1]?.toLowerCase();
@@ -430,6 +531,7 @@ async function handleImportInventory(payload) {
       if (!productId) throw new Error(`Cannot resolve product for SKU '${row.sku}'`);
 
       const qty = parseInt(row.quantity) || 0;
+      if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO inventory
            (organization_id, warehouse_id, product_id, sku, product_name,
@@ -450,7 +552,7 @@ async function handleImportInventory(payload) {
 
 // ─── 9. Shipments (historical — linked to existing orders by order_number) ──
 async function handleImportShipments(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
 
   const [ordersRes, carriersRes, warehousesRes] = await Promise.all([
     pool.query(
@@ -480,8 +582,11 @@ async function handleImportShipments(payload) {
     jobId,
     organizationId,
     rows,
+    filePath,
+    dryRun,
+    maxRows,
     importType: 'shipments',
-    processRow: async (row) => {
+    processRow: async (row, ctx) => {
       const order = (row.order_id && ordersById.get(row.order_id))
         || (row.order_number && ordersByNumber.get(String(row.order_number).toLowerCase()));
       if (!order) {
@@ -523,6 +628,8 @@ async function handleImportShipments(payload) {
       const shippingCost = row.shipping_cost ? parseFloat(row.shipping_cost) : (row.cost ? parseFloat(row.cost) : 0);
       const carrierTrackingNumber = row.carrier_tracking_number || null;
       const timelineEvents = buildShipmentEvents(status, originAddress, destinationAddress, currentLocation, pickupActual, deliveryActual);
+
+      if (ctx.dryRun) return;
 
       const client = await pool.connect();
       let shipmentId;
@@ -677,10 +784,10 @@ async function handleImportShipments(payload) {
 
 // ─── 8. Orders (historical — no carrier assignment or inventory reservation) ──
 async function handleImportOrders(payload) {
-  const { rows, organizationId, _jobId: jobId } = payload;
+  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   return runImport({
-    jobId, organizationId, rows, importType: 'orders',
-    processRow: async (row) => {
+    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'orders',
+    processRow: async (row, ctx) => {
       if (!row.customer_name) throw new Error('customer_name is required');
       if (!row.sku) throw new Error('sku is required');
       const unitPrice = parseFloat(row.unit_price) || 0;
@@ -710,6 +817,8 @@ async function handleImportOrders(payload) {
         postal_code: row.postal_code || '000000',
         country:     row.country     || 'India',
       };
+
+      if (ctx.dryRun) return;
 
       const client = await pool.connect();
       try {

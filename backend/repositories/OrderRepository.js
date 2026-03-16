@@ -305,11 +305,38 @@ class OrderRepository extends BaseRepository {
   /**
    * Update order status.
    */
-  async updateStatus(orderId, status, client = null) {
-    const result = await this.query(
-      `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
-      [status, orderId], client
-    );
+  async updateStatus(orderId, status, organizationIdOrClient = undefined, client = null) {
+    let organizationId = undefined;
+    let txClient = client;
+
+    // Backward compatibility:
+    // - updateStatus(id, status, tx)
+    // - updateStatus(id, status, organizationId, tx)
+    if (
+      organizationIdOrClient &&
+      typeof organizationIdOrClient === 'object' &&
+      typeof organizationIdOrClient.query === 'function'
+    ) {
+      txClient = organizationIdOrClient;
+    } else {
+      organizationId = organizationIdOrClient;
+    }
+
+    const params = [status, orderId];
+    let paramCount = 3;
+    let query = `
+      UPDATE orders
+      SET status = $1, updated_at = NOW()
+      WHERE id = $2
+    `;
+
+    if (organizationId !== undefined) {
+      query += ` AND organization_id = $${paramCount++}`;
+      params.push(organizationId);
+    }
+
+    query += ` RETURNING *`;
+    const result = await this.query(query, params, txClient);
     return result.rows[0] || null;
   }
 

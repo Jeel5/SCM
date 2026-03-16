@@ -6,14 +6,26 @@
  * Progress is pushed to the client via Socket.IO (import:progress / import:complete).
  */
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
 import { jobsService } from '../services/jobsService.js';
 import { AppError, NotFoundError } from '../errors/index.js';
 import { asyncHandler } from '../errors/errorHandler.js';
 
-// ─── Multer in-memory storage (≤ 10 MB) ──────────────────────────────────────
+const importsDir = path.join(process.cwd(), 'tmp', 'imports');
+fs.mkdirSync(importsDir, { recursive: true });
+
+// ─── Multer disk storage (stream-friendly for large files) ───────────────────
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, importsDir),
+    filename: (_req, file, cb) => {
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`);
+    },
+  }),
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
       cb(null, true);
@@ -38,11 +50,36 @@ const IMPORT_TYPES = {
   shipments:   'import:shipments',
 };
 
-const MAX_ROWS = 10_000;
+const MAX_ROWS = 200_000;
+
+function parseDryRunFlag(value) {
+  if (value === true || value === 'true' || value === '1' || value === 1) return true;
+  return false;
+}
+
+async function countCsvRows(filePath, maxRows = MAX_ROWS) {
+  const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+  let lines = 0;
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    lines++;
+    if (lines - 1 > maxRows) {
+      rl.close();
+      stream.destroy();
+      throw new AppError(`CSV too large: more than ${maxRows} data rows`, 400);
+    }
+  }
+
+  if (lines < 2) return 0;
+  return lines - 1; // minus header row
+}
 
 // ─── POST /import/upload ──────────────────────────────────────────────────────
 export const startImport = asyncHandler(async (req, res) => {
   const { type } = req.body;
+  const dryRun = parseDryRunFlag(req.body?.dryRun);
 
   if (!IMPORT_TYPES[type]) {
     throw new AppError(
@@ -53,21 +90,24 @@ export const startImport = asyncHandler(async (req, res) => {
 
   if (!req.file) throw new AppError('No file uploaded', 400);
 
-  const csvText = req.file.buffer.toString('utf8');
-  const rows = parseCsv(csvText);
-
-  if (!rows.length) throw new AppError('CSV file is empty or has no data rows', 400);
-  if (rows.length > MAX_ROWS) {
-    throw new AppError(`CSV too large: ${rows.length} rows (max ${MAX_ROWS})`, 400);
-  }
+  const totalRows = await countCsvRows(req.file.path, MAX_ROWS);
+  if (!totalRows) throw new AppError('CSV file is empty or has no data rows', 400);
 
   const organizationId = req.orgContext?.organizationId || req.user?.organizationId;
   const userId         = req.user?.userId;
 
   const job = await jobsService.createJob(
     IMPORT_TYPES[type],
-    { rows, organizationId, importedBy: userId, importType: type },
-    5,    // priority
+    {
+      filePath: req.file.path,
+      originalFileName: req.file.originalname,
+      organizationId,
+      importedBy: userId,
+      importType: type,
+      dryRun,
+      maxRows: MAX_ROWS,
+    },
+    dryRun ? 4 : 5,
     null, // scheduledFor
     userId
   );
@@ -75,8 +115,9 @@ export const startImport = asyncHandler(async (req, res) => {
   res.json({
     success:   true,
     jobId:     job.id,
-    totalRows: rows.length,
-    message:   `Import queued — ${rows.length} rows will be processed in the background.`,
+    totalRows,
+    dryRun,
+    message:   `${dryRun ? 'Dry-run validation' : 'Import'} queued — ${totalRows} rows will be processed in the background.`,
   });
 });
 
@@ -127,28 +168,6 @@ function parseCsvLine(line) {
   return result;
 }
 
-function parseCsv(text) {
-  const lines = text.split(/\r?\n/);
-  if (lines.length < 2) return [];
-
-  // Strip BOM
-  let headerLine = lines[0];
-  if (headerLine.charCodeAt(0) === 0xfeff) headerLine = headerLine.slice(1);
-
-  const headers = parseCsvLine(headerLine).map((h) => h.trim());
-  const rows = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const values = parseCsvLine(line);
-    const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = (values[idx] ?? '').trim();
-    });
-    if (Object.values(row).every((v) => !v)) continue; // skip blank rows
-    rows.push(row);
-  }
-
-  return rows;
+function parseCsv(_text) {
+  return [];
 }

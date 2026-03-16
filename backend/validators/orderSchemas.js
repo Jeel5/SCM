@@ -132,3 +132,22 @@ export const createTransferOrderSchema = Joi.object({
   notes: Joi.string().max(1000).optional().allow(''),
   expected_delivery_date: Joi.date().iso().min('now').optional()
 });
+
+export const cancelOrderSchema = Joi.object({
+  reason: Joi.string().max(500).optional().allow(''),
+});
+
+export const initiateReturnFromOrderSchema = Joi.object({
+  reason: Joi.string().max(100).required(),
+  reason_details: Joi.string().max(1000).optional().allow(''),
+  customer_email: Joi.string().email().optional(),
+  refund_amount: Joi.number().min(0).optional(),
+  items: Joi.array().items(
+    Joi.object({
+      product_id: Joi.string().uuid().optional(),
+      sku: Joi.string().max(100).optional(),
+      quantity: Joi.number().integer().min(1).required(),
+      condition: Joi.string().max(100).optional().allow(''),
+    }).or('product_id', 'sku')
+  ).optional(),
+});
