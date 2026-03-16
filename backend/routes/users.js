@@ -1,7 +1,7 @@
 // User and authentication routes
 import express from 'express';
 import { 
-  login, refreshToken, getProfile, listUsers, listRoles, logout,
+  login, googleLogin, refreshToken, getProfile, listUsers, listRoles, logout,
   updateProfile, changePassword, verifyEmailChange,
   getNotificationPreferences, updateNotificationPreferences,
   getActiveSessions, revokeSession, revokeAllSessions,
@@ -13,6 +13,7 @@ import { authorize, requireRoles, ROLES } from '../middlewares/rbac.js';
 import { validateRequest, validateQuery } from '../validators/index.js';
 import { 
   loginUserSchema, 
+  googleAuthSchema,
   updateProfileSchema, 
   changePasswordSchema,
   notificationPreferencesSchema,
@@ -25,6 +26,7 @@ const router = express.Router();
 
 // Public routes - no authentication required
 router.post('/auth/login', validateRequest(loginUserSchema), login);
+router.post('/auth/google', validateRequest(googleAuthSchema), googleLogin);
 router.post('/auth/refresh', refreshToken);
 
 // Protected routes - require authentication

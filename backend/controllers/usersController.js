@@ -4,9 +4,11 @@ import userRepo from '../repositories/UserRepository.js';
 import orgRepo from '../repositories/OrganizationRepository.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { settingsService } from '../services/settingsService.js';
+import emailService from '../services/emailService.js';
 import { ORG_ASSIGNABLE_ROLES } from '../config/roles.js';
 import { getSubscriptionLimits } from '../config/subscriptionLimits.js';
 import logger from '../utils/logger.js';
+import axios from 'axios';
 import { asyncHandler, ValidationError, AuthenticationError, AuthorizationError, NotFoundError, ConflictError } from '../errors/index.js';
 
 // HttpOnly cookie options — tokens are NOT accessible from JS
@@ -63,6 +65,66 @@ export const login = asyncHandler(async (req, res) => {
           createdAt: user.created_at
         }
       }
+    });
+});
+
+// Google OAuth login via ID token verification.
+export const googleLogin = asyncHandler(async (req, res) => {
+  const { credential } = req.body;
+  if (!credential) throw new ValidationError('Google credential is required');
+
+  let tokenInfo;
+  try {
+    const response = await axios.get('https://oauth2.googleapis.com/tokeninfo', {
+      params: { id_token: credential },
+      timeout: 10000,
+    });
+    tokenInfo = response.data;
+  } catch {
+    throw new AuthenticationError('Invalid Google token');
+  }
+
+  const configuredClientId = process.env.GOOGLE_CLIENT_ID;
+  if (configuredClientId && tokenInfo.aud !== configuredClientId) {
+    throw new AuthenticationError('Google token audience mismatch');
+  }
+
+  const email = tokenInfo.email;
+  if (!email || tokenInfo.email_verified !== 'true') {
+    throw new AuthenticationError('Google email is not verified');
+  }
+
+  const user = await userRepo.findByEmailWithOrg(email);
+  if (!user) throw new AuthenticationError('No account exists for this Google email');
+  if (!user.is_active) throw new AuthorizationError('User account is inactive');
+  if (user.org_is_deleted === true) throw new AuthorizationError('Organization is deleted');
+  if (user.org_suspended_at) throw new AuthorizationError('Organization is suspended');
+  if (user.org_is_active === false) throw new AuthorizationError('Organization is inactive');
+
+  await userRepo.updateLastLogin(user.id);
+
+  const tokenPayload = { userId: user.id, role: user.role, email: user.email, organizationId: user.organization_id };
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload);
+  await userRepo.createSession(user.id, refreshToken, req.ip, req.headers['user-agent']);
+
+  res
+    .cookie('accessToken', accessToken, { ...COOKIE_OPTS, maxAge: 15 * 60 * 1000 })
+    .cookie('refreshToken', refreshToken, { ...COOKIE_OPTS, maxAge: 7 * 24 * 60 * 60 * 1000 })
+    .json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          organizationId: user.organization_id,
+          avatar: user.avatar,
+          lastLogin: user.last_login,
+          createdAt: user.created_at,
+        },
+      },
     });
 });
 
@@ -187,15 +249,28 @@ export const updateProfile = asyncHandler(async (req, res) => {
   const updatedUser = await settingsService.updateUserProfile(userId, updates);
 
   // If an email change was staged, the service attaches _emailChangeToken and _pendingEmail.
-  // In production, send a verification email here. For now log the link.
   if (updatedUser._emailChangeToken) {
     const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${updatedUser._emailChangeToken}`;
-    logger.info('[EMAIL-VERIFY] Staged email verification link generated', {
+    try {
+      await emailService.sendEmailChangeVerification({
+        to: updatedUser._pendingEmail,
+        name: updatedUser.name,
+        verifyUrl,
+      });
+    } catch (emailError) {
+      // Email transport failures should not block profile updates.
+      logger.error('Failed to send email verification link', {
+        userId,
+        pendingEmail: updatedUser._pendingEmail,
+        error: emailError,
+      });
+    }
+
+    logger.info('[EMAIL-VERIFY] Email verification flow initiated', {
       pendingEmail: updatedUser._pendingEmail,
-      verifyUrl,
       userId,
     });
-    // TODO: replace with real email via nodemailer / SES / SendGrid
+
     delete updatedUser._emailChangeToken;
     delete updatedUser._pendingEmail;
   }

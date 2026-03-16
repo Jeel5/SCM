@@ -88,12 +88,12 @@ All items below exist as comments in source files. They are tracked here so they
 
 | File | Line | Item |
 |------|------|------|
-| `controllers/usersController.js` | 288 | *(email — deferred)* `TODO: replace with real email via nodemailer / SES / SendGrid` — email change verification link is only logged to console, never sent |
+| `controllers/usersController.js` | 288 | ✅ Email verification now sent through `services/emailService.js` (nodemailer with SMTP or JSON transport fallback) |
 | `routes/carriers.js` | 11–17 | ✅ `TODO: move webhook handler body into a dedicated CarrierWebhookController` — done; see `controllers/carriersController.js` |
 | `routes/jobs.js` | 10 | ✅ `TODO: add injectOrgContext to dashboard and analytics routes` — done; both routes now use `injectOrgContext` |
 | `routes/sla.js` | 10 | ✅ Joi query-validation schemas added for `getSlaViolations` (`page`, `limit`, `status`), `listExceptions` (`page`, `limit`, `severity`, `status`), `createException` body, and `resolveException` body — see `validators/slaSchemas.js` |
-| `jobs/jobHandlers.js` | 101 | *(email — deferred)* `TODO: Send actual email/SMS notification` — notification job handler is a no-op stub |
-| `jobs/jobHandlers.js` | 218 | *(email — deferred)* `TODO: Integrate with actual notification service` |
+| `jobs/jobHandlers.js` | 101 | ✅ Return pickup reminders now dispatch real emails via `emailService.sendSimpleNotification(...)` and only mark as sent on success |
+| `jobs/jobHandlers.js` | 218 | ✅ Notification dispatch now integrates concrete email delivery for `notificationType = 'email'` via `emailService` |
 | `jobs/jobHandlers.js` | 261 | ✅ `TODO: Implement actual inventory sync logic` — `handleInventorySync` now reconciles `available_quantity = MAX(0, quantity - reserved_quantity)` for all rows in the target warehouse, returning drift-fixed count + stock stats |
 | `jobs/jobHandlers.js` | 284 | ✅ `TODO: Implement actual report generation` — all 4 report generator helpers (`generateCarrierPerformanceReport`, `generateSLAComplianceReport`, `generateFinancialSummaryReport`, `generateInventorySnapshotReport`) now run real SQL queries against the DB |
 | `services/assignmentRetryService.js` | 64 | ✅ `TODO: Send alert to operations team` — replaced with a direct `INSERT INTO alerts` creating a `critical` severity system alert visible in the dashboard |
@@ -107,8 +107,8 @@ All items below exist as comments in source files. They are tracked here so they
 |---------|---------|--------|
 | Carrier API calls | `services/shipping/carrierQuoteService.js` — `getDHLQuote`, `getFedExQuote`, `getBlueDartQuote`, `getDelhiveryQuote` | *(deferred)* All return hard-coded simulated pricing. The real `axios.post()` calls are commented out. `api_key_encrypted` is never decrypted (TASK-R12-014). |
 | Carrier reliability scores | `services/shipping/carrierSelectionService.js` | ✅ `selectBestQuote` and `getCarrierReliabilityScore` are now async and query `carriers.reliability_score` from the DB. Hard-coded industry fallbacks are retained for carriers not yet in the DB. Three call-sites in `shippingQuoteController.js` and the `carrierRateService.js` delegate are updated to `await`. |
-| Email delivery | `controllers/usersController.js:288` | *(deferred)* Verification link logged to `console.info`, never emailed |
-| Notification jobs | `jobs/jobHandlers.js` | *(deferred)* 2 notification job types remain stubs (`notification_dispatch`, `return_pickup_reminder`) |
+| Email delivery | `controllers/usersController.js` + `services/emailService.js` | ✅ Verification emails are sent using nodemailer; SMTP is used when configured, with JSON transport fallback for local/dev |
+| Notification jobs | `jobs/jobHandlers.js` | ✅ `notification_dispatch` and `return_pickup_reminder` now perform concrete email dispatch via `emailService` |
 | Simulate-update route in production | `routes/shipments.js:41` | ✅ Now wrapped in `if (process.env.NODE_ENV !== 'production')` — endpoint absent in production builds |
 | Zone / distance calculation | `utils/shippingHelpers.js:227`, `services/shipping/shippingUtils.js:72` | ✅ Both functions are now `async` and query `postal_zones` + `zone_distances` tables. Precise Haversine distance is used when lat/lon are populated; zone-pair distance table is used when only zone codes are available. Falls back to the first-3-digit approximation when the table is empty (tables remain seeded-empty until real pincode data is populated). |
 | Per-carrier API timeout | `carriers` table | Migration `023` adds `api_timeout_ms` column. Column must be populated; currently defaults to 15 000 ms for all carriers. |

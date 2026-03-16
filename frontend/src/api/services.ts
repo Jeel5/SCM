@@ -39,6 +39,10 @@ export const authApi = {
     // Backend clears both httpOnly cookies (accessToken + refreshToken)
     return post('/auth/logout', {});
   },
+
+  async googleLogin(credential: string): Promise<ApiResponse<{ user: User }>> {
+    return post('/auth/google', { credential });
+  },
 };
 
 // ==================== ASYNC IMPORT ====================

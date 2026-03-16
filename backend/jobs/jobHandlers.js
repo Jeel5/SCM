@@ -19,6 +19,7 @@ import financeRepo from '../repositories/FinanceRepository.js';
 import warehouseRepo from '../repositories/WarehouseRepository.js';
 import shipmentRepo from '../repositories/ShipmentRepository.js';
 import { emitToOrg } from '../sockets/emitter.js';
+import emailService from '../services/emailService.js';
 
 /**
  * SLA Monitoring Job
@@ -812,20 +813,34 @@ async function handleReturnPickupReminder(payload) {
     const returns = await returnRepo.findPendingPickupReminders();
     
     const reminders = [];
+    const failures = [];
     
     for (const returnItem of returns) {
-      // TODO: Send actual email/SMS notification
-      logger.info(`📧 Sending pickup reminder for return ${returnItem.id} to ${returnItem.email}`);
-      
-      // Mark reminder as sent
-      await returnRepo.markReminderSent(returnItem.id);
-      
-      reminders.push(returnItem.id);
+      try {
+        if (returnItem.email) {
+          await emailService.sendSimpleNotification({
+            to: returnItem.email,
+            subject: `Pickup reminder for return ${returnItem.rma_number || returnItem.id}`,
+            message: `Your return ${returnItem.rma_number || returnItem.id} is scheduled for pickup soon. Please keep the package ready.`,
+          });
+        }
+        // Mark reminder as sent only when dispatch succeeds.
+        await returnRepo.markReminderSent(returnItem.id);
+        reminders.push(returnItem.id);
+      } catch (err) {
+        logger.error('Failed to send return pickup reminder', {
+          returnId: returnItem.id,
+          email: returnItem.email,
+          error: err,
+        });
+        failures.push(returnItem.id);
+      }
     }
     
     return {
       success: true,
       remindersSent: reminders.length,
+      remindersFailed: failures.length,
       duration: `${Date.now() - startTime}ms`,
     };
   } catch (error) {
@@ -917,7 +932,6 @@ async function handleNotificationDispatch(payload) {
   const { notificationType, recipients, message, data } = payload;
   
   try {
-    // TODO: Integrate with actual notification service
     logger.info('📨 Dispatching notifications', {
       type: notificationType,
       recipientCount: recipients.length,
@@ -928,9 +942,16 @@ async function handleNotificationDispatch(payload) {
     
     for (const recipient of recipients) {
       try {
-        // Simulate notification sending
-        // In production, integrate with services like SendGrid, Twilio, Firebase, etc.
-        logger.info(`Sending ${notificationType} to ${recipient}`);
+        if (notificationType === 'email') {
+          await emailService.sendSimpleNotification({
+            to: recipient,
+            subject: data?.subject || 'TwinChain notification',
+            message,
+          });
+        } else {
+          // Non-email channels are accepted and logged until SMS/push provider is configured.
+          logger.info('Notification channel accepted', { notificationType, recipient });
+        }
         sent.push(recipient);
       } catch (error) {
         logger.error(`Failed to send notification to ${recipient}:`, error);
