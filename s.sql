@@ -2,6 +2,8 @@
 
 CREATE SCHEMA public AUTHORIZATION pg_database_owner;
 
+COMMENT ON SCHEMA public IS 'standard public schema';
+
 -- DROP SEQUENCE public.exception_ticket_seq;
 
 CREATE SEQUENCE public.exception_ticket_seq
@@ -201,6 +203,7 @@ CREATE TABLE public.dead_letter_queue (
 CREATE INDEX idx_dlq_created ON public.dead_letter_queue USING btree (moved_to_dlq_at);
 CREATE INDEX idx_dlq_job_type ON public.dead_letter_queue USING btree (job_type);
 CREATE INDEX idx_dlq_unprocessed ON public.dead_letter_queue USING btree (reprocessed) WHERE (reprocessed = false);
+COMMENT ON TABLE public.dead_letter_queue IS 'Failed jobs that exceeded max retries for debugging and reprocessing';
 
 
 -- public.postal_zones definition
@@ -224,6 +227,7 @@ CREATE TABLE public.postal_zones (
 	CONSTRAINT postal_zones_pkey PRIMARY KEY (id)
 );
 CREATE INDEX idx_postal_zones_zone_code ON public.postal_zones USING btree (zone_code);
+COMMENT ON TABLE public.postal_zones IS 'NOT_PRODUCTION_READY: table is empty until seeded with real pincode data.';
 
 
 -- public.zone_distances definition
@@ -241,6 +245,7 @@ CREATE TABLE public.zone_distances (
 	CONSTRAINT zone_distances_from_zone_to_zone_key UNIQUE (from_zone, to_zone),
 	CONSTRAINT zone_distances_pkey PRIMARY KEY (id)
 );
+COMMENT ON TABLE public.zone_distances IS 'NOT_PRODUCTION_READY: table is empty until seeded with carrier zone matrices.';
 
 
 -- public.alerts definition
@@ -322,6 +327,7 @@ CREATE INDEX idx_audit_logs_created ON public.audit_logs USING btree (created_at
 CREATE INDEX idx_audit_logs_entity ON public.audit_logs USING btree (entity_type, entity_id);
 CREATE INDEX idx_audit_logs_org ON public.audit_logs USING btree (organization_id);
 CREATE INDEX idx_audit_logs_user ON public.audit_logs USING btree (user_id);
+COMMENT ON TABLE public.audit_logs IS 'Immutable audit trail for compliance and security';
 
 
 -- public.background_jobs definition
@@ -397,7 +403,7 @@ CREATE TABLE public.carrier_assignments (
 	carrier_reference_id varchar(100) NULL,
 	carrier_tracking_number varchar(100) NULL,
 	rejected_reason text NULL,
-	idempotency_key varchar(255) NULL,
+	idempotency_key varchar(255) NULL, -- Prevents duplicate carrier assignment requests
 	requested_at timestamptz DEFAULT now() NULL,
 	assigned_at timestamptz NULL,
 	accepted_at timestamptz NULL,
@@ -412,6 +418,10 @@ CREATE INDEX idx_carrier_assignments_carrier ON public.carrier_assignments USING
 CREATE INDEX idx_carrier_assignments_expires ON public.carrier_assignments USING btree (expires_at) WHERE ((status)::text = 'pending'::text);
 CREATE INDEX idx_carrier_assignments_order ON public.carrier_assignments USING btree (order_id);
 CREATE INDEX idx_carrier_assignments_status ON public.carrier_assignments USING btree (status);
+
+-- Column comments
+
+COMMENT ON COLUMN public.carrier_assignments.idempotency_key IS 'Prevents duplicate carrier assignment requests';
 
 -- Table Triggers
 
@@ -468,8 +478,8 @@ CREATE TABLE public.carrier_quotes (
 	response_time_ms int4 NULL,
 	was_retried bool DEFAULT false NULL,
 	retry_count int4 DEFAULT 0 NULL,
-	was_selected bool DEFAULT false NULL,
-	selection_reason varchar(255) NULL,
+	was_selected bool DEFAULT false NULL, -- TRUE for the winning bid; FALSE for all others in the window.
+	selection_reason varchar(255) NULL, -- Why selected: best_price, best_speed, best_balance, reliability, only_option
 	status varchar(50) DEFAULT 'received'::character varying NULL,
 	error_message text NULL,
 	request_payload jsonb NULL,
@@ -484,6 +494,12 @@ CREATE INDEX idx_carrier_quotes_order ON public.carrier_quotes USING btree (orde
 CREATE INDEX idx_carrier_quotes_org ON public.carrier_quotes USING btree (organization_id);
 CREATE INDEX idx_carrier_quotes_selected ON public.carrier_quotes USING btree (order_id) WHERE (was_selected = true);
 CREATE INDEX idx_carrier_quotes_window ON public.carrier_quotes USING btree (order_id, expires_at) WHERE (was_selected IS FALSE);
+COMMENT ON TABLE public.carrier_quotes IS 'Carrier bid responses during the assignment bidding window. When window closes (expires_at), best quote by (SLA risk + price + reliability) is selected and shipment is created.';
+
+-- Column comments
+
+COMMENT ON COLUMN public.carrier_quotes.was_selected IS 'TRUE for the winning bid; FALSE for all others in the window.';
+COMMENT ON COLUMN public.carrier_quotes.selection_reason IS 'Why selected: best_price, best_speed, best_balance, reliability, only_option';
 
 
 -- public.carrier_rejections definition
@@ -497,7 +513,7 @@ CREATE TABLE public.carrier_rejections (
 	carrier_assignment_id uuid NULL,
 	carrier_id uuid NOT NULL,
 	order_id uuid NULL,
-	reason varchar(100) NOT NULL,
+	reason varchar(100) NOT NULL, -- at_capacity, weight_exceeded, route_not_serviceable, no_cold_storage, api_error, timeout
 	message text NULL,
 	error_code varchar(50) NULL,
 	response_time_ms int4 NULL,
@@ -510,6 +526,10 @@ CREATE INDEX idx_carrier_rejections_carrier ON public.carrier_rejections USING b
 CREATE INDEX idx_carrier_rejections_date ON public.carrier_rejections USING btree (rejected_at);
 CREATE INDEX idx_carrier_rejections_order_id ON public.carrier_rejections USING btree (order_id);
 CREATE INDEX idx_carrier_rejections_reason ON public.carrier_rejections USING btree (reason);
+
+-- Column comments
+
+COMMENT ON COLUMN public.carrier_rejections.reason IS 'at_capacity, weight_exceeded, route_not_serviceable, no_cold_storage, api_error, timeout';
 
 
 -- public.carriers definition
@@ -540,13 +560,13 @@ CREATE TABLE public.carriers (
 	last_status_change timestamptz DEFAULT now() NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	webhook_secret varchar(255) NULL,
-	our_client_id varchar(100) NULL,
-	our_client_secret varchar(255) NULL,
-	ip_whitelist jsonb NULL,
-	webhook_events _text NULL,
+	webhook_secret varchar(255) NULL, -- Shared secret for HMAC-SHA256 signature verification (carrier signs their webhooks)
+	our_client_id varchar(100) NULL, -- Our client ID for authenticating with carrier API
+	our_client_secret varchar(255) NULL, -- Our secret for signing requests to carrier API
+	ip_whitelist jsonb NULL, -- Array of allowed IP addresses for webhook requests
+	webhook_events _text NULL, -- Array of webhook event types carrier subscribes to
 	webhook_enabled bool DEFAULT true NULL,
-	api_timeout_ms int4 DEFAULT 15000 NULL,
+	api_timeout_ms int4 DEFAULT 15000 NULL, -- Per-carrier HTTP timeout in milliseconds for outbound quote/tracking API calls. NULL means use the application default (DEFAULT_CARRIER_API_TIMEOUT_MS). Value is capped to 45 000 ms in the application layer.
 	CONSTRAINT carriers_api_timeout_ms_check CHECK (((api_timeout_ms >= 1000) AND (api_timeout_ms <= 45000))),
 	CONSTRAINT carriers_availability_status_check CHECK (((availability_status)::text = ANY ((ARRAY['available'::character varying, 'busy'::character varying, 'offline'::character varying, 'suspended'::character varying])::text[]))),
 	CONSTRAINT carriers_organization_id_code_key UNIQUE (organization_id, code),
@@ -557,6 +577,15 @@ CREATE INDEX idx_carriers_active ON public.carriers USING btree (is_active);
 CREATE INDEX idx_carriers_code ON public.carriers USING btree (code);
 CREATE INDEX idx_carriers_org ON public.carriers USING btree (organization_id);
 CREATE INDEX idx_carriers_status ON public.carriers USING btree (availability_status);
+
+-- Column comments
+
+COMMENT ON COLUMN public.carriers.webhook_secret IS 'Shared secret for HMAC-SHA256 signature verification (carrier signs their webhooks)';
+COMMENT ON COLUMN public.carriers.our_client_id IS 'Our client ID for authenticating with carrier API';
+COMMENT ON COLUMN public.carriers.our_client_secret IS 'Our secret for signing requests to carrier API';
+COMMENT ON COLUMN public.carriers.ip_whitelist IS 'Array of allowed IP addresses for webhook requests';
+COMMENT ON COLUMN public.carriers.webhook_events IS 'Array of webhook event types carrier subscribes to';
+COMMENT ON COLUMN public.carriers.api_timeout_ms IS 'Per-carrier HTTP timeout in milliseconds for outbound quote/tracking API calls. NULL means use the application default (DEFAULT_CARRIER_API_TIMEOUT_MS). Value is capped to 45 000 ms in the application layer.';
 
 -- Table Triggers
 
@@ -662,7 +691,7 @@ CREATE TABLE public.exceptions (
 	resolved_at timestamptz NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	ticket_number varchar(30) NULL,
+	ticket_number varchar(30) NULL, -- Customer-facing ticket ID, e.g. EX-20260314-0001. Auto-generated on INSERT.
 	CONSTRAINT exceptions_exception_type_check CHECK (((exception_type)::text = ANY ((ARRAY['delay'::character varying, 'damage'::character varying, 'lost_shipment'::character varying, 'address_issue'::character varying, 'carrier_issue'::character varying, 'inventory_issue'::character varying, 'sla_breach'::character varying, 'delivery_failed'::character varying, 'customer_not_available'::character varying, 'other'::character varying])::text[]))),
 	CONSTRAINT exceptions_pkey PRIMARY KEY (id),
 	CONSTRAINT exceptions_severity_check CHECK (((severity)::text = ANY ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying, 'critical'::character varying])::text[]))),
@@ -678,6 +707,10 @@ CREATE INDEX idx_exceptions_shipment ON public.exceptions USING btree (shipment_
 CREATE INDEX idx_exceptions_status ON public.exceptions USING btree (status);
 CREATE INDEX idx_exceptions_ticket ON public.exceptions USING btree (ticket_number);
 CREATE INDEX idx_exceptions_type ON public.exceptions USING btree (exception_type);
+
+-- Column comments
+
+COMMENT ON COLUMN public.exceptions.ticket_number IS 'Customer-facing ticket ID, e.g. EX-20260314-0001. Auto-generated on INSERT.';
 
 -- Table Triggers
 
@@ -703,17 +736,17 @@ CREATE TABLE public.inventory (
 	product_id uuid NULL,
 	sku varchar(100) NULL,
 	product_name varchar(255) NULL,
-	quantity int4 DEFAULT 0 NULL,
-	available_quantity int4 DEFAULT 0 NULL,
-	reserved_quantity int4 DEFAULT 0 NULL,
-	damaged_quantity int4 DEFAULT 0 NULL,
-	in_transit_quantity int4 DEFAULT 0 NULL,
+	quantity int4 DEFAULT 0 NULL, -- Total quantity (available + reserved + damaged + in_transit)
+	available_quantity int4 DEFAULT 0 NULL, -- Available quantity for sale/transfer
+	reserved_quantity int4 DEFAULT 0 NULL, -- Reserved quantity (allocated to orders)
+	damaged_quantity int4 DEFAULT 0 NULL, -- Damaged/unusable quantity
+	in_transit_quantity int4 DEFAULT 0 NULL, -- Quantity in transit (being transferred)
 	reorder_point int4 NULL,
 	max_stock_level int4 NULL,
 	last_stock_check timestamptz NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	unit_cost numeric(10, 2) DEFAULT 0 NULL,
+	unit_cost numeric(10, 2) DEFAULT 0 NULL, -- Cost per unit for inventory valuation
 	organization_id uuid NULL,
 	CONSTRAINT inventory_pkey PRIMARY KEY (id)
 );
@@ -724,6 +757,15 @@ CREATE INDEX idx_inventory_warehouse ON public.inventory USING btree (warehouse_
 CREATE UNIQUE INDEX idx_inventory_warehouse_product ON public.inventory USING btree (warehouse_id, product_id) WHERE (product_id IS NOT NULL);
 CREATE UNIQUE INDEX idx_inventory_warehouse_sku ON public.inventory USING btree (warehouse_id, sku) WHERE (sku IS NOT NULL);
 CREATE INDEX idx_inventory_warehouse_stats ON public.inventory USING btree (warehouse_id, quantity, available_quantity, reserved_quantity);
+
+-- Column comments
+
+COMMENT ON COLUMN public.inventory.quantity IS 'Total quantity (available + reserved + damaged + in_transit)';
+COMMENT ON COLUMN public.inventory.available_quantity IS 'Available quantity for sale/transfer';
+COMMENT ON COLUMN public.inventory.reserved_quantity IS 'Reserved quantity (allocated to orders)';
+COMMENT ON COLUMN public.inventory.damaged_quantity IS 'Damaged/unusable quantity';
+COMMENT ON COLUMN public.inventory.in_transit_quantity IS 'Quantity in transit (being transferred)';
+COMMENT ON COLUMN public.inventory.unit_cost IS 'Cost per unit for inventory valuation';
 
 -- Table Triggers
 
@@ -883,13 +925,13 @@ CREATE TABLE public.order_items (
 	status varchar(50) DEFAULT 'pending'::character varying NULL,
 	shipped_at timestamptz NULL,
 	created_at timestamptz DEFAULT now() NULL,
-	dimensions jsonb DEFAULT '{"width": 0, "height": 0, "length": 0}'::jsonb NULL,
+	dimensions jsonb DEFAULT '{"width": 0, "height": 0, "length": 0}'::jsonb NULL, -- Package dimensions in cm: {length, width, height}
 	is_fragile bool DEFAULT false NULL,
 	is_hazardous bool DEFAULT false NULL,
 	is_perishable bool DEFAULT false NULL,
 	requires_cold_storage bool DEFAULT false NULL,
 	item_type varchar(50) DEFAULT 'general'::character varying NULL,
-	volumetric_weight numeric(10, 3) NULL,
+	volumetric_weight numeric(10, 3) NULL, -- Dimensional weight (L×W×H/5000). Used for carrier pricing when > actual weight
 	package_type varchar(50) DEFAULT 'box'::character varying NULL,
 	handling_instructions text NULL,
 	requires_insurance bool DEFAULT false NULL,
@@ -904,6 +946,11 @@ CREATE INDEX idx_order_items_order ON public.order_items USING btree (order_id);
 CREATE INDEX idx_order_items_perishable ON public.order_items USING btree (is_perishable) WHERE (is_perishable = true);
 CREATE INDEX idx_order_items_product ON public.order_items USING btree (product_id);
 CREATE INDEX idx_order_items_sku ON public.order_items USING btree (sku);
+
+-- Column comments
+
+COMMENT ON COLUMN public.order_items.dimensions IS 'Package dimensions in cm: {length, width, height}';
+COMMENT ON COLUMN public.order_items.volumetric_weight IS 'Dimensional weight (L×W×H/5000). Used for carrier pricing when > actual weight';
 
 -- Table Triggers
 
@@ -925,13 +972,13 @@ CREATE TABLE public.orders (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	organization_id uuid NULL,
 	order_number varchar(50) NULL,
-	external_order_id varchar(100) NULL,
-	customer_name varchar(255) NOT NULL,
+	external_order_id varchar(100) NULL, -- Reference ID from external system: E-commerce order ID for sales orders, PO number for purchase orders
+	customer_name varchar(255) NOT NULL, -- Customer name for sales orders, or receiving warehouse for transfer orders
 	customer_email varchar(255) NULL,
 	customer_phone varchar(20) NULL,
-	status varchar(50) DEFAULT 'created'::character varying NULL,
-	priority varchar(20) DEFAULT 'standard'::character varying NULL,
-	order_type varchar(50) DEFAULT 'outbound'::character varying NULL,
+	status varchar(50) DEFAULT 'created'::character varying NULL, -- Order workflow: created -> pending_carrier_assignment -> ready_to_ship -> shipped -> in_transit -> delivered. Use on_hold for any blocking issues.
+	priority varchar(20) DEFAULT 'standard'::character varying NULL, -- Used for transfer and inbound_restock urgency. Outbound defaults to standard (not shown in customer UI).
+	order_type varchar(50) DEFAULT 'outbound'::character varying NULL, -- outbound = customer sale; transfer = warehouse-to-warehouse stock movement; inbound_restock = supplier PO inbound
 	is_cod bool DEFAULT false NULL,
 	subtotal numeric(10, 2) NULL,
 	tax_amount numeric(10, 2) DEFAULT 0 NULL,
@@ -945,19 +992,19 @@ CREATE TABLE public.orders (
 	actual_delivery timestamptz NULL,
 	promised_delivery timestamptz NULL,
 	allocated_warehouse_id uuid NULL,
-	shipping_locked_by varchar(255) NULL,
-	shipping_locked_at timestamptz NULL,
+	shipping_locked_by varchar(255) NULL, -- Worker/process identifier that acquired the lock (for debugging)
+	shipping_locked_at timestamptz NULL, -- Timestamp when the lock was acquired; used to detect expired locks
 	notes text NULL,
 	special_instructions text NULL,
 	tags jsonb NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	carrier_id uuid NULL,
-	platform varchar(50) NULL,
-	customer_id varchar(100) NULL,
-	payment_method varchar(50) NULL,
-	shipping_locked bool DEFAULT false NOT NULL,
-	CONSTRAINT orders_order_type_check null,
+	carrier_id uuid NULL, -- Carrier that accepted the assignment (set when carrier accepts job)
+	platform varchar(50) NULL, -- Source platform: amazon, shopify, ebay, website, api, manual
+	customer_id varchar(100) NULL, -- External customer ID from platform
+	payment_method varchar(50) NULL, -- Payment method: cod, prepaid, upi, card, netbanking
+	shipping_locked bool DEFAULT false NOT NULL, -- Optimistic lock flag – set true while a worker holds the shipping assignment lock
+	CONSTRAINT orders_order_type_check CHECK (((order_type)::text = ANY ((ARRAY['outbound'::character varying, 'transfer'::character varying, 'inbound_restock'::character varying])::text[]))),
 	CONSTRAINT orders_pkey PRIMARY KEY (id),
 	CONSTRAINT orders_priority_check CHECK (((priority)::text = ANY ((ARRAY['express'::character varying, 'standard'::character varying, 'bulk'::character varying, 'same_day'::character varying])::text[]))),
 	CONSTRAINT orders_status_check CHECK (((status)::text = ANY ((ARRAY['created'::character varying, 'confirmed'::character varying, 'processing'::character varying, 'allocated'::character varying, 'ready_to_ship'::character varying, 'shipped'::character varying, 'in_transit'::character varying, 'out_for_delivery'::character varying, 'delivered'::character varying, 'returned'::character varying, 'cancelled'::character varying, 'on_hold'::character varying, 'pending_carrier_assignment'::character varying])::text[])))
@@ -973,6 +1020,21 @@ CREATE INDEX idx_orders_org ON public.orders USING btree (organization_id);
 CREATE INDEX idx_orders_shipping_locked ON public.orders USING btree (shipping_locked_at) WHERE (shipping_locked = true);
 CREATE INDEX idx_orders_status ON public.orders USING btree (status);
 CREATE INDEX idx_orders_status_org ON public.orders USING btree (organization_id, status);
+
+-- Column comments
+
+COMMENT ON COLUMN public.orders.external_order_id IS 'Reference ID from external system: E-commerce order ID for sales orders, PO number for purchase orders';
+COMMENT ON COLUMN public.orders.customer_name IS 'Customer name for sales orders, or receiving warehouse for transfer orders';
+COMMENT ON COLUMN public.orders.status IS 'Order workflow: created -> pending_carrier_assignment -> ready_to_ship -> shipped -> in_transit -> delivered. Use on_hold for any blocking issues.';
+COMMENT ON COLUMN public.orders.priority IS 'Used for transfer and inbound_restock urgency. Outbound defaults to standard (not shown in customer UI).';
+COMMENT ON COLUMN public.orders.order_type IS 'outbound = customer sale; transfer = warehouse-to-warehouse stock movement; inbound_restock = supplier PO inbound';
+COMMENT ON COLUMN public.orders.shipping_locked_by IS 'Worker/process identifier that acquired the lock (for debugging)';
+COMMENT ON COLUMN public.orders.shipping_locked_at IS 'Timestamp when the lock was acquired; used to detect expired locks';
+COMMENT ON COLUMN public.orders.carrier_id IS 'Carrier that accepted the assignment (set when carrier accepts job)';
+COMMENT ON COLUMN public.orders.platform IS 'Source platform: amazon, shopify, ebay, website, api, manual';
+COMMENT ON COLUMN public.orders.customer_id IS 'External customer ID from platform';
+COMMENT ON COLUMN public.orders.payment_method IS 'Payment method: cod, prepaid, upi, card, netbanking';
+COMMENT ON COLUMN public.orders.shipping_locked IS 'Optimistic lock flag – set true while a worker holds the shipping assignment lock';
 
 -- Table Triggers
 
@@ -1006,6 +1068,7 @@ CREATE INDEX idx_org_audit_action ON public.organization_audit_logs USING btree 
 CREATE INDEX idx_org_audit_created ON public.organization_audit_logs USING btree (created_at);
 CREATE INDEX idx_org_audit_org ON public.organization_audit_logs USING btree (organization_id);
 CREATE INDEX idx_org_audit_performed_by ON public.organization_audit_logs USING btree (performed_by);
+COMMENT ON TABLE public.organization_audit_logs IS 'Immutable audit log of all superadmin actions on tenant organizations. Required for compliance and incident investigation.';
 
 
 -- public.organizations definition
@@ -1033,12 +1096,12 @@ CREATE TABLE public.organizations (
 	subscription_tier varchar(50) DEFAULT 'standard'::character varying NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	webhook_token varchar(64) DEFAULT encode(gen_random_bytes(32), 'hex'::text) NULL,
-	is_deleted bool DEFAULT false NOT NULL,
+	webhook_token varchar(64) DEFAULT encode(gen_random_bytes(32), 'hex'::text) NULL, -- Secret token for org-scoped webhook URLs. Used in /api/webhooks/:token/orders etc.
+	is_deleted bool DEFAULT false NOT NULL, -- Soft delete flag — tenant permanently removed by superadmin
 	deleted_at timestamptz NULL,
 	deleted_by uuid NULL,
-	suspension_reason text NULL,
-	suspended_at timestamptz NULL,
+	suspension_reason text NULL, -- Reason for suspension (non-payment, policy violation, etc.)
+	suspended_at timestamptz NULL, -- Timestamp when tenant was suspended; NULL means active
 	suspended_by uuid NULL,
 	CONSTRAINT organizations_code_key UNIQUE (code),
 	CONSTRAINT organizations_pkey PRIMARY KEY (id),
@@ -1048,6 +1111,14 @@ CREATE INDEX idx_org_is_deleted ON public.organizations USING btree (is_deleted)
 CREATE INDEX idx_org_suspended ON public.organizations USING btree (suspended_at) WHERE (suspended_at IS NOT NULL);
 CREATE INDEX idx_organizations_active ON public.organizations USING btree (is_active) WHERE (is_active = true);
 CREATE INDEX idx_organizations_webhook_token ON public.organizations USING btree (webhook_token);
+COMMENT ON TABLE public.organizations IS 'Multi-tenant companies using the platform';
+
+-- Column comments
+
+COMMENT ON COLUMN public.organizations.webhook_token IS 'Secret token for org-scoped webhook URLs. Used in /api/webhooks/:token/orders etc.';
+COMMENT ON COLUMN public.organizations.is_deleted IS 'Soft delete flag — tenant permanently removed by superadmin';
+COMMENT ON COLUMN public.organizations.suspension_reason IS 'Reason for suspension (non-payment, policy violation, etc.)';
+COMMENT ON COLUMN public.organizations.suspended_at IS 'Timestamp when tenant was suspended; NULL means active';
 
 -- Table Triggers
 
@@ -1071,34 +1142,34 @@ CREATE TABLE public.products (
 	description text NULL,
 	category varchar(100) NULL,
 	weight numeric(10, 3) NULL,
-	dimensions jsonb NULL,
-	selling_price numeric(10, 2) NULL,
-	cost_price numeric(10, 2) NULL,
+	dimensions jsonb NULL, -- Package dimensions in cm: {length, width, height}. Used for shipping cost calculations.
+	selling_price numeric(10, 2) NULL, -- Base catalog selling price (pre-tax, pre-discount)
+	cost_price numeric(10, 2) NULL, -- Purchase/manufacturing cost (COGS) - internal use for margin calculation
 	currency varchar(3) DEFAULT 'INR'::character varying NULL,
 	"attributes" jsonb NULL,
 	is_active bool DEFAULT true NULL,
-	is_fragile bool DEFAULT false NULL,
-	requires_cold_storage bool DEFAULT false NULL,
+	is_fragile bool DEFAULT false NULL, -- Requires fragile handling (adds surcharge)
+	requires_cold_storage bool DEFAULT false NULL, -- Requires temperature-controlled transport (adds surcharge)
 	is_hazmat bool DEFAULT false NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	is_perishable bool DEFAULT false NULL,
-	volumetric_weight numeric(10, 3) NULL,
-	package_type varchar(50) DEFAULT 'box'::character varying NULL,
-	handling_instructions text NULL,
-	requires_insurance bool DEFAULT false NULL,
-	manufacturer_barcode varchar(100) NULL,
-	hsn_code varchar(20) NULL,
-	gst_rate numeric(5, 2) DEFAULT 18.00 NULL,
-	brand varchar(255) NULL,
-	country_of_origin varchar(100) DEFAULT 'India'::character varying NULL,
-	warranty_period_days int4 DEFAULT 0 NULL,
-	shelf_life_days int4 NULL,
-	tags jsonb DEFAULT '[]'::jsonb NULL,
-	supplier_id uuid NULL,
-	mrp numeric(12, 2) NULL,
-	internal_barcode varchar(50) NOT NULL,
-	barcode varchar(100) NULL,
+	is_perishable bool DEFAULT false NULL, -- Perishable item (adds surcharge, time-sensitive delivery)
+	volumetric_weight numeric(10, 3) NULL, -- Dimensional weight (L×W×H/5000). Auto-calculated from dimensions.
+	package_type varchar(50) DEFAULT 'box'::character varying NULL, -- Recommended package type for this product
+	handling_instructions text NULL, -- Special handling instructions for carriers
+	requires_insurance bool DEFAULT false NULL, -- Whether this product requires shipping insurance
+	manufacturer_barcode varchar(100) NULL, -- UPC/EAN/ISBN from product manufacturer (optional, for retail products)
+	hsn_code varchar(20) NULL, -- HSN/SAC code for GST compliance (manual entry, government classification)
+	gst_rate numeric(5, 2) DEFAULT 18.00 NULL, -- GST rate percentage (0/5/12/18/28) - can be auto-filled from HSN but user must confirm
+	brand varchar(255) NULL, -- Brand or manufacturer name
+	country_of_origin varchar(100) DEFAULT 'India'::character varying NULL, -- Country of manufacture — required for customs declarations
+	warranty_period_days int4 DEFAULT 0 NULL, -- Warranty duration in days (0 = no warranty)
+	shelf_life_days int4 NULL, -- Shelf life in days for perishable products
+	tags jsonb DEFAULT '[]'::jsonb NULL, -- Free-form tags for search/filtering e.g. ["summer","new-arrival"]
+	supplier_id uuid NULL, -- Primary supplier for procurement and replenishment
+	mrp numeric(12, 2) NULL, -- Maximum Retail Price (India legal requirement, printed on package)
+	internal_barcode varchar(50) NOT NULL, -- Auto-generated internal barcode for warehouse scanning (mandatory, globally unique)
+	barcode varchar(100) NULL, -- EAN-13 / UPC-A / QR barcode for warehouse scanning
 	CONSTRAINT products_internal_barcode_unique UNIQUE (internal_barcode),
 	CONSTRAINT products_mrp_check CHECK (((mrp IS NULL) OR (mrp >= (0)::numeric))),
 	CONSTRAINT products_organization_id_sku_key UNIQUE (organization_id, sku),
@@ -1118,6 +1189,31 @@ CREATE INDEX idx_products_organization_id ON public.products USING btree (organi
 CREATE INDEX idx_products_perishable ON public.products USING btree (is_perishable) WHERE (is_perishable = true);
 CREATE INDEX idx_products_supplier ON public.products USING btree (supplier_id) WHERE (supplier_id IS NOT NULL);
 CREATE INDEX idx_products_tags ON public.products USING gin (tags);
+
+-- Column comments
+
+COMMENT ON COLUMN public.products.dimensions IS 'Package dimensions in cm: {length, width, height}. Used for shipping cost calculations.';
+COMMENT ON COLUMN public.products.selling_price IS 'Base catalog selling price (pre-tax, pre-discount)';
+COMMENT ON COLUMN public.products.cost_price IS 'Purchase/manufacturing cost (COGS) - internal use for margin calculation';
+COMMENT ON COLUMN public.products.is_fragile IS 'Requires fragile handling (adds surcharge)';
+COMMENT ON COLUMN public.products.requires_cold_storage IS 'Requires temperature-controlled transport (adds surcharge)';
+COMMENT ON COLUMN public.products.is_perishable IS 'Perishable item (adds surcharge, time-sensitive delivery)';
+COMMENT ON COLUMN public.products.volumetric_weight IS 'Dimensional weight (L×W×H/5000). Auto-calculated from dimensions.';
+COMMENT ON COLUMN public.products.package_type IS 'Recommended package type for this product';
+COMMENT ON COLUMN public.products.handling_instructions IS 'Special handling instructions for carriers';
+COMMENT ON COLUMN public.products.requires_insurance IS 'Whether this product requires shipping insurance';
+COMMENT ON COLUMN public.products.manufacturer_barcode IS 'UPC/EAN/ISBN from product manufacturer (optional, for retail products)';
+COMMENT ON COLUMN public.products.hsn_code IS 'HSN/SAC code for GST compliance (manual entry, government classification)';
+COMMENT ON COLUMN public.products.gst_rate IS 'GST rate percentage (0/5/12/18/28) - can be auto-filled from HSN but user must confirm';
+COMMENT ON COLUMN public.products.brand IS 'Brand or manufacturer name';
+COMMENT ON COLUMN public.products.country_of_origin IS 'Country of manufacture — required for customs declarations';
+COMMENT ON COLUMN public.products.warranty_period_days IS 'Warranty duration in days (0 = no warranty)';
+COMMENT ON COLUMN public.products.shelf_life_days IS 'Shelf life in days for perishable products';
+COMMENT ON COLUMN public.products.tags IS 'Free-form tags for search/filtering e.g. ["summer","new-arrival"]';
+COMMENT ON COLUMN public.products.supplier_id IS 'Primary supplier for procurement and replenishment';
+COMMENT ON COLUMN public.products.mrp IS 'Maximum Retail Price (India legal requirement, printed on package)';
+COMMENT ON COLUMN public.products.internal_barcode IS 'Auto-generated internal barcode for warehouse scanning (mandatory, globally unique)';
+COMMENT ON COLUMN public.products.barcode IS 'EAN-13 / UPC-A / QR barcode for warehouse scanning';
 
 -- Table Triggers
 
@@ -1148,6 +1244,7 @@ CREATE TABLE public.quote_idempotency_cache (
 	CONSTRAINT quote_idempotency_cache_pkey PRIMARY KEY (idempotency_key)
 );
 CREATE INDEX idx_quote_cache_expires ON public.quote_idempotency_cache USING btree (expires_at);
+COMMENT ON TABLE public.quote_idempotency_cache IS 'Prevents duplicate quote requests. Auto-cleanup: DELETE WHERE expires_at < NOW()';
 
 
 -- public.rate_cards definition
@@ -1240,6 +1337,7 @@ CREATE INDEX idx_restock_org ON public.restock_orders USING btree (organization_
 CREATE INDEX idx_restock_status ON public.restock_orders USING btree (status);
 CREATE INDEX idx_restock_supplier ON public.restock_orders USING btree (supplier_id);
 CREATE INDEX idx_restock_warehouse ON public.restock_orders USING btree (destination_warehouse_id);
+COMMENT ON TABLE public.restock_orders IS 'Inbound supplier purchase orders. Separate from outbound customer orders. Status managed by supplier; SCM tracks expected arrival and receipt confirmation.';
 
 -- Table Triggers
 
@@ -1292,7 +1390,7 @@ CREATE TABLE public."returns" (
 	customer_phone varchar(20) NULL,
 	reason varchar(100) NULL,
 	reason_detail text NULL,
-	status varchar(50) DEFAULT 'requested'::character varying NULL,
+	status varchar(50) DEFAULT 'requested'::character varying NULL, -- requested→approved/rejected→pickup_scheduled→picked_up→in_transit→received→inspecting→inspection_passed/failed→refunded. Restocking is triggered by inspection_passed as inventory event, not a status here.
 	quality_check_result varchar(50) NULL,
 	quality_check_notes text NULL,
 	inspection_images jsonb NULL,
@@ -1317,6 +1415,10 @@ CREATE INDEX idx_returns_org ON public.returns USING btree (organization_id);
 CREATE INDEX idx_returns_organization_id ON public.returns USING btree (organization_id);
 CREATE UNIQUE INDEX idx_returns_rma_number ON public.returns USING btree (organization_id, rma_number) WHERE (rma_number IS NOT NULL);
 CREATE INDEX idx_returns_status ON public.returns USING btree (status);
+
+-- Column comments
+
+COMMENT ON COLUMN public."returns".status IS 'requested→approved/rejected→pickup_scheduled→picked_up→in_transit→received→inspecting→inspection_passed/failed→refunded. Restocking is triggered by inspection_passed as inventory event, not a status here.';
 
 -- Table Triggers
 
@@ -1343,6 +1445,7 @@ CREATE TABLE public.revoked_tokens (
 );
 CREATE INDEX idx_revoked_tokens_expires ON public.revoked_tokens USING btree (expires_at);
 CREATE INDEX idx_revoked_tokens_jti ON public.revoked_tokens USING btree (jti);
+COMMENT ON TABLE public.revoked_tokens IS 'Blocklist of revoked JWT tokens (by JTI) for immediate invalidation';
 
 
 -- public.sales_channels definition
@@ -1374,6 +1477,7 @@ CREATE TABLE public.sales_channels (
 );
 CREATE INDEX idx_sales_channels_active ON public.sales_channels USING btree (organization_id, is_active);
 CREATE INDEX idx_sales_channels_org ON public.sales_channels USING btree (organization_id);
+COMMENT ON TABLE public.sales_channels IS 'E-commerce platforms and marketplaces that push orders via webhooks';
 
 -- Table Triggers
 
@@ -1435,8 +1539,8 @@ CREATE TABLE public.shipments (
 	shipping_cost numeric(10, 2) NULL,
 	cod_amount numeric(10, 2) NULL,
 	current_location jsonb NULL,
-	route_geometry jsonb NULL,
-	tracking_events jsonb DEFAULT '[]'::jsonb NULL,
+	route_geometry jsonb NULL, -- GeoJSON route for map display (populated during transit, not at creation)
+	tracking_events jsonb DEFAULT '[]'::jsonb NULL, -- Tracking history array (populated as carrier provides updates)
 	delivery_attempts int4 DEFAULT 0 NULL,
 	pickup_scheduled timestamptz NULL,
 	pickup_actual timestamptz NULL,
@@ -1448,17 +1552,17 @@ CREATE TABLE public.shipments (
 	delivery_notes text NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	is_fragile bool DEFAULT false NULL,
-	is_hazardous bool DEFAULT false NULL,
-	is_perishable bool DEFAULT false NULL,
-	requires_cold_storage bool DEFAULT false NULL,
-	item_type varchar(50) DEFAULT 'general'::character varying NULL,
-	package_type varchar(50) DEFAULT 'box'::character varying NULL,
-	handling_instructions text NULL,
-	requires_insurance bool DEFAULT false NULL,
-	declared_value numeric(10, 2) NULL,
-	total_items int4 DEFAULT 0 NULL,
-	sla_policy_id uuid NULL,
+	is_fragile bool DEFAULT false NULL, -- True if ANY item in shipment is fragile (aggregated from order_items)
+	is_hazardous bool DEFAULT false NULL, -- True if ANY item is hazardous (requires special carrier certification)
+	is_perishable bool DEFAULT false NULL, -- True if ANY item is perishable (time-sensitive delivery required)
+	requires_cold_storage bool DEFAULT false NULL, -- True if ANY item requires temperature control
+	item_type varchar(50) DEFAULT 'general'::character varying NULL, -- Most restrictive item type from all items in shipment
+	package_type varchar(50) DEFAULT 'box'::character varying NULL, -- Package type determined from order items
+	handling_instructions text NULL, -- Special handling instructions aggregated from all order items
+	requires_insurance bool DEFAULT false NULL, -- True if ANY item requires insurance
+	declared_value numeric(10, 2) NULL, -- Total declared value for insurance (sum of all item declared values)
+	total_items int4 DEFAULT 0 NULL, -- Total number of items (quantity) in this shipment
+	sla_policy_id uuid NULL, -- The SLA policy that was matched and applied when this shipment was created. NULL = system fallback (72h) was used.
 	CONSTRAINT shipments_item_type_check CHECK (((item_type)::text = ANY ((ARRAY['general'::character varying, 'fragile'::character varying, 'hazardous'::character varying, 'perishable'::character varying, 'electronics'::character varying, 'documents'::character varying, 'valuable'::character varying])::text[]))),
 	CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY ((ARRAY['envelope'::character varying, 'box'::character varying, 'tube'::character varying, 'pallet'::character varying, 'crate'::character varying, 'bag'::character varying, 'custom'::character varying])::text[]))),
 	CONSTRAINT shipments_pkey PRIMARY KEY (id),
@@ -1480,6 +1584,22 @@ CREATE INDEX idx_shipments_status ON public.shipments USING btree (status);
 CREATE INDEX idx_shipments_status_created ON public.shipments USING btree (status, created_at DESC);
 CREATE INDEX idx_shipments_status_org ON public.shipments USING btree (organization_id, status);
 CREATE INDEX idx_shipments_warehouse ON public.shipments USING btree (warehouse_id) WHERE (warehouse_id IS NOT NULL);
+
+-- Column comments
+
+COMMENT ON COLUMN public.shipments.route_geometry IS 'GeoJSON route for map display (populated during transit, not at creation)';
+COMMENT ON COLUMN public.shipments.tracking_events IS 'Tracking history array (populated as carrier provides updates)';
+COMMENT ON COLUMN public.shipments.is_fragile IS 'True if ANY item in shipment is fragile (aggregated from order_items)';
+COMMENT ON COLUMN public.shipments.is_hazardous IS 'True if ANY item is hazardous (requires special carrier certification)';
+COMMENT ON COLUMN public.shipments.is_perishable IS 'True if ANY item is perishable (time-sensitive delivery required)';
+COMMENT ON COLUMN public.shipments.requires_cold_storage IS 'True if ANY item requires temperature control';
+COMMENT ON COLUMN public.shipments.item_type IS 'Most restrictive item type from all items in shipment';
+COMMENT ON COLUMN public.shipments.package_type IS 'Package type determined from order items';
+COMMENT ON COLUMN public.shipments.handling_instructions IS 'Special handling instructions aggregated from all order items';
+COMMENT ON COLUMN public.shipments.requires_insurance IS 'True if ANY item requires insurance';
+COMMENT ON COLUMN public.shipments.declared_value IS 'Total declared value for insurance (sum of all item declared values)';
+COMMENT ON COLUMN public.shipments.total_items IS 'Total number of items (quantity) in this shipment';
+COMMENT ON COLUMN public.shipments.sla_policy_id IS 'The SLA policy that was matched and applied when this shipment was created. NULL = system fallback (72h) was used.';
 
 -- Table Triggers
 
@@ -1601,7 +1721,7 @@ CREATE TABLE public.stock_movements (
 	batch_number varchar(100) NULL,
 	created_by uuid NULL,
 	created_at timestamptz DEFAULT now() NULL,
-	performed_by varchar(255) NULL,
+	performed_by varchar(255) NULL, -- User ID or system identifier who performed the movement
 	CONSTRAINT stock_movements_movement_type_check CHECK (((movement_type)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying, 'transfer_in'::character varying, 'transfer_out'::character varying, 'adjustment'::character varying, 'return'::character varying, 'damaged'::character varying, 'expired'::character varying])::text[]))),
 	CONSTRAINT stock_movements_pkey PRIMARY KEY (id)
 );
@@ -1610,6 +1730,10 @@ CREATE INDEX idx_stock_movements_inventory ON public.stock_movements USING btree
 CREATE INDEX idx_stock_movements_reference ON public.stock_movements USING btree (reference_type, reference_id) WHERE (reference_id IS NOT NULL);
 CREATE INDEX idx_stock_movements_type ON public.stock_movements USING btree (movement_type);
 CREATE INDEX idx_stock_movements_warehouse ON public.stock_movements USING btree (warehouse_id);
+
+-- Column comments
+
+COMMENT ON COLUMN public.stock_movements.performed_by IS 'User ID or system identifier who performed the movement';
 
 
 -- public.suppliers definition
@@ -1644,6 +1768,7 @@ CREATE TABLE public.suppliers (
 );
 CREATE INDEX idx_suppliers_active ON public.suppliers USING btree (organization_id, is_active);
 CREATE INDEX idx_suppliers_org ON public.suppliers USING btree (organization_id);
+COMMENT ON TABLE public.suppliers IS 'Inbound vendors for purchase orders and inventory replenishment';
 
 -- Table Triggers
 
@@ -1691,13 +1816,18 @@ CREATE TABLE public.user_notification_preferences (
 	email_enabled bool DEFAULT true NULL,
 	push_enabled bool DEFAULT true NULL,
 	sms_enabled bool DEFAULT false NULL,
-	notification_types jsonb DEFAULT '{"orders": true, "returns": true, "shipments": true, "exceptions": true, "sla_alerts": true, "system_updates": true}'::jsonb NULL,
+	notification_types jsonb DEFAULT '{"orders": true, "returns": true, "shipments": true, "exceptions": true, "sla_alerts": true, "system_updates": true}'::jsonb NULL, -- JSON object containing boolean flags for different notification types (orders, shipments, sla_alerts, exceptions, returns, system_updates)
 	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
 	CONSTRAINT user_notification_preferences_pkey PRIMARY KEY (id),
 	CONSTRAINT user_notification_preferences_user_id_key UNIQUE (user_id)
 );
 CREATE INDEX idx_user_preferences_user_id ON public.user_notification_preferences USING btree (user_id);
+COMMENT ON TABLE public.user_notification_preferences IS 'Stores user notification preferences for different channels and event types';
+
+-- Column comments
+
+COMMENT ON COLUMN public.user_notification_preferences.notification_types IS 'JSON object containing boolean flags for different notification types (orders, shipments, sla_alerts, exceptions, returns, system_updates)';
 
 -- Table Triggers
 
@@ -1716,13 +1846,13 @@ update
 CREATE TABLE public.user_sessions (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	user_id uuid NOT NULL,
-	session_token text NOT NULL,
+	session_token text NOT NULL, -- JWT token for the session
 	refresh_token text NULL,
 	device_name varchar(255) NULL,
 	device_type varchar(50) NULL,
 	ip_address varchar(45) NULL,
 	user_agent text NULL,
-	is_active bool DEFAULT true NULL,
+	is_active bool DEFAULT true NULL, -- Whether the session is currently active (not revoked)
 	last_active timestamptz DEFAULT now() NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	expires_at timestamptz NOT NULL,
@@ -1734,6 +1864,12 @@ CREATE INDEX idx_user_sessions_expires ON public.user_sessions USING btree (expi
 CREATE INDEX idx_user_sessions_token ON public.user_sessions USING btree (session_token);
 CREATE INDEX idx_user_sessions_user ON public.user_sessions USING btree (user_id);
 CREATE INDEX idx_user_sessions_user_id ON public.user_sessions USING btree (user_id);
+COMMENT ON TABLE public.user_sessions IS 'Tracks active user sessions for security and session management';
+
+-- Column comments
+
+COMMENT ON COLUMN public.user_sessions.session_token IS 'JWT token for the session';
+COMMENT ON COLUMN public.user_sessions.is_active IS 'Whether the session is currently active (not revoked)';
 
 
 -- public.user_settings definition
@@ -1773,7 +1909,7 @@ CREATE TABLE public.users (
 	password_hash varchar(255) NOT NULL,
 	"name" varchar(255) NOT NULL,
 	"role" varchar(50) NOT NULL,
-	organization_id uuid NULL,
+	organization_id uuid NULL, -- NULL for superadmin who manages all organizations
 	avatar varchar(500) NULL,
 	phone varchar(20) NULL,
 	is_active bool DEFAULT true NULL,
@@ -1796,6 +1932,11 @@ CREATE INDEX idx_users_email_change_token ON public.users USING btree (email_cha
 CREATE INDEX idx_users_organization ON public.users USING btree (organization_id) WHERE (organization_id IS NOT NULL);
 CREATE INDEX idx_users_organization_id ON public.users USING btree (organization_id);
 CREATE INDEX idx_users_role ON public.users USING btree (role);
+COMMENT ON TABLE public.users IS 'All platform users including superadmin and company users';
+
+-- Column comments
+
+COMMENT ON COLUMN public.users.organization_id IS 'NULL for superadmin who manages all organizations';
 
 -- Table Triggers
 
@@ -1823,11 +1964,11 @@ CREATE TABLE public.warehouses (
 	contact_email varchar(255) NULL,
 	contact_phone varchar(20) NULL,
 	is_active bool DEFAULT true NULL,
-	warehouse_type varchar(50) DEFAULT 'fulfillment'::character varying NULL,
+	warehouse_type varchar(50) DEFAULT 'fulfillment'::character varying NULL, -- standard | fulfillment | distribution | cold_storage | hazmat | bonded_customs | returns_center
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
-	zones int4 DEFAULT 0 NULL,
-	operating_hours jsonb NULL,
+	zones int4 DEFAULT 0 NULL, -- Number of storage zones in warehouse
+	operating_hours jsonb NULL, -- Operating hours: {open: "HH:MM", close: "HH:MM", timezone: "TZ"}
 	gstin varchar(15) NULL,
 	has_cold_storage bool DEFAULT false NOT NULL,
 	temperature_min_celsius numeric(5, 1) NULL,
@@ -1845,6 +1986,12 @@ CREATE INDEX idx_warehouses_bonded_customs ON public.warehouses USING btree (cus
 CREATE INDEX idx_warehouses_cold_storage ON public.warehouses USING btree (has_cold_storage) WHERE (has_cold_storage = true);
 CREATE INDEX idx_warehouses_org ON public.warehouses USING btree (organization_id);
 CREATE INDEX idx_warehouses_organization_id ON public.warehouses USING btree (organization_id);
+
+-- Column comments
+
+COMMENT ON COLUMN public.warehouses.warehouse_type IS 'standard | fulfillment | distribution | cold_storage | hazmat | bonded_customs | returns_center';
+COMMENT ON COLUMN public.warehouses.zones IS 'Number of storage zones in warehouse';
+COMMENT ON COLUMN public.warehouses.operating_hours IS 'Operating hours: {open: "HH:MM", close: "HH:MM", timezone: "TZ"}';
 
 -- Table Triggers
 
@@ -1884,6 +2031,7 @@ CREATE INDEX idx_webhook_logs_created ON public.webhook_logs USING btree (create
 CREATE INDEX idx_webhook_logs_endpoint ON public.webhook_logs USING btree (endpoint, created_at DESC);
 CREATE INDEX idx_webhook_logs_signature_valid ON public.webhook_logs USING btree (signature_valid, created_at DESC);
 CREATE INDEX idx_webhook_logs_valid ON public.webhook_logs USING btree (signature_valid);
+COMMENT ON TABLE public.webhook_logs IS 'Audit trail for all webhook requests (authenticated and rejected)';
 
 
 -- public.alerts foreign keys
@@ -2216,6 +2364,8 @@ AS SELECT id,
    FROM carriers
   WHERE webhook_enabled = true;
 
+COMMENT ON VIEW public.carrier_webhook_config IS 'Webhook configuration for active carriers';
+
 
 -- public.transfer_orders source
 
@@ -2249,6 +2399,8 @@ AS SELECT o.id,
      LEFT JOIN carriers c ON s.carrier_id = c.id
   WHERE o.order_type::text = 'transfer'::text;
 
+COMMENT ON VIEW public.transfer_orders IS 'Convenient view for querying transfer orders with shipment details';
+
 
 -- public.v_order_items_shipping_details source
 
@@ -2278,6 +2430,8 @@ AS SELECT id,
             ELSE false
         END AS requires_special_handling
    FROM order_items oi;
+
+COMMENT ON VIEW public.v_order_items_shipping_details IS 'Complete shipping details for order items including chargeable weight and special handling';
 
 
 
