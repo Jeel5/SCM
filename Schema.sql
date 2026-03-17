@@ -2909,3 +2909,13 @@ COMMENT ON VIEW public.v_order_items_shipping_details IS 'Complete shipping deta
 
 
 
+INSERT INTO users (email, password_hash, name, role, organization_id, is_active)
+VALUES (
+    'superadmin@twinchain.com',
+    '$2b$10$5J.QGjlu1Cr2iH.pbVwIoO/WOqsaO0PgBRgv.HaovZgqYc62arliO', --pass
+    'Super Admin',
+    'superadmin',
+    NULL,
+    true
+)
+ON CONFLICT (email) DO NOTHING;
