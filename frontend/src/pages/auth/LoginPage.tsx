@@ -27,15 +27,24 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
 
   const handleGoogleSuccess = async (_credentialResponse: CredentialResponse) => {
+    const credential = _credentialResponse.credential;
+    if (!credential) {
+      const message = 'Missing Google credential. Please try again.';
+      setError(message);
+      toast.error('Google sign-in failed', message);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      
-      // TODO: Implement Google OAuth backend validation
-      // For now, show a message that Google login will be available soon
-      const message = 'Google OAuth will be available soon. Please use email/password login.';
-      setError(message);
-      toast.info('Google sign-in unavailable', message);
+
+      const response = await authApi.googleLogin(credential);
+      if (response.success) {
+        login(response.data.user);
+        localStorage.removeItem('useMockApi');
+        navigate('/dashboard');
+      }
     } catch (err) {
       const message = extractSafeErrorMessage(err, 'Authentication failed. Please try again.');
       setError(message);

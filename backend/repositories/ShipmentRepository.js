@@ -467,6 +467,35 @@ class ShipmentRepository extends BaseRepository {
   }
 
   /**
+   * Create a reverse shipment (return-to-origin) for an order cancellation.
+   */
+  async createReverseShipment(data, client = null) {
+    const result = await this.query(
+      `INSERT INTO shipments
+         (tracking_number, order_id, carrier_id, organization_id, status,
+          origin_address, destination_address, current_location,
+          shipping_cost, pickup_scheduled, delivery_scheduled, delivery_notes)
+       VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, NOW(), $9, $10)
+       RETURNING *`,
+      [
+        data.trackingNumber,
+        data.orderId,
+        data.carrierId || null,
+        data.organizationId || null,
+        JSON.stringify(data.originAddress || {}),
+        JSON.stringify(data.destinationAddress || {}),
+        data.currentLocation ? JSON.stringify(data.currentLocation) : null,
+        data.shippingCost || null,
+        data.deliveryScheduled || null,
+        data.notes || 'Reverse shipment initiated for cancelled order',
+      ],
+      client
+    );
+
+    return result.rows[0] || null;
+  }
+
+  /**
    * Update the route geometry on a shipment identified by tracking_number.
    */
   async updateRouteGeometry(trackingNumber, organizationId, geometry, client = null) {

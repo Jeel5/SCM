@@ -179,3 +179,44 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
     data: order 
   });
 });
+
+export const cancelOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+
+  const order = await orderService.cancelOrder(id, organizationId);
+
+  emitToOrg(organizationId, 'order:updated', {
+    id: order.id,
+    status: order.status,
+    orderNumber: order.order_number,
+    reverseShipment: order.reverse_shipment || null,
+  });
+  await invalidatePatterns(invalidationTargets(organizationId, 'orders:list', 'shipments:list', 'dash', 'analytics'));
+
+  res.json({
+    success: true,
+    message: 'Order cancelled successfully',
+    data: order,
+  });
+});
+
+export const initiateOrderReturn = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+
+  if (!req.body.reason) {
+    throw new ValidationError('reason is required');
+  }
+
+  const createdReturn = await orderService.initiateReturnForDeliveredOrder(id, req.body, organizationId);
+
+  emitToOrg(organizationId, 'return:created', createdReturn);
+  await invalidatePatterns(invalidationTargets(organizationId, 'returns:list', 'orders:list', 'dash', 'analytics'));
+
+  res.status(201).json({
+    success: true,
+    message: 'Return request created from delivered order',
+    data: createdReturn,
+  });
+});

@@ -4,6 +4,7 @@ import WarehouseRepository from '../repositories/WarehouseRepository.js';
 import CarrierRepository from '../repositories/CarrierRepository.js';
 import ShipmentRepository from '../repositories/ShipmentRepository.js';
 import ProductRepository from '../repositories/ProductRepository.js';
+import ReturnRepository from '../repositories/ReturnRepository.js';
 import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index.js';
 import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
@@ -21,12 +22,54 @@ const ORDER_VALID_TRANSITIONS = {
   pending_carrier_assignment: ['confirmed', 'allocated', 'cancelled', 'on_hold'],
   shipped:                    ['in_transit', 'returned', 'cancelled'],
   in_transit:                 ['out_for_delivery', 'returned', 'cancelled'],
-  out_for_delivery:           ['delivered', 'returned'],
+  out_for_delivery:           ['delivered', 'returned', 'cancelled'],
   delivered:                  [], // terminal — no forward transitions
   returned:                   [], // terminal
   cancelled:                  [], // terminal
   on_hold:                    ['created', 'confirmed', 'allocated', 'cancelled'],
 };
+
+const IN_TRANSIT_CANCEL_STATUSES = new Set(['shipped', 'in_transit', 'out_for_delivery']);
+
+function parseJsonValue(value, fallback = {}) {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function toCoordinates(address = {}) {
+  const lat = Number(address.lat ?? address.latitude ?? address.coordinates?.lat);
+  const lon = Number(address.lon ?? address.lng ?? address.longitude ?? address.coordinates?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const toRad = (x) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const aa =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+  return R * c;
+}
+
+function estimateReverseShippingCost(originAddress, destinationAddress) {
+  const from = toCoordinates(originAddress);
+  const to = toCoordinates(destinationAddress);
+  if (!from || !to) {
+    return { estimatedCost: 120, distanceKm: null };
+  }
+  const distanceKm = Math.max(1, Math.round(haversineKm(from, to)));
+  const estimatedCost = Math.round(45 + (distanceKm * 6.5));
+  return { estimatedCost, distanceKm };
+}
 
 // Order Service - contains business logic and orchestrates order operations
 class OrderService {
@@ -389,7 +432,10 @@ class OrderService {
         for (const item of items) {
           if (!item.warehouse_id || !item.sku) continue;
           if (status === 'cancelled') {
-            await InventoryRepository.releaseStock(item.sku, item.warehouse_id, item.quantity, tx);
+            // If already in transit, stock has left the warehouse and must return via reverse logistics.
+            if (!IN_TRANSIT_CANCEL_STATUSES.has(oldStatus)) {
+              await InventoryRepository.releaseStock(item.sku, item.warehouse_id, item.quantity, tx);
+            }
           } else {
             // shipped: convert reservation to an actual deduction — stock permanently leaves
             await InventoryRepository.deductStock(item.sku, item.warehouse_id, item.quantity, tx);
@@ -806,31 +852,167 @@ class OrderService {
    */
   async cancelOrder(id, organizationId = undefined) {
     return withTransaction(async (tx) => {
-      // Get order items
-      const items = await OrderRepository.findOrderItems(id, tx);
+      const order = await OrderRepository.findById(id, tx);
+      assertExists(order, 'Order');
 
-      // Release inventory for each item
-      for (const item of items) {
-        if (item.warehouse_id && item.sku) {
-          await InventoryRepository.releaseStock(
-            item.sku,
-            item.warehouse_id,
-            item.quantity,
-            tx
-          );
+      if (organizationId !== undefined && order.organization_id !== organizationId) {
+        throw new NotFoundError('Order');
+      }
+
+      if (order.status === 'cancelled') {
+        throw new BusinessLogicError('Order is already cancelled');
+      }
+      if (order.status === 'delivered') {
+        throw new BusinessLogicError('Delivered orders cannot be cancelled. Initiate a return instead.');
+      }
+      if (order.status === 'returned') {
+        throw new BusinessLogicError('Order is already returned');
+      }
+
+      const items = await OrderRepository.findOrderItems(id, tx);
+      const shipments = await ShipmentRepository.findByOrderId(id, undefined, tx);
+      const latestShipment = shipments[0] || null;
+
+      let reverseShipment = null;
+      let returnShippingCost = null;
+
+      if (IN_TRANSIT_CANCEL_STATUSES.has(order.status) && latestShipment) {
+        const shipmentDestination = parseJsonValue(latestShipment.destination_address, {});
+        const shipmentOrigin = parseJsonValue(latestShipment.origin_address, {});
+        const currentLocation = parseJsonValue(latestShipment.current_location, shipmentDestination);
+        const reverseDestination = shipmentOrigin;
+        const { estimatedCost, distanceKm } = estimateReverseShippingCost(currentLocation, reverseDestination);
+
+        returnShippingCost = { amount: estimatedCost, currency: order.currency || 'INR', distanceKm };
+        const eta = new Date();
+        eta.setDate(eta.getDate() + 2);
+
+        reverseShipment = await ShipmentRepository.createReverseShipment(
+          {
+            trackingNumber: `RTN-${Date.now().toString(36).toUpperCase()}-${String(id).slice(0, 6).toUpperCase()}`,
+            orderId: id,
+            carrierId: latestShipment.carrier_id || null,
+            organizationId: order.organization_id || null,
+            originAddress: currentLocation,
+            destinationAddress: reverseDestination,
+            currentLocation,
+            shippingCost: estimatedCost,
+            deliveryScheduled: eta,
+            notes: `Reverse shipment created from current transit location for cancellation of ${order.order_number}`,
+          },
+          tx
+        );
+
+        await ShipmentRepository.addTrackingEvent(
+          {
+            shipment_id: reverseShipment.id,
+            event_type: 'reverse_shipment_created',
+            location: currentLocation,
+            description: `Return-to-origin started. Estimated reverse logistics cost: ${estimatedCost} ${order.currency || 'INR'}`,
+          },
+          tx
+        );
+
+        await ShipmentRepository.updateStatus(latestShipment.id, 'returned', undefined, currentLocation, tx);
+      } else {
+        for (const item of items) {
+          if (!item.warehouse_id || !item.sku) continue;
+          await InventoryRepository.releaseStock(item.sku, item.warehouse_id, item.quantity, tx);
         }
       }
 
-      // Update order status — pass undefined as organizationId then tx as client
-      const order = await OrderRepository.updateStatus(id, 'cancelled', organizationId, tx);
+      const cancelledOrder = await OrderRepository.updateStatus(id, 'cancelled', organizationId, tx);
 
       logEvent('OrderCancelled', {
+        orderId: cancelledOrder.id,
+        orderNumber: cancelledOrder.order_number,
+        itemCount: items.length,
+        reverseShipmentId: reverseShipment?.id || null,
+        reverseShipmentCost: returnShippingCost?.amount || null,
+      });
+
+      return {
+        ...cancelledOrder,
+        reverse_shipment: reverseShipment,
+        return_shipping_cost: returnShippingCost,
+      };
+    });
+  }
+
+  async initiateReturnForDeliveredOrder(orderId, payload = {}, organizationId = undefined) {
+    return withTransaction(async (tx) => {
+      const order = await OrderRepository.findOrderWithItems(orderId, organizationId, tx);
+      assertExists(order, 'Order');
+
+      if (order.status !== 'delivered') {
+        throw new BusinessLogicError('Only delivered orders can start a return flow from orders API');
+      }
+
+      const existingReturns = await ReturnRepository.findByOrderId(orderId, organizationId, tx);
+      const openReturn = existingReturns.find(r => !['rejected', 'cancelled', 'completed', 'refunded', 'restocked'].includes(r.status));
+      if (openReturn) {
+        throw new BusinessLogicError(`Order already has an active return (${openReturn.rma_number})`);
+      }
+
+      const orderItems = Array.isArray(order.items) ? order.items : [];
+      const requestedItems = Array.isArray(payload.items) && payload.items.length > 0
+        ? payload.items
+        : orderItems.map(item => ({
+            product_id: item.product_id,
+            sku: item.sku,
+            product_name: item.product_name,
+            quantity: item.quantity,
+          }));
+
+      const validatedItems = requestedItems.map((item) => {
+        const match = orderItems.find(oi =>
+          (item.product_id && oi.product_id === item.product_id) ||
+          (item.sku && oi.sku === item.sku)
+        );
+
+        if (!match) {
+          throw new BusinessLogicError(`Return item not part of order: ${item.sku || item.product_id}`);
+        }
+
+        const qty = Number(item.quantity || 0);
+        if (!Number.isFinite(qty) || qty <= 0 || qty > Number(match.quantity)) {
+          throw new BusinessLogicError(`Invalid return quantity for ${match.sku}. Allowed max: ${match.quantity}`);
+        }
+
+        return {
+          product_id: match.product_id,
+          sku: match.sku,
+          product_name: match.product_name,
+          quantity: qty,
+          condition: item.condition || null,
+          reason: payload.reason || 'customer_return',
+        };
+      });
+
+      const rmaNumber = `RMA-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const createdReturn = await ReturnRepository.createReturnWithItems(
+        {
+          rma_number: rmaNumber,
+          order_id: orderId,
+          reason: payload.reason || 'customer_return',
+          reason_detail: payload.reason_details || null,
+          customer_email: payload.customer_email || order.customer_email || null,
+          refund_amount: payload.refund_amount ?? null,
+          organization_id: order.organization_id || null,
+        },
+        validatedItems,
+        tx
+      );
+
+      logEvent('OrderReturnInitiated', {
         orderId: order.id,
         orderNumber: order.order_number,
-        itemCount: items.length,
+        returnId: createdReturn.id,
+        rmaNumber,
+        itemCount: validatedItems.length,
       });
-      
-      return order;
+
+      return createdReturn;
     });
   }
 }

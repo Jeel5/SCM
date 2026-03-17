@@ -16,13 +16,13 @@
  */
 import { Worker } from 'bullmq';
 import { createRedisConnection } from '../config/redis.js';
-import { QUEUE_NAME } from '../queues/index.js';
+import { QUEUE_NAMES } from '../queues/index.js';
 import { jobHandlers } from './jobHandlers.js';
 import { jobsService } from '../services/jobsService.js';
 import jobsRepo from '../repositories/JobsRepository.js';
 import logger from '../utils/logger.js';
 
-let worker = null;
+let workers = [];
 
 /**
  * Process a single BullMQ job.
@@ -79,64 +79,83 @@ async function processJob(bullJob) {
 
 export const jobWorker = {
   async start() {
-    if (worker) {
+    if (workers.length > 0) {
       logger.warn('BullMQ Worker is already running');
       return;
     }
 
-    worker = new Worker(QUEUE_NAME, processJob, {
-      connection: createRedisConnection(),
-      concurrency: parseInt(process.env.JOB_CONCURRENCY) || 5,
-      stalledInterval: 30_000,
-    });
+    const configs = [
+      {
+        queueName: QUEUE_NAMES.operations,
+        concurrency: parseInt(process.env.JOB_CONCURRENCY || '5', 10),
+      },
+      {
+        queueName: QUEUE_NAMES.imports,
+        concurrency: parseInt(process.env.IMPORT_JOB_CONCURRENCY || '1', 10),
+      },
+      {
+        queueName: QUEUE_NAMES.notifications,
+        concurrency: parseInt(process.env.NOTIFICATION_JOB_CONCURRENCY || '4', 10),
+      },
+    ];
 
-    worker.on('completed', (job) => {
-      logger.info(`✅ BullMQ job complete: ${job.data.jobType}`, {
-        bullId: job.id,
-        attempts: job.attemptsMade,
+    for (const cfg of configs) {
+      const worker = new Worker(cfg.queueName, processJob, {
+        connection: createRedisConnection(),
+        concurrency: cfg.concurrency,
+        stalledInterval: 30_000,
       });
-    });
 
-    worker.on('failed', async (job, err) => {
-      if (!job) return;
-      const { jobId: dbId, jobType, isCron } = job.data;
-      logger.error(`❌ BullMQ job failed: ${jobType}`, {
-        bullId: job.id,
-        dbId,
-        attempts: job.attemptsMade,
-        error: err.message,
+      worker.on('completed', (job) => {
+        logger.info(`✅ BullMQ job complete: ${job.data.jobType}`, {
+          queue: cfg.queueName,
+          bullId: job.id,
+          attempts: job.attemptsMade,
+        });
       });
 
-      // Move to DLQ only after final attempt, only for DB-tracked regular jobs
-      if (job.attemptsMade >= (job.opts?.attempts ?? 1) && dbId && !isCron) {
-        try {
-          await jobsService.moveToDeadLetterQueue(dbId, err.message);
-          logger.info(`📮 Job ${dbId} moved to dead letter queue`);
-        } catch (dlqErr) {
-          logger.error(`Failed to move job ${dbId} to DLQ:`, dlqErr.message);
+      worker.on('failed', async (job, err) => {
+        if (!job) return;
+        const { jobId: dbId, jobType, isCron } = job.data;
+        logger.error(`❌ BullMQ job failed: ${jobType}`, {
+          queue: cfg.queueName,
+          bullId: job.id,
+          dbId,
+          attempts: job.attemptsMade,
+          error: err.message,
+        });
+
+        // Move to DLQ only after final attempt, only for DB-tracked regular jobs
+        if (job.attemptsMade >= (job.opts?.attempts ?? 1) && dbId && !isCron) {
+          try {
+            await jobsService.moveToDeadLetterQueue(dbId, err.message);
+            logger.info(`📮 Job ${dbId} moved to dead letter queue`);
+          } catch (dlqErr) {
+            logger.error(`Failed to move job ${dbId} to DLQ:`, dlqErr.message);
+          }
         }
-      }
-    });
+      });
 
-    worker.on('stalled', (jobId) => logger.warn(`⚠️  Job stalled: ${jobId}`));
-    worker.on('error', (err) => logger.error(`Worker error: ${err.message}`));
+      worker.on('stalled', (jobId) => logger.warn(`⚠️  Job stalled (${cfg.queueName}): ${jobId}`));
+      worker.on('error', (err) => logger.error(`Worker error (${cfg.queueName}): ${err.message}`));
+      workers.push(worker);
+    }
 
-    logger.info('🚀 BullMQ Worker started', {
-      queue: QUEUE_NAME,
-      concurrency: parseInt(process.env.JOB_CONCURRENCY) || 5,
+    logger.info('🚀 BullMQ Workers started', {
+      queues: configs.map((c) => ({ queue: c.queueName, concurrency: c.concurrency })),
     });
   },
 
   async stop() {
-    if (worker) {
-      await worker.close();
-      worker = null;
+    if (workers.length > 0) {
+      await Promise.all(workers.map((w) => w.close()));
+      workers = [];
       logger.info('✅ BullMQ Worker stopped');
     }
   },
 
   getStatus() {
-    return { isRunning: !!worker, engine: 'bullmq' };
+    return { isRunning: workers.length > 0, engine: 'bullmq', workerCount: workers.length };
   },
 };
 
