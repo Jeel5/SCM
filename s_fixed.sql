@@ -99,7 +99,481 @@ CREATE SEQUENCE public.zone_distances_id_seq
 
 -- DROP TABLE public.analytics_daily_carrier_stats;
 
-CREATE TABLE public.analytics_daily_carrier_stats (
+-- DROP FUNCTION public.armor(bytea);
+
+CREATE OR REPLACE FUNCTION public.armor(bytea)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_armor$function$
+;
+
+-- DROP FUNCTION public.armor(bytea, _text, _text);
+
+CREATE OR REPLACE FUNCTION public.armor(bytea, text[], text[])
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_armor$function$
+;
+
+-- DROP FUNCTION public.calculate_product_volumetric_weight();
+
+CREATE OR REPLACE FUNCTION public.calculate_product_volumetric_weight()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- Calculate volumetric weight: (L × W × H) / 5000 (industry standard)
+  -- Dimensions are in cm, weight in kg
+  IF NEW.dimensions IS NOT NULL AND 
+     (NEW.dimensions->>'length')::numeric > 0 AND 
+     (NEW.dimensions->>'width')::numeric > 0 AND 
+     (NEW.dimensions->>'height')::numeric > 0 THEN
+    
+    NEW.volumetric_weight := (
+      (NEW.dimensions->>'length')::numeric * 
+      (NEW.dimensions->>'width')::numeric * 
+      (NEW.dimensions->>'height')::numeric
+    ) / 5000.0;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.calculate_volumetric_weight();
+
+CREATE OR REPLACE FUNCTION public.calculate_volumetric_weight()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- Calculate volumetric weight: (L × W × H) / 5000 (industry standard)
+  -- Dimensions are in cm, weight in kg
+  IF NEW.dimensions IS NOT NULL AND 
+     (NEW.dimensions->>'length')::numeric > 0 AND 
+     (NEW.dimensions->>'width')::numeric > 0 AND 
+     (NEW.dimensions->>'height')::numeric > 0 THEN
+    
+    NEW.volumetric_weight := (
+      (NEW.dimensions->>'length')::numeric * 
+      (NEW.dimensions->>'width')::numeric * 
+      (NEW.dimensions->>'height')::numeric
+    ) / 5000.0;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.crypt(text, text);
+
+CREATE OR REPLACE FUNCTION public.crypt(text, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_crypt$function$
+;
+
+-- DROP FUNCTION public.dearmor(text);
+
+CREATE OR REPLACE FUNCTION public.dearmor(text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_dearmor$function$
+;
+
+-- DROP FUNCTION public.decrypt(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.decrypt(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_decrypt$function$
+;
+
+-- DROP FUNCTION public.decrypt_iv(bytea, bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.decrypt_iv(bytea, bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_decrypt_iv$function$
+;
+
+-- DROP FUNCTION public.digest(text, text);
+
+CREATE OR REPLACE FUNCTION public.digest(text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_digest$function$
+;
+
+-- DROP FUNCTION public.digest(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.digest(bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_digest$function$
+;
+
+-- DROP FUNCTION public.encrypt(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.encrypt(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_encrypt$function$
+;
+
+-- DROP FUNCTION public.encrypt_iv(bytea, bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.encrypt_iv(bytea, bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_encrypt_iv$function$
+;
+
+-- DROP FUNCTION public.fips_mode();
+
+CREATE OR REPLACE FUNCTION public.fips_mode()
+ RETURNS boolean
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_check_fipsmode$function$
+;
+
+-- DROP FUNCTION public.gen_random_bytes(int4);
+
+CREATE OR REPLACE FUNCTION public.gen_random_bytes(integer)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_random_bytes$function$
+;
+
+-- DROP FUNCTION public.gen_random_uuid();
+
+CREATE OR REPLACE FUNCTION public.gen_random_uuid()
+ RETURNS uuid
+ LANGUAGE c
+ PARALLEL SAFE
+AS '$libdir/pgcrypto', $function$pg_random_uuid$function$
+;
+
+-- DROP FUNCTION public.gen_salt(text);
+
+CREATE OR REPLACE FUNCTION public.gen_salt(text)
+ RETURNS text
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_gen_salt$function$
+;
+
+-- DROP FUNCTION public.gen_salt(text, int4);
+
+CREATE OR REPLACE FUNCTION public.gen_salt(text, integer)
+ RETURNS text
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_gen_salt_rounds$function$
+;
+
+-- DROP FUNCTION public.generate_exception_ticket();
+
+CREATE OR REPLACE FUNCTION public.generate_exception_ticket()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF NEW.ticket_number IS NULL THEN
+        NEW.ticket_number := 'EX-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' ||
+                             LPAD(nextval('public.exception_ticket_seq')::text, 4, '0');
+    END IF;
+    RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.generate_restock_number();
+
+CREATE OR REPLACE FUNCTION public.generate_restock_number()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF NEW.restock_number IS NULL THEN
+        NEW.restock_number := 'RST-' || TO_CHAR(NOW(), 'YY') || '-' ||
+                              LPAD(nextval('public.restock_order_number_seq')::text, 5, '0');
+    END IF;
+    RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.generate_webhook_credentials();
+
+CREATE OR REPLACE FUNCTION public.generate_webhook_credentials()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.webhook_secret IS NULL THEN
+    NEW.webhook_secret := 'whsec_' || LOWER(NEW.code) || '_' || MD5(RANDOM()::TEXT);
+  END IF;
+  IF NEW.our_client_id IS NULL THEN
+    NEW.our_client_id := 'scm_client_' || NEW.id::TEXT;
+  END IF;
+  IF NEW.our_client_secret IS NULL THEN
+    NEW.our_client_secret := 'scm_secret_' || MD5(RANDOM()::TEXT);
+  END IF;
+  IF NEW.webhook_events IS NULL THEN
+    NEW.webhook_events := ARRAY['shipment.pickup', 'shipment.in_transit', 'shipment.delivered', 'shipment.exception'];
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.hmac(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.hmac(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_hmac$function$
+;
+
+-- DROP FUNCTION public.hmac(text, text, text);
+
+CREATE OR REPLACE FUNCTION public.hmac(text, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_hmac$function$
+;
+
+-- DROP FUNCTION public.pgp_armor_headers(in text, out text, out text);
+
+CREATE OR REPLACE FUNCTION public.pgp_armor_headers(text, OUT key text, OUT value text)
+ RETURNS SETOF record
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_armor_headers$function$
+;
+
+-- DROP FUNCTION public.pgp_key_id(bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_key_id(bytea)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_key_id_w$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.sync_inventory_product_info();
+
+CREATE OR REPLACE FUNCTION public.sync_inventory_product_info()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_sku  VARCHAR(100);
+  v_name VARCHAR(255);
+BEGIN
+  IF NEW.product_id IS NOT NULL THEN
+    SELECT sku, name INTO v_sku, v_name
+    FROM products WHERE id = NEW.product_id LIMIT 1;
+
+    NEW.sku          := COALESCE(NEW.sku, v_sku);
+    NEW.product_name := COALESCE(NEW.product_name, v_name);
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.update_updated_at_column();
+
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+    BEGIN
+        NEW.updated_at = CURRENT_TIMESTAMP;
+        RETURN NEW;
+    END;
+    $function$
+;CREATE TABLE public.analytics_daily_carrier_stats (
 	organization_id uuid NOT NULL,
 	stat_date date NOT NULL,
 	carrier_id uuid NOT NULL,
@@ -2435,478 +2909,3 @@ COMMENT ON VIEW public.v_order_items_shipping_details IS 'Complete shipping deta
 
 
 
--- DROP FUNCTION public.armor(bytea);
-
-CREATE OR REPLACE FUNCTION public.armor(bytea)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_armor$function$
-;
-
--- DROP FUNCTION public.armor(bytea, _text, _text);
-
-CREATE OR REPLACE FUNCTION public.armor(bytea, text[], text[])
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_armor$function$
-;
-
--- DROP FUNCTION public.calculate_product_volumetric_weight();
-
-CREATE OR REPLACE FUNCTION public.calculate_product_volumetric_weight()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  -- Calculate volumetric weight: (L × W × H) / 5000 (industry standard)
-  -- Dimensions are in cm, weight in kg
-  IF NEW.dimensions IS NOT NULL AND 
-     (NEW.dimensions->>'length')::numeric > 0 AND 
-     (NEW.dimensions->>'width')::numeric > 0 AND 
-     (NEW.dimensions->>'height')::numeric > 0 THEN
-    
-    NEW.volumetric_weight := (
-      (NEW.dimensions->>'length')::numeric * 
-      (NEW.dimensions->>'width')::numeric * 
-      (NEW.dimensions->>'height')::numeric
-    ) / 5000.0;
-  END IF;
-  
-  RETURN NEW;
-END;
-$function$
-;
-
--- DROP FUNCTION public.calculate_volumetric_weight();
-
-CREATE OR REPLACE FUNCTION public.calculate_volumetric_weight()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  -- Calculate volumetric weight: (L × W × H) / 5000 (industry standard)
-  -- Dimensions are in cm, weight in kg
-  IF NEW.dimensions IS NOT NULL AND 
-     (NEW.dimensions->>'length')::numeric > 0 AND 
-     (NEW.dimensions->>'width')::numeric > 0 AND 
-     (NEW.dimensions->>'height')::numeric > 0 THEN
-    
-    NEW.volumetric_weight := (
-      (NEW.dimensions->>'length')::numeric * 
-      (NEW.dimensions->>'width')::numeric * 
-      (NEW.dimensions->>'height')::numeric
-    ) / 5000.0;
-  END IF;
-  
-  RETURN NEW;
-END;
-$function$
-;
-
--- DROP FUNCTION public.crypt(text, text);
-
-CREATE OR REPLACE FUNCTION public.crypt(text, text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_crypt$function$
-;
-
--- DROP FUNCTION public.dearmor(text);
-
-CREATE OR REPLACE FUNCTION public.dearmor(text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_dearmor$function$
-;
-
--- DROP FUNCTION public.decrypt(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.decrypt(bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_decrypt$function$
-;
-
--- DROP FUNCTION public.decrypt_iv(bytea, bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.decrypt_iv(bytea, bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_decrypt_iv$function$
-;
-
--- DROP FUNCTION public.digest(text, text);
-
-CREATE OR REPLACE FUNCTION public.digest(text, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_digest$function$
-;
-
--- DROP FUNCTION public.digest(bytea, text);
-
-CREATE OR REPLACE FUNCTION public.digest(bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_digest$function$
-;
-
--- DROP FUNCTION public.encrypt(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.encrypt(bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_encrypt$function$
-;
-
--- DROP FUNCTION public.encrypt_iv(bytea, bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.encrypt_iv(bytea, bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_encrypt_iv$function$
-;
-
--- DROP FUNCTION public.fips_mode();
-
-CREATE OR REPLACE FUNCTION public.fips_mode()
- RETURNS boolean
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_check_fipsmode$function$
-;
-
--- DROP FUNCTION public.gen_random_bytes(int4);
-
-CREATE OR REPLACE FUNCTION public.gen_random_bytes(integer)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_random_bytes$function$
-;
-
--- DROP FUNCTION public.gen_random_uuid();
-
-CREATE OR REPLACE FUNCTION public.gen_random_uuid()
- RETURNS uuid
- LANGUAGE c
- PARALLEL SAFE
-AS '$libdir/pgcrypto', $function$pg_random_uuid$function$
-;
-
--- DROP FUNCTION public.gen_salt(text);
-
-CREATE OR REPLACE FUNCTION public.gen_salt(text)
- RETURNS text
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_gen_salt$function$
-;
-
--- DROP FUNCTION public.gen_salt(text, int4);
-
-CREATE OR REPLACE FUNCTION public.gen_salt(text, integer)
- RETURNS text
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_gen_salt_rounds$function$
-;
-
--- DROP FUNCTION public.generate_exception_ticket();
-
-CREATE OR REPLACE FUNCTION public.generate_exception_ticket()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-    IF NEW.ticket_number IS NULL THEN
-        NEW.ticket_number := 'EX-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' ||
-                             LPAD(nextval('public.exception_ticket_seq')::text, 4, '0');
-    END IF;
-    RETURN NEW;
-END;
-$function$
-;
-
--- DROP FUNCTION public.generate_restock_number();
-
-CREATE OR REPLACE FUNCTION public.generate_restock_number()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-    IF NEW.restock_number IS NULL THEN
-        NEW.restock_number := 'RST-' || TO_CHAR(NOW(), 'YY') || '-' ||
-                              LPAD(nextval('public.restock_order_number_seq')::text, 5, '0');
-    END IF;
-    RETURN NEW;
-END;
-$function$
-;
-
--- DROP FUNCTION public.generate_webhook_credentials();
-
-CREATE OR REPLACE FUNCTION public.generate_webhook_credentials()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NEW.webhook_secret IS NULL THEN
-    NEW.webhook_secret := 'whsec_' || LOWER(NEW.code) || '_' || MD5(RANDOM()::TEXT);
-  END IF;
-  IF NEW.our_client_id IS NULL THEN
-    NEW.our_client_id := 'scm_client_' || NEW.id::TEXT;
-  END IF;
-  IF NEW.our_client_secret IS NULL THEN
-    NEW.our_client_secret := 'scm_secret_' || MD5(RANDOM()::TEXT);
-  END IF;
-  IF NEW.webhook_events IS NULL THEN
-    NEW.webhook_events := ARRAY['shipment.pickup', 'shipment.in_transit', 'shipment.delivered', 'shipment.exception'];
-  END IF;
-  RETURN NEW;
-END;
-$function$
-;
-
--- DROP FUNCTION public.hmac(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.hmac(bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_hmac$function$
-;
-
--- DROP FUNCTION public.hmac(text, text, text);
-
-CREATE OR REPLACE FUNCTION public.hmac(text, text, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_hmac$function$
-;
-
--- DROP FUNCTION public.pgp_armor_headers(in text, out text, out text);
-
-CREATE OR REPLACE FUNCTION public.pgp_armor_headers(text, OUT key text, OUT value text)
- RETURNS SETOF record
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_armor_headers$function$
-;
-
--- DROP FUNCTION public.pgp_key_id(bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_key_id(bytea)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_key_id_w$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_sym_encrypt(text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
-;
-
--- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
-;
-
--- DROP FUNCTION public.sync_inventory_product_info();
-
-CREATE OR REPLACE FUNCTION public.sync_inventory_product_info()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_sku  VARCHAR(100);
-  v_name VARCHAR(255);
-BEGIN
-  IF NEW.product_id IS NOT NULL THEN
-    SELECT sku, name INTO v_sku, v_name
-    FROM products WHERE id = NEW.product_id LIMIT 1;
-
-    NEW.sku          := COALESCE(NEW.sku, v_sku);
-    NEW.product_name := COALESCE(NEW.product_name, v_name);
-  END IF;
-  RETURN NEW;
-END;
-$function$
-;
-
--- DROP FUNCTION public.update_updated_at_column();
-
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-    BEGIN
-        NEW.updated_at = CURRENT_TIMESTAMP;
-        RETURN NEW;
-    END;
-    $function$
-;

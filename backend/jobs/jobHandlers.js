@@ -18,6 +18,7 @@ import slaRepo from '../repositories/SlaRepository.js';
 import financeRepo from '../repositories/FinanceRepository.js';
 import warehouseRepo from '../repositories/WarehouseRepository.js';
 import shipmentRepo from '../repositories/ShipmentRepository.js';
+import { generateInternalBarcode } from '../utils/barcodeGenerator.js';
 import { emitToOrg } from '../sockets/emitter.js';
 
 /**
@@ -132,6 +133,12 @@ function parseJsonObject(value) {
   } catch {
     return null;
   }
+}
+
+function normalizeLookupKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 }
 
 function normalizeShipmentStatus(rawStatus) {
@@ -371,22 +378,38 @@ async function handleImportProducts(payload) {
     processRow: async (row) => {
       const { v4: uuidv4 } = await import('uuid');
       const sku = row.sku || `SKU-${uuidv4().substring(0, 8).toUpperCase()}`;
-      await pool.query(
-        `INSERT INTO products
-           (organization_id, name, sku, category, description, weight,
-            selling_price, cost_price, currency, is_active, brand)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-         ON CONFLICT (organization_id, sku) DO UPDATE SET
-           name = EXCLUDED.name, updated_at = NOW()`,
-        [organizationId, row.name, sku, row.category || null,
-         row.description || null,
-         row.weight       ? parseFloat(row.weight)       : null,
-         row.selling_price ? parseFloat(row.selling_price) : null,
-         row.cost_price    ? parseFloat(row.cost_price)    : null,
-         row.currency || 'INR',
-         String(row.is_active || 'true').toLowerCase() !== 'false',
-         row.brand || null]
-      );
+      let internalBarcode = String(row.internal_barcode || '').trim() || generateInternalBarcode();
+
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await pool.query(
+            `INSERT INTO products
+               (organization_id, name, sku, category, description, weight,
+                selling_price, cost_price, currency, is_active, brand, internal_barcode)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             ON CONFLICT (organization_id, sku) DO UPDATE SET
+               name = EXCLUDED.name, updated_at = NOW()`,
+            [organizationId, row.name, sku, row.category || null,
+             row.description || null,
+             row.weight       ? parseFloat(row.weight)       : null,
+             row.selling_price ? parseFloat(row.selling_price) : null,
+             row.cost_price    ? parseFloat(row.cost_price)    : null,
+             row.currency || 'INR',
+             String(row.is_active || 'true').toLowerCase() !== 'false',
+             row.brand || null,
+             internalBarcode]
+          );
+          return;
+        } catch (error) {
+          if (error?.code === '23505' && error?.constraint === 'products_internal_barcode_unique' && !row.internal_barcode) {
+            internalBarcode = generateInternalBarcode();
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      throw new Error('Could not generate unique internal_barcode after 5 attempts');
     },
   });
 }
@@ -434,7 +457,7 @@ async function handleImportInventory(payload) {
            (organization_id, warehouse_id, product_id, sku, product_name,
             quantity, available_quantity, reserved_quantity, reorder_point, unit_cost)
          VALUES ($1,$2,$3,$4,$5,$6,$6,0,$7,$8)
-         ON CONFLICT (organization_id, warehouse_id, sku) DO UPDATE SET
+        ON CONFLICT (warehouse_id, sku) WHERE sku IS NOT NULL DO UPDATE SET
            quantity           = EXCLUDED.quantity,
            available_quantity = EXCLUDED.quantity,
            updated_at         = NOW()`,
@@ -471,6 +494,8 @@ async function handleImportShipments(payload) {
   const carriersById = new Map(carriersRes.rows.map((carrier) => [carrier.id, carrier]));
   const carriersByCode = new Map(carriersRes.rows.map((carrier) => [String(carrier.code || '').toLowerCase(), carrier]));
   const carriersByName = new Map(carriersRes.rows.map((carrier) => [String(carrier.name || '').toLowerCase(), carrier]));
+  const carriersByNormCode = new Map(carriersRes.rows.map((carrier) => [normalizeLookupKey(carrier.code), carrier]));
+  const carriersByNormName = new Map(carriersRes.rows.map((carrier) => [normalizeLookupKey(carrier.name), carrier]));
   const warehousesById = new Map(warehousesRes.rows.map((warehouse) => [warehouse.id, warehouse]));
   const warehousesByCode = new Map(warehousesRes.rows.map((warehouse) => [String(warehouse.code || '').toLowerCase(), warehouse]));
   const warehousesByName = new Map(warehousesRes.rows.map((warehouse) => [String(warehouse.name || '').toLowerCase(), warehouse]));
@@ -489,9 +514,62 @@ async function handleImportShipments(payload) {
 
       const carrier = (row.carrier_id && carriersById.get(row.carrier_id))
         || (row.carrier_code && carriersByCode.get(String(row.carrier_code).toLowerCase()))
-        || (row.carrier_name && carriersByName.get(String(row.carrier_name).toLowerCase()));
-      if (!carrier) {
-        throw new Error(`Cannot resolve carrier '${row.carrier_code || row.carrier_name || row.carrier_id || 'unknown'}'`);
+        || (row.carrier_name && carriersByName.get(String(row.carrier_name).toLowerCase()))
+        || (row.carrier_code && carriersByNormCode.get(normalizeLookupKey(row.carrier_code)))
+        || (row.carrier_name && carriersByNormName.get(normalizeLookupKey(row.carrier_name)));
+
+      let resolvedCarrier = carrier;
+      if (!resolvedCarrier) {
+        const carrierLabel = String(row.carrier_name || row.carrier_code || '').trim();
+        if (!carrierLabel) {
+          throw new Error(`Cannot resolve carrier '${row.carrier_code || row.carrier_name || row.carrier_id || 'unknown'}'`);
+        }
+
+        const baseCode = String(row.carrier_code || carrierLabel)
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 30) || 'IMP-CARRIER';
+
+        let placeholder = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+          const candidateCode = attempt === 0 ? baseCode : `${baseCode.slice(0, 24)}-${suffix}`;
+
+          const insertRes = await pool.query(
+            `INSERT INTO carriers (organization_id, code, name, service_type, is_active, availability_status)
+             VALUES ($1, $2, $3, 'all', true, 'available')
+             ON CONFLICT (organization_id, code) DO NOTHING
+             RETURNING id, code, name`,
+            [organizationId, candidateCode, carrierLabel]
+          );
+
+          placeholder = insertRes.rows[0];
+          if (!placeholder) {
+            const existingRes = await pool.query(
+              `SELECT id, code, name
+               FROM carriers
+               WHERE organization_id = $1 AND code = $2
+               LIMIT 1`,
+              [organizationId, candidateCode]
+            );
+            placeholder = existingRes.rows[0] || null;
+          }
+
+          if (placeholder) break;
+        }
+
+        if (!placeholder) {
+          throw new Error(`Cannot resolve carrier '${carrierLabel}'`);
+        }
+
+        carriersById.set(placeholder.id, placeholder);
+        carriersByCode.set(String(placeholder.code || '').toLowerCase(), placeholder);
+        carriersByName.set(String(placeholder.name || '').toLowerCase(), placeholder);
+        carriersByNormCode.set(normalizeLookupKey(placeholder.code), placeholder);
+        carriersByNormName.set(normalizeLookupKey(placeholder.name), placeholder);
+
+        resolvedCarrier = placeholder;
       }
 
       const warehouse = (row.warehouse_id && UUID_RE.test(row.warehouse_id) && warehousesById.get(row.warehouse_id))
@@ -558,7 +636,7 @@ async function handleImportShipments(payload) {
              RETURNING id`,
             [
               order.id,
-              carrier.id,
+              resolvedCarrier.id,
               warehouse?.id || null,
               carrierTrackingNumber,
               status,
@@ -591,7 +669,7 @@ async function handleImportShipments(payload) {
               trackingNumber,
               carrierTrackingNumber,
               order.id,
-              carrier.id,
+              resolvedCarrier.id,
               warehouse?.id || null,
               status,
               JSON.stringify(originAddress),

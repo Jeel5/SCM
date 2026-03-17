@@ -199,10 +199,10 @@ export function ShipmentsPage() {
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => importRef.current?.click()}>
-            Import CSV
+            Import
           </Button>
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
-            Export CSV
+            Export
           </Button>
         </div>
       </motion.div>
