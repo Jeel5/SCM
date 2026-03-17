@@ -35,11 +35,7 @@ export function ProductsPage() {
   if (categoryFilter) filters.category = categoryFilter;
   if (statusFilter !== '') filters.is_active = statusFilter;
 
-  const { products, totalItems, isLoading, refetch } = useProducts(page, PAGE_SIZE, filters);
-
-  const activeCount = products.filter(p => p.isActive).length;
-  const inactiveCount = products.filter(p => !p.isActive).length;
-  const categoryCount = new Set(products.map(p => p.category).filter(Boolean)).size;
+  const { products, totalItems, stats, isLoading, refetch } = useProducts(page, PAGE_SIZE, filters);
 
   const openAdd = () => { setSelectedProduct(null); setIsAddEditOpen(true); };
   const openEdit = (p: Product) => { setSelectedProduct(p); setIsAddEditOpen(true); setIsDetailsOpen(false); };
@@ -173,21 +169,21 @@ export function ProductsPage() {
     },
   ];
 
-  const stats = [
+  const statCards = [
     {
-      label: 'Total Products', value: totalItems,
+      label: 'Total Products', value: stats.totalProducts,
       icon: Package2, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100 dark:bg-indigo-900/30',
     },
     {
-      label: 'Active', value: activeCount,
+      label: 'Active', value: stats.active,
       icon: CheckCircle, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30',
     },
     {
-      label: 'Inactive', value: inactiveCount,
+      label: 'Inactive', value: stats.inactive,
       icon: XCircle, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30',
     },
     {
-      label: 'Categories', value: categoryCount,
+      label: 'Categories', value: stats.categories,
       icon: Tag, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-900/30',
     },
   ];
@@ -221,7 +217,7 @@ export function ProductsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map((s, i) => (
+        {statCards.map((s, i) => (
           <motion.div
             key={s.label}
             initial={{ opacity: 0, y: 20 }}

@@ -341,6 +341,40 @@ class SlaRepository extends BaseRepository {
   }
 
   /**
+   * Global exception stats (no pagination) for cards/tabs.
+   */
+  async getExceptionStatusStats({ organizationId } = {}) {
+    const params = [];
+    let p = 1;
+    const where = ['1=1'];
+
+    if (organizationId) {
+      params.push(organizationId);
+      where.push(`e.organization_id = $${p++}`);
+    }
+
+    const result = await this.query(
+      `SELECT
+         COUNT(*)::int AS total_exceptions,
+         COUNT(*) FILTER (WHERE e.status = 'open')::int AS open,
+         COUNT(*) FILTER (WHERE e.status = 'in_progress')::int AS in_progress,
+         COUNT(*) FILTER (WHERE e.status = 'resolved')::int AS resolved,
+         COUNT(*) FILTER (WHERE e.severity = 'critical')::int AS critical
+       FROM exceptions e
+       WHERE ${where.join(' AND ')}`,
+      params
+    );
+
+    return result.rows[0] || {
+      total_exceptions: 0,
+      open: 0,
+      in_progress: 0,
+      resolved: 0,
+      critical: 0,
+    };
+  }
+
+  /**
    * Insert a new exception row.
    * Returns the created row.
    */

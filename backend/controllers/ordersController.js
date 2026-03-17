@@ -20,6 +20,7 @@ export const listOrders = asyncHandler(async (req, res) => {
   const cached = await cacheWrap(cacheKey, 30, async () => {
     const result = await orderService.getOrders({ status, search, page: pageNum, limit: limitNum, sortBy, sortOrder, organizationId });
     return {
+      stats: result.stats,
       data: result.orders.map(row => ({
         id: row.id,
         orderNumber: row.order_number,

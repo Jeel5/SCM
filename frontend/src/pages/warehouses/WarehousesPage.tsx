@@ -39,6 +39,45 @@ const MAP_STYLE = {
   ],
 };
 
+const INDIA_BOUNDS = {
+  minLat: 8,
+  maxLat: 35,
+  minLng: 68,
+  maxLng: 97,
+};
+
+function hasValidCoordinates(location: Warehouse['location'] | undefined | null): location is { lat: number; lng: number } {
+  return !!location
+    && Number.isFinite(location.lat)
+    && Number.isFinite(location.lng)
+    && Math.abs(location.lat) <= 90
+    && Math.abs(location.lng) <= 180
+    && (location.lat !== 0 || location.lng !== 0);
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function fallbackCoordinates(warehouse: Warehouse): { lat: number; lng: number } {
+  const key = [warehouse.address?.city, warehouse.address?.state, warehouse.address?.country, warehouse.id]
+    .filter(Boolean)
+    .join('|');
+  const hash = hashString(key || warehouse.id);
+  const latRatio = (hash % 1000) / 1000;
+  const lngRatio = ((Math.floor(hash / 1000)) % 1000) / 1000;
+
+  return {
+    lat: INDIA_BOUNDS.minLat + (INDIA_BOUNDS.maxLat - INDIA_BOUNDS.minLat) * latRatio,
+    lng: INDIA_BOUNDS.minLng + (INDIA_BOUNDS.maxLng - INDIA_BOUNDS.minLng) * lngRatio,
+  };
+}
+
 // Main Warehouses Page
 export function WarehousesPage() {
   const { warehouses, isLoading, refetch } = useWarehouses();
@@ -96,11 +135,16 @@ export function WarehousesPage() {
   const activeWarehouses = warehouses.filter((w) => w.status === 'active').length;
 
   // Calculate map center based on warehouse locations
-  const warehousesWithCoords = warehouses.filter((w) => w.location?.lng && w.location?.lat);
+  const warehousesWithCoords = warehouses.map((warehouse) => ({
+    warehouse,
+    coordinates: hasValidCoordinates(warehouse.location)
+      ? warehouse.location
+      : fallbackCoordinates(warehouse),
+  }));
   const mapCenter = warehousesWithCoords.length > 0
     ? {
-      longitude: warehousesWithCoords.reduce((sum, w) => sum + w.location.lng, 0) / warehousesWithCoords.length,
-      latitude: warehousesWithCoords.reduce((sum, w) => sum + w.location.lat, 0) / warehousesWithCoords.length,
+      longitude: warehousesWithCoords.reduce((sum, item) => sum + item.coordinates.lng, 0) / warehousesWithCoords.length,
+      latitude: warehousesWithCoords.reduce((sum, item) => sum + item.coordinates.lat, 0) / warehousesWithCoords.length,
       zoom: warehousesWithCoords.length === 1 ? 10 : 4,
     }
     : { longitude: 78.9629, latitude: 20.5937, zoom: 4 }; // Default to India if no warehouses
@@ -298,11 +342,11 @@ export function WarehousesPage() {
               mapStyle={MAP_STYLE}
             >
               <NavigationControl position="bottom-right" />
-              {warehousesWithCoords.map((warehouse) => (
+              {warehousesWithCoords.map(({ warehouse, coordinates }) => (
                 <Marker
                   key={warehouse.id}
-                  longitude={warehouse.location.lng}
-                  latitude={warehouse.location.lat}
+                  longitude={coordinates.lng}
+                  latitude={coordinates.lat}
                   anchor="bottom"
                   onClick={(e) => {
                     e.originalEvent.stopPropagation();

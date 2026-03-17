@@ -13,7 +13,7 @@ import { useExceptions } from './hooks/useExceptions';
 export function ExceptionsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const { exceptions, totalExceptions, isLoading, refetch } = useExceptions(page, pageSize);
+  const { exceptions, totalExceptions, stats, isLoading, refetch } = useExceptions(page, pageSize);
 
   // Refetch on real-time exception events
   useSocketEvent('exception:created', refetch);
@@ -34,24 +34,18 @@ export function ExceptionsPage() {
   };
 
   // Calculate stats
-  const criticalCount = exceptions.filter((e) => e.severity === 'critical').length;
-  const openCount = exceptions.filter((e) => e.status === 'open').length;
-  const resolvedCount = exceptions.filter((e) => e.status === 'resolved').length;
-
-  // Count exceptions per status for tab badges
-  const statusCounts = exceptions.reduce<Record<string, number>>((acc, exception) => {
-    acc[exception.status] = (acc[exception.status] || 0) + 1;
-    return acc;
-  }, {});
+  const criticalCount = stats.critical;
+  const openCount = stats.open;
+  const resolvedCount = stats.resolved;
 
   // Filter list by active tab
   const filteredExceptions = exceptions.filter((exception) => activeTab === 'all' || exception.status === activeTab);
 
   const tabs = [
-    { id: 'all', label: 'All Exceptions', count: exceptions.length },
-    { id: 'open', label: 'Open', count: statusCounts.open || 0 },
-    { id: 'in_progress', label: 'In Progress', count: statusCounts.in_progress || 0 },
-    { id: 'resolved', label: 'Resolved', count: statusCounts.resolved || 0 },
+    { id: 'all', label: 'All Exceptions', count: stats.totalExceptions },
+    { id: 'open', label: 'Open', count: stats.open },
+    { id: 'in_progress', label: 'In Progress', count: stats.inProgress },
+    { id: 'resolved', label: 'Resolved', count: stats.resolved },
   ];
 
   const columns = [

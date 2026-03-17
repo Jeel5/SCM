@@ -43,6 +43,36 @@ class ProductRepository extends BaseRepository {
   }
 
   /**
+   * Global product stats (no pagination) for cards.
+   */
+  async getProductStats({ organizationId } = {}, client = null) {
+    const params = [];
+    let p = 1;
+    let query = `
+      SELECT
+        COUNT(*)::int AS total_products,
+        COUNT(*) FILTER (WHERE p.is_active = true)::int AS active_products,
+        COUNT(*) FILTER (WHERE p.is_active = false)::int AS inactive_products,
+        COUNT(DISTINCT p.category)::int AS category_count
+      FROM products p
+      WHERE 1=1
+    `;
+
+    if (organizationId) {
+      query += ` AND (p.organization_id = $${p++} OR p.organization_id IS NULL)`;
+      params.push(organizationId);
+    }
+
+    const result = await this.query(query, params, client);
+    return result.rows[0] || {
+      total_products: 0,
+      active_products: 0,
+      inactive_products: 0,
+      category_count: 0,
+    };
+  }
+
+  /**
    * Find a single product by id, scoped to org.
    */
   async findById(id, organizationId = undefined, client = null) {

@@ -19,6 +19,28 @@ export const SHIPMENT_VALID_TRANSITIONS = {
 
 class ShipmentService {
   /**
+   * Get paginated shipments list for table + global status stats for cards.
+   * Stats are calculated on the full dataset (no pagination).
+   */
+  async getShipmentsWithStats({ page = 1, limit = 20, status = null, carrier_id = null, search = null, organizationId = undefined } = {}, client = null) {
+    const [{ shipments, totalCount }, statsRow] = await Promise.all([
+      shipmentRepo.findShipmentsWithDetails({ page, limit, status, carrier_id, search, organizationId }, client),
+      shipmentRepo.getShipmentStatusStats(organizationId, client),
+    ]);
+
+    return {
+      shipments,
+      totalCount,
+      stats: {
+        totalShipments: parseInt(statsRow.total_shipments || 0),
+        inTransit: parseInt(statsRow.in_transit || 0),
+        outForDelivery: parseInt(statsRow.out_for_delivery || 0),
+        delivered: parseInt(statsRow.delivered || 0),
+      },
+    };
+  }
+
+  /**
    * Transition a shipment to a new status.
    * Validates state machine, updates shipment + shipment_events, and
    * auto-executes inventory transfer for delivered transfer orders.

@@ -1,28 +1,27 @@
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import type { Order, OrderStatus } from '@/types';
 
 interface OrderStatsProps {
-  orders: Order[];
-  totalOrders: number;
+  stats: {
+    totalOrders: number;
+    processing: number;
+    shipped: number;
+    delivered: number;
+    returned: number;
+  };
 }
 
-export function OrderStats({ orders, totalOrders }: OrderStatsProps) {
-  const statusCounts = orders.reduce((acc, order) => {
-    acc[order.status] = (acc[order.status] || 0) + 1;
-    return acc;
-  }, {} as Record<OrderStatus, number>);
-
-  const stats = [
-    { label: 'Total Orders', value: totalOrders, color: 'text-gray-900 dark:text-white' },
-    { label: 'Processing', value: statusCounts['processing'] || 0, color: 'text-yellow-600 dark:text-yellow-400' },
-    { label: 'Shipped', value: statusCounts['shipped'] || 0, color: 'text-purple-600 dark:text-purple-400' },
-    { label: 'Delivered', value: statusCounts['delivered'] || 0, color: 'text-green-600 dark:text-green-400' },
+export function OrderStats({ stats }: OrderStatsProps) {
+  const cards = [
+    { label: 'Total Orders', value: stats.totalOrders, color: 'text-gray-900 dark:text-white' },
+    { label: 'Processing', value: stats.processing, color: 'text-yellow-600 dark:text-yellow-400' },
+    { label: 'Shipped', value: stats.shipped, color: 'text-purple-600 dark:text-purple-400' },
+    { label: 'Delivered', value: stats.delivered, color: 'text-green-600 dark:text-green-400' },
   ];
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {stats.map((stat) => (
+      {cards.map((stat) => (
         <motion.div
           key={stat.label}
           initial={{ opacity: 0, y: 10 }}

@@ -237,6 +237,41 @@ class ReturnRepository extends BaseRepository {
   }
 
   /**
+   * Global return status counts (no pagination) for cards/tabs.
+   */
+  async getReturnStatusStats(organizationId = undefined, client = null) {
+    const params = [];
+    let p = 1;
+    let query = `
+      SELECT
+        COUNT(*)::int AS total_returns,
+        COUNT(*) FILTER (WHERE r.status = 'pending')::int AS pending,
+        COUNT(*) FILTER (WHERE r.status = 'approved')::int AS approved,
+        COUNT(*) FILTER (WHERE r.status = 'rejected')::int AS rejected,
+        COUNT(*) FILTER (WHERE r.status = 'completed')::int AS completed
+      FROM returns r
+      WHERE 1=1
+    `;
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'r');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${p++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
+    return result.rows[0] || {
+      total_returns: 0,
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      completed: 0,
+    };
+  }
+
+  /**
    * Find a single return with order details and enriched item list.
    */
   async findReturnDetails(returnId, organizationId = undefined, client = null) {

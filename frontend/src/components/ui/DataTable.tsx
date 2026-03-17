@@ -105,6 +105,23 @@ export function DataTable<T extends { id: string | number }>({
 
   const totalPages = pagination ? Math.ceil(pagination.total / pagination.pageSize) : 1;
 
+  const getVisiblePages = (currentPage: number, allPages: number, maxButtons = 5): number[] => {
+    if (allPages <= maxButtons) {
+      return Array.from({ length: allPages }, (_, i) => i + 1);
+    }
+
+    const half = Math.floor(maxButtons / 2);
+    let start = Math.max(1, currentPage - half);
+    let end = start + maxButtons - 1;
+
+    if (end > allPages) {
+      end = allPages;
+      start = end - maxButtons + 1;
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  };
+
   return (
     <div className={cn('bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden', className)}>
       {/* Search & Filters */}
@@ -259,18 +276,7 @@ export function DataTable<T extends { id: string | number }>({
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(window.innerWidth < 640 ? 3 : 5, totalPages) }).map((_, i) => {
-                let pageNum: number;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (pagination.page <= 3) {
-                  pageNum = i + 1;
-                } else if (pagination.page >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = pagination.page - 2 + i;
-                }
-                
+              {getVisiblePages(pagination.page, totalPages, 5).map((pageNum) => {
                 return (
                   <motion.button
                     key={pageNum}

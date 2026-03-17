@@ -123,10 +123,12 @@ export function WarehouseCard({
             <Boxes className="h-4 w-4" />
             {formatNumber(warehouse.inventoryCount)} items
           </div>
-          <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-300">
-            <Truck className="h-4 w-4" />
-            {warehouse.zones} zones
-          </div>
+          {warehouse.zones > 0 && (
+            <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-300">
+              <Truck className="h-4 w-4" />
+              {warehouse.zones} zones
+            </div>
+          )}
         </div>
         <Badge
           variant={

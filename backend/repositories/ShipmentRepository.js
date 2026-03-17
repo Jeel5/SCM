@@ -156,6 +156,41 @@ class ShipmentRepository extends BaseRepository {
   }
 
   /**
+   * Get shipment status counts across the full dataset (no pagination).
+   * Used for dashboard/stat cards so counts are not tied to current page rows.
+   */
+  async getShipmentStatusStats(organizationId = undefined, client = null) {
+    const params = [];
+    let paramCount = 1;
+
+    let query = `
+      SELECT
+        COUNT(*)::int AS total_shipments,
+        COUNT(*) FILTER (WHERE s.status = 'in_transit')::int AS in_transit,
+        COUNT(*) FILTER (WHERE s.status = 'out_for_delivery')::int AS out_for_delivery,
+        COUNT(*) FILTER (WHERE s.status = 'delivered')::int AS delivered
+      FROM shipments s
+      WHERE 1=1
+    `;
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 's');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
+    return result.rows[0] || {
+      total_shipments: 0,
+      in_transit: 0,
+      out_for_delivery: 0,
+      delivered: 0,
+    };
+  }
+
+  /**
    * Find a single shipment with carrier, order and warehouse details.
    */
   async findShipmentDetails(id, organizationId = undefined, client = null) {
@@ -351,7 +386,7 @@ class ShipmentRepository extends BaseRepository {
         COUNT(*) FILTER (WHERE status = 'failed') as failed_shipments,
         AVG(EXTRACT(EPOCH FROM (actual_delivery - created_at))/86400) 
           FILTER (WHERE actual_delivery IS NOT NULL) as avg_delivery_days,
-        SUM(cost) as total_shipping_cost
+        SUM(shipping_cost) as total_shipping_cost
       FROM shipments
       WHERE 1=1
     `;

@@ -1,9 +1,9 @@
---remove this: in superadmin add Organization
-Admin temporary password is auto-generated and shown once after creation.
-Organization code is generated automatically by the server.
+- [x] removed this in superadmin add Organization
+	Admin temporary password is auto-generated and shown once after creation.
+	Organization code is generated automatically by the server.
 
---when i am import warehouses from import button then they not showing on map because csv dont have cordinates
+- [x] fixed warehouses imported from CSV without coordinates not showing on map
 
---pagination error(in every page): in card data shows only for one page for example 10
---remove "0 zones" this from warehouse card
---there is problem in products page when i click next in that page then even number pages are showing as still in refreshing
+- [x] fixed pagination issue (shared table pagination behavior across pages)
+- [x] removed "0 zones" from warehouse card
+- [x] fixed products page next-page issue where even pages appeared stuck refreshing

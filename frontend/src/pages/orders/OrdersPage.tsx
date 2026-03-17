@@ -31,7 +31,7 @@ export function OrdersPage() {
   const importRef = useRef<HTMLInputElement | null>(null);
 
   const pageSize = 10;
-  const { orders, totalOrders, isLoading, refetch } = useOrders(page, pageSize);
+  const { orders, totalOrders, stats, isLoading, refetch } = useOrders(page, pageSize);
 
   const handleExport = () => {
     const exportData = filteredOrders.map(order => ({
@@ -100,21 +100,15 @@ export function OrdersPage() {
     refetch();
   });
 
-  // Count orders per status for tab badges
-  const statusCounts = orders.reduce<Record<string, number>>((acc, order) => {
-    acc[order.status] = (acc[order.status] || 0) + 1;
-    return acc;
-  }, {});
-
   // Filter list by active tab
   const filteredOrders = orders.filter((order) => activeTab === 'all' || order.status === activeTab);
 
   const tabs = [
-    { id: 'all', label: 'All Orders', count: orders.length },
-    { id: 'processing', label: 'Processing', count: statusCounts.processing || 0 },
-    { id: 'shipped', label: 'Shipped', count: statusCounts.shipped || 0 },
-    { id: 'delivered', label: 'Delivered', count: statusCounts.delivered || 0 },
-    { id: 'returned', label: 'Returned', count: statusCounts.returned || 0 },
+    { id: 'all', label: 'All Orders', count: stats.totalOrders },
+    { id: 'processing', label: 'Processing', count: stats.processing },
+    { id: 'shipped', label: 'Shipped', count: stats.shipped },
+    { id: 'delivered', label: 'Delivered', count: stats.delivered },
+    { id: 'returned', label: 'Returned', count: stats.returned },
   ];
 
   const columns = [
@@ -219,7 +213,7 @@ export function OrdersPage() {
       </motion.div>
 
       {/* Stats */}
-      <OrderStats orders={orders} totalOrders={totalOrders} />
+      <OrderStats stats={stats} />
 
       {/* Tabs */}
       <Card padding="none">

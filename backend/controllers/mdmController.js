@@ -569,11 +569,18 @@ export const listProducts = asyncHandler(async (req, res) => {
     limit: limitNum,
     offset,
   });
+  const statsRow = await ProductRepository.getProductStats({ organizationId });
 
   const totalCount = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
 
   res.json({
     success: true,
+    stats: {
+      totalProducts: parseInt(statsRow.total_products || 0),
+      active: parseInt(statsRow.active_products || 0),
+      inactive: parseInt(statsRow.inactive_products || 0),
+      categories: parseInt(statsRow.category_count || 0),
+    },
     data: rows,
     pagination: {
       page: parseInt(page),

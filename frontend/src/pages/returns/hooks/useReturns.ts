@@ -8,6 +8,13 @@ import type { Return } from '@/types';
 export function useReturns(page: number, pageSize: number) {
   const [returns, setReturns] = useState<Return[]>([]);
   const [totalReturns, setTotalReturns] = useState(0);
+  const [stats, setStats] = useState({
+    totalReturns: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    completed: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const { useMockApi } = useApiMode();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -29,10 +36,20 @@ export function useReturns(page: number, pageSize: number) {
           : await returnsApi.getReturns(page, pageSize);
         setReturns(response.data);
         setTotalReturns(response.total);
+        const fallback = {
+          totalReturns: response.total,
+          pending: response.data.filter((r) => r.status === 'pending').length,
+          approved: response.data.filter((r) => r.status === 'approved').length,
+          rejected: response.data.filter((r) => r.status === 'rejected').length,
+          completed: response.data.filter((r) => r.status === 'completed').length,
+        };
+        const responseWithStats = response as typeof response & { stats?: typeof fallback };
+        setStats(responseWithStats.stats ?? fallback);
       } catch (error) {
         if (!isSoft) notifyLoadError('returns', error);
         setReturns([]);
         setTotalReturns(0);
+        setStats({ totalReturns: 0, pending: 0, approved: 0, rejected: 0, completed: 0 });
       } finally {
         setIsLoading(false);
       }
@@ -41,5 +58,5 @@ export function useReturns(page: number, pageSize: number) {
     fetchReturns();
   }, [page, pageSize, refreshKey]);
 
-  return { returns, totalReturns, isLoading, refetch };
+  return { returns, totalReturns, stats, isLoading, refetch };
 }

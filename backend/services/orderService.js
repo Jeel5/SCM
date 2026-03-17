@@ -75,18 +75,28 @@ function estimateReverseShippingCost(originAddress, destinationAddress) {
 class OrderService {
   // Get paginated orders with optional filtering
   async getOrders({ page = 1, limit = 20, status, search, sortBy = 'created_at', sortOrder = 'DESC', organizationId = undefined }) {
-    const { orders, totalCount } = await OrderRepository.findOrders({
-      page,
-      limit,
-      status,
-      search,
-      sortBy,
-      sortOrder,
-      organizationId
-    });
+    const [{ orders, totalCount }, statsRow] = await Promise.all([
+      OrderRepository.findOrders({
+        page,
+        limit,
+        status,
+        search,
+        sortBy,
+        sortOrder,
+        organizationId
+      }),
+      OrderRepository.getOrderStatusStats(organizationId),
+    ]);
 
     return {
       orders,
+      stats: {
+        totalOrders: parseInt(statsRow.total_orders || 0),
+        processing: parseInt(statsRow.processing || 0),
+        shipped: parseInt(statsRow.shipped || 0),
+        delivered: parseInt(statsRow.delivered || 0),
+        returned: parseInt(statsRow.returned || 0),
+      },
       pagination: {
         page,
         limit,

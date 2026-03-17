@@ -175,9 +175,17 @@ export const listExceptions = asyncHandler(async (req, res) => {
   const { rows, total } = await slaRepo.findExceptions({
     organizationId, severity, status, page: pageNum, limit: limitNum,
   });
+  const statsRow = await slaRepo.getExceptionStatusStats({ organizationId });
 
   res.json({
     success: true,
+    stats: {
+      totalExceptions: parseInt(statsRow.total_exceptions || 0),
+      open: parseInt(statsRow.open || 0),
+      inProgress: parseInt(statsRow.in_progress || 0),
+      resolved: parseInt(statsRow.resolved || 0),
+      critical: parseInt(statsRow.critical || 0),
+    },
     data: rows.map(e => ({
       id: e.id,
       shipmentId: e.shipment_id,

@@ -303,6 +303,42 @@ class OrderRepository extends BaseRepository {
   }
 
   /**
+   * Global order status counts (no pagination) for UI cards/tabs.
+   */
+  async getOrderStatusStats(organizationId = undefined, client = null) {
+    const params = [];
+    let p = 1;
+
+    let query = `
+      SELECT
+        COUNT(*)::int AS total_orders,
+        COUNT(*) FILTER (WHERE status = 'processing')::int AS processing,
+        COUNT(*) FILTER (WHERE status = 'shipped')::int AS shipped,
+        COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered,
+        COUNT(*) FILTER (WHERE status = 'returned')::int AS returned
+      FROM orders o
+      WHERE 1=1
+    `;
+
+    if (organizationId !== undefined) {
+      const orgFilter = this.buildOrgFilter(organizationId, 'o');
+      if (orgFilter.clause) {
+        query += ` AND ${orgFilter.clause}$${p++}`;
+        params.push(...orgFilter.params);
+      }
+    }
+
+    const result = await this.query(query, params, client);
+    return result.rows[0] || {
+      total_orders: 0,
+      processing: 0,
+      shipped: 0,
+      delivered: 0,
+      returned: 0,
+    };
+  }
+
+  /**
    * Update order status.
    */
   async updateStatus(orderId, status, organizationIdOrClient = undefined, client = null) {

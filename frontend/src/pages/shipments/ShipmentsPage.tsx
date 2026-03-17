@@ -35,7 +35,7 @@ export function ShipmentsPage() {
   const importRef = useRef<HTMLInputElement | null>(null);
 
   const pageSize = 10;
-  const { shipments, totalShipments, isLoading, refetch } = useShipments(page, pageSize);
+  const { shipments, totalShipments, stats, isLoading, refetch } = useShipments(page, pageSize);
 
   const handleExport = () => {
     const exportData = filteredShipments.map(shipment => ({
@@ -111,10 +111,10 @@ export function ShipmentsPage() {
   const filteredShipments = shipments.filter((shipment) => activeTab === 'all' || shipment.status === activeTab);
 
   const tabs = [
-    { id: 'all', label: 'All Shipments', count: shipments.length },
-    { id: 'in_transit', label: 'In Transit', count: statusCounts.in_transit || 0 },
-    { id: 'out_for_delivery', label: 'Out for Delivery', count: statusCounts.out_for_delivery || 0 },
-    { id: 'delivered', label: 'Delivered', count: statusCounts.delivered || 0 },
+    { id: 'all', label: 'All Shipments', count: stats.totalShipments },
+    { id: 'in_transit', label: 'In Transit', count: stats.inTransit },
+    { id: 'out_for_delivery', label: 'Out for Delivery', count: stats.outForDelivery },
+    { id: 'delivered', label: 'Delivered', count: stats.delivered },
     { id: 'failed_delivery', label: 'Failed', count: statusCounts.failed_delivery || 0 },
   ];
 
@@ -210,10 +210,10 @@ export function ShipmentsPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Shipments', value: totalShipments, icon: Package, color: 'bg-blue-100 text-blue-600' },
-          { label: 'In Transit', value: shipments.filter((s) => s.status === 'in_transit').length, icon: Truck, color: 'bg-yellow-100 text-yellow-600' },
-          { label: 'Out for Delivery', value: shipments.filter((s) => s.status === 'out_for_delivery').length, icon: Navigation, color: 'bg-purple-100 text-purple-600' },
-          { label: 'Delivered', value: shipments.filter((s) => s.status === 'delivered').length, icon: CheckCircle2, color: 'bg-green-100 text-green-600' },
+          { label: 'Total Shipments', value: stats.totalShipments, icon: Package, color: 'bg-blue-100 text-blue-600' },
+          { label: 'In Transit', value: stats.inTransit, icon: Truck, color: 'bg-yellow-100 text-yellow-600' },
+          { label: 'Out for Delivery', value: stats.outForDelivery, icon: Navigation, color: 'bg-purple-100 text-purple-600' },
+          { label: 'Delivered', value: stats.delivered, icon: CheckCircle2, color: 'bg-green-100 text-green-600' },
         ].map((stat) => (
           <motion.div
             key={stat.label}

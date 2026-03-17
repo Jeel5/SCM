@@ -19,10 +19,20 @@ export const listReturns = asyncHandler(async (req, res) => {
   // Cache filtered paginated list for 30 seconds
   const cacheKey = `returns:list:${orgSeg(organizationId)}:${hashParams({ page: pageNum, limit: limitNum, status, reason })}`;
   const cached = await cacheWrap(cacheKey, 30, async () => {
-    const { returns, totalCount } = await returnRepo.findReturnsWithDetails({
-      page: pageNum, limit: limitNum, status: status || null, reason: reason || null, organizationId,
-    });
+    const [{ returns, totalCount }, statsRow] = await Promise.all([
+      returnRepo.findReturnsWithDetails({
+        page: pageNum, limit: limitNum, status: status || null, reason: reason || null, organizationId,
+      }),
+      returnRepo.getReturnStatusStats(organizationId),
+    ]);
     return {
+      stats: {
+        totalReturns: parseInt(statsRow.total_returns || 0),
+        pending: parseInt(statsRow.pending || 0),
+        approved: parseInt(statsRow.approved || 0),
+        rejected: parseInt(statsRow.rejected || 0),
+        completed: parseInt(statsRow.completed || 0),
+      },
       data: returns.map(r => ({
         id: r.id,
         rmaNumber: r.rma_number,
@@ -47,6 +57,7 @@ export const listReturns = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
+    stats: cached.stats,
     data: cached.data,
     pagination: { page: pageNum, limit: limitNum, total: cached.totalCount },
   });

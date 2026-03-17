@@ -33,7 +33,7 @@ export function ReturnsPage() {
   const [activeTab, setActiveTab] = useState('all');
 
   const pageSize = 10;
-  const { returns, totalReturns, isLoading, refetch } = useReturns(page, pageSize);
+  const { returns, totalReturns, stats, isLoading, refetch } = useReturns(page, pageSize);
 
   // Refetch on real-time return events
   useSocketEvent('return:created', refetch);
@@ -50,21 +50,15 @@ export function ReturnsPage() {
     }
   };
 
-  // Count returns per status for tab badges
-  const statusCounts = returns.reduce<Record<string, number>>((acc, returnItem) => {
-    acc[returnItem.status] = (acc[returnItem.status] || 0) + 1;
-    return acc;
-  }, {});
-
   // Filter list by active tab
   const filteredReturns = returns.filter((returnItem) => activeTab === 'all' || returnItem.status === activeTab);
 
   const tabs = [
-    { id: 'all', label: 'All Returns', count: returns.length },
-    { id: 'pending', label: 'Pending', count: statusCounts.pending || 0 },
-    { id: 'approved', label: 'Approved', count: statusCounts.approved || 0 },
-    { id: 'rejected', label: 'Rejected', count: statusCounts.rejected || 0 },
-    { id: 'completed', label: 'Completed', count: statusCounts.completed || 0 },
+    { id: 'all', label: 'All Returns', count: stats.totalReturns },
+    { id: 'pending', label: 'Pending', count: stats.pending },
+    { id: 'approved', label: 'Approved', count: stats.approved },
+    { id: 'rejected', label: 'Rejected', count: stats.rejected },
+    { id: 'completed', label: 'Completed', count: stats.completed },
   ];
 
   const columns = [
@@ -172,10 +166,10 @@ export function ReturnsPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Returns', value: totalReturns, icon: RotateCcw, color: 'bg-purple-100 text-purple-600' },
-          { label: 'Pending', value: returns.filter((r) => r.status === 'pending').length, icon: Package, color: 'bg-yellow-100 text-yellow-600' },
-          { label: 'Approved', value: returns.filter((r) => r.status === 'approved').length, icon: CheckCircle2, color: 'bg-green-100 text-green-600' },
-          { label: 'Rejected', value: returns.filter((r) => r.status === 'rejected').length, icon: XCircle, color: 'bg-red-100 text-red-600' },
+          { label: 'Total Returns', value: stats.totalReturns, icon: RotateCcw, color: 'bg-purple-100 text-purple-600' },
+          { label: 'Pending', value: stats.pending, icon: Package, color: 'bg-yellow-100 text-yellow-600' },
+          { label: 'Approved', value: stats.approved, icon: CheckCircle2, color: 'bg-green-100 text-green-600' },
+          { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'bg-red-100 text-red-600' },
         ].map((stat) => (
           <motion.div
             key={stat.label}

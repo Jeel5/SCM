@@ -78,8 +78,27 @@ export const importApi = {
 
 // ==================== ORDERS ====================
 export const ordersApi = {
-  async getOrders(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Order>> {
-    const response = await get<{ success: boolean; data: Order[]; pagination: { page: number; limit: number; total: number } }>(
+  async getOrders(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Order> & {
+    stats: {
+      totalOrders: number;
+      processing: number;
+      shipped: number;
+      delivered: number;
+      returned: number;
+    };
+  }> {
+    const response = await get<{
+      success: boolean;
+      data: Order[];
+      pagination: { page: number; limit: number; total: number };
+      stats?: {
+        totalOrders?: number;
+        processing?: number;
+        shipped?: number;
+        delivered?: number;
+        returned?: number;
+      };
+    }>(
       '/orders',
       { page, limit: pageSize, ...filters }
     );
@@ -89,6 +108,13 @@ export const ordersApi = {
       page: response.pagination.page,
       pageSize: response.pagination.limit,
       totalPages: Math.ceil(response.pagination.total / response.pagination.limit),
+      stats: {
+        totalOrders: response.stats?.totalOrders ?? response.pagination.total,
+        processing: response.stats?.processing ?? 0,
+        shipped: response.stats?.shipped ?? 0,
+        delivered: response.stats?.delivered ?? 0,
+        returned: response.stats?.returned ?? 0,
+      },
     };
   },
 
@@ -130,8 +156,25 @@ export const ordersApi = {
 
 // ==================== SHIPMENTS ====================
 export const shipmentsApi = {
-  async getShipments(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Shipment>> {
-    const response = await get<{ success: boolean; data: Shipment[]; pagination?: { page: number; limit: number; total: number } }>(
+  async getShipments(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Shipment> & {
+    stats: {
+      totalShipments: number;
+      inTransit: number;
+      outForDelivery: number;
+      delivered: number;
+    };
+  }> {
+    const response = await get<{
+      success: boolean;
+      data: Shipment[];
+      pagination?: { page: number; limit: number; total: number };
+      stats?: {
+        totalShipments?: number;
+        inTransit?: number;
+        outForDelivery?: number;
+        delivered?: number;
+      };
+    }>(
       '/shipments',
       { page, limit: pageSize, ...filters }
     );
@@ -141,6 +184,12 @@ export const shipmentsApi = {
       page: response.pagination?.page || 1,
       pageSize: response.pagination?.limit || pageSize,
       totalPages: Math.ceil((response.pagination?.total || 0) / (response.pagination?.limit || pageSize)),
+      stats: {
+        totalShipments: response.stats?.totalShipments ?? (response.pagination?.total || 0),
+        inTransit: response.stats?.inTransit ?? 0,
+        outForDelivery: response.stats?.outForDelivery ?? 0,
+        delivered: response.stats?.delivered ?? 0,
+      },
     };
   },
 
@@ -271,14 +320,37 @@ export const inventoryApi = {
 
 // ==================== PRODUCTS ====================
 export const productsApi = {
-  async getProducts(filters?: Record<string, unknown>): Promise<PaginatedResponse<Product>> {
-    const response = await get<{ success: boolean; data: Record<string, unknown>[]; pagination: { page: number; limit: number; total: number } }>('/products', filters);
+  async getProducts(filters?: Record<string, unknown>): Promise<PaginatedResponse<Product> & {
+    stats: {
+      totalProducts: number;
+      active: number;
+      inactive: number;
+      categories: number;
+    };
+  }> {
+    const response = await get<{
+      success: boolean;
+      data: Record<string, unknown>[];
+      pagination: { page: number; limit: number; total: number };
+      stats?: {
+        totalProducts?: number;
+        active?: number;
+        inactive?: number;
+        categories?: number;
+      };
+    }>('/products', filters);
     return {
       data: response.data.map(mapProduct),
       total: response.pagination?.total ?? response.data.length,
       page: response.pagination?.page ?? 1,
       pageSize: response.pagination?.limit ?? 50,
       totalPages: response.pagination ? Math.ceil(response.pagination.total / response.pagination.limit) : 1,
+      stats: {
+        totalProducts: response.stats?.totalProducts ?? (response.pagination?.total ?? response.data.length),
+        active: response.stats?.active ?? 0,
+        inactive: response.stats?.inactive ?? 0,
+        categories: response.stats?.categories ?? 0,
+      },
     };
   },
 
@@ -539,17 +611,43 @@ export const slaApi = {
 
 // ==================== RETURNS ====================
 export const returnsApi = {
-  async getReturns(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Return>> {
-    const response = await get<{ success: boolean; data: Return[]; pagination: { page: number; limit: number; total: number } }>(
+  async getReturns(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Return> & {
+    stats: {
+      totalReturns: number;
+      pending: number;
+      approved: number;
+      rejected: number;
+      completed: number;
+    };
+  }> {
+    const response = await get<{
+      success: boolean;
+      data: Return[];
+      pagination: { page: number; limit: number; total: number };
+      stats?: {
+        totalReturns?: number;
+        pending?: number;
+        approved?: number;
+        rejected?: number;
+        completed?: number;
+      };
+    }>(
       '/returns',
       { page, limit: pageSize, ...filters }
     );
     return {
       data: response.data,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      pageSize: response.pagination.limit,
-      totalPages: Math.ceil(response.pagination.total / response.pagination.limit),
+      total: response.pagination?.total || response.data.length,
+      page: response.pagination?.page || page,
+      pageSize: response.pagination?.limit || pageSize,
+      totalPages: response.pagination ? Math.ceil(response.pagination.total / response.pagination.limit) : 1,
+      stats: {
+        totalReturns: response.stats?.totalReturns ?? (response.pagination?.total || response.data.length),
+        pending: response.stats?.pending ?? 0,
+        approved: response.stats?.approved ?? 0,
+        rejected: response.stats?.rejected ?? 0,
+        completed: response.stats?.completed ?? 0,
+      },
     };
   },
 
@@ -572,10 +670,6 @@ export const returnsApi = {
 
 // ==================== SETTINGS ====================
 export const settingsApi = {
-  async updateProfile(data: { name?: string; phone?: string; email?: string }): Promise<ApiResponse<User>> {
-    return patch('/settings/profile', data);
-  },
-
   async changePassword(data: { current_password: string; new_password: string }): Promise<ApiResponse<null>> {
     return post('/settings/password', data);
   },
@@ -650,8 +744,27 @@ export const financeApi = {
 
 // ==================== EXCEPTIONS ====================
 export const exceptionsApi = {
-  async getExceptions(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Exception>> {
-    const response = await get<{ success: boolean; data: Exception[]; pagination: { page: number; limit: number; total: number } }>(
+  async getExceptions(page = 1, pageSize = 20, filters?: Record<string, unknown>): Promise<PaginatedResponse<Exception> & {
+    stats: {
+      totalExceptions: number;
+      open: number;
+      inProgress: number;
+      resolved: number;
+      critical: number;
+    };
+  }> {
+    const response = await get<{
+      success: boolean;
+      data: Exception[];
+      pagination: { page: number; limit: number; total: number };
+      stats?: {
+        totalExceptions?: number;
+        open?: number;
+        inProgress?: number;
+        resolved?: number;
+        critical?: number;
+      };
+    }>(
       '/exceptions',
       { page, limit: pageSize, ...filters }
     );
@@ -661,6 +774,13 @@ export const exceptionsApi = {
       page: response.pagination?.page || page,
       pageSize: response.pagination?.limit || pageSize,
       totalPages: response.pagination ? Math.ceil(response.pagination.total / response.pagination.limit) : 1,
+      stats: {
+        totalExceptions: response.stats?.totalExceptions ?? (response.pagination?.total || response.data.length),
+        open: response.stats?.open ?? 0,
+        inProgress: response.stats?.inProgress ?? 0,
+        resolved: response.stats?.resolved ?? 0,
+        critical: response.stats?.critical ?? 0,
+      },
     };
   },
 
@@ -691,6 +811,7 @@ export const dashboardApi = {
     const response = await get<{ success: boolean; data: {
       orders?: { total: number; totalValue: number; pending: number; processing: number; shipped: number; delivered: number; cancelled: number; returned: number; change: number; revenueChange: number };
       shipments?: { inTransit: number; onTimeRate: number; total: number; delivered: number; avgDeliveryDays: number; change: number; onTimeRateChange: number; avgDeliveryChange: number };
+      inventory?: { lowStockAlerts?: number };
       returns?: { pending: number; change: number };
       exceptions?: { active: number; change: number };
       ordersTrend?: Array<{ date: string; count: number; value: number }>;

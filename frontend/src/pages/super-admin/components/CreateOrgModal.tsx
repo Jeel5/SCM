@@ -162,9 +162,7 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
               onChange={(e) => set('subscription_tier', e.target.value)}
               options={SUBSCRIPTION_TIERS}
             />
-            <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-3 text-xs text-blue-700 dark:text-blue-300 self-end">
-              Organization code is generated automatically by the server.
-            </div>
+            <div />
           </div>
         </div>
 
@@ -196,9 +194,7 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
               onChange={(e) => set('admin_email', e.target.value)}
               placeholder="admin@company.in"
             />
-            <div className="rounded-md bg-emerald-50 dark:bg-emerald-900/20 p-3 text-xs text-emerald-700 dark:text-emerald-300 self-end">
-              Admin temporary password is auto-generated and shown once after creation.
-            </div>
+            <div />
           </div>
         </div>
 

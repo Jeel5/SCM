@@ -26,7 +26,7 @@ export const listShipments = asyncHandler(async (req, res) => {
   // Cache paginated + filtered list (including batch-loaded events) for 30 seconds
   const cacheKey = `ship:list:${orgSeg(organizationId)}:${hashParams({ status, carrier_id, search, page: pageNum, limit: limitNum })}`;
   const cached = await cacheWrap(cacheKey, 30, async () => {
-    const { shipments: rows, totalCount } = await shipmentRepo.findShipmentsWithDetails({
+    const { shipments: rows, totalCount, stats } = await shipmentService.getShipmentsWithStats({
       page: pageNum, limit: limitNum, status, carrier_id, search, organizationId,
     });
 
@@ -38,6 +38,7 @@ export const listShipments = asyncHandler(async (req, res) => {
     }, {});
 
     return {
+      stats,
       data: rows.map(row => ({
         id: row.id,
         trackingNumber: row.tracking_number,

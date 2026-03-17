@@ -9,6 +9,13 @@ import type { Order } from '@/types';
 export function useOrders(page: number, pageSize: number) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
+  const [stats, setStats] = useState({
+    totalOrders: 0,
+    processing: 0,
+    shipped: 0,
+    delivered: 0,
+    returned: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
@@ -31,10 +38,20 @@ export function useOrders(page: number, pageSize: number) {
           : await ordersApi.getOrders(page, pageSize);
         setOrders(response.data);
         setTotalOrders(response.total);
+        const fallback = {
+          totalOrders: response.total,
+          processing: response.data.filter((o) => o.status === 'processing').length,
+          shipped: response.data.filter((o) => o.status === 'shipped').length,
+          delivered: response.data.filter((o) => o.status === 'delivered').length,
+          returned: response.data.filter((o) => o.status === 'returned').length,
+        };
+        const responseWithStats = response as typeof response & { stats?: typeof fallback };
+        setStats(responseWithStats.stats ?? fallback);
       } catch (error) {
         if (!isSoft) notifyLoadError('orders', error);
         setOrders([]);
         setTotalOrders(0);
+        setStats({ totalOrders: 0, processing: 0, shipped: 0, delivered: 0, returned: 0 });
       } finally {
         setIsLoading(false);
       }
@@ -47,6 +64,6 @@ export function useOrders(page: number, pageSize: number) {
   useSocketEvent('order:created', refetch);
   useSocketEvent('order:updated', refetch);
 
-  return { orders, totalOrders, isLoading, refetch };
+  return { orders, totalOrders, stats, isLoading, refetch };
 }
 
