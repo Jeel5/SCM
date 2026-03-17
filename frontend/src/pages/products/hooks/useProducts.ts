@@ -4,6 +4,14 @@ import { useApiMode } from '@/hooks';
 import { notifyLoadError } from '@/lib/apiErrors';
 import type { Product } from '@/types';
 
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  if (typeof error === 'object' && error !== null && 'name' in error) {
+    return (error as { name?: string }).name === 'CanceledError';
+  }
+  return false;
+};
+
 export function useProducts(page: number, pageSize: number, filters?: Record<string, unknown>) {
   const [products, setProducts] = useState<Product[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -17,15 +25,14 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
   const isSoftRefresh = useRef(false);
-  const latestRequestRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(() => {
     isSoftRefresh.current = true;
     setRefreshKey((k) => k + 1);
   }, []);
 
-  const fetchProducts = useCallback(async () => {
-    const requestId = ++latestRequestRef.current;
+  const fetchProducts = useCallback(async (signal?: AbortSignal) => {
     const isSoft = isSoftRefresh.current;
     isSoftRefresh.current = false;
     if (useMockApi) {
@@ -38,7 +45,6 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
     if (!isSoft) setIsLoading(true);
     try {
       const res = await productsApi.getProducts({ page, limit: pageSize, ...filters });
-      if (latestRequestRef.current !== requestId) return;
       setProducts(res.data);
       setTotalItems(res.total);
       const fallback = {
@@ -50,21 +56,30 @@ export function useProducts(page: number, pageSize: number, filters?: Record<str
       const responseWithStats = res as typeof res & { stats?: typeof fallback };
       setStats(responseWithStats.stats ?? fallback);
     } catch (error) {
-      if (latestRequestRef.current !== requestId) return;
+      if (isAbortError(error)) return;
       if (!isSoft) notifyLoadError('products', error);
       setProducts([]);
       setTotalItems(0);
       setStats({ totalProducts: 0, active: 0, inactive: 0, categories: 0 });
     } finally {
-      if (latestRequestRef.current === requestId) {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, useMockApi, JSON.stringify(filters)]);
 
   useEffect(() => {
-    fetchProducts();
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    fetchProducts(controller.signal);
+
+    return () => {
+      controller.abort();
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    };
   }, [fetchProducts, refreshKey]);
 
   return { products, totalItems, stats, isLoading, refetch };

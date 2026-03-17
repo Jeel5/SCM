@@ -450,6 +450,7 @@ export type ExceptionStatus =
   | 'open'
   | 'acknowledged'
   | 'investigating'
+  | 'in_progress'
   | 'pending_resolution'
   | 'resolved'
   | 'escalated'

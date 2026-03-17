@@ -5,6 +5,14 @@ import { useApiMode } from '@/hooks';
 import { notifyLoadError } from '@/lib/apiErrors';
 import type { SLAPolicy, SLAViolation, SLADashboardData } from '@/types';
 
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  if (typeof error === 'object' && error !== null && 'name' in error) {
+    return (error as { name?: string }).name === 'CanceledError';
+  }
+  return false;
+};
+
 export function useSLA(page: number, pageSize: number) {
   const [policies, setPolicies] = useState<SLAPolicy[]>([]);
   const [violations, setViolations] = useState<SLAViolation[]>([]);
@@ -16,12 +24,17 @@ export function useSLA(page: number, pageSize: number) {
 
   // isSoftRefresh: when triggered by refetch() skip full-page spinner
   const isSoftRefresh = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const refetch = useCallback(() => {
     isSoftRefresh.current = true;
     setRefreshKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const isSoft = isSoftRefresh.current;
     isSoftRefresh.current = false;
 
@@ -42,12 +55,12 @@ export function useSLA(page: number, pageSize: number) {
             totalShipments: 1250,
             onTimeDeliveries: 1182,
             violations: { pending: 12, resolved: 45, waived: 11 },
-            topCarriers: [],
+            topCarriers: [] as Array<{ name: string; reliabilityScore: number; shipmentCount: number }>,
           });
         } else {
           const [policiesRes, violationsRes, dashRes] = await Promise.all([
             slaApi.getSLAPolicies(),
-            slaApi.getSLAViolations(page, pageSize),
+            slaApi.getSLAViolations(page, pageSize, undefined),
             slaApi.getSLADashboard(),
           ]);
           setPolicies(policiesRes.data || []);
@@ -58,10 +71,11 @@ export function useSLA(page: number, pageSize: number) {
             totalShipments: 0,
             onTimeDeliveries: 0,
             violations: { pending: 0, resolved: 0, waived: 0 },
-            topCarriers: [],
+            topCarriers: [] as Array<{ name: string; reliabilityScore: number; shipmentCount: number }>,
           });
         }
       } catch (error) {
+        if (isAbortError(error)) return;
         if (!isSoft) notifyLoadError('SLA data', error);
         setPolicies([]);
         setViolations([]);
@@ -71,14 +85,23 @@ export function useSLA(page: number, pageSize: number) {
           totalShipments: 0,
           onTimeDeliveries: 0,
           violations: { pending: 0, resolved: 0, waived: 0 },
-          topCarriers: [],
+          topCarriers: [] as Array<{ name: string; reliabilityScore: number; shipmentCount: number }>,
         });
       } finally {
-        setIsLoading(false);
+        if (abortControllerRef.current === controller) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchData();
+
+    return () => {
+      controller.abort();
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    };
   }, [page, pageSize, useMockApi, refreshKey]);
 
   return { policies, violations, totalViolations, dashboardData, isLoading, refetch };

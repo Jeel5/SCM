@@ -6,6 +6,14 @@ import { useSocketEvent } from '@/hooks/useSocket';
 import { notifyLoadError } from '@/lib/apiErrors';
 import type { InventoryItem, Warehouse } from '@/types';
 
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  if (typeof error === 'object' && error !== null && 'name' in error) {
+    return (error as { name?: string }).name === 'CanceledError';
+  }
+  return false;
+};
+
 export function useInventory(page: number, pageSize: number) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -17,6 +25,7 @@ export function useInventory(page: number, pageSize: number) {
   const { useMockApi } = useApiMode();
 
   const isSoftRefresh = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const refetch = useCallback(() => {
     isSoftRefresh.current = true;
     setRefreshKey((k) => k + 1);
@@ -26,6 +35,10 @@ export function useInventory(page: number, pageSize: number) {
   useSocketEvent('inventory:updated', refetch);
 
   useEffect(() => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const isSoft = isSoftRefresh.current;
     isSoftRefresh.current = false;
     const fetchData = async () => {
@@ -44,11 +57,16 @@ export function useInventory(page: number, pageSize: number) {
         } else {
           // Use allSettled so a failing stats/low-stock call doesn't wipe the main list
           const [inventoryRes, warehouseRes, statsRes, lowStockRes] = await Promise.allSettled([
-            inventoryApi.getInventory(page, pageSize),
-            warehousesApi.getWarehouses(),
-            inventoryApi.getInventoryStats(),
-            inventoryApi.getLowStockItems(),
+            inventoryApi.getInventory(page, pageSize, undefined),
+            warehousesApi.getWarehouses(undefined),
+            inventoryApi.getInventoryStats(undefined),
+            inventoryApi.getLowStockItems(undefined),
           ]);
+
+          const wasAborted = [inventoryRes, warehouseRes, statsRes, lowStockRes].some(
+            (result) => result.status === 'rejected' && isAbortError(result.reason)
+          );
+          if (wasAborted) return;
 
           if (inventoryRes.status === 'fulfilled') {
             setInventory(inventoryRes.value.data);
@@ -75,6 +93,7 @@ export function useInventory(page: number, pageSize: number) {
           }
         }
       } catch (error) {
+        if (isAbortError(error)) return;
         if (!isSoft) notifyLoadError('inventory', error);
         setInventory([]);
         setTotalItems(0);
@@ -82,11 +101,20 @@ export function useInventory(page: number, pageSize: number) {
         setStats(null);
         setLowStockItems([]);
       } finally {
-        setIsLoading(false);
+        if (abortControllerRef.current === controller) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchData();
+
+    return () => {
+      controller.abort();
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    };
   }, [page, pageSize, useMockApi, refreshKey]);
 
   return { inventory, warehouses, totalItems, stats, lowStockList: lowStockItems, isLoading, refetch };

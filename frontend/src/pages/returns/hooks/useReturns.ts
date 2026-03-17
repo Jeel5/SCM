@@ -5,6 +5,14 @@ import { useApiMode } from '@/hooks';
 import { notifyLoadError } from '@/lib/apiErrors';
 import type { Return } from '@/types';
 
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  if (typeof error === 'object' && error !== null && 'name' in error) {
+    return (error as { name?: string }).name === 'CanceledError';
+  }
+  return false;
+};
+
 export function useReturns(page: number, pageSize: number) {
   const [returns, setReturns] = useState<Return[]>([]);
   const [totalReturns, setTotalReturns] = useState(0);
@@ -20,12 +28,17 @@ export function useReturns(page: number, pageSize: number) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const isSoftRefresh = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const refetch = useCallback(() => {
     isSoftRefresh.current = true;
     setRefreshKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const isSoft = isSoftRefresh.current;
     isSoftRefresh.current = false;
     const fetchReturns = async () => {
@@ -33,7 +46,7 @@ export function useReturns(page: number, pageSize: number) {
       try {
         const response = useMockApi
           ? await mockApi.getReturns(page, pageSize)
-          : await returnsApi.getReturns(page, pageSize);
+          : await returnsApi.getReturns(page, pageSize, undefined);
         setReturns(response.data);
         setTotalReturns(response.total);
         const fallback = {
@@ -46,17 +59,27 @@ export function useReturns(page: number, pageSize: number) {
         const responseWithStats = response as typeof response & { stats?: typeof fallback };
         setStats(responseWithStats.stats ?? fallback);
       } catch (error) {
+        if (isAbortError(error)) return;
         if (!isSoft) notifyLoadError('returns', error);
         setReturns([]);
         setTotalReturns(0);
         setStats({ totalReturns: 0, pending: 0, approved: 0, rejected: 0, completed: 0 });
       } finally {
-        setIsLoading(false);
+        if (abortControllerRef.current === controller) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchReturns();
-  }, [page, pageSize, refreshKey]);
+
+    return () => {
+      controller.abort();
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    };
+  }, [page, pageSize, refreshKey, useMockApi]);
 
   return { returns, totalReturns, stats, isLoading, refetch };
 }

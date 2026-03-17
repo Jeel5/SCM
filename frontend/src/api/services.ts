@@ -600,7 +600,7 @@ export const slaApi = {
     };
   },
 
-  async getSLADashboard(): Promise<ApiResponse<{ overallCompliance: number; violations: Record<string, number>; topCarriers: unknown[] }>> {
+  async getSLADashboard(): Promise<ApiResponse<{ overallCompliance: number; totalShipments: number; onTimeDeliveries: number; violations: { pending: number; resolved: number; waived: number }; topCarriers: Array<{ name: string; reliabilityScore: number; shipmentCount: number }> }>> {
     return get('/sla/dashboard');
   },
 

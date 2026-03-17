@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect } from 'react';
-import { Link, BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { motion, AnimatePresence } from 'framer-motion';
