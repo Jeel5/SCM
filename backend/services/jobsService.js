@@ -8,9 +8,10 @@ import { cronScheduler } from '../jobs/cronScheduler.js';
 import logger from '../utils/logger.js';
 
 export const jobsService = {
-  // Create a new background job; idempotencyKey prevents duplicate processing of the same event.
-  // After writing the DB record the job is pushed onto the BullMQ queue for immediate (or
-  // deferred) processing — no polling required.
+  /**
+   * Create a background job and enqueue it for worker processing.
+   * Idempotency keys prevent duplicate inserts for repeated webhook/event inputs.
+   */
   async createJob(jobType, payload, priority = 5, scheduledFor = null, createdBy = null, idempotencyKey = null) {
     const dbJob = await jobsRepo.createJobIdempotent({ jobType, payload, priority, scheduledFor, createdBy, idempotencyKey });
 
@@ -33,7 +34,9 @@ export const jobsService = {
     return dbJob;
   },
 
-  // Get jobs with filtering and pagination
+  /**
+   * Return filtered jobs with pagination metadata.
+   */
   async getJobs(filters = {}, page = 1, limit = 20, organizationId = undefined) {
     const { jobs, totalCount } = await jobsRepo.getJobs(filters, page, limit, organizationId);
     return {
@@ -47,17 +50,23 @@ export const jobsService = {
     };
   },
 
-  // Get job by ID (with optional org scope)
+  /**
+   * Get a single background job by id.
+   */
   async getJobById(jobId, organizationId = undefined) {
     return jobsRepo.getJobById(jobId, organizationId);
   },
 
-  // Get job execution logs
+  /**
+   * Fetch execution attempts for a job.
+   */
   async getJobLogs(jobId) {
     return jobsRepo.getJobLogs(jobId);
   },
 
-  // Start job execution
+  /**
+   * Claim a job for execution and create a corresponding execution log row.
+   */
   async startJobExecution(jobId) {
     return withTransaction(async (tx) => {
       // Conditional UPDATE: only transitions jobs that are still pending/retrying.
@@ -70,7 +79,9 @@ export const jobsService = {
     });
   },
 
-  // Complete job execution
+  /**
+   * Mark both job and execution log as completed.
+   */
   async completeJobExecution(jobId, logId, result = null) {
     return withTransaction(async (tx) => {
       await jobsRepo.completeJob(jobId, result, tx);
@@ -78,7 +89,9 @@ export const jobsService = {
     });
   },
 
-  // Fail job execution
+  /**
+   * Fail an execution attempt and either schedule retry or mark job failed.
+   */
   async failJobExecution(jobId, logId, errorMessage) {
     return withTransaction(async (tx) => {
       const retryInfo = await jobsRepo.getJobRetryInfo(jobId, tx);
@@ -97,29 +110,40 @@ export const jobsService = {
     });
   },
 
-  // Retry a failed job (scoped to org when organizationId provided)
+  /**
+   * Reset a failed/cancelled job to pending so workers can retry it.
+   */
   async retryJob(jobId, organizationId = undefined) {
     const row = await jobsRepo.resetJobToPending(jobId, organizationId);
     if (!row) throw new NotFoundError('Job');
     return jobsRepo.getJobById(jobId);
   },
 
-  // Cancel a job (scoped to org when organizationId provided)
+  /**
+   * Cancel a pending/retrying job.
+   */
   async cancelJob(jobId, organizationId = undefined) {
     await jobsRepo.cancelJob(jobId, organizationId);
     return jobsRepo.getJobById(jobId);
   },
 
-  // Get pending jobs for execution
+  /**
+   * Get jobs ready for immediate worker pickup.
+   */
   async getPendingJobs(limit = 10) {
     return jobsRepo.getPendingJobs(limit);
   },
 
-  // Cron schedules management
+  /**
+   * List cron schedules for an organization.
+   */
   async getCronSchedules(organizationId = undefined) {
     return jobsRepo.getCronSchedules(organizationId);
   },
 
+  /**
+   * Validate and create a cron schedule, then register it with the scheduler.
+   */
   async createCronSchedule(name, jobType, cronExpression, payload = {}, organizationId = undefined) {
     try {
       const interval = parser.parseExpression(cronExpression);
@@ -134,6 +158,9 @@ export const jobsService = {
     }
   },
 
+  /**
+   * Update cron schedule fields and synchronize runtime scheduler state.
+   */
   async updateCronSchedule(scheduleId, updates, organizationId = undefined) {
     const fields = {};
 
@@ -161,18 +188,25 @@ export const jobsService = {
     return updated;
   },
 
+  /**
+   * Delete a cron schedule and unregister it from runtime scheduler.
+   */
   async deleteCronSchedule(scheduleId, organizationId = undefined) {
     await jobsRepo.deleteCronSchedule(scheduleId, organizationId);
     // Remove from BullMQ so it stops firing
     await cronScheduler.removeSchedule(scheduleId);
   },
 
-  // Get due cron schedules
+  /**
+   * Get active cron schedules that are due now.
+   */
   async getDueCronSchedules() {
     return jobsRepo.getDueCronSchedules();
   },
 
-  // Update last run time for cron schedule
+  /**
+   * Recompute next_run_at from cron expression and persist last/next run markers.
+   */
   async updateCronLastRun(scheduleId) {
     const cronExpression = await jobsRepo.getCronExpression(scheduleId);
     if (!cronExpression) throw new NotFoundError('Schedule');
@@ -182,7 +216,9 @@ export const jobsService = {
     await jobsRepo.updateCronLastRun(scheduleId, nextRun);
   },
 
-  // Dead Letter Queue Management
+  /**
+   * Move a terminally failed job to the dead-letter queue.
+   */
   async moveToDeadLetterQueue(jobId, errorMessage) {
     return withTransaction(async (tx) => {
       const job = await jobsRepo.findJob(jobId, tx);
@@ -203,6 +239,9 @@ export const jobsService = {
     });
   },
 
+  /**
+   * Return paginated dead-letter queue rows.
+   */
   async getDeadLetterQueue(page = 1, limit = 20, organizationId = undefined) {
     const { jobs, totalCount } = await jobsRepo.getDeadLetterQueue({ page, limit, organizationId });
     return {
@@ -216,6 +255,9 @@ export const jobsService = {
     };
   },
 
+  /**
+   * Requeue a dead-letter job as a new pending background job.
+   */
   async retryFromDeadLetterQueue(dlqId) {
     return withTransaction(async (tx) => {
       const dlqJob = await jobsRepo.getDlqEntry(dlqId, tx);
@@ -237,6 +279,9 @@ export const jobsService = {
     });
   },
 
+  /**
+   * Delete old dead-letter rows older than N days.
+   */
   async purgeDeadLetterQueue(olderThanDays = 30) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);

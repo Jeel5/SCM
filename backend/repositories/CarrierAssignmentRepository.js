@@ -5,6 +5,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         super('carrier_assignments');
     }
 
+    /**
+     * Find non-terminal assignments for an order.
+     */
     async findActiveByOrderId(orderId, organizationId = undefined, client = null) {
         let query = `
       SELECT id, status 
@@ -20,6 +23,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Fetch assignment detail joined with order and carrier records.
+     */
     async findDetailsById(assignmentId, organizationId = undefined, client = null) {
         let query = `
       SELECT 
@@ -44,6 +50,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0];
     }
 
+    /**
+     * Fetch all assignments for an order sorted by newest request.
+     */
     async findByOrderId(orderId, organizationId = undefined, client = null) {
         let query = `
       SELECT 
@@ -87,6 +96,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0];
     }
 
+    /**
+     * Count unique carriers attempted for an order.
+     */
     async countTriedCarriers(orderId, client = null) {
         const result = await this.query(
             `SELECT COUNT(DISTINCT carrier_id) AS tried_count FROM carrier_assignments WHERE order_id = $1`,
@@ -95,6 +107,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return parseInt(result.rows[0]?.tried_count || 0, 10);
     }
 
+    /**
+     * Fetch pending/assigned windows for a carrier with optional filters.
+     */
     async findPendingByCarrier(carrierId, filters = {}, client = null) {
         let query = `
             SELECT
@@ -121,6 +136,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Lock and fetch assignment row for acceptance flow.
+     */
     async findForAcceptance(assignmentId, carrierId, client = null) {
         const result = await this.query(
             `SELECT ca.*, o.id AS order_id, o.shipping_address, o.customer_name,
@@ -135,6 +153,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || null;
     }
 
+    /**
+     * Fetch assignment with carrier identity fields.
+     */
     async findByIdWithCarrier(assignmentId, client = null) {
         const result = await this.query(
             `SELECT ca.id, ca.carrier_id, c.name AS carrier_name, ca.status
@@ -146,6 +167,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || null;
     }
 
+    /**
+     * Mark a pending assignment as accepted by a carrier.
+     */
     async acceptAssignment(assignmentId, referenceId, trackingNumber, acceptancePayload, client = null) {
         const result = await this.query(
             `UPDATE carrier_assignments
@@ -176,6 +200,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Reject a pending assignment for a specific carrier.
+     */
     async rejectAssignment(assignmentId, carrierId, reason, client = null) {
         const result = await this.query(
             `UPDATE carrier_assignments
@@ -189,6 +216,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || null;
     }
 
+    /**
+     * Fetch all expired pending assignment rows.
+     */
     async findExpiredPending(client = null) {
         const result = await this.query(
             `SELECT id, order_id, carrier_id FROM carrier_assignments
@@ -198,6 +228,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Cancel a single assignment by id.
+     */
     async cancelById(id, client = null) {
         await this.query(
             `UPDATE carrier_assignments SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
@@ -205,6 +238,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Find orders that have expired assignment windows and can retry.
+     */
     async findExpiredWithOrders(client = null) {
         const result = await this.query(
             `SELECT DISTINCT ca.order_id, o.*
@@ -220,6 +256,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Mark all pending assignments for an order as expired.
+     */
     async expireByOrderId(orderId, client = null) {
         await this.query(
             `UPDATE carrier_assignments SET status = 'expired', updated_at = NOW()
@@ -228,6 +267,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Move an assignment back into pending state.
+     */
     async resetToPending(id, client = null) {
         await this.query(
             `UPDATE carrier_assignments SET status = 'pending', updated_at = NOW() WHERE id = $1`,
@@ -235,6 +277,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Fetch currently busy assignments for a carrier.
+     */
     async findBusyByCarrier(carrierId, limit = 5, client = null) {
         const result = await this.query(
             `SELECT ca.*, o.priority, o.customer_name
@@ -251,6 +296,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Find orders where all assignment attempts in the current cycle failed.
+     */
     async findAllRejectedOrders(client = null) {
         const result = await this.query(
             `SELECT ca.order_id,
@@ -272,6 +320,9 @@ class CarrierAssignmentRepository extends BaseRepository {
 
     // ── Methods for carrierAssignmentService ────────────────────────────────
 
+    /**
+     * Fetch minimal order fields used by assignment flows.
+     */
     async findOrderById(orderId, client = null) {
         const result = await this.query(
             `SELECT id, customer_name, customer_email, customer_phone, priority,
@@ -283,6 +334,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || null;
     }
 
+    /**
+     * Fetch order items along with product shipping attributes.
+     */
     async findOrderItemsWithProducts(orderId, client = null) {
         const result = await this.query(
             `SELECT oi.*, p.weight as product_weight, p.dimensions as product_dimensions,
@@ -295,6 +349,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Resolve primary warehouse for an order from order items.
+     */
     async findWarehouseForOrder(orderId, client = null) {
         const result = await this.query(
             `SELECT w.* FROM warehouses w
@@ -306,6 +363,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || { id: 'default' };
     }
 
+    /**
+     * Put order in on_hold once assignment attempts are exhausted.
+     */
     async markOrderOnHold(orderId, client = null) {
         await this.query(
             `UPDATE orders
@@ -317,6 +377,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Fetch top available carriers for a service type.
+     */
     async findAvailableCarriers(serviceType, client = null) {
         const result = await this.query(
             `SELECT id, code, name, contact_email, service_type, is_active, availability_status
@@ -331,6 +394,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Create a pending carrier assignment row.
+     */
     async createAssignment({ orderId, carrierId, organizationId = null, serviceType, pickupAddress, deliveryAddress, estimatedPickup, estimatedDelivery, requestPayload, expiresAt, idempotencyKey }, client = null) {
         const result = await this.query(
             `INSERT INTO carrier_assignments
@@ -348,6 +414,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0];
     }
 
+    /**
+     * Count still-open assignment windows for an order.
+     */
     async countOpenWindowAssignments(orderId, client = null) {
         const result = await this.query(
             `SELECT COUNT(*)::int AS open_count
@@ -360,6 +429,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return parseInt(result.rows[0]?.open_count || 0, 10);
     }
 
+    /**
+     * Return order ids where bidding has a winner and no open windows remain.
+     */
     async findOrdersReadyForBiddingFinalization(client = null) {
         const result = await this.query(
             `SELECT ca.order_id
@@ -380,6 +452,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows.map(r => r.order_id);
     }
 
+    /**
+     * Fetch accepted assignments that are candidates for final winner selection.
+     */
     async findAcceptedAssignmentsByOrder(orderId, client = null) {
         const result = await this.query(
             `SELECT
@@ -399,6 +474,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Find latest shipment for an order if it exists.
+     */
     async findShipmentByOrderId(orderId, client = null) {
         const result = await this.query(
             `SELECT id, tracking_number, status, created_at
@@ -412,6 +490,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || null;
     }
 
+    /**
+     * Mark winner assignment as assigned and close remaining windows.
+     */
     async markWinnerAndCloseOrderWindow(orderId, winnerAssignmentId, client = null) {
         await this.query(
             `UPDATE carrier_assignments
@@ -424,6 +505,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Update order status field.
+     */
     async updateOrderStatus(orderId, status, client = null) {
         await this.query(
             'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
@@ -431,6 +515,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Lookup carrier by carrier code.
+     */
     async findCarrierByCode(code, client = null) {
         const result = await this.query(
             'SELECT * FROM carriers WHERE code = $1',
@@ -439,6 +526,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || null;
     }
 
+    /**
+     * Set carrier availability to available.
+     */
     async setCarrierAvailable(carrierId, client = null) {
         await this.query(
             `UPDATE carriers
@@ -449,6 +539,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Fetch all order item fields required to construct shipment records.
+     */
     async findOrderItemsForShipment(orderId, client = null) {
         const result = await this.query(
             `SELECT quantity, weight, dimensions, volumetric_weight,
@@ -462,6 +555,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows;
     }
 
+    /**
+     * Insert shipment row for chosen carrier assignment.
+     */
     async createShipment(fields, client = null) {
         const {
             trackingNumber, carrierTrackingNumber, orderId, assignmentId, carrierId,
@@ -504,6 +600,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0];
     }
 
+    /**
+     * Add initial shipment-created event to tracking timeline.
+     */
     async insertShipmentCreatedEvent(shipmentId, client = null) {
         await this.query(
             `INSERT INTO shipment_events
@@ -514,6 +613,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Update order status + assigned carrier id.
+     */
     async updateOrderCarrier(orderId, status, carrierId, client = null) {
         await this.query(
             `UPDATE orders
@@ -525,6 +627,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Fetch order record with aggregated order items.
+     */
     async findOrderWithItems(orderId, client = null) {
         const result = await this.query(
             `SELECT o.*, array_agg(oi.*) as items FROM orders o
@@ -536,6 +641,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         return result.rows[0] || null;
     }
 
+    /**
+     * Emit critical alert when assignment retries are exhausted.
+     */
     async createAssignmentExhaustedAlert({ organizationId, orderNumber, orderId, triedCount, priority }, client = null) {
         await this.query(
             `INSERT INTO alerts
@@ -552,6 +660,9 @@ class CarrierAssignmentRepository extends BaseRepository {
         );
     }
 
+    /**
+     * Fetch carriers that recently returned to available state.
+     */
     async findNewlyAvailableCarriers(client = null) {
         const result = await this.query(
             `SELECT id, code, name

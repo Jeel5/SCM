@@ -288,7 +288,7 @@ class InventoryRepository extends BaseRepository {
       data.reserved_quantity || 0,
       data.reorder_point || null,
       data.max_stock_level || null,
-      data.unit_cost != null ? data.unit_cost : null
+      data.unit_cost ?? null
     ];
 
     const result = await this.query(query, params, client);
@@ -310,12 +310,12 @@ class InventoryRepository extends BaseRepository {
     const params = [];
     let paramCount = 1;
 
-    for (const field of ALLOWED) {
+    ALLOWED.forEach((field) => {
       if (updates[field] !== undefined) {
         setClauses.push(`${field} = $${paramCount += 1}`);
         params.push(updates[field]);
       }
-    }
+    });
 
     if (setClauses.length === 0) throw new ValidationError('No valid fields to update');
     setClauses.push(`updated_at = NOW()`);

@@ -4,6 +4,96 @@ import { NotFoundError } from '../errors/index.js';
 import { logEvent } from '../utils/logger.js';
 import financeRepo from '../repositories/FinanceRepository.js';
 
+function runSerial(items, worker) {
+  return items.reduce(
+    (chain, item) => chain.then(() => worker(item)),
+    Promise.resolve()
+  );
+}
+
+/**
+ * Build shipment-fee line items and accumulate base amount.
+ */
+function buildShipmentLineItems(shipments) {
+  let baseAmount = 0;
+  const shipmentLineItems = [];
+
+  shipments.forEach((shipment) => {
+    const shippingCost = parseFloat(shipment.shipping_cost) || 0;
+    baseAmount += shippingCost;
+
+    shipmentLineItems.push({
+      shipmentId: shipment.id,
+      description: `Shipment ${shipment.tracking_number} - Order ${shipment.order_number}`,
+      itemType: 'shipping_fee',
+      quantity: 1,
+      unitPrice: shippingCost,
+      amount: shippingCost,
+    });
+  });
+
+  return { baseAmount, shipmentLineItems };
+}
+
+/**
+ * Build penalty line items and accumulate total penalties.
+ */
+function buildPenaltyLineItems(penalties) {
+  let totalPenalties = 0;
+  const penaltyLineItems = [];
+
+  penalties.forEach((penalty) => {
+    const penaltyAmount = parseFloat(penalty.penalty_amount) || 0;
+    totalPenalties += penaltyAmount;
+
+    penaltyLineItems.push({
+      shipmentId: penalty.shipment_id,
+      description: `SLA Penalty - ${penalty.tracking_number} (${penalty.delay_hours}h delay)`,
+      itemType: 'penalty',
+      quantity: 1,
+      unitPrice: -penaltyAmount,
+      amount: -penaltyAmount,
+    });
+  });
+
+  return { totalPenalties, penaltyLineItems };
+}
+
+/**
+ * Build fuel surcharge line item based on base freight amount.
+ */
+function buildFuelLineItem(baseAmount) {
+  const fuelSurcharge = baseAmount * 0.05;
+  return {
+    fuelSurcharge,
+    fuelLineItem: {
+      shipmentId: null,
+      description: 'Fuel Surcharge (5%)',
+      itemType: 'fuel_surcharge',
+      quantity: 1,
+      unitPrice: fuelSurcharge,
+      amount: fuelSurcharge,
+    },
+  };
+}
+
+/**
+ * Persist invoice line items serially for deterministic writes.
+ */
+async function persistInvoiceLineItems(invoiceId, lineItems, tx) {
+  await runSerial(lineItems, async (lineItem) => {
+    await financeRepo.createInvoiceLineItem({
+      invoiceId,
+      shipmentId: lineItem.shipmentId,
+      description: lineItem.description,
+      itemType: lineItem.itemType,
+      quantity: lineItem.quantity,
+      unitPrice: lineItem.unitPrice,
+      amount: lineItem.amount,
+    }, tx);
+  });
+}
+
 // ─── Invoice State Machine ──────────────────────────────────────────────────────────────────
 // Single source of truth for valid invoice status transitions (TASK-R9-020).
 // Imported by financeController; do not redefine inline.
@@ -22,17 +112,12 @@ class InvoiceService {
    */
   async generateInvoiceForCarrier(carrierId, billingPeriodStart, billingPeriodEnd, jobId = null) {
     return withTransaction(async (tx) => {
-
-      // Get carrier info
       const carrier = await financeRepo.findCarrierById(carrierId, tx);
-
       if (!carrier) {
         throw new NotFoundError('Carrier not found');
       }
 
-      // Get all shipments for this carrier in the period
       const shipments = await financeRepo.findShipmentsForCarrierPeriod(carrierId, billingPeriodStart, billingPeriodEnd, tx);
-
       if (shipments.length === 0) {
         logEvent('InvoiceGenerationSkipped', {
           carrierId,
@@ -42,66 +127,16 @@ class InvoiceService {
         return null;
       }
 
-      // Calculate base shipping costs
-      let baseAmount = 0;
-      const shipmentLineItems = [];
-
-      for (const shipment of shipments) {
-        const shippingCost = parseFloat(shipment.shipping_cost) || 0;
-        baseAmount += shippingCost;
-
-        shipmentLineItems.push({
-          shipmentId: shipment.id,
-          description: `Shipment ${shipment.tracking_number} - Order ${shipment.order_number}`,
-          itemType: 'shipping_fee',
-          quantity: 1,
-          unitPrice: shippingCost,
-          amount: shippingCost
-        });
-      }
-
-      // Get SLA penalties for this period
+      const { baseAmount, shipmentLineItems } = buildShipmentLineItems(shipments);
       const penalties = await financeRepo.findPenaltiesForCarrierPeriod(carrierId, billingPeriodStart, billingPeriodEnd, tx);
+      const { totalPenalties, penaltyLineItems } = buildPenaltyLineItems(penalties);
+      const { fuelSurcharge, fuelLineItem } = buildFuelLineItem(baseAmount);
 
-      let totalPenalties = 0;
-      const penaltyLineItems = [];
-
-      for (const penalty of penalties) {
-        const penaltyAmount = parseFloat(penalty.penalty_amount) || 0;
-        totalPenalties += penaltyAmount;
-
-        penaltyLineItems.push({
-          shipmentId: penalty.shipment_id,
-          description: `SLA Penalty - ${penalty.tracking_number} (${penalty.delay_hours}h delay)`,
-          itemType: 'penalty',
-          quantity: 1,
-          unitPrice: -penaltyAmount,
-          amount: -penaltyAmount
-        });
-      }
-
-      // Calculate fuel surcharge (example: 5% of base)
-      const fuelSurcharge = baseAmount * 0.05;
-      const fuelLineItem = {
-        shipmentId: null,
-        description: 'Fuel Surcharge (5%)',
-        itemType: 'fuel_surcharge',
-        quantity: 1,
-        unitPrice: fuelSurcharge,
-        amount: fuelSurcharge
-      };
-
-      // Calculate final amount
       const finalAmount = baseAmount + fuelSurcharge - totalPenalties;
-
-      // Generate invoice number
       const invoiceNumber = `INV-${carrier.code}-${Date.now()}`;
-
-      // Calculate payment due date (30 days from end of period)
       const paymentDueDate = new Date(billingPeriodEnd);
       paymentDueDate.setDate(paymentDueDate.getDate() + 30);
 
-      // Create invoice
       const invoice = await financeRepo.createAutoGeneratedInvoice({
         invoiceNumber,
         carrierId,
@@ -116,21 +151,8 @@ class InvoiceService {
         paymentDueDate
       }, tx);
 
-      // Insert all line items
       const allLineItems = [...shipmentLineItems, ...penaltyLineItems, fuelLineItem];
-
-      for (const lineItem of allLineItems) {
-        await financeRepo.createInvoiceLineItem({
-          invoiceId: invoice.id,
-          shipmentId: lineItem.shipmentId,
-          description: lineItem.description,
-          itemType: lineItem.itemType,
-          quantity: lineItem.quantity,
-          unitPrice: lineItem.unitPrice,
-          amount: lineItem.amount
-        }, tx);
-      }
-
+      await persistInvoiceLineItems(invoice.id, allLineItems, tx);
 
       logEvent('InvoiceGenerated', {
         invoiceId: invoice.id,
@@ -144,7 +166,6 @@ class InvoiceService {
       });
 
       return invoice;
-
     });
   }
 
@@ -166,24 +187,28 @@ class InvoiceService {
     const invoices = [];
     const errors = [];
 
-    for (const carrier of carriers) {
-      try {
-        const invoice = await this.generateInvoiceForCarrier(
+    const outcomes = await Promise.allSettled(
+      carriers.map((carrier) =>
+        this.generateInvoiceForCarrier(
           carrier.id,
           periodStart.toISOString(),
           periodEnd.toISOString()
-        );
+        ).then((invoice) => ({ carrierId: carrier.id, invoice }))
+      )
+    );
 
-        if (invoice) {
-          invoices.push(invoice);
-        }
-      } catch (error) {
-        errors.push({
-          carrierId: carrier.id,
-          error: error.message
-        });
+    outcomes.forEach((outcome, idx) => {
+      const carrierId = carriers[idx]?.id;
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value.invoice) invoices.push(outcome.value.invoice);
+        return;
       }
-    }
+
+      errors.push({
+        carrierId,
+        error: outcome.reason?.message || String(outcome.reason),
+      });
+    });
 
     logEvent('MonthlyInvoicesGenerated', {
       month,

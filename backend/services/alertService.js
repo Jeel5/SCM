@@ -8,25 +8,109 @@ import { NotFoundError } from '../errors/AppError.js';
 
 export const alertService = {
   /**
+   * Create a new alert unless a recent one exists inside cooldown window.
+   */
+  async createAlertWithCooldown(rule) {
+    const cooldownMinutes = rule.cooldown_minutes || 60;
+
+    const txResult = await withTransaction(async (tx) => {
+      const recentAlertRow = await alertRepo.findRecentAlertByRule(rule.id, cooldownMinutes, tx);
+      if (recentAlertRow) {
+        return { suppressed: true, alert: recentAlertRow, cooldownMinutes };
+      }
+
+      const newAlert = await alertRepo.createAlert(
+        rule.id,
+        rule.name,
+        rule.rule_type,
+        rule.severity,
+        rule.message_template,
+        {},
+        tx
+      );
+
+      return { suppressed: false, alert: newAlert, cooldownMinutes };
+    });
+
+    return txResult;
+  },
+
+  /**
+   * Send alert notifications to recipients and log individual failures.
+   */
+  async dispatchAlertNotifications(rule, alert, recipients) {
+    const notifyOutcomes = await Promise.allSettled(
+      recipients.map((userId) =>
+        notificationService.createNotification(
+          userId,
+          'alert',
+          rule.name,
+          rule.message_template,
+          null,
+          { alertId: alert.id, ruleId: rule.id, severity: rule.severity }
+        )
+      )
+    );
+
+    notifyOutcomes.forEach((outcome, idx) => {
+      if (outcome.status === 'fulfilled') return;
+      logger.error('Failed to create alert notification', {
+        userId: recipients[idx],
+        alertId: alert.id,
+        error: outcome.reason?.message || String(outcome.reason),
+      });
+    });
+  },
+
+  /**
+   * Enqueue escalation follow-up for critical alerts when enabled.
+   */
+  async maybeScheduleEscalation(rule, alert) {
+    if (rule.severity !== 'critical' || !rule.escalation_enabled) {
+      return;
+    }
+
+    try {
+      await jobsService.createJob(
+        'alert_escalation',
+        {
+          alertId: alert.id,
+          ruleId: rule.id,
+          escalationLevel: 1
+        },
+        1,
+        new Date(Date.now() + (rule.escalation_delay_minutes || 15) * 60000)
+      );
+    } catch (jobErr) {
+      logger.error('Failed to create alert escalation job', {
+        alertId: alert.id,
+        error: jobErr.message,
+      });
+    }
+  },
+
+  /**
    * Evaluate alert rules and trigger notifications
    */
   async evaluateAlerts() {
     try {
       const rules = await this.getActiveAlertRules();
-      const triggeredAlerts = [];
-
-      for (const rule of rules) {
-        try {
+      const outcomes = await Promise.allSettled(
+        rules.map(async (rule) => {
           const shouldTrigger = await this.evaluateRule(rule);
-          
-          if (shouldTrigger) {
-            const alert = await this.triggerAlert(rule);
-            triggeredAlerts.push(alert);
-          }
-        } catch (error) {
-          logger.error(`Failed to evaluate rule ${rule.id}:`, error);
+          if (!shouldTrigger) return null;
+          return this.triggerAlert(rule);
+        })
+      );
+
+      const triggeredAlerts = [];
+      outcomes.forEach((outcome, idx) => {
+        if (outcome.status === 'fulfilled') {
+          if (outcome.value) triggeredAlerts.push(outcome.value);
+          return;
         }
-      }
+        logger.error(`Failed to evaluate rule ${rules[idx].id}:`, outcome.reason);
+      });
 
       logger.info(`Evaluated ${rules.length} rules, triggered ${triggeredAlerts.length} alerts`);
       
@@ -81,40 +165,13 @@ export const alertService = {
    * the existing alert is returned and no new notifications are sent.
    */
   async triggerAlert(rule) {
-    // ── Transactional section: dedup check + alert INSERT ────────────────────
-    // withTransaction commits when the callback returns normally, so side-effects
-    // that follow the await are always post-commit (TASK-R13-004).
-    const cooldownMinutes = rule.cooldown_minutes || 60;
+    const txResult = await this.createAlertWithCooldown(rule);
 
-    const txResult = await withTransaction(async (tx) => {
-      // Dedup / cooldown check — skip if the same rule already fired recently.
-      const recentAlertRow = await alertRepo.findRecentAlertByRule(rule.id, cooldownMinutes, tx);
-
-      if (recentAlertRow) {
-        // Return suppression marker — transaction commits as a no-op.
-        return { suppressed: true, alert: recentAlertRow };
-      }
-
-      // Create alert record
-      const newAlert = await alertRepo.createAlert(
-        rule.id,
-        rule.name,
-        rule.rule_type,
-        rule.severity,
-        rule.message_template,
-        {},
-        tx
-      );
-
-      return { suppressed: false, alert: newAlert };
-    });
-
-    // Transaction committed — handle suppression or proceed with side-effects.
     if (txResult.suppressed) {
       logger.debug('Alert suppressed by cooldown', {
         ruleId: rule.id,
         ruleName: rule.name,
-        cooldownMinutes,
+        cooldownMinutes: txResult.cooldownMinutes,
         existingAlertId: txResult.alert.id
       });
       return txResult.alert;
@@ -129,49 +186,9 @@ export const alertService = {
       severity: rule.severity,
     });
 
-    // ── Post-commit side-effects (notifications + escalation job) ─────────────
-    // Running outside the transaction means a notification/job failure cannot
-    // roll back the already-committed alert record (TASK-R13-004).
     const recipients = await this.getAlertRecipients(rule);
-
-    for (const userId of recipients) {
-      try {
-        await notificationService.createNotification(
-          userId,
-          'alert',
-          rule.name,
-          rule.message_template,
-          null,
-          { alertId: alert.id, ruleId: rule.id, severity: rule.severity }
-        );
-      } catch (notifyErr) {
-        logger.error('Failed to create alert notification', {
-          userId,
-          alertId: alert.id,
-          error: notifyErr.message,
-        });
-      }
-    }
-
-    if (rule.severity === 'critical' && rule.escalation_enabled) {
-      try {
-        await jobsService.createJob(
-          'alert_escalation',
-          {
-            alertId: alert.id,
-            ruleId: rule.id,
-            escalationLevel: 1
-          },
-          1, // High priority
-          new Date(Date.now() + (rule.escalation_delay_minutes || 15) * 60000)
-        );
-      } catch (jobErr) {
-        logger.error('Failed to create alert escalation job', {
-          alertId: alert.id,
-          error: jobErr.message,
-        });
-      }
-    }
+    await this.dispatchAlertNotifications(rule, alert, recipients);
+    await this.maybeScheduleEscalation(rule, alert);
 
     logger.info('Alert dispatched', {
       alertId: alert.id,

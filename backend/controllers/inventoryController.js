@@ -40,7 +40,7 @@ function formatInventoryItem(row) {
     reorderPoint: row.reorder_point !== null ? parseInt(row.reorder_point, 10) : null,
     maxStockLevel: row.max_stock_level !== null ? parseInt(row.max_stock_level, 10) : null,
     // Derived flags
-    isLowStock: row.reorder_point != null
+    isLowStock: row.reorder_point !== null
       ? row.available_quantity <= row.reorder_point
       : false,
     isOutOfStock: row.available_quantity === 0,

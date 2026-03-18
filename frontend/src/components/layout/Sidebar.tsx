@@ -223,10 +223,10 @@ export function Sidebar() {
       <aside
         className={cn(
           'group fixed top-0 left-0 h-screen bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 z-50 flex flex-col',
-          'w-[52px] hover:w-[225px]',
+          'w-13 hover:w-56',
           'transition-all duration-300 ease-out-quint',
           'lg:relative lg:translate-x-0',
-          sidebarMobileOpen ? 'translate-x-0 w-[280px]' : '-translate-x-full lg:translate-x-0',
+          sidebarMobileOpen ? 'translate-x-0 w-70' : '-translate-x-full lg:translate-x-0',
           'overflow-hidden'
         )}
       >
@@ -235,7 +235,7 @@ export function Sidebar() {
           to="/dashboard"
           className="h-16 flex items-center gap-3 px-2 border-b border-gray-100 dark:border-gray-700 shrink-0"
         >
-          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shrink-0">
+          <div className="h-9 w-9 rounded-lg bg-linear-to-br from-blue-600 to-indigo-600 flex items-center justify-center shrink-0">
             <Truck className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0 overflow-hidden">
@@ -256,7 +256,7 @@ export function Sidebar() {
             {filteredNav.map((item) => {
               const isActive = location.pathname.startsWith(item.path);
               return (
-                <li key={item.id} className="min-w-[36px]">
+                <li key={item.id} className="min-w-9">
                   <Link
                     to={item.path}
                     onClick={() => setMobileSidebarOpen(false)}

@@ -124,25 +124,28 @@ class ExceptionService {
     // Find exceptions that are past their estimated resolution time
     const overdueResult = await exceptionRepo.findOverdue();
 
-    const escalated = [];
-
-    for (const exception of overdueResult) {
-      const newLevel = exception.escalation_level + 1;
-      
-      try {
-        const escalatedEx = await this.escalateException(
+    const outcomes = await Promise.allSettled(
+      overdueResult.map((exception) => {
+        const newLevel = exception.escalation_level + 1;
+        return this.escalateException(
           exception.id,
           newLevel,
-          `Auto-escalated: Exceeded estimated resolution time`
+          'Auto-escalated: Exceeded estimated resolution time'
         );
-        escalated.push(escalatedEx);
-      } catch (error) {
-        logger.error('Failed to auto-escalate exception', {
-          exceptionId: exception.id,
-          error: error.message,
-        });
+      })
+    );
+
+    const escalated = [];
+    outcomes.forEach((outcome, idx) => {
+      if (outcome.status === 'fulfilled') {
+        escalated.push(outcome.value);
+        return;
       }
-    }
+      logger.error('Failed to auto-escalate exception', {
+        exceptionId: overdueResult[idx]?.id,
+        error: outcome.reason?.message || String(outcome.reason),
+      });
+    });
 
     if (escalated.length > 0) {
       logEvent('AutoEscalationCompleted', {
@@ -239,36 +242,38 @@ class ExceptionService {
     // Find shipments that are significantly delayed but no exception exists
     const delayedResult = await exceptionRepo.findDelayedShipmentsWithoutException();
 
-    const createdExceptions = [];
+    const delayOutcomes = await Promise.allSettled(
+      delayedResult.map((shipment) => {
+        const now = new Date();
+        const scheduled = new Date(shipment.delivery_scheduled);
+        const delayHours = (now - scheduled) / (1000 * 60 * 60);
 
-    for (const shipment of delayedResult) {
-      const now = new Date();
-      const scheduled = new Date(shipment.delivery_scheduled);
-      const delayHours = (now - scheduled) / (1000 * 60 * 60);
+        let severity = 'low';
+        if (delayHours > 72) severity = 'critical';
+        else if (delayHours > 48) severity = 'high';
+        else if (delayHours > 24) severity = 'medium';
 
-      // Determine severity based on delay
-      let severity = 'low';
-      if (delayHours > 72) severity = 'critical';
-      else if (delayHours > 48) severity = 'high';
-      else if (delayHours > 24) severity = 'medium';
-
-      try {
-        const exception = await this.createException({
+        return this.createException({
           shipmentId: shipment.id,
           orderId: shipment.order_id,
           exceptionType: 'delay',
           description: `Shipment delayed by ${Math.round(delayHours)} hours`,
           severity
         });
+      })
+    );
 
-        createdExceptions.push(exception);
-      } catch (error) {
-        logger.error('Failed to create delay exception for shipment', {
-          shipmentId: shipment.id,
-          error: error.message,
-        });
+    const createdExceptions = [];
+    delayOutcomes.forEach((outcome, idx) => {
+      if (outcome.status === 'fulfilled') {
+        createdExceptions.push(outcome.value);
+        return;
       }
-    }
+      logger.error('Failed to create delay exception for shipment', {
+        shipmentId: delayedResult[idx]?.id,
+        error: outcome.reason?.message || String(outcome.reason),
+      });
+    });
 
     if (createdExceptions.length > 0) {
       logEvent('DelayExceptionsAutoDetected', {

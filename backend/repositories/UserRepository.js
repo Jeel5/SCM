@@ -7,18 +7,25 @@ class UserRepository extends BaseRepository {
     super('users');
   }
 
+  /**
+   * Parse total_count from paginated window-count queries.
+   */
   parseTotalCount(rows) {
     return rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
   }
 
-  // Find user by name
+  /**
+   * Find user by username (stored in name column).
+   */
   async findByUsername(username, client = null) {
     const query = `SELECT * FROM users WHERE name = $1`;
     const result = await this.query(query, [username], client);
     return result.rows[0] || null;
   }
 
-  // Find user by email address
+  /**
+   * Find user by email, optionally constrained to an organization.
+   */
   async findByEmail(email, organizationId = undefined, client = null) {
     let query = `SELECT * FROM users WHERE email = $1`;
     const params = [email];
@@ -30,7 +37,9 @@ class UserRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Get users with pagination and filters (role, active status, search)
+  /**
+   * Get paginated users with role, active-state, and text-search filters.
+   */
   async findUsers({ page = 1, limit = 20, role = null, is_active = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
@@ -59,7 +68,7 @@ class UserRepository extends BaseRepository {
       params.push(role);
     }
 
-    if (is_active !== null) {
+    if (typeof is_active === 'boolean') {
       query += ` AND is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
@@ -401,11 +410,11 @@ class UserRepository extends BaseRepository {
     // Mirror to Redis — pipeline so it's one round-trip
     try {
       const pipeline = redis.pipeline();
-      for (const { jti, expires_at } of rows) {
+      rows.forEach(({ jti, expires_at }) => {
         const exp = expires_at ? new Date(expires_at) : new Date(Date.now() + 24 * 60 * 60 * 1000);
         const ttlSec = Math.max(1, Math.floor((exp.getTime() - Date.now()) / 1000));
         pipeline.set(`revoked_jti:${jti}`, '1', 'EX', ttlSec);
-      }
+      });
       await pipeline.exec();
     } catch (_) { /* Redis unavailable — DB is source of truth */ }
   }
@@ -751,7 +760,7 @@ class UserRepository extends BaseRepository {
     // ── 1. Redis fast path ─────────────────────────────────────────────
     try {
       const cached = await redis.get(`revoked_jti:${jti}`);
-      if (cached !== null) return true; // key exists → revoked
+      if (cached) return true; // key exists → revoked
     } catch (_) { /* Redis unavailable — fall through to DB */ }
 
     // ── 2. DB source of truth ──────────────────────────────────────────

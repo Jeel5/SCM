@@ -6,11 +6,16 @@ class ShipmentRepository extends BaseRepository {
     super('shipments');
   }
 
+  /**
+   * Parse total_count from a paginated query result row set.
+   */
   parseTotalCount(rows) {
     return rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
   }
 
-  // Get shipments with pagination and filters (status, carrier, search)
+  /**
+   * Get paginated shipments with optional status, carrier, and text search filters.
+   */
   async findShipments({ page = 1, limit = 20, status = null, carrier_id = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
@@ -84,6 +89,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Find shipment by tracking number and include an authenticated carrier fallback id.
+   */
   async findByTrackingNumberWithCarrier(trackingNumber, organizationId = undefined, client = null) {
     let query = `
       SELECT s.*, COALESCE(s.carrier_id, ca.carrier_id) AS authenticated_carrier_id
@@ -779,6 +787,9 @@ class ShipmentRepository extends BaseRepository {
     await this.query(sql, params, client);
   }
 
+  /**
+   * Add a tracking event row for a shipment state transition.
+   */
   async addEvent(shipmentId, eventType, location = null, description = null, client = null) {
     await this.query(
       `INSERT INTO shipment_events (shipment_id, event_type, location, description, event_timestamp)
@@ -787,6 +798,9 @@ class ShipmentRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Stamp a shipment with the actual delivery timestamp.
+   */
   async markDelivered(shipmentId, client = null) {
     await this.query(
       `UPDATE shipments SET delivery_actual = NOW() WHERE id = $1`,
@@ -794,6 +808,9 @@ class ShipmentRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Fetch the order associated with a shipment, including source warehouse id.
+   */
   async findOrderForShipment(shipmentId, client = null) {
     const result = await this.query(
       `SELECT o.*, s.warehouse_id as from_warehouse_id
@@ -805,6 +822,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Mark the order attached to the shipment as delivered.
+   */
   async markOrderDelivered(shipmentId, client = null) {
     await this.query(
       `UPDATE orders SET status = 'delivered', actual_delivery = NOW()
@@ -815,6 +835,9 @@ class ShipmentRepository extends BaseRepository {
 
   // ── Transfer order delivery helpers ─────────────────────────────────────
 
+  /**
+   * List all order items for a transfer/delivery fulfillment flow.
+   */
   async findOrderItems(orderId, client = null) {
     const result = await this.query(
       `SELECT * FROM order_items WHERE order_id = $1`,
@@ -823,6 +846,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows;
   }
 
+  /**
+   * Resolve warehouse id by serialized address JSON.
+   */
   async findWarehouseByAddress(addressJson, client = null) {
     const result = await this.query(
       `SELECT id FROM warehouses WHERE address::text = $1 LIMIT 1`,
@@ -831,6 +857,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Decrease reserved inventory quantity for a SKU in a warehouse.
+   */
   async decrementInventoryReserved(sku, warehouseId, quantity, client = null) {
     await this.query(
       `UPDATE inventory SET reserved_quantity = reserved_quantity - $1, updated_at = NOW()
@@ -839,6 +868,9 @@ class ShipmentRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Decrease on-hand inventory quantity for a SKU in a warehouse.
+   */
   async decrementInventoryQuantity(sku, warehouseId, quantity, client = null) {
     await this.query(
       `UPDATE inventory SET quantity = quantity - $1, updated_at = NOW()
@@ -847,6 +879,9 @@ class ShipmentRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Insert a transfer-out stock movement for audit history.
+   */
   async insertTransferOutMovement(quantity, orderId, note, sku, warehouseId, client = null) {
     await this.query(
       `INSERT INTO stock_movements
@@ -857,6 +892,9 @@ class ShipmentRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Upsert destination warehouse inventory when transfer stock arrives.
+   */
   async upsertInventoryForTransfer(toWarehouseId, productId, sku, productName, quantity, client = null) {
     await this.query(
       `INSERT INTO inventory
@@ -870,6 +908,9 @@ class ShipmentRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Insert a transfer-in stock movement for audit history.
+   */
   async insertTransferInMovement(quantity, orderId, note, sku, warehouseId, client = null) {
     await this.query(
       `INSERT INTO stock_movements
@@ -882,6 +923,9 @@ class ShipmentRepository extends BaseRepository {
 
   // ── confirmPickup helpers ────────────────────────────────────────────────
 
+  /**
+   * Load shipment with order and carrier assignment context for pickup confirmation.
+   */
   async findShipmentWithOrderAndCarrier(shipmentId, client = null) {
     const result = await this.query(
       `SELECT s.*, o.id as order_id, o.order_number, ca.carrier_id
@@ -894,6 +938,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Mark shipment as picked up and record pickup time/location.
+   */
   async setPickedUp(shipmentId, pickupTime, gpsLocation, client = null) {
     const result = await this.query(
       `UPDATE shipments
@@ -908,6 +955,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0];
   }
 
+  /**
+   * Mark the order as shipped once pickup is confirmed.
+   */
   async markOrderShipped(orderId, client = null) {
     await this.query(
       `UPDATE orders SET status = 'shipped', updated_at = NOW() WHERE id = $1`,
@@ -917,6 +967,9 @@ class ShipmentRepository extends BaseRepository {
 
   // ── shipmentTrackingService helpers ─────────────────────────────────────
 
+  /**
+   * Find shipment by id for tracking service read paths.
+   */
   async findById(shipmentId, client = null) {
     const result = await this.query(
       `SELECT * FROM shipments WHERE id = $1`,
@@ -925,6 +978,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Find shipment with carrier, warehouse, and order metadata for tracking detail views.
+   */
   async findWithCarrierAndWarehouse(shipmentId, client = null) {
     const result = await this.query(
       `SELECT
@@ -942,6 +998,9 @@ class ShipmentRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Mark the order linked to the shipment as delivered.
+   */
   async markOrderDeliveredByShipmentId(shipmentId, client = null) {
     await this.query(
       `UPDATE orders SET status = 'delivered', updated_at = NOW()

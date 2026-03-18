@@ -7,9 +7,10 @@ import userRepo from '../repositories/UserRepository.js';
 import logger from '../utils/logger.js';
 
 export const settingsService = {
-  // Update user profile fields
-  // Email changes are staged: the new address is saved as pending_email and the
-  // user receives a verification token that must be confirmed before the change applies.
+  /**
+   * Update user profile fields.
+   * Email changes are staged as pending and require token verification.
+   */
   async updateUserProfile(userId, updates) {
     const allowedFields = ['name', 'phone', 'company', 'avatar']; // email handled separately
     const fields = [];
@@ -34,13 +35,13 @@ export const settingsService = {
     }
 
     // Build dynamic update for non-email fields
-    for (const [key, value] of Object.entries(updates)) {
+    Object.entries(updates).forEach(([key, value]) => {
       if (allowedFields.includes(key) && value !== undefined) {
         fields.push(`${key} = $${paramCount}`);
         values.push(value);
         paramCount++;
       }
-    }
+    });
 
     let updatedUser;
     if (fields.length > 0) {
@@ -67,8 +68,9 @@ export const settingsService = {
     return updatedUser;
   },
 
-  // Confirm an email change using the token that was emailed to the new address.
-  // Sets users.email = pending_email and clears the pending_* columns.
+  /**
+   * Confirm a staged email change using verification token.
+   */
   async verifyEmailChange(token) {
     const now = new Date();
     const user = await userRepo.confirmEmailChange(token, now);
@@ -78,7 +80,9 @@ export const settingsService = {
     return user;
   },
 
-  // Change user password
+  /**
+   * Change user password and revoke all active sessions.
+   */
   async changePassword(userId, currentPassword, newPassword) {
     // Validate new password strength
     if (newPassword.length < 8) {
@@ -130,7 +134,9 @@ export const settingsService = {
     });
   },
 
-  // Get notification preferences
+  /**
+   * Get user notification preferences or defaults.
+   */
   async getNotificationPreferences(userId) {
     const row = await userRepo.getNotificationPreferences(userId);
 
@@ -154,7 +160,9 @@ export const settingsService = {
     return row;
   },
 
-  // Update notification preferences
+  /**
+   * Update selected notification preference fields.
+   */
   async updateNotificationPreferences(userId, preferences) {
     const { email_enabled, push_enabled, sms_enabled, notification_types } = preferences;
 
@@ -198,13 +206,16 @@ export const settingsService = {
     return userRepo.updateNotificationPreferences(userId, fields, values);
   },
 
-  // Get active sessions for user
+  /**
+   * List active sessions for account security settings.
+   */
   async getActiveSessions(userId) {
     return userRepo.getActiveSessions(userId);
   },
 
-  // Revoke a session — marks it inactive AND blocklists the associated JWT so it is
-  // rejected even while it would still pass signature verification.
+  /**
+   * Revoke one session and optionally blocklist its JWT by JTI.
+   */
   async revokeSession(userId, sessionId, jti = null, tokenExpiresAt = null) {
     const revokedSession = await userRepo.revokeSessionById(sessionId, userId);
 

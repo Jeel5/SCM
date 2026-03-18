@@ -2,10 +2,20 @@
 // a proper domain boundary without duplicating complex SQL into the controller.
 import BaseRepository from './BaseRepository.js';
 
+/**
+ * Convert Date to yyyy-mm-dd.
+ * @param {Date} value
+ * @returns {string}
+ */
 function toDateString(value) {
   return value.toISOString().slice(0, 10);
 }
 
+/**
+ * Resolve date window boundaries from preset range.
+ * @param {'day'|'week'|'month'|'year'} range
+ * @returns {{startDate: string, endDate: string}}
+ */
 function getRangeWindow(range) {
   const end = new Date();
   end.setUTCHours(0, 0, 0, 0);
@@ -20,6 +30,11 @@ function getRangeWindow(range) {
   };
 }
 
+/**
+ * Resolve analytics range from shared SQL arg convention.
+ * @param {Array} baseArgs
+ * @returns {'day'|'week'|'month'|'year'}
+ */
 function resolveRangeFromArgs(baseArgs) {
   const interval = baseArgs[baseArgs.length - 1];
   if (interval === '1 day') return 'day';
@@ -28,6 +43,11 @@ function resolveRangeFromArgs(baseArgs) {
   return 'month';
 }
 
+/**
+ * Build SQL date bucketing expression for analytics series.
+ * @param {'day'|'week'|'month'|'year'} range
+ * @returns {string}
+ */
 function buildBucketExpression(range) {
   if (range === 'year') {
     return "DATE_TRUNC('month', stat_date)::date";
@@ -56,6 +76,11 @@ class AnalyticsRepository extends BaseRepository {
    * in the controller before being passed here.
    */
 
+  /**
+   * Aggregate order metrics over time for charting.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getOrdersOverTime({ dateGrouping, intClause, orgClause, baseArgs }) {
     const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
     const range = resolveRangeFromArgs(baseArgs);
@@ -77,9 +102,14 @@ class AnalyticsRepository extends BaseRepository {
     `, [organizationId, startDate, endDate]);
   }
 
+  /**
+   * Aggregate shipment KPIs by carrier for selected range.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getShipmentsByCarrier({ intClause, orgClauseAlias, baseArgs }) {
     const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
-    const range = baseArgs[baseArgs.length - 1] === '1 year' ? 'year' : baseArgs[baseArgs.length - 1] === '7 days' ? 'week' : baseArgs[baseArgs.length - 1] === '1 day' ? 'day' : 'month';
+    const range = resolveRangeFromArgs(baseArgs);
     const { startDate, endDate } = getRangeWindow(range);
     return this.query(`
       SELECT
@@ -100,6 +130,11 @@ class AnalyticsRepository extends BaseRepository {
     `, [organizationId, startDate, endDate]);
   }
 
+  /**
+   * Return top products by revenue/units sold.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getTopProducts({ intClause, orgClauseAlias, baseArgs }) {
     return this.query(`
       SELECT
@@ -120,6 +155,11 @@ class AnalyticsRepository extends BaseRepository {
     `, baseArgs);
   }
 
+  /**
+   * Return utilization and throughput metrics per warehouse.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getWarehouseUtilization({ intClause, orgParam, baseArgs }) {
     return this.query(`
       SELECT
@@ -140,6 +180,11 @@ class AnalyticsRepository extends BaseRepository {
     `, baseArgs);
   }
 
+  /**
+   * Aggregate SLA violation totals over time.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getSlaViolations({ dateGrouping, intClause, orgClause, baseArgs }) {
     const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
     const range = resolveRangeFromArgs(baseArgs);
@@ -158,6 +203,11 @@ class AnalyticsRepository extends BaseRepository {
     `, [organizationId, startDate, endDate]);
   }
 
+  /**
+   * Group exceptions by type and severity with resolution stats.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getExceptionsByType({ intClause, orgClause, baseArgs }) {
     return this.query(`
       SELECT
@@ -177,6 +227,11 @@ class AnalyticsRepository extends BaseRepository {
     `, baseArgs);
   }
 
+  /**
+   * Summarize return/refund quality metrics.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getReturnsAnalysis({ intClause, orgClause, baseArgs }) {
     return this.query(`
       SELECT
@@ -192,6 +247,11 @@ class AnalyticsRepository extends BaseRepository {
     `, baseArgs);
   }
 
+  /**
+   * Summarize financial metrics for selected date range.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async getFinancialMetrics({ intClause, orgClause, baseArgs }) {
     const organizationId = baseArgs.length > 1 ? baseArgs[0] : null;
     const range = resolveRangeFromArgs(baseArgs);
@@ -212,6 +272,11 @@ class AnalyticsRepository extends BaseRepository {
 
   // ── CSV export queries ─────────────────────────────────────────────────
 
+  /**
+   * Export order records as flat dataset.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async exportOrders({ intIdx, orgClause, params }) {
     return this.query(`
       SELECT order_number, customer_name, customer_email, status,
@@ -223,6 +288,11 @@ class AnalyticsRepository extends BaseRepository {
     `, params);
   }
 
+  /**
+   * Export shipment records as flat dataset.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async exportShipments({ intIdx, orgParam, params }) {
     return this.query(`
       SELECT s.id, s.tracking_number, c.name AS carrier_name, s.status,
@@ -236,6 +306,11 @@ class AnalyticsRepository extends BaseRepository {
     `, params);
   }
 
+  /**
+   * Export return records as flat dataset.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async exportReturns({ intIdx, orgClause, params }) {
     return this.query(`
       SELECT rma_number, customer_name, status, refund_amount, reason, requested_at
@@ -246,6 +321,11 @@ class AnalyticsRepository extends BaseRepository {
     `, params);
   }
 
+  /**
+   * Export SLA violation records as flat dataset.
+   * @param {Object} args
+   * @returns {Promise<Object>}
+   */
   async exportViolations({ intIdx, orgParam, params }) {
     return this.query(`
       SELECT sv.id, sv.shipment_id, sp.name AS policy_name,

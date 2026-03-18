@@ -4,6 +4,7 @@ import readline from 'readline';
 export const DEFAULT_MAX_IMPORT_ROWS = 200_000;
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** Parse a CSV line while honoring quoted commas and escaped quotes. */
 export function parseCsvLine(line) {
   const result = [];
   let current = '';
@@ -29,6 +30,7 @@ export function parseCsvLine(line) {
   return result;
 }
 
+/** Stream parsed CSV rows as plain objects with header-based keys. */
 export async function* iterCsvRows(filePath, maxRows = DEFAULT_MAX_IMPORT_ROWS) {
   const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -63,6 +65,7 @@ export async function* iterCsvRows(filePath, maxRows = DEFAULT_MAX_IMPORT_ROWS) 
   }
 }
 
+/** Parse a JSON object-like value safely, returning null on invalid data. */
 export function parseJsonObject(value) {
   if (!value) return null;
   if (typeof value === 'object') return value;
@@ -73,12 +76,14 @@ export function parseJsonObject(value) {
   }
 }
 
+/** Normalize text into a case-insensitive alphanumeric lookup key. */
 export function normalizeLookupKey(value) {
   return String(value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 }
 
+/** Normalize external shipment statuses into internal allowed status values. */
 export function normalizeShipmentStatus(rawStatus) {
   const status = String(rawStatus || 'delivered').toLowerCase().trim();
   const statusMap = {
@@ -97,6 +102,7 @@ export function normalizeShipmentStatus(rawStatus) {
   return validStatuses.includes(normalized) ? normalized : 'delivered';
 }
 
+/** Build normalized address object from prefixed CSV columns and fallback data. */
 export function buildAddress(prefix, row, fallback = null) {
   const street = row[`${prefix}_street`] || row[`${prefix}_address`] || fallback?.street || 'N/A';
   const city = row[`${prefix}_city`] || fallback?.city || 'Unknown';
@@ -113,6 +119,7 @@ export function buildAddress(prefix, row, fallback = null) {
   };
 }
 
+/** Build synthetic shipment timeline events from imported shipment status context. */
 export function buildShipmentEvents(status, origin, destination, currentLocation, pickupActual, deliveryActual) {
   const baseTime = new Date();
   const pickupTime = pickupActual ? new Date(pickupActual) : new Date(baseTime.getTime() - 2 * 24 * 3_600_000);

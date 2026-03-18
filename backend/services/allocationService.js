@@ -6,6 +6,13 @@ import shipmentRepo from '../repositories/ShipmentRepository.js';
 import inventoryRepo from '../repositories/InventoryRepository.js';
 import allocationRepo from '../repositories/AllocationRepository.js';
 
+function runSerial(items, worker) {
+  return items.reduce(
+    (chain, item) => chain.then(() => worker(item)),
+    Promise.resolve()
+  );
+}
+
 class AllocationService {
   /**
    * Allocate inventory for order items across available warehouses
@@ -18,7 +25,7 @@ class AllocationService {
       // Get active allocation rules sorted by priority
       const rules = await allocationRepo.findActiveRules(tx);
 
-      for (const item of items) {
+      await runSerial(items, async (item) => {
         const allocation = await this.allocateItem(item, shippingAddress, rules, tx);
         allocations.push(allocation);
 
@@ -32,7 +39,7 @@ class AllocationService {
           allocatedQuantity: item.quantity,
           reason: allocation.reason
         }, tx);
-      }
+      });
 
       logEvent('InventoryAllocated', { orderId, allocationsCount: allocations.length });
       return allocations;
@@ -87,7 +94,7 @@ class AllocationService {
     let selectedStrategy = 'default';
     let reason = '';
 
-    for (const rule of rules) {
+    await runSerial(rules, async (rule) => {
       let score = 0;
 
       switch (rule.strategy) {
@@ -124,7 +131,7 @@ class AllocationService {
         maxScore = score;
         selectedStrategy = rule.strategy;
       }
-    }
+    });
 
     return {
       ...warehouse,
@@ -190,11 +197,10 @@ class AllocationService {
    * Check if order needs to be split across multiple warehouses
    */
   async checkOrderSplitRequired(items) {
-    for (const item of items) {
-      const count = await inventoryRepo.countWarehousesWithStock(item.sku, item.quantity);
-      if (count === 0) return true;
-    }
-    return false;
+    const counts = await Promise.all(
+      items.map((item) => inventoryRepo.countWarehousesWithStock(item.sku, item.quantity))
+    );
+    return counts.some((count) => count === 0);
   }
 
   /**
@@ -203,7 +209,7 @@ class AllocationService {
   async splitOrderAcrossWarehouses(orderId, items, shippingAddress) {
     const splits = {};
 
-    for (const item of items) {
+    await runSerial(items, async (item) => {
       const warehouses = await inventoryRepo.findWarehousesWithStockBySku(item.sku);
       let remainingQty = item.quantity;
 
@@ -233,7 +239,7 @@ class AllocationService {
           `Insufficient total inventory for SKU: ${item.sku}. Short by ${remainingQty} units.`
         );
       }
-    }
+    });
 
     logEvent('OrderSplit', { 
       orderId, 

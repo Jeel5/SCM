@@ -19,43 +19,37 @@ class AssignmentRetryService {
 
       logger.info(`Found ${orders.length} orders with expired assignments`);
 
-      for (const order of orders) {
-        // Mark old assignments as expired
-        await carrierAssignmentRepo.expireByOrderId(order.id);
+      const outcomes = await Promise.allSettled(
+        orders.map(async (order) => {
+          await carrierAssignmentRepo.expireByOrderId(order.id);
+          const triedCount = await carrierAssignmentRepo.countTriedCarriers(order.id);
 
-        // Count how many batches have been tried
-        const triedCount = await carrierAssignmentRepo.countTriedCarriers(order.id);
+          if (triedCount >= 9) {
+            logger.warn(`Order ${order.id} exhausted all carrier retries (${triedCount} carriers). Moving to on_hold.`);
+            await carrierAssignmentRepo.markOrderOnHold(order.id);
+            await carrierAssignmentRepo.createAssignmentExhaustedAlert({
+              organizationId: order.organization_id,
+              orderNumber: order.order_number,
+              orderId: order.id,
+              triedCount,
+              priority: order.priority
+            });
+            logger.warn('System alert raised: carrier assignment exhausted', { orderId: order.id, triedCount });
+            return;
+          }
 
-        if (triedCount >= 9) {
-          // Maximum retries reached - escalate to manual review
-          logger.warn(`Order ${order.id} exhausted all carrier retries (${triedCount} carriers). Moving to on_hold.`);
-          
-          await carrierAssignmentRepo.markOrderOnHold(order.id);
-
-          // Raise a system alert so ops staff can pick this up in the dashboard
-          await carrierAssignmentRepo.createAssignmentExhaustedAlert({
-            organizationId: order.organization_id,
-            orderNumber: order.order_number,
-            orderId: order.id,
-            triedCount,
-            priority: order.priority
-          });
-          logger.warn('System alert raised: carrier assignment exhausted', { orderId: order.id, triedCount });
-          continue;
-        }
-
-        // Retry with next batch of carriers
-        logger.info(`Retrying carrier assignment for order ${order.id} (attempt ${Math.floor(triedCount / 3) + 1}/3)`);
-        
-        try {
+          logger.info(`Retrying carrier assignment for order ${order.id} (attempt ${Math.floor(triedCount / 3) + 1}/3)`);
           await carrierAssignmentService.requestCarrierAssignment(order.id, {
             priority: order.priority,
-            items: [] // Will be fetched by service
+            items: []
           });
-        } catch (error) {
-          logger.error(`Failed to retry assignment for order ${order.id}:`, error);
-        }
-      }
+        })
+      );
+
+      outcomes.forEach((outcome, idx) => {
+        if (outcome.status === 'fulfilled') return;
+        logger.error(`Failed to retry assignment for order ${orders[idx]?.id}:`, outcome.reason);
+      });
 
       return orders.length;
     } catch (error) {
@@ -84,21 +78,26 @@ class AssignmentRetryService {
 
       let retriedCount = 0;
 
-      for (const carrier of carriers) {
-        // Find assignments this carrier marked as 'busy'
-        const busyAssignments = await carrierAssignmentRepo.findBusyByCarrier(carrier.id, 5);
+      const carrierOutcomes = await Promise.allSettled(
+        carriers.map(async (carrier) => {
+          const busyAssignments = await carrierAssignmentRepo.findBusyByCarrier(carrier.id, 5);
 
-        if (busyAssignments.length > 0) {
-          logger.info(`Carrier ${carrier.code} has ${busyAssignments.length} busy assignments to retry`);
-
-          // Reset status to 'pending' so carrier can accept
-          for (const assignment of busyAssignments) {
-            await carrierAssignmentRepo.resetToPending(assignment.id);
+          if (busyAssignments.length > 0) {
+            logger.info(`Carrier ${carrier.code} has ${busyAssignments.length} busy assignments to retry`);
+            await Promise.all(busyAssignments.map((assignment) => carrierAssignmentRepo.resetToPending(assignment.id)));
           }
 
-          retriedCount += busyAssignments.length;
+          return busyAssignments.length;
+        })
+      );
+
+      carrierOutcomes.forEach((outcome, idx) => {
+        if (outcome.status === 'fulfilled') {
+          retriedCount += outcome.value;
+          return;
         }
-      }
+        logger.error(`Failed to process busy assignments for carrier ${carriers[idx]?.code}:`, outcome.reason);
+      });
 
       logger.info(`Reset ${retriedCount} busy assignments to pending`);
       return retriedCount;
@@ -121,18 +120,20 @@ class AssignmentRetryService {
 
       logger.info(`Found ${rows.length} orders with all carriers rejected/busy`);
 
-      for (const row of rows) {
-        logger.info(`Retrying order ${row.order_id} after all carriers rejected/busy (batch ${row.total_assignments / 3})`);
-
-        try {
-          await carrierAssignmentService.requestCarrierAssignment(row.order_id, {
+      const retryOutcomes = await Promise.allSettled(
+        rows.map((row) => {
+          logger.info(`Retrying order ${row.order_id} after all carriers rejected/busy (batch ${row.total_assignments / 3})`);
+          return carrierAssignmentService.requestCarrierAssignment(row.order_id, {
             priority: row.priority,
             items: []
           });
-        } catch (error) {
-          logger.error(`Failed to retry order ${row.order_id}:`, error);
-        }
-      }
+        })
+      );
+
+      retryOutcomes.forEach((outcome, idx) => {
+        if (outcome.status === 'fulfilled') return;
+        logger.error(`Failed to retry order ${rows[idx]?.order_id}:`, outcome.reason);
+      });
 
       return rows.length;
     } catch (error) {

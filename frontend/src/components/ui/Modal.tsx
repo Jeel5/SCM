@@ -85,7 +85,7 @@ export function Modal({
             )}
           >
             {(title || showClose) && (
-              <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
+              <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
                 <div>
                   {title && (
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h2>
@@ -140,9 +140,9 @@ export function ConfirmModal({
   isLoading = false,
 }: ConfirmModalProps) {
   const variantStyles = {
-    danger: 'bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 shadow-red-500/30',
-    warning: 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/30',
-    info: 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-blue-500/30',
+    danger: 'bg-linear-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 shadow-red-500/30',
+    warning: 'bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/30',
+    info: 'bg-linear-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-blue-500/30',
   };
 
   return (

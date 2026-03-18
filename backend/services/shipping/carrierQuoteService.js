@@ -31,6 +31,95 @@ function resolveCarrierTimeout(carrier) {
   return Math.min(raw, MAX_CARRIER_API_TIMEOUT_MS);
 }
 
+/** Build pending assignment projection used by both portal and final responses. */
+function buildPendingAssignments(allActiveCarriers) {
+  return allActiveCarriers.map((carrier) => ({
+    carrierId: carrier.id,
+    carrierName: carrier.name,
+  }));
+}
+
+/** Return response when no carriers are active at all. */
+function buildNoCarriersResponse() {
+  return {
+    acceptedQuotes: [],
+    rejectedCarriers: [],
+    pendingAssignments: [],
+    totalCarriers: 0,
+    acceptanceRate: '0%',
+    message: 'No carriers available. Order queued for manual assignment.',
+  };
+}
+
+/** Return response for portal-only mode when no carrier has push API configured. */
+function buildPortalOnlyResponse(allActiveCarriers) {
+  return {
+    acceptedQuotes: [],
+    rejectedCarriers: [],
+    pendingAssignments: buildPendingAssignments(allActiveCarriers),
+    totalCarriers: allActiveCarriers.length,
+    acceptanceRate: '0%',
+    message: `Order queued for carrier portal. ${allActiveCarriers.length} carriers can view and accept.`,
+  };
+}
+
+/** Derive accepted/rejected buckets from Promise.allSettled carrier call outcomes. */
+function splitCarrierResults(carrierResults, carriers) {
+  const acceptedQuotes = [];
+  const rejectedCarriers = [];
+
+  carrierResults.forEach((result, index) => {
+    const carrier = carriers[index];
+
+    if (result.status === 'fulfilled') {
+      const response = result.value;
+      if (response.accepted) {
+        acceptedQuotes.push(response.quote);
+        logger.info(`Carrier ${carrier.name} ACCEPTED`, {
+          price: response.quote.quotedPrice,
+          days: response.quote.estimatedDeliveryDays,
+        });
+        return;
+      }
+
+      rejectedCarriers.push({
+        carrierName: carrier.name,
+        carrierCode: carrier.code,
+        reason: response.reason,
+        message: response.message,
+      });
+      logger.warn(`Carrier ${carrier.name} REJECTED`, { reason: response.reason });
+      return;
+    }
+
+    rejectedCarriers.push({
+      carrierName: carrier.name,
+      carrierCode: carrier.code,
+      reason: 'api_error',
+      message: result.reason.message,
+    });
+    logger.error(`Carrier ${carrier.name} API ERROR`, { error: result.reason.message });
+  });
+
+  return { acceptedQuotes, rejectedCarriers };
+}
+
+/** Build final quote-collection response shape after carrier fanout completes. */
+function buildFinalQuoteResponse(acceptedQuotes, rejectedCarriers, allActiveCarriers) {
+  return {
+    acceptedQuotes,
+    rejectedCarriers,
+    pendingAssignments: buildPendingAssignments(allActiveCarriers),
+    totalCarriers: allActiveCarriers.length,
+    acceptanceRate: allActiveCarriers.length > 0
+      ? `${((acceptedQuotes.length / allActiveCarriers.length) * 100).toFixed(1)}%`
+      : '0%',
+    message: acceptedQuotes.length > 0
+      ? `${acceptedQuotes.length} carriers accepted, ${rejectedCarriers.length} rejected`
+      : `Order queued for carrier portal. ${allActiveCarriers.length} carriers can view and accept.`,
+  };
+}
+
 /**
  * Get shipping quotes from all active carriers after order is placed
  * Sends request to all carriers, waits for accept/reject responses
@@ -60,14 +149,7 @@ export async function getQuotesFromAllCarriers(shipmentDetails) {
 
     if (allActiveCarriers.length === 0) {
       logger.warn('No active carriers in system at all - order will wait in pending state', { orderId });
-      return {
-        acceptedQuotes: [],
-        rejectedCarriers: [],
-        pendingAssignments: [],
-        totalCarriers: 0,
-        acceptanceRate: '0%',
-        message: 'No carriers available. Order queued for manual assignment.'
-      };
+      return buildNoCarriersResponse();
     }
 
     // Use carriers with API endpoints if available (PUSH model)
@@ -90,15 +172,8 @@ export async function getQuotesFromAllCarriers(shipmentDetails) {
         orderId,
         availableCarriers: allActiveCarriers.length
       });
-      
-      return {
-        acceptedQuotes: [],
-        rejectedCarriers: [],
-        pendingAssignments: allActiveCarriers.map(c => ({ carrierId: c.id, carrierName: c.name })),
-        totalCarriers: allActiveCarriers.length,
-        acceptanceRate: '0%',
-        message: `Order queued for carrier portal. ${allActiveCarriers.length} carriers can view and accept.`
-      };
+
+      return buildPortalOnlyResponse(allActiveCarriers);
     }
 
     // Send to carriers with API endpoints (PUSH model)
@@ -117,42 +192,7 @@ export async function getQuotesFromAllCarriers(shipmentDetails) {
     // Wait for all carriers to respond
     const carrierResults = await Promise.allSettled(carrierPromises);
 
-    // Separate accepted and rejected quotes
-    const acceptedQuotes = [];
-    const rejectedCarriers = [];
-
-    carrierResults.forEach((result, index) => {
-      const carrier = carriers[index];
-      
-      if (result.status === 'fulfilled') {
-        const response = result.value;
-        
-        if (response.accepted) {
-          acceptedQuotes.push(response.quote);
-          logger.info(`Carrier ${carrier.name} ACCEPTED`, {
-            price: response.quote.quotedPrice,
-            days: response.quote.estimatedDeliveryDays
-          });
-        } else {
-          rejectedCarriers.push({
-            carrierName: carrier.name,
-            carrierCode: carrier.code,
-            reason: response.reason,
-            message: response.message
-          });
-          logger.warn(`Carrier ${carrier.name} REJECTED`, { reason: response.reason });
-        }
-      } else {
-        // API error
-        rejectedCarriers.push({
-          carrierName: carrier.name,
-          carrierCode: carrier.code,
-          reason: 'api_error',
-          message: result.reason.message
-        });
-        logger.error(`Carrier ${carrier.name} API ERROR`, { error: result.reason.message });
-      }
-    });
+    const { acceptedQuotes, rejectedCarriers } = splitCarrierResults(carrierResults, carriers);
 
     // Store all quotes (accepted and rejected) for audit
     if (acceptedQuotes.length > 0) {
@@ -170,18 +210,7 @@ export async function getQuotesFromAllCarriers(shipmentDetails) {
       totalCarriers: allActiveCarriers.length
     });
 
-    return {
-      acceptedQuotes,
-      rejectedCarriers,
-      pendingAssignments: allActiveCarriers.map(c => ({ carrierId: c.id, carrierName: c.name })),
-      totalCarriers: allActiveCarriers.length,
-      acceptanceRate: allActiveCarriers.length > 0 
-        ? ((acceptedQuotes.length / allActiveCarriers.length) * 100).toFixed(1) + '%' 
-        : '0%',
-      message: acceptedQuotes.length > 0
-        ? `${acceptedQuotes.length} carriers accepted, ${rejectedCarriers.length} rejected`
-        : `Order queued for carrier portal. ${allActiveCarriers.length} carriers can view and accept.`
-    };
+    return buildFinalQuoteResponse(acceptedQuotes, rejectedCarriers, allActiveCarriers);
   } catch (error) {
     logger.error('Error getting real quotes from carriers', { error: error.message });
     throw error;

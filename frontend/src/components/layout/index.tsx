@@ -27,7 +27,7 @@ export function MainLayout() {
           animate={{ opacity: 1, scale: 1 }}
           className="flex flex-col items-center gap-4"
         >
-          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center animate-pulse">
+          <div className="h-16 w-16 rounded-2xl bg-linear-to-br from-blue-600 to-indigo-600 flex items-center justify-center animate-pulse">
             <svg
               className="h-8 w-8 text-white"
               fill="none"

@@ -10,6 +10,102 @@ import WarehouseRepository from '../repositories/WarehouseRepository.js';
 
 class CarrierAssignmentService {
   /**
+   * Load order context and create carrier assignments in one transaction.
+   */
+  async createAssignmentBatch(orderId, tx) {
+    const order = await carrierAssignmentRepo.findOrderById(orderId, tx);
+    if (!order) throw new NotFoundError(`Order ${orderId}`);
+
+    const rawItems = await carrierAssignmentRepo.findOrderItemsWithProducts(orderId, tx);
+    const items = rawItems.map((item) => ({
+      ...item,
+      weight: item.weight || item.product_weight || 0,
+      dimensions: item.dimensions || item.product_dimensions || { length: 30, width: 20, height: 15 },
+      is_fragile: item.is_fragile || item.product_is_fragile || false,
+      is_hazardous: item.is_hazardous || item.product_is_hazardous || false,
+    }));
+
+    const warehouse = await carrierAssignmentRepo.findWarehouseForOrder(orderId, tx);
+    const triedCount = await carrierAssignmentRepo.countTriedCarriers(orderId, tx);
+    if (triedCount >= 9) {
+      logger.error(`Order ${orderId} has exhausted all carrier retries`, { triedCount });
+      await carrierAssignmentRepo.markOrderOnHold(orderId, tx);
+      throw new AppError('Maximum carrier assignment attempts exceeded. Order placed on hold for manual intervention.', 503);
+    }
+
+    const serviceType = order.priority || 'standard';
+    const carriers = await carrierAssignmentRepo.findAvailableCarriers(serviceType, tx);
+    if (carriers.length === 0) {
+      logger.warn(`No available carriers for order ${orderId}. Will retry when carriers become available.`, { serviceType, triedCount });
+      return { assignments: [], carriersToNotify: [], orderId };
+    }
+
+    const carriersToNotify = await Promise.all(
+      carriers.map(async (carrier) => {
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+
+        const requestPayload = await carrierPayloadBuilder.buildRequestPayload(
+          order,
+          items,
+          warehouse,
+          carrier,
+          serviceType
+        );
+
+        const idempotencyKey = `${orderId}-carrier-${carrier.id}-${Date.now()}`;
+        requestPayload.assignmentId = idempotencyKey;
+
+        const assignment = await carrierAssignmentRepo.createAssignment({
+          orderId,
+          carrierId: carrier.id,
+          organizationId: order.organization_id || null,
+          serviceType,
+          pickupAddress: requestPayload.pickup.address,
+          deliveryAddress: requestPayload.delivery.address,
+          estimatedPickup: new Date(requestPayload.service.estimatedDeliveryDate) || new Date(Date.now() + 2 * 60 * 60 * 1000),
+          estimatedDelivery: new Date(requestPayload.service.estimatedDeliveryDate) || new Date(Date.now() + 24 * 60 * 60 * 1000),
+          requestPayload,
+          expiresAt,
+          idempotencyKey
+        }, tx);
+
+        logger.info('Created carrier assignment request', {
+          assignmentId: assignment.id,
+          carrierId: carrier.id,
+          carrierName: carrier.name,
+          orderId,
+          idempotencyKey
+        });
+
+        return { assignment, carrier, requestPayload };
+      })
+    );
+
+    await carrierAssignmentRepo.updateOrderStatus(orderId, 'pending_carrier_assignment', tx);
+    return {
+      assignments: carriersToNotify.map(({ assignment }) => assignment),
+      carriersToNotify,
+      orderId,
+    };
+  }
+
+  /**
+   * Trigger asynchronous notification calls to carriers after transaction commit.
+   */
+  dispatchCarrierNotifications(carriersToNotify) {
+    carriersToNotify.forEach(({ assignment, carrier, requestPayload }) => {
+      this.sendAssignmentToCarrier(assignment.id, carrier, requestPayload).catch((err) => {
+        logger.error('Failed to notify carrier', {
+          assignmentId: assignment.id,
+          carrierCode: carrier.code,
+          error: err.message
+        });
+      });
+    });
+  }
+
+  /**
    * Request carrier assignment for an order
    * Finds matching carriers and sends assignment request to them
    */
@@ -20,120 +116,11 @@ class CarrierAssignmentService {
         items: orderData.items?.length
       });
 
-      // Use transaction to ensure atomicity
-      const result = await withTransaction(async (tx) => {
-        // Get order details
-        const order = await carrierAssignmentRepo.findOrderById(orderId, tx);
-        if (!order) throw new NotFoundError(`Order ${orderId}`);
-
-        // Get order items with shipping details
-        const rawItems = await carrierAssignmentRepo.findOrderItemsWithProducts(orderId, tx);
-        const items = rawItems.map(item => ({
-          ...item,
-          weight: item.weight || item.product_weight || 0,
-          dimensions: item.dimensions || item.product_dimensions || { length: 30, width: 20, height: 15 },
-          is_fragile: item.is_fragile || item.product_is_fragile || false,
-          is_hazardous: item.is_hazardous || item.product_is_hazardous || false
-        }));
-
-        // Get warehouse details for pickup address
-        const warehouse = await carrierAssignmentRepo.findWarehouseForOrder(orderId, tx);
-
-        // Check if max retry attempts reached (3 batches × 3 carriers = 9 max)
-        const triedCount = await carrierAssignmentRepo.countTriedCarriers(orderId, tx);
-
-        if (triedCount >= 9) {
-          logger.error(`Order ${orderId} has exhausted all carrier retries`, { triedCount });
-          await carrierAssignmentRepo.markOrderOnHold(orderId, tx);
-          throw new AppError('Maximum carrier assignment attempts exceeded. Order placed on hold for manual intervention.', 503);
-        }
-
-        // Find eligible carriers based on service type and availability
-        const serviceType = order.priority || 'standard'; // standard, express, bulk
-        const carriers = await carrierAssignmentRepo.findAvailableCarriers(serviceType, tx);
-        const carriersResult = { rows: carriers }; // kept for compat with code below
-
-        if (carriersResult.rows.length === 0) {
-          logger.warn(`No available carriers for order ${orderId}. Will retry when carriers become available.`, { serviceType, triedCount });
-          
-          // Don't throw error - keep order in pending_carrier_assignment state
-          // Retry service will handle this
-          return { assignments: [], carriersToNotify: [], orderId };
-        }
-
-        const assignments = [];
-        const carriersToNotify = [];
-
-        for (const carrier of carriersResult.rows) {
-          // Create assignment record
-          const expiresAt = new Date();
-          expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minute window per batch
-
-          // Build comprehensive payload using payload builder
-          const requestPayload = await carrierPayloadBuilder.buildRequestPayload(
-            order,
-            items,
-            warehouse,
-            carrier,
-            serviceType
-          );
-
-          // Generate idempotency key
-          const idempotencyKey = `${orderId}-carrier-${carrier.id}-${Date.now()}`;
-
-          // Store assignment ID in payload
-          requestPayload.assignmentId = idempotencyKey;
-
-          // Use proper addresses from payload
-          const pickupAddress = requestPayload.pickup.address;
-          const deliveryAddress = requestPayload.delivery.address;
-
-          const assignmentResult = await carrierAssignmentRepo.createAssignment({
-            orderId,
-            carrierId: carrier.id,
-            organizationId: order.organization_id || null,
-            serviceType,
-            pickupAddress,
-            deliveryAddress,
-            estimatedPickup: new Date(requestPayload.service.estimatedDeliveryDate) || new Date(Date.now() + 2 * 60 * 60 * 1000),
-            estimatedDelivery: new Date(requestPayload.service.estimatedDeliveryDate) || new Date(Date.now() + 24 * 60 * 60 * 1000),
-            requestPayload,
-            expiresAt,
-            idempotencyKey
-          }, tx);
-          const assignment = assignmentResult;
-          assignments.push(assignment);
-
-          logger.info(`Created carrier assignment request`, {
-            assignmentId: assignment.id,
-            carrierId: carrier.id,
-            carrierName: carrier.name,
-            orderId,
-            idempotencyKey
-          });
-
-          // Store carrier info for notification after transaction commits
-          carriersToNotify.push({ assignment, carrier, requestPayload });
-        }
-
-        // Update order status to pending_carrier_assignment
-        await carrierAssignmentRepo.updateOrderStatus(orderId, 'pending_carrier_assignment', tx);
-
-        return { assignments, carriersToNotify, orderId };
-      });
+      const result = await withTransaction((tx) => this.createAssignmentBatch(orderId, tx));
 
       // After transaction commits, send notifications to carriers
       // This happens outside transaction because external API calls can't be rolled back
-      for (const { assignment, carrier, requestPayload } of result.carriersToNotify) {
-        // Fire and forget - don't await
-        this.sendAssignmentToCarrier(assignment.id, carrier, requestPayload).catch(err => {
-          logger.error('Failed to notify carrier', {
-            assignmentId: assignment.id,
-            carrierCode: carrier.code,
-            error: err.message
-          });
-        });
-      }
+      this.dispatchCarrierNotifications(result.carriersToNotify);
 
       return {
         orderId: result.orderId,
@@ -414,18 +401,31 @@ class CarrierAssignmentService {
     });
   }
 
+  /**
+   * Finalize all orders whose bidding windows have fully closed.
+   * @returns {Promise<number>} count of orders finalized in this run
+   */
   async finalizeReadyBiddingWindows() {
     const readyOrders = await carrierAssignmentRepo.findOrdersReadyForBiddingFinalization();
-    let finalizedCount = 0;
-
-    for (const orderId of readyOrders) {
-      try {
+    const outcomes = await Promise.allSettled(
+      readyOrders.map(async (orderId) => {
         const result = await this.tryFinalizeBiddingWindow(orderId);
-        if (result.finalized) finalizedCount += 1;
-      } catch (error) {
-        logger.error('Failed to finalize bidding window', { orderId, error: error.message });
+        return { orderId, finalized: Boolean(result?.finalized) };
+      })
+    );
+
+    let finalizedCount = 0;
+    outcomes.forEach((outcome, idx) => {
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value.finalized) finalizedCount += 1;
+        return;
       }
-    }
+
+      logger.error('Failed to finalize bidding window', {
+        orderId: readyOrders[idx],
+        error: outcome.reason?.message || String(outcome.reason),
+      });
+    });
 
     return finalizedCount;
   }
@@ -474,19 +474,26 @@ class CarrierAssignmentService {
 
       logger.info(`Found ${expiredRows.length} expired assignments`);
 
-      for (const expired of expiredRows) {
-        // Mark as cancelled
-        await carrierAssignmentRepo.cancelById(expired.id);
+      const outcomes = await Promise.allSettled(
+        expiredRows.map(async (expired) => {
+          await carrierAssignmentRepo.cancelById(expired.id);
 
-        // Try to reassign
-        const order = await carrierAssignmentRepo.findOrderWithItems(expired.order_id);
+          const order = await carrierAssignmentRepo.findOrderWithItems(expired.order_id);
+          if (order) {
+            logger.info(`Reassigning expired assignment for order ${expired.order_id}`);
+            await this.requestCarrierAssignment(expired.order_id, { items: order.items });
+          }
+        })
+      );
 
-        if (order) {
-          logger.info(`Reassigning expired assignment for order ${expired.order_id}`);
-          // Recursively request new assignment
-          await this.requestCarrierAssignment(expired.order_id, { items: order.items });
-        }
-      }
+      outcomes.forEach((outcome, idx) => {
+        if (outcome.status === 'fulfilled') return;
+        logger.error('Failed to process expired assignment', {
+          assignmentId: expiredRows[idx]?.id,
+          orderId: expiredRows[idx]?.order_id,
+          error: outcome.reason?.message || String(outcome.reason),
+        });
+      });
 
       return expiredRows.length;
     } catch (error) {
@@ -579,6 +586,9 @@ class CarrierAssignmentService {
     return largest;
   }
 
+  /**
+   * Pick the best accepted assignment by weighted score (price, ETA, reliability).
+   */
   _selectBestAcceptedAssignment(assignments) {
     const enriched = assignments.map((a) => {
       const payload = typeof a.acceptance_payload === 'string'
@@ -610,17 +620,20 @@ class CarrierAssignmentService {
       return 1 - ((value - min) / (max - min));
     };
 
-    for (const item of enriched) {
+    enriched.forEach((item) => {
       const priceScore = normalizeDescending(item._quotedPrice, minPrice, maxPrice);
       const etaScore = normalizeDescending(item._etaHours, minEta, maxEta);
       const reliabilityScore = Math.max(0, Math.min(item._reliability, 1));
       item._selectionScore = (0.5 * priceScore) + (0.3 * etaScore) + (0.2 * reliabilityScore);
-    }
+    });
 
     enriched.sort((a, b) => b._selectionScore - a._selectionScore);
     return enriched[0];
   }
 
+  /**
+   * Create shipment + initial events from the winning accepted assignment.
+   */
   async _createShipmentFromAcceptedAssignment(assignment, tx) {
     const acceptancePayload = typeof assignment.acceptance_payload === 'string'
       ? JSON.parse(assignment.acceptance_payload)

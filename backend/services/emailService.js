@@ -1,6 +1,9 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger.js';
 
+/**
+ * Create mail transport using SMTP env config or JSON transport fallback.
+ */
 function createTransport() {
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT || '587', 10);
@@ -22,6 +25,9 @@ function createTransport() {
 
 const transport = createTransport();
 
+/**
+ * Send a raw email payload and log metadata.
+ */
 async function send({ to, subject, html, text }) {
   const from = process.env.SMTP_FROM || 'TwinChain <no-reply@twinchain.local>';
   const info = await transport.sendMail({ from, to, subject, text, html });
@@ -34,6 +40,9 @@ async function send({ to, subject, html, text }) {
   return info;
 }
 
+/**
+ * Escape HTML special characters for safe template interpolation.
+ */
 function escapeHtml(value) {
   return String(value || '')
     .replaceAll('&', '&amp;')
@@ -43,6 +52,9 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+  /**
+   * Send verification email for pending email-change requests.
+   */
 async function sendEmailChangeVerification({ to, name, verifyUrl }) {
   const safeName = escapeHtml(name || 'there');
   const safeUrl = escapeHtml(verifyUrl);
@@ -59,6 +71,9 @@ async function sendEmailChangeVerification({ to, name, verifyUrl }) {
   });
 }
 
+/**
+ * Send a simple single-message notification email.
+ */
 async function sendSimpleNotification({ to, subject, message }) {
   const safeMessage = escapeHtml(message);
   return send({

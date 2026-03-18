@@ -76,7 +76,7 @@ export function PublicHeader() {
             </Link>
             <Link
               to="/get-demo"
-              className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
+              className="px-5 py-2.5 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
             >
               Request a Demo
             </Link>
@@ -133,7 +133,7 @@ export function PublicHeader() {
                 </Link>
                 <Link
                   to="/get-demo"
-                  className="w-full text-center px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all"
+                  className="w-full text-center px-4 py-2.5 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all"
                   onClick={() => setMobileOpen(false)}
                 >
                   Demo

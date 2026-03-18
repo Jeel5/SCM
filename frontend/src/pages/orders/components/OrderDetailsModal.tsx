@@ -37,7 +37,7 @@ export function OrderDetailsModal({ order, isOpen, onClose, onUpdate }: OrderDet
     <Modal isOpen={isOpen} onClose={onClose} title={`Order ${order.orderNumber}`} size="2xl">
       <div className="space-y-6">
         {/* Status Header */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-linear-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Status</p>
             <StatusBadge status={order.status} />
@@ -130,7 +130,7 @@ export function OrderDetailsModal({ order, isOpen, onClose, onUpdate }: OrderDet
           </div>
 
           {/* Order Summary */}
-          <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+          <div className="mt-4 p-4 bg-linear-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-600 dark:text-gray-400">Total Items:</span>
               <Badge variant="default">{order.items.length} items</Badge>

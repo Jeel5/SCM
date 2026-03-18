@@ -57,7 +57,7 @@ export async function resolveWebhookOrg(req, res, next) {
     logger.warn(`Webhook: invalid/unknown org token`, {
       path: req.path,
       ip: req.ip,
-      tokenPrefix: orgToken.substring(0, 8) + '...'
+      tokenPrefix: `${orgToken.substring(0, 8)}...`
     });
     return res.status(401).json({
       success: false,

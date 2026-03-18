@@ -96,26 +96,27 @@ class ReturnsService {
         if (qualityCheckResult === 'passed') {
           const items = await returnRepo.findReturnItemsWithInventoryInfo(returnId, tx);
 
-          for (const item of items) {
-            // Add back to available inventory
-            await returnRepo.upsertInventoryStock(item.warehouse_id, item.product_id, item.quantity, tx);
-
-            // Record stock movement
-            await returnRepo.insertStockMovement({
-              warehouseId: item.warehouse_id,
-              productId: item.product_id,
-              quantity: item.quantity,
-              returnId,
-              notes: `Return inspection passed: ${inspectionNotes}`
-            }, tx);
-          }
+          await Promise.all(
+            items.map(async (item) => {
+              await returnRepo.upsertInventoryStock(item.warehouse_id, item.product_id, item.quantity, tx);
+              await returnRepo.insertStockMovement({
+                warehouseId: item.warehouse_id,
+                productId: item.product_id,
+                quantity: item.quantity,
+                returnId,
+                notes: `Return inspection passed: ${inspectionNotes}`
+              }, tx);
+            })
+          );
         } else {
           // Mark as damaged inventory
           const items = await returnRepo.findReturnItemsWithWarehouse(returnId, tx);
 
-          for (const item of items) {
-            await returnRepo.markDamagedInventory(item.warehouse_id, item.product_id, item.quantity, tx);
-          }
+          await Promise.all(
+            items.map((item) =>
+              returnRepo.markDamagedInventory(item.warehouse_id, item.product_id, item.quantity, tx)
+            )
+          );
         }
 
         return { returnData, updatedReturn };

@@ -7,7 +7,7 @@ import shipmentRepo from '../repositories/ShipmentRepository.js';
 const OSRM_URL = process.env.OSRM_API_URL || 'http://router.project-osrm.org';
 
 function parseJsonField(value, fallback) {
-  if (value == null) {
+  if (value === null || value === undefined) {
     return fallback;
   }
 

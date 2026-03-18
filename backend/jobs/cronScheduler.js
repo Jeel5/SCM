@@ -74,7 +74,9 @@ class CronScheduler {
     });
   }
 
-  /** Register a new cron schedule as a BullMQ repeatable job. */
+  /**
+   * Register a new cron schedule as a BullMQ repeatable job.
+   */
   async addSchedule(schedule) {
     if (!schedule.is_active) return;
     await this._register(schedule);
@@ -96,7 +98,9 @@ class CronScheduler {
     }
   }
 
-  /** Remove a cron schedule from BullMQ by its DB id. */
+  /**
+   * Remove a cron schedule from BullMQ by its DB id.
+   */
   async removeSchedule(scheduleId) {
     const name = cronJobName(scheduleId);
     const jobs = await jobQueue.getRepeatableJobs();
@@ -107,6 +111,9 @@ class CronScheduler {
     }
   }
 
+  /**
+   * Stop scheduler runtime without clearing persisted repeatable jobs.
+   */
   async stop() {
     this.isRunning = false;
     // Repeatable jobs remain registered in Redis and will fire again when
@@ -114,12 +121,18 @@ class CronScheduler {
     logger.info('✅ CronScheduler stopped');
   }
 
+  /**
+   * Get scheduler health/status metadata.
+   */
   getStatus() {
     return { isRunning: this.isRunning, engine: 'bullmq' };
   }
 
   // ── Private ─────────────────────────────────────────────────────────────
 
+  /**
+   * Register a repeatable BullMQ job from a cron schedule row.
+   */
   async _register(schedule) {
     const payload = typeof schedule.payload === 'string'
       ? JSON.parse(schedule.payload)

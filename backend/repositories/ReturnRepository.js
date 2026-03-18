@@ -11,7 +11,9 @@ class ReturnRepository extends BaseRepository {
     super('returns');
   }
 
-  // Get returns with pagination and filters (status, reason, search)
+  /**
+   * Get paginated returns with optional status, reason, and free-text filters.
+   */
   async findReturns({ page = 1, limit = 20, status = null, reason = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];

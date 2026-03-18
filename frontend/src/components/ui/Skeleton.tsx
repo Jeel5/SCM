@@ -34,7 +34,7 @@ export function Skeleton({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className={cn(
-        'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 bg-[length:200%_100%]',
+        'bg-linear-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 bg-size-[200%_100%]',
         variants[variant],
         animations[animation],
         className

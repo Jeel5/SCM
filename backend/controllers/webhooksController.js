@@ -441,7 +441,7 @@ export const handleCatalogWebhook = asyncHandler(async (req, res) => {
       manufacturer_barcode: p.manufacturer_barcode || null,
       country_of_origin:  p.country_of_origin || null,
       hsn_code:           p.hsn_code || null,
-      gst_rate:           p.gst_rate != null ? parseFloat(p.gst_rate) : null,
+      gst_rate:           p.gst_rate !== null ? parseFloat(p.gst_rate) : null,
       warranty_period_days: p.warranty_period_days || 0,
       tags:               Array.isArray(p.tags) ? p.tags : (p.tags ? JSON.parse(p.tags) : []),
       // Handling flags

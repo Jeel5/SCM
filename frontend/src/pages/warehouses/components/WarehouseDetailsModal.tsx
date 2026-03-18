@@ -193,7 +193,7 @@ export function WarehouseDetailsModal({
                 <p className="text-gray-500 dark:text-gray-400">Cold Storage</p>
                 <p className="text-gray-900 dark:text-white">
                   {warehouse.hasColdStorage
-                    ? warehouse.temperatureMinCelsius != null && warehouse.temperatureMaxCelsius != null
+                    ? warehouse.temperatureMinCelsius !== null && warehouse.temperatureMaxCelsius !== null
                       ? `${warehouse.temperatureMinCelsius}°C to ${warehouse.temperatureMaxCelsius}°C`
                       : 'Yes'
                     : 'No'}

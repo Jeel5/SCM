@@ -4,11 +4,29 @@ import carrierRepo from '../../repositories/CarrierRepository.js';
 import { generateInternalBarcode } from '../../utils/barcodeGenerator.js';
 import { runImport } from '../importRunner.js';
 
-export async function handleImportWarehouses(payload) {
+/**
+ * Build shared runImport payload for master-data import handlers.
+ */
+function runMasterImport(payload, importType, processRow) {
   const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
   return runImport({
-    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'warehouses',
-    processRow: async (row, ctx) => {
+    jobId,
+    organizationId,
+    rows,
+    filePath,
+    dryRun,
+    maxRows,
+    importType,
+    processRow,
+  });
+}
+
+/**
+ * Import warehouses from CSV rows into tenant-scoped warehouse records.
+ */
+export async function handleImportWarehouses(payload) {
+  const { organizationId } = payload;
+  return runMasterImport(payload, 'warehouses', async (row, ctx) => {
       if (!row.name) throw new Error('name is required');
       const typeMap = {
         'cross-dock': 'distribution', staging: 'distribution', retail: 'standard',
@@ -41,15 +59,15 @@ export async function handleImportWarehouses(payload) {
         [organizationId, row.name, row.code || null, wType, Number(row.capacity) || 0,
           address, email, row.contact_phone || null, isActive]
       );
-    },
   });
 }
 
+/**
+ * Import carriers from CSV rows into tenant-scoped carrier records.
+ */
 export async function handleImportCarriers(payload) {
-  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
-  return runImport({
-    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'carriers',
-    processRow: async (row, ctx) => {
+  const { organizationId } = payload;
+  return runMasterImport(payload, 'carriers', async (row, ctx) => {
       if (!row.name) throw new Error('name is required');
       const validSvcTypes = ['express', 'standard', 'economy', 'overnight', 'two_day', 'surface', 'air', 'all'];
       const svcType = validSvcTypes.includes(row.service_type) ? row.service_type : 'standard';
@@ -77,15 +95,15 @@ export async function handleImportCarriers(payload) {
           String(row.is_active || 'true').toLowerCase() !== 'false',
           'available']
       );
-    },
   });
 }
 
+/**
+ * Import suppliers from CSV rows into tenant-scoped supplier records.
+ */
 export async function handleImportSuppliers(payload) {
-  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
-  return runImport({
-    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'suppliers',
-    processRow: async (row, ctx) => {
+  const { organizationId } = payload;
+  return runMasterImport(payload, 'suppliers', async (row, ctx) => {
       if (!row.name) throw new Error('name is required');
       if (ctx.dryRun) return;
       await pool.query(
@@ -104,15 +122,15 @@ export async function handleImportSuppliers(payload) {
           row.reliability_score ? parseFloat(row.reliability_score) : 0.85,
           String(row.is_active || 'true').toLowerCase() !== 'false']
       );
-    },
   });
 }
 
+/**
+ * Import sales channels from CSV rows into tenant-scoped channel records.
+ */
 export async function handleImportChannels(payload) {
-  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
-  return runImport({
-    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'channels',
-    processRow: async (row, ctx) => {
+  const { organizationId } = payload;
+  return runMasterImport(payload, 'channels', async (row, ctx) => {
       if (!row.name) throw new Error('name is required');
       const validTypes = ['marketplace', 'd2c', 'b2b', 'wholesale', 'internal'];
       const platformType = validTypes.includes(row.platform_type) ? row.platform_type : 'marketplace';
@@ -131,16 +149,16 @@ export async function handleImportChannels(payload) {
           row.contact_name || null, row.contact_email || null, row.contact_phone || null,
           String(row.is_active || 'true').toLowerCase() !== 'false']
       );
-    },
   });
 }
 
+/**
+ * Import team users from CSV rows with generated placeholder credentials.
+ */
 export async function handleImportTeam(payload) {
-  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
+  const { organizationId } = payload;
   const placeholderHash = await bcrypt.hash(`Import@${Date.now()}!`, 12);
-  return runImport({
-    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'team',
-    processRow: async (row, ctx) => {
+  return runMasterImport(payload, 'team', async (row, ctx) => {
       if (!row.email || !row.email.includes('@')) throw new Error('Missing or invalid email');
       const validRoles = ['operations_manager', 'warehouse_manager', 'carrier_partner', 'finance', 'customer_support'];
       const role = validRoles.includes(row.role) ? row.role : 'operations_manager';
@@ -154,15 +172,15 @@ export async function handleImportTeam(payload) {
           row.email.toLowerCase().trim(), row.phone || null,
           role, placeholderHash, true]
       );
-    },
   });
 }
 
+/**
+ * Import products from CSV rows with resilient barcode conflict handling.
+ */
 export async function handleImportProducts(payload) {
-  const { rows, filePath, dryRun = false, maxRows, organizationId, _jobId: jobId } = payload;
-  return runImport({
-    jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'products',
-    processRow: async (row, ctx) => {
+  const { organizationId } = payload;
+  return runMasterImport(payload, 'products', async (row, ctx) => {
       if (!row.name && !row.sku) throw new Error('name or sku is required');
       const { v4: uuidv4 } = await import('uuid');
       const sku = row.sku || `SKU-${uuidv4().substring(0, 8).toUpperCase()}`;
@@ -198,6 +216,5 @@ export async function handleImportProducts(payload) {
       }
 
       throw new Error('Could not generate unique internal_barcode after 5 attempts');
-    },
   });
 }

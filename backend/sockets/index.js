@@ -30,6 +30,80 @@ function parseCookies(cookieHeader = '') {
   }, {});
 }
 
+function attachRedisAdapter(io) {
+  try {
+    const pubClient = createRedisConnection();
+    const subClient = createRedisConnection();
+    io.adapter(createAdapter(pubClient, subClient));
+    logger.info('✅ Socket.IO Redis adapter enabled (cluster-safe broadcasts)');
+  } catch (err) {
+    logger.warn(`Socket.IO Redis adapter failed — falling back to in-memory adapter: ${err.message}`);
+  }
+}
+
+function attachSocketAuth(io) {
+  io.use(async (socket, next) => {
+    try {
+      const cookies = parseCookies(socket.handshake.headers.cookie || '');
+      const token = cookies.accessToken || socket.handshake.auth?.token;
+
+      if (!token) return next(new Error('Authentication required'));
+
+      const decoded = verifyAccessToken(token);
+      if (!decoded) return next(new Error('Invalid or expired token'));
+
+      if (decoded.jti) {
+        const revoked = await userRepo.isTokenRevoked(decoded.jti);
+        if (revoked) return next(new Error('Token revoked'));
+      }
+
+      socket.user = {
+        userId: decoded.userId,
+        role: decoded.role,
+        organizationId: decoded.organizationId,
+      };
+
+      next();
+    } catch (err) {
+      logger.warn(`Socket auth failed: ${err.message}`);
+      next(new Error('Authentication failed'));
+    }
+  });
+}
+
+function bindSocketConnectionHandlers(io) {
+  io.on('connection', (socket) => {
+    const { userId, role, organizationId } = socket.user;
+
+    if (userId) {
+      socket.join(`user:${userId}`);
+    }
+
+    if (role === 'superadmin') {
+      socket.join('superadmin');
+      logger.debug('Socket joined superadmin room', { userId, socketId: socket.id });
+    } else if (organizationId) {
+      socket.join(`org:${organizationId}`);
+      logger.debug('Socket joined org room', { userId, organizationId, socketId: socket.id });
+    }
+
+    socket.on('shipment:subscribe', ({ shipmentId } = {}) => {
+      if (shipmentId) {
+        socket.join(`shipment:${shipmentId}`);
+        logger.debug('Socket subscribed to shipment', { shipmentId, socketId: socket.id });
+      }
+    });
+
+    socket.on('shipment:unsubscribe', ({ shipmentId } = {}) => {
+      if (shipmentId) socket.leave(`shipment:${shipmentId}`);
+    });
+
+    socket.on('disconnect', (reason) => {
+      logger.debug('Socket disconnected', { userId, reason, socketId: socket.id });
+    });
+  });
+}
+
 /**
  * Initialise Socket.IO on the given HTTP server.
  *
@@ -46,83 +120,9 @@ export function initSocket(httpServer, corsOrigin) {
     transports: ['websocket', 'polling'],
   });
 
-  // ── Redis adapter (required for PM2 cluster / multi-instance) ────────────
-  // Each Socket.IO event is published via Redis pub/sub so any worker can
-  // emit to any socket regardless of which worker it connected to.
-  // This replaces the need for sticky sessions in Nginx.
-  try {
-    const pubClient = createRedisConnection();
-    const subClient = createRedisConnection();
-    io.adapter(createAdapter(pubClient, subClient));
-    logger.info('✅ Socket.IO Redis adapter enabled (cluster-safe broadcasts)');
-  } catch (err) {
-    logger.warn(`Socket.IO Redis adapter failed — falling back to in-memory adapter: ${err.message}`);
-  }
-
-  // ── Authentication middleware ────────────────────────────────────────────
-  io.use(async (socket, next) => {
-    try {
-      // Prefer httpOnly cookie (web clients); fall back to auth.token (Postman / mobile)
-      const cookies = parseCookies(socket.handshake.headers.cookie || '');
-      const token = cookies.accessToken || socket.handshake.auth?.token;
-
-      if (!token) return next(new Error('Authentication required'));
-
-      const decoded = verifyAccessToken(token);
-      if (!decoded) return next(new Error('Invalid or expired token'));
-
-      // Blocklist check (same as authenticate middleware)
-      if (decoded.jti) {
-        const revoked = await userRepo.isTokenRevoked(decoded.jti);
-        if (revoked) return next(new Error('Token revoked'));
-      }
-
-      socket.user = {
-        userId:         decoded.userId,
-        role:           decoded.role,
-        organizationId: decoded.organizationId,
-      };
-
-      next();
-    } catch (err) {
-      logger.warn(`Socket auth failed: ${err.message}`);
-      next(new Error('Authentication failed'));
-    }
-  });
-
-  io.on('connection', (socket) => {
-    const { userId, role, organizationId } = socket.user;
-
-    // Join a per-user room for targeted notification delivery.
-    if (userId) {
-      socket.join(`user:${userId}`);
-    }
-
-    // Join the org room so org-scoped broadcasts reach this socket
-    if (role === 'superadmin') {
-      socket.join('superadmin');
-      logger.debug('Socket joined superadmin room', { userId, socketId: socket.id });
-    } else if (organizationId) {
-      socket.join(`org:${organizationId}`);
-      logger.debug('Socket joined org room', { userId, organizationId, socketId: socket.id });
-    }
-
-    // Per-shipment room management (for live map tracking)
-    socket.on('shipment:subscribe', ({ shipmentId } = {}) => {
-      if (shipmentId) {
-        socket.join(`shipment:${shipmentId}`);
-        logger.debug('Socket subscribed to shipment', { shipmentId, socketId: socket.id });
-      }
-    });
-
-    socket.on('shipment:unsubscribe', ({ shipmentId } = {}) => {
-      if (shipmentId) socket.leave(`shipment:${shipmentId}`);
-    });
-
-    socket.on('disconnect', (reason) => {
-      logger.debug('Socket disconnected', { userId, reason, socketId: socket.id });
-    });
-  });
+  attachRedisAdapter(io);
+  attachSocketAuth(io);
+  bindSocketConnectionHandlers(io);
 
   setIo(io);
   logger.info('Socket.IO initialised');

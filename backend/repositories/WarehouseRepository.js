@@ -7,11 +7,18 @@ class WarehouseRepository extends BaseRepository {
     super('warehouses');
   }
 
+  /**
+   * Read window total from paginated rows.
+   * @param {Array} rows
+   * @returns {number}
+   */
   parseTotalCount(rows) {
     return rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
   }
 
-  // Get warehouses with pagination and filtering
+  /**
+   * Get warehouses with optional filters and pagination.
+   */
   async findWarehouses({ page = 1, limit = 20, is_active = null, warehouse_type = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
@@ -33,7 +40,7 @@ class WarehouseRepository extends BaseRepository {
       }
     }
 
-    if (is_active !== null) {
+    if (typeof is_active === 'boolean') {
       query += ` AND w.is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
@@ -66,7 +73,9 @@ class WarehouseRepository extends BaseRepository {
     };
   }
 
-  // Find warehouse by ID with manager details, with optional organization filter
+  /**
+   * Find warehouse by id with optional organization scoping.
+   */
   async findByIdWithDetails(id, organizationId = undefined, client = null) {
     let query = `
       SELECT w.*
@@ -88,7 +97,9 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Find warehouse by code
+  /**
+   * Find warehouse by code with optional organization scoping.
+   */
   async findByCode(code, organizationId = undefined, client = null) {
     let query = `SELECT * FROM warehouses WHERE code = $1`;
     const params = [code];
@@ -100,7 +111,9 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Generate unique warehouse code using an atomic DB sequence
+  /**
+   * Generate unique warehouse code from DB sequence.
+   */
   async generateWarehouseCode(client = null) {
     const prefix = 'WH';
     const year = new Date().getFullYear().toString().slice(-2);
@@ -114,6 +127,9 @@ class WarehouseRepository extends BaseRepository {
     return `${prefix}-${year}-${sequence}`;
   }
 
+  /**
+   * Create warehouse record.
+   */
   async createWarehouse(warehouseData, client = null) {
     // Auto-generate code if not provided
     const code = warehouseData.code || await this.generateWarehouseCode(client);
@@ -148,8 +164,8 @@ class WarehouseRepository extends BaseRepository {
       // SCM-scoped fields
       warehouseData.gstin || null,
       warehouseData.has_cold_storage || false,
-      warehouseData.temperature_min_celsius != null ? warehouseData.temperature_min_celsius : null,
-      warehouseData.temperature_max_celsius != null ? warehouseData.temperature_max_celsius : null,
+      warehouseData.temperature_min_celsius ?? null,
+      warehouseData.temperature_max_celsius ?? null,
       warehouseData.customs_bonded_warehouse || false,
       warehouseData.certifications ? warehouseData.certifications : [],
     ];
@@ -158,87 +174,49 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0];
   }
 
-  // Update warehouse
+  /**
+   * Update mutable warehouse fields.
+   * @param {string} id
+   * @param {Object} warehouseData
+   * @param {Object|null} client
+   * @returns {Promise<Object>}
+   */
   async updateWarehouse(id, warehouseData, client = null) {
     const updates = [];
     const params = [];
     let paramCount = 1;
 
-    // Build dynamic SET clause based on provided fields
-    if (warehouseData.name !== undefined) {
-      updates.push(`name = $${paramCount += 1}`);
-      params.push(warehouseData.name);
-    }
+    const fieldSerializers = {
+      address: (v) => JSON.stringify(v),
+      coordinates: (v) => (v ? JSON.stringify(v) : null),
+      gstin: (v) => v || null,
+    };
 
-    if (warehouseData.warehouse_type !== undefined) {
-      updates.push(`warehouse_type = $${paramCount += 1}`);
-      params.push(warehouseData.warehouse_type);
-    }
+    const mutableFields = [
+      'name',
+      'warehouse_type',
+      'address',
+      'coordinates',
+      'capacity',
+      'current_utilization',
+      'contact_email',
+      'contact_phone',
+      'is_active',
+      'gstin',
+      'has_cold_storage',
+      'temperature_min_celsius',
+      'temperature_max_celsius',
+      'customs_bonded_warehouse',
+      'certifications',
+    ];
 
-    if (warehouseData.address !== undefined) {
-      updates.push(`address = $${paramCount += 1}`);
-      params.push(JSON.stringify(warehouseData.address));
-    }
-
-    if (warehouseData.coordinates !== undefined) {
-      updates.push(`coordinates = $${paramCount += 1}`);
-      params.push(warehouseData.coordinates ? JSON.stringify(warehouseData.coordinates) : null);
-    }
-
-    if (warehouseData.capacity !== undefined) {
-      updates.push(`capacity = $${paramCount += 1}`);
-      params.push(warehouseData.capacity);
-    }
-
-    if (warehouseData.current_utilization !== undefined) {
-      updates.push(`current_utilization = $${paramCount += 1}`);
-      params.push(warehouseData.current_utilization);
-    }
-
-    if (warehouseData.contact_email !== undefined) {
-      updates.push(`contact_email = $${paramCount += 1}`);
-      params.push(warehouseData.contact_email);
-    }
-
-    if (warehouseData.contact_phone !== undefined) {
-      updates.push(`contact_phone = $${paramCount += 1}`);
-      params.push(warehouseData.contact_phone);
-    }
-
-    if (warehouseData.is_active !== undefined) {
-      updates.push(`is_active = $${paramCount += 1}`);
-      params.push(warehouseData.is_active);
-    }
-
-    if (warehouseData.gstin !== undefined) {
-      updates.push(`gstin = $${paramCount += 1}`);
-      params.push(warehouseData.gstin || null);
-    }
-
-    if (warehouseData.has_cold_storage !== undefined) {
-      updates.push(`has_cold_storage = $${paramCount += 1}`);
-      params.push(warehouseData.has_cold_storage);
-    }
-
-    if (warehouseData.temperature_min_celsius !== undefined) {
-      updates.push(`temperature_min_celsius = $${paramCount += 1}`);
-      params.push(warehouseData.temperature_min_celsius);
-    }
-
-    if (warehouseData.temperature_max_celsius !== undefined) {
-      updates.push(`temperature_max_celsius = $${paramCount += 1}`);
-      params.push(warehouseData.temperature_max_celsius);
-    }
-
-    if (warehouseData.customs_bonded_warehouse !== undefined) {
-      updates.push(`customs_bonded_warehouse = $${paramCount += 1}`);
-      params.push(warehouseData.customs_bonded_warehouse);
-    }
-
-    if (warehouseData.certifications !== undefined) {
-      updates.push(`certifications = $${paramCount += 1}`);
-      params.push(warehouseData.certifications);
-    }
+    mutableFields.forEach((field) => {
+      if (warehouseData[field] !== undefined) {
+        updates.push(`${field} = $${paramCount += 1}`);
+        const serializer = fieldSerializers[field];
+        params.push(serializer ? serializer(warehouseData[field]) : warehouseData[field]);
+      }
+    });
 
     if (updates.length === 0) {
       throw new ValidationError('No fields to update');
@@ -258,7 +236,9 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0];
   }
 
-  // Soft delete warehouse (deactivate)
+  /**
+   * Soft delete warehouse (deactivate) when no live inventory exists.
+   */
   async deactivateWarehouse(id, client = null) {
     // Pre-check: refuse to deactivate a warehouse that still holds live inventory
     const hasLiveStock = await this.hasInventory(id, client);
@@ -278,7 +258,9 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0];
   }
 
-  // Check if warehouse has inventory
+  /**
+   * Check whether warehouse has positive on-hand inventory.
+   */
   async hasInventory(id, client = null) {
     const query = `
       SELECT EXISTS(
@@ -290,7 +272,9 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0].has_inventory;
   }
 
-  // Get warehouse statistics
+  /**
+   * Get warehouse inventory and pick-list statistics.
+   */
   async getWarehouseStats(id, client = null) {
     const query = `
       SELECT
@@ -316,7 +300,9 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Get inventory for a specific warehouse
+  /**
+   * Get warehouse inventory with filters and pagination.
+   */
   async getWarehouseInventory(warehouseId, { page = 1, limit = 20, search = null, low_stock = false }, client = null) {
     const offset = (page - 1) * limit;
     const params = [warehouseId];
@@ -354,7 +340,9 @@ class WarehouseRepository extends BaseRepository {
     };
   }
 
-  // Update warehouse utilization
+  /**
+   * Persist current utilization value for a warehouse.
+   */
   async updateUtilization(id, utilization, client = null) {
     const query = `
       UPDATE warehouses 
@@ -366,7 +354,9 @@ class WarehouseRepository extends BaseRepository {
     return result.rows[0];
   }
 
-  // Get all active warehouses (for dropdowns)
+  /**
+   * List active warehouses for UI dropdowns.
+   */
   async getActiveWarehouses(organizationId = undefined, client = null) {
     let query = `
       SELECT id, code, name, warehouse_type, address, coordinates

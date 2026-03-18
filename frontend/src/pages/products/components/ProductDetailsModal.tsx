@@ -51,7 +51,7 @@ export function ProductDetailsModal({ isOpen, onClose, onEdit, product }: Props)
             )}
             <p className="text-xs font-mono text-indigo-600 dark:text-indigo-400 mt-1">SKU: {product.sku}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 flex-shrink-0 justify-end">
+          <div className="flex flex-wrap items-center gap-2 shrink-0 justify-end">
             <Badge variant={product.isActive ? 'success' : 'error'}>
               {product.isActive ? 'Active' : 'Inactive'}
             </Badge>

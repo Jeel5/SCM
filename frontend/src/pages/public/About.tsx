@@ -47,7 +47,7 @@ export function AboutPage() {
       <PublicHeader />
 
       {/* Hero */}
-      <section className="relative overflow-hidden pt-28 lg:pt-32 pb-16 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-b from-blue-50/60 to-white dark:from-gray-950 dark:to-gray-950">
+      <section className="relative overflow-hidden pt-28 lg:pt-32 pb-16 border-b border-gray-100 dark:border-gray-800 bg-linear-to-b from-blue-50/60 to-white dark:from-gray-950 dark:to-gray-950">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-24 right-0 h-64 w-64 rounded-full bg-blue-200/40 blur-3xl dark:bg-blue-900/20" />
           <div className="absolute bottom-0 left-10 h-52 w-52 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-900/20" />

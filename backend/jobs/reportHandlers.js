@@ -45,6 +45,7 @@ export async function handleReportGeneration(payload) {
   }
 }
 
+/** Build carrier performance report dataset for configured date range. */
 async function generateCarrierPerformanceReport(parameters) {
   const { carrierId, startDate, endDate } = parameters;
 
@@ -67,6 +68,7 @@ async function generateCarrierPerformanceReport(parameters) {
   };
 }
 
+/** Build SLA compliance report dataset for configured date range. */
 async function generateSLAComplianceReport(parameters) {
   const { startDate, endDate } = parameters;
 
@@ -84,6 +86,7 @@ async function generateSLAComplianceReport(parameters) {
   };
 }
 
+/** Build financial summary report combining invoices and refunds. */
 async function generateFinancialSummaryReport(parameters) {
   const { startDate, endDate } = parameters;
 
@@ -104,6 +107,7 @@ async function generateFinancialSummaryReport(parameters) {
   };
 }
 
+/** Build inventory snapshot report for one or all warehouses. */
 async function generateInventorySnapshotReport(parameters) {
   const { warehouseId } = parameters;
 

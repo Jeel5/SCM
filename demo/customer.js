@@ -43,7 +43,7 @@ function bindOrgControls() {
         const newToken = orgTokenInput.value.trim();
         const newOrgName = orgNameInput.value.trim() || 'Organization';
         if (!newToken) {
-            alert('Please enter a webhook token.');
+            console.error('Please enter a webhook token.');
             return;
         }
 
@@ -268,8 +268,8 @@ document.getElementById('getEstimateBtn').addEventListener('click', (e) => {
 });
 
 async function getEstimate() {
-    if (!selectedProduct) { alert('Please select a product first'); return; }
-    if (!deliveryPin)     { alert('Please click on the map to set a delivery location'); return; }
+    if (!selectedProduct) { console.error('Please select a product first'); return; }
+    if (!deliveryPin)     { console.error('Please click on the map to set a delivery location'); return; }
 
     const btn = document.getElementById('getEstimateBtn');
     if (btn.disabled) return;
@@ -405,7 +405,7 @@ async function placeOrder() {
         );
         const stockData = await stockRes.json();
         if (!stockData.in_stock) {
-            alert(`❌ ${stockData.message}\n\nRefreshing catalog…`);
+            console.error(`Stock unavailable: ${stockData.message}`);
             await loadCatalog();
             return;
         }
@@ -493,7 +493,7 @@ async function placeOrder() {
         document.getElementById('step3').style.display = 'block';
         document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
     } catch (error) {
-        alert(`Error placing order: ${error.message}`);
+        console.error(`Error placing order: ${error.message}`);
         btn.disabled    = false;
         btn.textContent = '💳 Place Order';
     }

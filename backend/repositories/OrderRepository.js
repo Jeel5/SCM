@@ -7,7 +7,9 @@ class OrderRepository extends BaseRepository {
     super('orders');
   }
 
-  // Get orders with pagination, filters (status, search), and sorting
+  /**
+   * Get paginated orders with status/search filters and safe sorting.
+   */
   async findOrders({ page = 1, limit = 20, status = null, search = null, sortBy = 'created_at', sortOrder = 'DESC', organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
@@ -85,9 +87,8 @@ class OrderRepository extends BaseRepository {
   }
 
   /**
-   * Find order by ID with all items
+   * Get order with all its items using JSON aggregation.
    */
-  // Get order with all its items using JSON aggregation
   async findOrderWithItems(orderId, organizationId = undefined, client = null) {
     let query = `
       SELECT 
@@ -126,7 +127,9 @@ class OrderRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Create order with items in single transaction
+  /**
+   * Create an order and its items atomically within a transaction.
+   */
   async createOrderWithItems(orderData, items, client) {
     // Fail fast if the caller forgot to pass a transaction client — two separate pool
     // queries without a transaction would leave an orphan order if items insert fails.
@@ -177,7 +180,9 @@ class OrderRepository extends BaseRepository {
     return order;
   }
 
-  // Update order status and timestamp
+  /**
+   * Update order status (legacy variant retained for backward compatibility).
+   */
   async updateStatus(orderId, status, organizationId = undefined, client = null) {
     let query = `
       UPDATE orders

@@ -29,7 +29,7 @@ export function Progress({
     success: 'bg-emerald-500',
     warning: 'bg-amber-500',
     error: 'bg-red-500',
-    gradient: 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500',
+    gradient: 'bg-linear-to-r from-blue-500 via-purple-500 to-pink-500',
   };
 
   const sizes = {

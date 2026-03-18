@@ -145,7 +145,7 @@ class SLAService {
     logEvent('CarrierPerformanceCalculated', {
       carrierId,
       score: performanceScore.toFixed(2),
-      onTimeRate: ((onTime / total) * 100).toFixed(1) + '%'
+      onTimeRate: `${((onTime / total) * 100).toFixed(1)}%`
     });
 
     return {

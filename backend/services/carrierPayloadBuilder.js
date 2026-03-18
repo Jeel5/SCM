@@ -9,6 +9,102 @@ import deliveryChargeService from './deliveryChargeService.js';
 import carrierRepo from '../repositories/CarrierRepository.js';
 import logger from '../utils/logger.js';
 
+function parseDeliveryAddress(order) {
+  return typeof order.shipping_address === 'string'
+    ? JSON.parse(order.shipping_address)
+    : order.shipping_address;
+}
+
+function buildOriginPayload(order, warehouse, warehouseDetails) {
+  return {
+    type: 'warehouse',
+    warehouseId: warehouse.id || warehouseDetails.id,
+    warehouseName: warehouseDetails.name,
+    contactPerson: warehouseDetails.contact_person || 'Warehouse Manager',
+    contactPhone: warehouseDetails.contact_phone || order.customer_phone,
+    address: {
+      line1: warehouseDetails.address_line1 || warehouseDetails.address,
+      line2: warehouseDetails.address_line2,
+      city: warehouseDetails.city,
+      state: warehouseDetails.state,
+      postalCode: warehouseDetails.postal_code,
+      country: warehouseDetails.country || 'India',
+    },
+    coordinates: {
+      lat: warehouseDetails.latitude,
+      lon: warehouseDetails.longitude,
+    },
+  };
+}
+
+function buildDestinationPayload(order, deliveryAddress) {
+  return {
+    type: 'customer',
+    customerName: order.customer_name,
+    contactPhone: order.customer_phone,
+    contactEmail: order.customer_email,
+    address: {
+      line1: deliveryAddress.address_line1 || deliveryAddress.street,
+      line2: deliveryAddress.address_line2 || deliveryAddress.landmark,
+      city: deliveryAddress.city,
+      state: deliveryAddress.state,
+      postalCode: deliveryAddress.postal_code || deliveryAddress.postalCode || deliveryAddress.pincode,
+      country: deliveryAddress.country || 'India',
+    },
+    coordinates: deliveryAddress.coordinates || {},
+  };
+}
+
+function buildDetailedItems(items) {
+  return items.map((item) => ({
+    sku: item.sku,
+    productName: item.product_name,
+    quantity: item.quantity,
+    weight: item.weight,
+    dimensions: item.dimensions || { length: 0, width: 0, height: 0 },
+    volumetricWeight: item.volumetric_weight,
+    itemType: item.item_type || 'general',
+    isFragile: item.is_fragile || false,
+    isHazardous: item.is_hazardous || false,
+    isPerishable: item.is_perishable || false,
+    requiresColdStorage: item.requires_cold_storage || false,
+    packageType: item.package_type || 'box',
+    unitPrice: parseFloat(item.unit_price || 0),
+    totalValue: parseFloat((item.unit_price || 0) * item.quantity),
+    declaredValue: item.declared_value,
+    requiresInsurance: item.requires_insurance || false,
+    handlingInstructions: item.handling_instructions,
+  }));
+}
+
+function buildServicePayload(serviceType, pricingEstimate) {
+  return {
+    type: serviceType,
+    estimatedDeliveryDays: pricingEstimate.estimatedDeliveryDays,
+    estimatedDeliveryDate: deliveryChargeService.getEstimatedDeliveryDate(
+      pricingEstimate.estimatedDeliveryDays
+    ).toISOString(),
+  };
+}
+
+function buildInsurancePayload(items) {
+  return {
+    required: items.some((i) => i.requires_insurance || i.requiresInsurance),
+    declaredValue: items.reduce((sum, i) => sum + (i.declared_value || 0), 0),
+  };
+}
+
+function buildResponseRequiredPayload() {
+  return {
+    acceptedPrice: true,
+    estimatedPickupTime: true,
+    estimatedDeliveryTime: true,
+    trackingNumber: true,
+    carrierReferenceId: true,
+    driverDetails: false,
+  };
+}
+
 class CarrierPayloadBuilder {
   /**
    * Build complete carrier assignment request payload
@@ -20,55 +116,12 @@ class CarrierPayloadBuilder {
    */
   async buildRequestPayload(order, items, warehouse, carrier, serviceType) {
     try {
-      // 1. Get warehouse coordinates
       const warehouseDetails = await this.getWarehouseDetails(warehouse);
-      
-      // 2. Parse delivery address
-      const deliveryAddress = typeof order.shipping_address === 'string' 
-        ? JSON.parse(order.shipping_address) 
-        : order.shipping_address;
-
-      // 3. Calculate shipment dimensions and weight
+      const deliveryAddress = parseDeliveryAddress(order);
       const shipmentPhysicals = this.calculateShipmentPhysicals(items);
-      
-      // 4. Build origin and destination
-      const origin = {
-        type: 'warehouse',
-        warehouseId: warehouse.id || warehouseDetails.id,
-        warehouseName: warehouseDetails.name,
-        contactPerson: warehouseDetails.contact_person || 'Warehouse Manager',
-        contactPhone: warehouseDetails.contact_phone || order.customer_phone,
-        address: {
-          line1: warehouseDetails.address_line1 || warehouseDetails.address,
-          line2: warehouseDetails.address_line2,
-          city: warehouseDetails.city,
-          state: warehouseDetails.state,
-          postalCode: warehouseDetails.postal_code,
-          country: warehouseDetails.country || 'India'
-        },
-        coordinates: {
-          lat: warehouseDetails.latitude,
-          lon: warehouseDetails.longitude
-        }
-      };
+      const origin = buildOriginPayload(order, warehouse, warehouseDetails);
+      const destination = buildDestinationPayload(order, deliveryAddress);
 
-      const destination = {
-        type: 'customer',
-        customerName: order.customer_name,
-        contactPhone: order.customer_phone,
-        contactEmail: order.customer_email,
-        address: {
-          line1: deliveryAddress.address_line1 || deliveryAddress.street,
-          line2: deliveryAddress.address_line2 || deliveryAddress.landmark,
-          city: deliveryAddress.city,
-          state: deliveryAddress.state,
-          postalCode: deliveryAddress.postal_code || deliveryAddress.postalCode || deliveryAddress.pincode,
-          country: deliveryAddress.country || 'India'
-        },
-        coordinates: deliveryAddress.coordinates || {}
-      };
-
-      // 5. Calculate estimated delivery charges
       const pricingEstimate = await deliveryChargeService.calculateShippingCost(
         {
           items,
@@ -79,49 +132,14 @@ class CarrierPayloadBuilder {
         carrier
       );
 
-      // 6. Build detailed items array
-      const detailedItems = items.map(item => ({
-        // Product identification
-        sku: item.sku,
-        productName: item.product_name,
-        quantity: item.quantity,
-        
-        // Physical properties
-        weight: item.weight, // in kg
-        dimensions: item.dimensions || { length: 0, width: 0, height: 0 }, // in cm
-        volumetricWeight: item.volumetric_weight,
-        
-        // Classification
-        itemType: item.item_type || 'general',
-        isFragile: item.is_fragile || false,
-        isHazardous: item.is_hazardous || false,
-        isPerishable: item.is_perishable || false,
-        requiresColdStorage: item.requires_cold_storage || false,
-        
-        // Packaging
-        packageType: item.package_type || 'box',
-        
-        // Value
-        unitPrice: parseFloat(item.unit_price || 0),
-        totalValue: parseFloat((item.unit_price || 0) * item.quantity),
-        declaredValue: item.declared_value,
-        requiresInsurance: item.requires_insurance || false,
-        
-        // Special instructions
-        handlingInstructions: item.handling_instructions
-      }));
-
-      // 7. Determine special handling requirements
+      const detailedItems = buildDetailedItems(items);
       const specialHandling = this.determineSpecialHandling(items);
 
-      // 8. Build complete payload
-      const payload = {
-        // Assignment metadata
+      return {
         assignmentId: null, // Will be filled when assignment is created
         requestedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
-        
-        // Order information
+
         order: {
           orderId: order.id,
           orderNumber: order.order_number,
@@ -131,22 +149,10 @@ class CarrierPayloadBuilder {
           currency: order.currency || 'INR'
         },
 
-        // Service requirements
-        service: {
-          type: serviceType, // express, standard, bulk
-          estimatedDeliveryDays: pricingEstimate.estimatedDeliveryDays,
-          estimatedDeliveryDate: deliveryChargeService.getEstimatedDeliveryDate(
-            pricingEstimate.estimatedDeliveryDays
-          ).toISOString()
-        },
-
-        // Pickup details
+        service: buildServicePayload(serviceType, pricingEstimate),
         pickup: origin,
-
-        // Delivery details
         delivery: destination,
 
-        // Shipment physical details
         shipment: {
           totalWeight: shipmentPhysicals.totalWeight,
           totalVolumetricWeight: shipmentPhysicals.totalVolumetricWeight,
@@ -156,39 +162,19 @@ class CarrierPayloadBuilder {
           dimensions: shipmentPhysicals.overallDimensions
         },
 
-        // Detailed items
         items: detailedItems,
-
-        // Special handling
         specialHandling,
 
-        // Pricing estimate (what we calculated - carrier can provide their quote)
         estimatedPricing: pricingEstimate,
 
-        // Instructions
         instructions: {
           special: order.notes,
           delivery: deliveryAddress.instructions || 'Please call before delivery'
         },
 
-        // Insurance requirements
-        insurance: {
-          required: items.some(i => i.requires_insurance || i.requiresInsurance),
-          declaredValue: items.reduce((sum, i) => sum + (i.declared_value || 0), 0)
-        },
-
-        // Carrier expectations (what we need from them)
-        responseRequired: {
-          acceptedPrice: true,
-          estimatedPickupTime: true,
-          estimatedDeliveryTime: true,
-          trackingNumber: true,
-          carrierReferenceId: true,
-          driverDetails: false // Optional
-        }
+        insurance: buildInsurancePayload(items),
+        responseRequired: buildResponseRequiredPayload()
       };
-
-      return payload;
     } catch (error) {
       logger.error('Failed to build carrier request payload', { error: error.message });
       throw error;

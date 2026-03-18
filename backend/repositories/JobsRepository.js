@@ -258,6 +258,9 @@ class JobsRepository extends BaseRepository {
 
   // ── Cron schedules ───────────────────────────────────────────────────────────
 
+  /**
+   * List cron schedules, optionally scoped to an organization.
+   */
   async getCronSchedules(organizationId = undefined, client = null) {
     const orgClause = organizationId ? ' WHERE organization_id = $1' : '';
     const params    = organizationId ? [organizationId] : [];
@@ -268,6 +271,9 @@ class JobsRepository extends BaseRepository {
     return result.rows;
   }
 
+  /**
+   * Create a cron schedule used by the scheduler loop.
+   */
   async createCronSchedule({ name, jobType, cronExpression, payload, nextRun, organizationId } = {}, client = null) {
     const result = await this.query(
       `INSERT INTO cron_schedules (name, job_type, cron_expression, payload, next_run_at, organization_id)
@@ -278,6 +284,9 @@ class JobsRepository extends BaseRepository {
     return result.rows[0];
   }
 
+  /**
+   * Update mutable cron schedule fields and bump updated_at.
+   */
   async updateCronSchedule(scheduleId, fields, organizationId = undefined, client = null) {
     const setClauses = Object.keys(fields).map((k, i) => `${k} = $${i + 1}`);
     if (!setClauses.length) return null;
@@ -294,12 +303,18 @@ class JobsRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Delete a cron schedule by id, optionally constrained to an organization.
+   */
   async deleteCronSchedule(scheduleId, organizationId = undefined, client = null) {
     const orgClause = organizationId ? ' AND organization_id = $2' : '';
     const params    = organizationId ? [scheduleId, organizationId] : [scheduleId];
     await this.query(`DELETE FROM cron_schedules WHERE id = $1${orgClause}`, params, client);
   }
 
+  /**
+   * Return active schedules that are due to run now.
+   */
   async getDueCronSchedules(client = null) {
     const result = await this.query(
       `SELECT * FROM cron_schedules WHERE is_active = true AND next_run_at <= NOW() ORDER BY next_run_at ASC`,
@@ -308,6 +323,9 @@ class JobsRepository extends BaseRepository {
     return result.rows;
   }
 
+  /**
+   * Fetch cron expression text for a single schedule.
+   */
   async getCronExpression(scheduleId, client = null) {
     const result = await this.query(
       'SELECT cron_expression FROM cron_schedules WHERE id = $1',
@@ -316,6 +334,9 @@ class JobsRepository extends BaseRepository {
     return result.rows[0]?.cron_expression || null;
   }
 
+  /**
+   * Persist last_run_at and next_run_at after schedule execution.
+   */
   async updateCronLastRun(scheduleId, nextRun, client = null) {
     await this.query(
       `UPDATE cron_schedules SET last_run_at = NOW(), next_run_at = $1, updated_at = NOW() WHERE id = $2`,
@@ -325,11 +346,17 @@ class JobsRepository extends BaseRepository {
 
   // ── Dead Letter Queue ─────────────────────────────────────────────────────────
 
+  /**
+   * Find a background job by id.
+   */
   async findJob(jobId, client = null) {
     const result = await this.query('SELECT * FROM background_jobs WHERE id = $1', [jobId], client);
     return result.rows[0] || null;
   }
 
+  /**
+   * Insert a dead-letter queue record for a failed job.
+   */
   async insertDlqEntry({ originalJobId, jobType, payload, priority, errorMessage, retryCount, createdAt } = {}, client = null) {
     await this.query(
       `INSERT INTO dead_letter_queue
@@ -339,6 +366,9 @@ class JobsRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Mark a background job as moved to dead-letter status.
+   */
   async markJobDeadLetter(jobId, errorMessage, client = null) {
     await this.query(
       `UPDATE background_jobs SET status = 'dead_letter', error_message = $2, updated_at = NOW() WHERE id = $1`,
@@ -346,11 +376,17 @@ class JobsRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Fetch one dead-letter queue entry by id.
+   */
   async getDlqEntry(dlqId, client = null) {
     const result = await this.query('SELECT * FROM dead_letter_queue WHERE id = $1', [dlqId], client);
     return result.rows[0] || null;
   }
 
+  /**
+   * Resolve organization id for the original job referenced by a DLQ entry.
+   */
   async getOriginalJobOrgId(originalJobId, client = null) {
     const result = await this.query(
       'SELECT organization_id FROM background_jobs WHERE id = $1',
@@ -359,6 +395,9 @@ class JobsRepository extends BaseRepository {
     return result.rows[0]?.organization_id || null;
   }
 
+  /**
+   * Create a background job row without idempotency handling.
+   */
   async createJob({ jobType, payload, priority, status = 'pending', organizationId } = {}, client = null) {
     const result = await this.query(
       `INSERT INTO background_jobs (job_type, payload, priority, status, organization_id)
@@ -368,6 +407,9 @@ class JobsRepository extends BaseRepository {
     return result.rows[0];
   }
 
+  /**
+   * Mark a DLQ entry as reprocessed and attach the replacement job id.
+   */
   async markDlqReprocessed(dlqId, newJobId, client = null) {
     await this.query(
       `UPDATE dead_letter_queue
@@ -377,6 +419,9 @@ class JobsRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Return paginated dead-letter queue items with total count.
+   */
   async getDeadLetterQueue({ page = 1, limit = 20, organizationId } = {}, client = null) {
     const offset = (page - 1) * limit;
     const orgJoin = organizationId
@@ -397,6 +442,9 @@ class JobsRepository extends BaseRepository {
     return { jobs: rows, totalCount };
   }
 
+  /**
+   * Permanently delete DLQ rows older than the provided cutoff timestamp.
+   */
   async purgeDlq(cutoffDate, client = null) {
     const result = await this.query(
       'DELETE FROM dead_letter_queue WHERE moved_to_dlq_at < $1',

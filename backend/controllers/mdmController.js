@@ -9,6 +9,11 @@ import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { generateInternalBarcode } from '../utils/barcodeGenerator.js';
 
+/**
+ * Normalize warehouse address payload for API responses.
+ * @param {Object} address
+ * @returns {{street: string, city: string, state: string, postalCode: string, country: string}}
+ */
 function mapWarehouseAddress(address) {
   return {
     street: address?.street || '',
@@ -19,16 +24,61 @@ function mapWarehouseAddress(address) {
   };
 }
 
+/**
+ * Map warehouse-specific SCM extension fields to frontend shape.
+ * @param {Object} warehouse
+ * @returns {Object}
+ */
 function mapWarehouseScmFields(warehouse) {
   return {
     gstin: warehouse.gstin || null,
     hasColdStorage: warehouse.has_cold_storage || false,
-    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
-    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
+    temperatureMinCelsius: warehouse.temperature_min_celsius !== null ? parseFloat(warehouse.temperature_min_celsius) : null,
+    temperatureMaxCelsius: warehouse.temperature_max_celsius !== null ? parseFloat(warehouse.temperature_max_celsius) : null,
     dailyInboundCapacity: undefined,
     dailyOutboundCapacity: undefined,
     customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
     certifications: warehouse.certifications || [],
+  };
+}
+
+/**
+ * Build the canonical warehouse payload returned by warehouse endpoints.
+ * This removes duplicate object construction across list/get/create/update handlers.
+ * @param {Object} warehouse
+ * @param {Object} [options]
+ * @param {number|null} [options.totalQty]
+ * @param {number|null} [options.inventoryCount]
+ * @returns {Object}
+ */
+function formatWarehouseResponse(warehouse, options = {}) {
+  const capacity = warehouse.capacity || 0;
+  const totalQty = options.totalQty ?? warehouse.current_utilization ?? 0;
+  const inventoryCount = options.inventoryCount ?? warehouse.inventory_count ?? 0;
+  const utilizationPercentage = capacity > 0
+    ? Math.min(parseFloat(((totalQty / capacity) * 100).toFixed(1)), 100)
+    : 0;
+
+  return {
+    id: warehouse.id,
+    code: warehouse.code,
+    name: warehouse.name,
+    type: warehouse.warehouse_type,
+    address: mapWarehouseAddress(warehouse.address),
+    coordinates: warehouse.coordinates,
+    capacity,
+    currentUtilization: totalQty,
+    utilizationPercentage,
+    inventoryCount,
+    zones: warehouse.zones || 0,
+    location: warehouse.coordinates || { lat: 0, lng: 0 },
+    status: warehouse.is_active ? 'active' : 'inactive',
+    contactEmail: warehouse.contact_email,
+    contactPhone: warehouse.contact_phone,
+    operatingHours: warehouse.operating_hours || { open: '00:00', close: '23:59', timezone: 'UTC' },
+    ...mapWarehouseScmFields(warehouse),
+    createdAt: warehouse.created_at,
+    updatedAt: warehouse.updated_at,
   };
 }
 
@@ -54,8 +104,8 @@ export const listWarehouses = asyncHandler(async (req, res) => {
 
   // Get inventory count and total quantities for utilization per warehouse
   const warehouseIds = warehouses.map(w => w.id);
-  let inventoryCounts = {};
-  let warehouseQtys = {};
+  const inventoryCounts = {};
+  const warehouseQtys = {};
 
   if (warehouseIds.length > 0) {
     const statsByWarehouse = await WarehouseRepository.getInventoryStatsBatch(warehouseIds);
@@ -65,33 +115,10 @@ export const listWarehouses = asyncHandler(async (req, res) => {
     });
   }
 
-  const transformedWarehouses = warehouses.map(w => {
-    const capacity = w.capacity || 0;
-    const totalQty = warehouseQtys[w.id] || 0;
-    const utilization = capacity > 0 ? Math.min(parseFloat(((totalQty / capacity) * 100).toFixed(1)), 100) : 0;
-
-    return {
-      id: w.id,
-      code: w.code,
-      name: w.name,
-      type: w.warehouse_type,
-      address: mapWarehouseAddress(w.address),
-      coordinates: w.coordinates,
-      capacity,
-      currentUtilization: totalQty,
-      utilizationPercentage: utilization,
-      inventoryCount: inventoryCounts[w.id] || 0,
-      zones: w.zones || 0,
-      location: w.coordinates || { lat: 0, lng: 0 },
-      status: w.is_active ? 'active' : 'inactive',
-      contactEmail: w.contact_email,
-      contactPhone: w.contact_phone,
-      operatingHours: w.operating_hours || { open: '00:00', close: '23:59', timezone: 'UTC' },
-      ...mapWarehouseScmFields(w),
-      createdAt: w.created_at,
-      updatedAt: w.updated_at
-    };
-  });
+  const transformedWarehouses = warehouses.map(w => formatWarehouseResponse(w, {
+    totalQty: warehouseQtys[w.id] || 0,
+    inventoryCount: inventoryCounts[w.id] || 0,
+  }));
 
   res.json({
     success: true,
@@ -124,27 +151,10 @@ export const getWarehouse = asyncHandler(async (req, res) => {
   const capacity = warehouse.capacity || 0;
   const utilizationPercentage = capacity > 0 ? Math.min(parseFloat(((totalQty / capacity) * 100).toFixed(1)), 100) : 0;
 
-  const transformed = {
-    id: warehouse.id,
-    code: warehouse.code,
-    name: warehouse.name,
-    type: warehouse.warehouse_type,
-    address: mapWarehouseAddress(warehouse.address),
-    coordinates: warehouse.coordinates,
-    capacity,
-    currentUtilization: totalQty,
-    utilizationPercentage,
+  const transformed = formatWarehouseResponse(warehouse, {
+    totalQty,
     inventoryCount,
-    zones: warehouse.zones || 0,
-    location: warehouse.coordinates || { lat: 0, lng: 0 },
-    status: warehouse.is_active ? 'active' : 'inactive',
-    contactEmail: warehouse.contact_email,
-    contactPhone: warehouse.contact_phone,
-    operatingHours: warehouse.operating_hours || { open: '00:00', close: '23:59', timezone: 'UTC' },
-    ...mapWarehouseScmFields(warehouse),
-    createdAt: warehouse.created_at,
-    updatedAt: warehouse.updated_at
-  };
+  });
 
   res.json({ success: true, data: transformed });
 });
@@ -182,22 +192,9 @@ export const createWarehouse = asyncHandler(async (req, res) => {
 
   const warehouse = await WarehouseRepository.createWarehouse(warehouseData);
 
-  const transformed = {
-    id: warehouse.id,
-    code: warehouse.code,
-    name: warehouse.name,
-    type: warehouse.warehouse_type,
-    address: mapWarehouseAddress(warehouse.address),
-    coordinates: warehouse.coordinates,
-    capacity: warehouse.capacity,
-    currentUtilization: warehouse.current_utilization,
-    location: warehouse.coordinates || { lat: 0, lng: 0 },
-    status: warehouse.is_active ? 'active' : 'inactive',
-    contactEmail: warehouse.contact_email,
-    contactPhone: warehouse.contact_phone,
-    ...mapWarehouseScmFields(warehouse),
-    createdAt: warehouse.created_at
-  };
+  const transformed = formatWarehouseResponse(warehouse, {
+    totalQty: warehouse.current_utilization,
+  });
 
   res.status(201).json({ success: true, data: transformed });
 });
@@ -219,22 +216,9 @@ export const updateWarehouse = asyncHandler(async (req, res) => {
 
   const warehouse = await WarehouseRepository.updateWarehouse(id, value);
 
-  const transformed = {
-    id: warehouse.id,
-    code: warehouse.code,
-    name: warehouse.name,
-    type: warehouse.warehouse_type,
-    address: mapWarehouseAddress(warehouse.address),
-    coordinates: warehouse.coordinates,
-    capacity: warehouse.capacity,
-    currentUtilization: warehouse.current_utilization,
-    location: warehouse.coordinates || { lat: 0, lng: 0 },
-    status: warehouse.is_active ? 'active' : 'inactive',
-    contactEmail: warehouse.contact_email,
-    contactPhone: warehouse.contact_phone,
-    ...mapWarehouseScmFields(warehouse),
-    updatedAt: warehouse.updated_at
-  };
+  const transformed = formatWarehouseResponse(warehouse, {
+    totalQty: warehouse.current_utilization,
+  });
 
   res.json({ success: true, data: transformed });
 });
@@ -582,12 +566,16 @@ export const createProduct = asyncHandler(async (req, res) => {
     const month = new Date().toISOString().slice(0, 7).replace('-', '');
 
     // Retry up to 5 times on collision
-    for (let attempt = 0; attempt < 5; attempt++) {
+    const findAvailableSku = async (attempt = 0) => {
+      if (attempt >= 5) return null;
       const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
       const candidate = `${prefix}-${month}-${rand}`;
       const collision = await ProductRepository.findBySku(candidate, organizationId);
-      if (!collision) { sku = candidate; break; }
-    }
+      if (!collision) return candidate;
+      return findAvailableSku(attempt + 1);
+    };
+
+    sku = await findAvailableSku();
     // Guaranteed-unique fallback
     if (!sku) sku = `${prefix}-${Date.now()}`;
   }

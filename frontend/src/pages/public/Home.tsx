@@ -208,7 +208,7 @@ function DashboardMockup() {
               <div key={i} className="flex-1 h-full flex flex-col justify-end">
                 <div
                   style={{ height: `${h}%` }}
-                  className="rounded-sm bg-gradient-to-t from-blue-600/80 to-indigo-400/50"
+                  className="rounded-sm bg-linear-to-t from-blue-600/80 to-indigo-400/50"
                 />
               </div>
             ))}
@@ -273,7 +273,7 @@ export function LandingPage() {
         />
 
         <div className="relative w-full px-6 sm:px-10 lg:px-16 xl:px-24 2xl:px-32">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 xl:gap-28 items-center max-w-[1400px] mx-auto">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 xl:gap-28 items-center max-w-350 mx-auto">
             {/* Left copy */}
             <div>
               <motion.div
@@ -296,7 +296,7 @@ export function LandingPage() {
                 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 dark:text-white leading-[1.1] tracking-tight mb-6"
               >
                 Complete
-                <span className="block bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+                <span className="block bg-linear-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
                   Supply Chain
                 </span>
                 Visibility
@@ -320,7 +320,7 @@ export function LandingPage() {
               >
                 <Link
                   to="/get-demo"
-                  className="inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
+                  className="inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
                 >
                   Request a Demo
                   <ArrowRight className="h-4 w-4" />
@@ -380,10 +380,10 @@ export function LandingPage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.6 }}
-            className="mt-20 max-w-[1400px] mx-auto grid grid-cols-2 lg:grid-cols-4 gap-px bg-white/70 dark:bg-white/5 rounded-2xl overflow-hidden border border-gray-200 dark:border-white/10"
+            className="mt-20 max-w-350 mx-auto grid grid-cols-2 lg:grid-cols-4 gap-px bg-white/70 dark:bg-white/5 rounded-2xl overflow-hidden border border-gray-200 dark:border-white/10"
           >
             {stats.map(({ value, label }) => (
-              <div key={label} className="bg-white/70 dark:bg-white/[0.03] px-6 py-6 text-center hover:bg-white dark:hover:bg-white/[0.06] transition-colors">
+              <div key={label} className="bg-white/70 dark:bg-white/3 px-6 py-6 text-center hover:bg-white dark:hover:bg-white/6 transition-colors">
                 <p className="text-3xl font-extrabold text-gray-900 dark:text-white mb-1 tracking-tight">{value}</p>
                 <p className="text-sm text-gray-600 dark:text-gray-500">{label}</p>
               </div>
@@ -412,7 +412,7 @@ export function LandingPage() {
                 variants={stagger(i * 0.07)}
                 className="group relative bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-6 hover:border-blue-200 dark:hover:border-blue-800 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300"
               >
-                <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
+                <div className={`h-12 w-12 rounded-xl bg-linear-to-br ${feature.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
                   <feature.icon className="h-6 w-6 text-white" />
                 </div>
                 <h3 className="text-base font-bold text-gray-900 dark:text-white mb-2">{feature.title}</h3>
@@ -441,14 +441,14 @@ export function LandingPage() {
 
           <div className="grid md:grid-cols-3 gap-8 relative">
             {/* Connecting line */}
-            <div className="hidden md:block absolute top-12 left-1/6 right-1/6 h-px bg-gradient-to-r from-blue-600/0 via-blue-600/40 to-blue-600/0" />
+            <div className="hidden md:block absolute top-12 left-1/6 right-1/6 h-px bg-linear-to-r from-blue-600/0 via-blue-600/40 to-blue-600/0" />
             {howItWorks.map((step, i) => (
               <motion.div
                 key={step.step}
                 variants={stagger(i * 0.12)}
                 className="relative text-center"
               >
-                <div className="h-24 w-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex flex-col items-center justify-center shadow-xl shadow-blue-500/20 relative">
+                <div className="h-24 w-24 mx-auto mb-6 rounded-full bg-linear-to-br from-blue-600 to-indigo-600 flex flex-col items-center justify-center shadow-xl shadow-blue-500/20 relative">
                   <step.icon className="h-8 w-8 text-white" />
                   <span className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-white dark:bg-gray-950 border-2 border-blue-500 flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-400">
                     {step.step}
@@ -463,7 +463,7 @@ export function LandingPage() {
       </Section>
 
       {/* ── PRODUCT SCREENSHOT ────────────────────────────────────────── */}
-      <Section className="py-24 lg:py-32 bg-gradient-to-b from-white to-blue-50/30 dark:from-gray-950 dark:to-gray-900">
+      <Section className="py-24 lg:py-32 bg-linear-to-b from-white to-blue-50/30 dark:from-gray-950 dark:to-gray-900">
         <div className="w-full px-6 sm:px-10 lg:px-16 xl:px-24 2xl:px-32">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div>
@@ -497,7 +497,7 @@ export function LandingPage() {
               </Link>
             </div>
             <div className="relative">
-              <div className="absolute -inset-4 bg-gradient-to-r from-blue-600/10 to-indigo-600/10 rounded-3xl blur-2xl" />
+              <div className="absolute -inset-4 bg-linear-to-r from-blue-600/10 to-indigo-600/10 rounded-3xl blur-2xl" />
               <DashboardMockup />
             </div>
           </div>
@@ -523,7 +523,7 @@ export function LandingPage() {
                 variants={stagger(i * 0.1)}
                 className={`relative rounded-2xl p-7 flex flex-col ${
                   plan.highlight
-                    ? 'bg-gradient-to-b from-blue-600 to-indigo-700 text-white shadow-2xl shadow-blue-500/30 scale-105'
+                    ? 'bg-linear-to-b from-blue-600 to-indigo-700 text-white shadow-2xl shadow-blue-500/30 scale-105'
                     : 'bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm'
                 }`}
               >
@@ -574,10 +574,10 @@ export function LandingPage() {
       </Section>
 
       {/* ── FINAL CTA ─────────────────────────────────────────────────── */}
-      <Section className="py-24 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-[#0a0f1e] dark:to-[#0a0f1e] relative overflow-hidden">
+      <Section className="py-24 bg-linear-to-br from-blue-50 to-indigo-100 dark:from-[#0a0f1e] dark:to-[#0a0f1e] relative overflow-hidden">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)`, backgroundSize: '60px 60px' }} />
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-600/15 blur-[100px] rounded-full" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-150 h-75 bg-blue-600/15 blur-3xl rounded-full" />
         </div>
         <div className="relative max-w-3xl mx-auto px-4 text-center">
           <h2 className="text-3xl lg:text-5xl font-extrabold text-gray-900 dark:text-white tracking-tight mb-5 leading-tight">
@@ -589,7 +589,7 @@ export function LandingPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               to="/get-demo"
-              className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-base font-bold rounded-xl shadow-2xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-base font-bold rounded-xl shadow-2xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
             >
               Get a Demo
               <ArrowRight className="h-5 w-5" />

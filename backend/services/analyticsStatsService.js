@@ -3,10 +3,16 @@ import { withTransaction } from '../utils/dbTransaction.js';
 
 const repo = new BaseRepository('analytics_daily_stats');
 
+/**
+ * Convert a Date to YYYY-MM-DD for analytics date filtering.
+ */
 function toDateString(value) {
   return value.toISOString().slice(0, 10);
 }
 
+/**
+ * Build a trailing inclusive date window ending today in UTC.
+ */
 export function getTrailingDateWindow(days) {
   const end = new Date();
   end.setUTCHours(0, 0, 0, 0);
@@ -20,6 +26,9 @@ export function getTrailingDateWindow(days) {
   };
 }
 
+/**
+ * Rebuild analytics_daily_stats rows for a date range.
+ */
 async function refreshDailyStats(organizationId, startDate, endDate, tx) {
   await repo.query(
     `DELETE FROM analytics_daily_stats
@@ -195,6 +204,9 @@ async function refreshDailyStats(organizationId, startDate, endDate, tx) {
   );
 }
 
+/**
+ * Rebuild daily carrier analytics rows for a date range.
+ */
 async function refreshCarrierStats(organizationId, startDate, endDate, tx) {
   await repo.query(
     `DELETE FROM analytics_daily_carrier_stats
@@ -256,6 +268,9 @@ async function refreshCarrierStats(organizationId, startDate, endDate, tx) {
   );
 }
 
+/**
+ * Rebuild daily warehouse activity analytics rows for a date range.
+ */
 async function refreshWarehouseActivity(organizationId, startDate, endDate, tx) {
   await repo.query(
     `DELETE FROM analytics_daily_warehouse_activity
@@ -363,6 +378,9 @@ async function refreshWarehouseActivity(organizationId, startDate, endDate, tx) 
   );
 }
 
+/**
+ * Sync all analytics summary tables inside a single transaction.
+ */
 export async function syncAnalyticsStats(organizationId, { startDate, endDate }) {
   if (!organizationId || !startDate || !endDate) {
     return;

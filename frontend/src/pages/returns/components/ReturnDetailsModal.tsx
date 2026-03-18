@@ -64,7 +64,7 @@ export function ReturnDetailsModal({
     <Modal isOpen={isOpen} onClose={onClose} title={`Return ${displayItem.id}`} size="lg">
       <div className="space-y-6">
         {/* Status Header */}
-        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="p-4 bg-linear-to-r from-purple-50 to-pink-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="h-12 w-12 rounded-xl bg-white dark:bg-gray-900 flex items-center justify-center shadow-sm">

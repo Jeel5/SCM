@@ -352,7 +352,7 @@ function displayAssignments(assignments) {
 
 async function acceptAssignment(assignmentId) {
     const quotedPrice = parseFloat(document.getElementById(`quotedPrice-${assignmentId}`).value);
-    const deliveryDays = parseInt(document.getElementById(`deliveryDays-${assignmentId}`).value);
+    const deliveryDays = parseInt(document.getElementById(`deliveryDays-${assignmentId}`).value, 10);
     const serviceType = document.getElementById(`quoteServiceType-${assignmentId}`).value;
 
     const acceptanceData = {
@@ -379,7 +379,7 @@ async function acceptAssignment(assignmentId) {
         else throw new Error(result.error || 'Failed to accept assignment');
     } catch (error) {
         console.error('Error accepting assignment:', error);
-        alert('Error: ' + error.message);
+        console.error('Error: ' + error.message);
     }
 }
 
@@ -395,7 +395,7 @@ async function rejectAssignment(assignmentId) {
         else throw new Error(result.error || 'Failed to reject assignment');
     } catch (error) {
         console.error('Error rejecting assignment:', error);
-        alert('Error: ' + error.message);
+        console.error('Error: ' + error.message);
     }
 }
 
@@ -548,12 +548,12 @@ async function confirmPickup(shipmentId, trackingNumber) {
             `${API_BASE}/shipments/${shipmentId}/confirm-pickup`, 'POST', pickupData
         );
         if (result.success) {
-            alert(`✅ Pickup Confirmed!\n\nTracking: ${result.data.trackingNumber}\nStatus: ${result.data.status}\nOrder: ${result.data.orderStatus}\n\nSLA timer started.`);
+            console.info(`✅ Pickup Confirmed!\n\nTracking: ${result.data.trackingNumber}\nStatus: ${result.data.status}\nOrder: ${result.data.orderStatus}\n\nSLA timer started.`);
             loadMyShipments();
         } else throw new Error(result.error || 'Failed to confirm pickup');
     } catch (error) {
         console.error('Error confirming pickup:', error);
-        alert('❌ Error: ' + error.message);
+        console.error('❌ Error: ' + error.message);
     }
 }
 
@@ -566,9 +566,9 @@ async function updateShipmentStatus() {
     const description = document.getElementById('updateDescription').value.trim();
     const resultDiv = document.getElementById('statusUpdateResult');
 
-    if (!trackingNumber) { alert('Please enter a tracking number.'); return; }
+    if (!trackingNumber) { console.error('Please enter a tracking number.'); return; }
     if (!currentWebhookSecret || !currentCarrierId) {
-        alert('Please select a carrier first so the HMAC secret is loaded.');
+        console.error('Please select a carrier first so the HMAC secret is loaded.');
         return;
     }
 

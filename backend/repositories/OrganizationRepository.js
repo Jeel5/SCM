@@ -7,11 +7,18 @@ class OrganizationRepository extends BaseRepository {
     super('organizations');
   }
 
+  /**
+   * Read window-count from paginated query rows.
+   * @param {Array} rows
+   * @returns {number}
+   */
   parseTotalCount(rows) {
     return rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
   }
 
-  // Ensure the org code sequence exists and is at least aligned to current data.
+  /**
+   * Ensure the organization code sequence exists and is aligned with current max code.
+   */
   async ensureOrgCodeSequence(client = null) {
     await this.query(
       `CREATE SEQUENCE IF NOT EXISTS public.org_code_seq
@@ -48,7 +55,9 @@ class OrganizationRepository extends BaseRepository {
     );
   }
 
-  // Generate unique organization code using an atomic DB sequence
+  /**
+   * Generate unique organization code using org_code_seq.
+   */
   async generateOrganizationCode(client = null) {
     await this.ensureOrgCodeSequence(client);
 
@@ -64,7 +73,9 @@ class OrganizationRepository extends BaseRepository {
     return `${prefix}-${year}-${sequence}`;
   }
 
-  // Get organizations with pagination and filtering
+  /**
+   * Get paginated organizations with active/deleted/search filters.
+   */
   async findOrganizations({ page = 1, limit = 20, is_active = null, include_deleted = false, search = null }, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
@@ -82,7 +93,7 @@ class OrganizationRepository extends BaseRepository {
       query += ` AND o.is_deleted = false`;
     }
 
-    if (is_active !== null && is_active !== undefined && typeof is_active !== 'object') {
+    if (typeof is_active === 'boolean') {
       query += ` AND o.is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
@@ -109,14 +120,18 @@ class OrganizationRepository extends BaseRepository {
     return { organizations, totalCount };
   }
 
-  // Find organization by code
+  /**
+   * Find organization by unique code.
+   */
   async findByCode(code, client = null) {
     const query = 'SELECT * FROM organizations WHERE code = $1';
     const result = await this.query(query, [code], client);
     return result.rows[0] || null;
   }
 
-  // Find organization by email (optionally exclude a specific org id — used in update uniqueness check)
+  /**
+   * Find organization by email, optionally excluding one organization id.
+   */
   async findByEmail(email, client = null, excludeId = null) {
     const clause = excludeId ? ' AND id != $2' : '';
     const params = excludeId ? [email, excludeId] : [email];
@@ -127,14 +142,18 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Find organization by ID
+  /**
+   * Find organization by id.
+   */
   async findById(id, client = null) {
     const query = 'SELECT * FROM organizations WHERE id = $1';
     const result = await this.query(query, [id], client);
     return result.rows[0] || null;
   }
 
-  // Create organization
+  /**
+   * Create an organization record.
+   */
   async createOrganization(orgData, client = null) {
     // Auto-generate code if not provided
     const code = orgData.code || await this.generateOrganizationCode(client);
@@ -172,81 +191,40 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0];
   }
 
-  // Update organization
+  /**
+   * Update mutable organization profile fields.
+   * @param {string} id
+   * @param {Object} orgData
+   * @param {Object|null} client
+   * @returns {Promise<Object>}
+   */
   async updateOrganization(id, orgData, client = null) {
     const updates = [];
     const params = [];
     let paramCount = 1;
+    const mutableFields = [
+      'name',
+      'email',
+      'phone',
+      'website',
+      'address',
+      'city',
+      'state',
+      'country',
+      'postal_code',
+      'timezone',
+      'currency',
+      'logo_url',
+      'subscription_tier',
+      'is_active',
+    ];
 
-    if (orgData.name !== undefined) {
-      updates.push(`name = $${paramCount += 1}`);
-      params.push(orgData.name);
-    }
-
-    if (orgData.email !== undefined) {
-      updates.push(`email = $${paramCount += 1}`);
-      params.push(orgData.email);
-    }
-
-    if (orgData.phone !== undefined) {
-      updates.push(`phone = $${paramCount += 1}`);
-      params.push(orgData.phone);
-    }
-
-    if (orgData.website !== undefined) {
-      updates.push(`website = $${paramCount += 1}`);
-      params.push(orgData.website);
-    }
-
-    if (orgData.address !== undefined) {
-      updates.push(`address = $${paramCount += 1}`);
-      params.push(orgData.address);
-    }
-
-    if (orgData.city !== undefined) {
-      updates.push(`city = $${paramCount += 1}`);
-      params.push(orgData.city);
-    }
-
-    if (orgData.state !== undefined) {
-      updates.push(`state = $${paramCount += 1}`);
-      params.push(orgData.state);
-    }
-
-    if (orgData.country !== undefined) {
-      updates.push(`country = $${paramCount += 1}`);
-      params.push(orgData.country);
-    }
-
-    if (orgData.postal_code !== undefined) {
-      updates.push(`postal_code = $${paramCount += 1}`);
-      params.push(orgData.postal_code);
-    }
-
-    if (orgData.timezone !== undefined) {
-      updates.push(`timezone = $${paramCount += 1}`);
-      params.push(orgData.timezone);
-    }
-
-    if (orgData.currency !== undefined) {
-      updates.push(`currency = $${paramCount += 1}`);
-      params.push(orgData.currency);
-    }
-
-    if (orgData.logo_url !== undefined) {
-      updates.push(`logo_url = $${paramCount += 1}`);
-      params.push(orgData.logo_url);
-    }
-
-    if (orgData.subscription_tier !== undefined) {
-      updates.push(`subscription_tier = $${paramCount += 1}`);
-      params.push(orgData.subscription_tier);
-    }
-
-    if (orgData.is_active !== undefined) {
-      updates.push(`is_active = $${paramCount += 1}`);
-      params.push(orgData.is_active);
-    }
+    mutableFields.forEach((field) => {
+      if (orgData[field] !== undefined) {
+        updates.push(`${field} = $${paramCount += 1}`);
+        params.push(orgData[field]);
+      }
+    });
 
     if (updates.length === 0) {
       throw new ValidationError('No fields to update');
@@ -266,8 +244,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0];
   }
 
-  // Delete organization (soft delete by setting is_active = false)
-  // Soft-delete (permanent removal) — sets is_deleted flag, not just is_active
+  /**
+   * Soft-delete organization by setting is_deleted and deactivating tenant.
+   */
   async softDeleteOrganization(id, deletedBy, client = null) {
     const result = await this.query(`
       UPDATE organizations
@@ -282,7 +261,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Suspend a tenant (blocks logins; is_active stays based on plan, but suspended_at set)
+  /**
+   * Suspend a tenant and record suspension metadata.
+   */
   async suspendOrganization(id, suspendedBy, reason, client = null) {
     const result = await this.query(`
       UPDATE organizations
@@ -297,7 +278,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Reactivate a suspended tenant
+  /**
+   * Reactivate a suspended tenant.
+   */
   async reactivateOrganization(id, reactivatedBy, client = null) {
     const result = await this.query(`
       UPDATE organizations
@@ -312,7 +295,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Get global platform statistics (superadmin dashboard)
+  /**
+   * Get platform-wide statistics for superadmin dashboards.
+   */
   async getGlobalStats(client = null) {
     const result = await this.query(`
       SELECT
@@ -331,7 +316,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0];
   }
 
-  // Get top-risk tenants (high SLA violations, low health)
+  /**
+   * Get top at-risk tenants by recent SLA violations and open exceptions.
+   */
   async getAtRiskTenants(limit = 10, client = null) {
     const result = await this.query(`
       SELECT
@@ -358,7 +345,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows;
   }
 
-  // Get users for a specific organization
+  /**
+   * Get users for a specific organization.
+   */
   async getUsersByOrganization(orgId, client = null) {
     const result = await this.query(`
       SELECT id, name, email, role, is_active, last_login, created_at
@@ -369,6 +358,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows;
   }
 
+  /**
+   * Fetch paginated users across all active organizations.
+   */
   async getGlobalUsers({ page = 1, limit = 50, search = '' } = {}, client = null) {
     const offset = (page - 1) * limit;
     const params = [];
@@ -414,6 +406,9 @@ class OrganizationRepository extends BaseRepository {
     };
   }
 
+  /**
+   * Fetch recent organization audit logs.
+   */
   async getOrganizationAuditLogs(orgId, limit = 100, client = null) {
     const result = await this.query(`
       SELECT
@@ -439,6 +434,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows;
   }
 
+  /**
+   * Summarize billing metrics for the selected date range.
+   */
   async getOrganizationBillingSummary(orgId, rangeDays = 90, client = null) {
     const result = await this.query(
       `SELECT
@@ -491,6 +489,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Return highest-priority active incident banner for an org/global context.
+   */
   async getActiveIncidentBanner(organizationId = null, client = null) {
     const result = await this.query(
       `SELECT b.*
@@ -509,6 +510,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * List all incident banners with optional organization metadata.
+   */
   async listIncidentBanners(client = null) {
     const result = await this.query(
       `SELECT b.*, o.name AS organization_name
@@ -521,6 +525,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows;
   }
 
+  /**
+   * Create a new incident banner.
+   */
   async createIncidentBanner(data, client = null) {
     const result = await this.query(
       `INSERT INTO system_incident_banners
@@ -542,15 +549,18 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
+  /**
+   * Update incident banner fields.
+   */
   async updateIncidentBanner(id, data, actorId, client = null) {
     const updates = [];
     const params = [];
     let idx = 1;
 
-    for (const [k, v] of Object.entries(data || {})) {
+    Object.entries(data || {}).forEach(([k, v]) => {
       updates.push(`${k} = $${idx += 1}`);
       params.push(v);
-    }
+    });
 
     updates.push(`updated_by = $${idx += 1}`);
     params.push(actorId || null);
@@ -568,7 +578,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Write an immutable audit log entry for superadmin actions
+  /**
+   * Write an immutable audit log entry for organization admin actions.
+   */
   async logAuditAction({ orgId, action, performedBy, performedByRole, ip, userAgent, beforeState, afterState, metadata } = {}, client = null) {
     await this.query(`
       INSERT INTO organization_audit_logs
@@ -587,7 +599,9 @@ class OrganizationRepository extends BaseRepository {
     ], client);
   }
 
-  // Get organization statistics
+  /**
+   * Get basic organization-level entity counts.
+   */
   async getOrganizationStats(organizationId, client = null) {
     const query = `
       SELECT
@@ -600,6 +614,9 @@ class OrganizationRepository extends BaseRepository {
     return result.rows[0];
   }
 
+  /**
+   * Count active users in an organization.
+   */
   async countActiveUsers(organizationId, client = null) {
     const result = await this.query(
       `SELECT COUNT(*)::int AS count

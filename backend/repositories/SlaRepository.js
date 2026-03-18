@@ -103,12 +103,12 @@ class SlaRepository extends BaseRepository {
       priority:                'priority',
     };
 
-    for (const [key, col] of Object.entries(fieldMap)) {
+    Object.entries(fieldMap).forEach(([key, col]) => {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
         params.push(data[key]);
         fields.push(`${col} = $${p += 1}`);
       }
-    }
+    });
 
     if (fields.length === 0) return null;
 

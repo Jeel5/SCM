@@ -9,7 +9,9 @@ class CarrierRepository extends BaseRepository {
         super('carriers');
     }
 
-    // Generate unique carrier code using an atomic DB sequence
+    /**
+     * Generate a unique carrier code using the carrier_code_seq sequence.
+     */
     async generateCarrierCode(client = null) {
         const prefix = 'CAR';
         const year = new Date().getFullYear().toString().slice(-2);
@@ -248,15 +250,17 @@ class CarrierRepository extends BaseRepository {
 
         for (const field of ALLOWED) {
             if (updates[field] !== undefined) {
-                setClauses.push(`${field} = $${paramCount += 1}`);
+                setClauses.push(`${field} = $${paramCount}`);
                 params.push(updates[field]);
+                paramCount += 1;
             }
         }
 
         // Handle service_areas JSON separately
         if (updates.service_areas !== undefined) {
-            setClauses.push(`service_areas = $${paramCount += 1}`);
+            setClauses.push(`service_areas = $${paramCount}`);
             params.push(JSON.stringify(updates.service_areas));
+            paramCount += 1;
         }
 
         if (setClauses.length === 0) throw new ValidationError('No valid fields to update');

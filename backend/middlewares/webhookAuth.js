@@ -16,6 +16,306 @@ function sendWebhookError(res, statusCode, message, error, extra = {}) {
   });
 }
 
+function buildLogData(req, carrierId, signature, timestamp) {
+  return {
+    endpoint: req.path,
+    method: req.method,
+    carrierId,
+    hasSignature: !!signature,
+    hasTimestamp: !!timestamp,
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+}
+
+async function maybeLogAttempt(logAllAttempts, req, data) {
+  if (!logAllAttempts) return;
+  await logWebhookAttempt(req, data);
+}
+
+function parseTimestampCheck(timestamp, toleranceSec) {
+  const requestTimestamp = parseInt(timestamp, 10);
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  const timeDifference = Math.abs(currentTimestamp - requestTimestamp);
+  return {
+    requestTimestamp,
+    currentTimestamp,
+    timeDifference,
+    isWithinTolerance: Number.isFinite(requestTimestamp) && timeDifference <= toleranceSec,
+  };
+}
+
+function isIpWhitelisted(carrier, ipAddress) {
+  if (!carrier.ip_whitelist || !Array.isArray(carrier.ip_whitelist)) {
+    return true;
+  }
+  return carrier.ip_whitelist.includes(ipAddress);
+}
+
+function verifyHmacSignature(signature, timestamp, req, webhookSecret) {
+  const payload = req.rawBody || JSON.stringify(req.body);
+  const signedPayload = `${timestamp}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(signedPayload)
+    .digest('hex');
+
+  const providedSignature = signature.replace('sha256=', '');
+  const expectedBuf = Buffer.from(expectedSignature);
+  const providedBuf = Buffer.from(providedSignature);
+
+  return {
+    expectedSignature,
+    providedSignature,
+    isValid: expectedBuf.length === providedBuf.length &&
+      crypto.timingSafeEqual(expectedBuf, providedBuf),
+  };
+}
+
+async function rejectWebhook({
+  res,
+  statusCode,
+  message,
+  error,
+  extra,
+  req,
+  logAllAttempts,
+  attemptLog,
+}) {
+  await maybeLogAttempt(logAllAttempts, req, attemptLog);
+  return sendWebhookError(res, statusCode, message, error, extra);
+}
+
+async function ensureRequiredHeaders(context, res, logAllAttempts) {
+  if (context.signature && context.timestamp && context.carrierId) {
+    return true;
+  }
+
+  logger.warn('Webhook authentication failed: Missing headers', context.logData);
+  await rejectWebhook({
+    res,
+    statusCode: 401,
+    message: 'Missing required authentication headers',
+    error: 'Unauthorized',
+    extra: { required: ['x-carrier-id', 'x-webhook-signature', 'x-webhook-timestamp'] },
+    req: context.req,
+    logAllAttempts,
+    attemptLog: {
+      carrierId: context.carrierId,
+      signatureValid: false,
+      errorMessage: 'Missing required headers (signature, timestamp, or carrierId)',
+      responseStatus: 401,
+    },
+  });
+  return false;
+}
+
+async function ensureTimestampWithinTolerance(context, res, logAllAttempts, timestampToleranceSec) {
+  const timestampCheck = parseTimestampCheck(context.timestamp, timestampToleranceSec);
+  context.timestampCheck = timestampCheck;
+
+  if (timestampCheck.isWithinTolerance) {
+    return true;
+  }
+
+  logger.warn('Webhook authentication failed: Timestamp too old', {
+    ...context.logData,
+    requestTimestamp: timestampCheck.requestTimestamp,
+    currentTimestamp: timestampCheck.currentTimestamp,
+    timeDifference: timestampCheck.timeDifference,
+    tolerance: timestampToleranceSec,
+  });
+
+  await rejectWebhook({
+    res,
+    statusCode: 401,
+    message: 'Request timestamp too old or too far in future',
+    error: 'Unauthorized',
+    extra: { tolerance: `${timestampToleranceSec} seconds` },
+    req: context.req,
+    logAllAttempts,
+    attemptLog: {
+      carrierId: context.carrierId,
+      signatureValid: false,
+      errorMessage: `Timestamp too old (${timestampCheck.timeDifference}s > ${timestampToleranceSec}s tolerance)`,
+      responseStatus: 401,
+    },
+  });
+  return false;
+}
+
+async function resolveCarrierOrReject(context, res, logAllAttempts) {
+  const carrier = await carrierRepo.findByIdWithWebhookConfig(context.carrierId);
+  context.carrier = carrier;
+
+  if (!carrier) {
+    logger.warn('Webhook authentication failed: Unknown carrier', { ...context.logData, carrierId: context.carrierId });
+    await rejectWebhook({
+      res,
+      statusCode: 401,
+      message: 'Unknown carrier',
+      error: 'Unauthorized',
+      req: context.req,
+      logAllAttempts,
+      attemptLog: {
+        carrierId: context.carrierId,
+        signatureValid: false,
+        errorMessage: 'Unknown carrier ID',
+        responseStatus: 401,
+      },
+    });
+    return false;
+  }
+
+  if (!carrier.webhook_enabled) {
+    logger.warn('Webhook authentication failed: Webhooks disabled for carrier', {
+      ...context.logData,
+      carrierId: carrier.id,
+      carrierCode: carrier.code,
+    });
+    await rejectWebhook({
+      res,
+      statusCode: 403,
+      message: 'Webhooks are disabled for this carrier',
+      error: 'Forbidden',
+      req: context.req,
+      logAllAttempts,
+      attemptLog: {
+        carrierId: carrier.id,
+        signatureValid: false,
+        errorMessage: 'Webhooks disabled for this carrier',
+        responseStatus: 403,
+      },
+    });
+    return false;
+  }
+
+  return true;
+}
+
+async function ensureIpAllowed(context, res, logAllAttempts) {
+  if (isIpWhitelisted(context.carrier, context.req.ip)) {
+    return true;
+  }
+
+  logger.warn('Webhook authentication failed: IP not whitelisted', {
+    ...context.logData,
+    requestIp: context.req.ip,
+    allowedIps: context.carrier.ip_whitelist,
+  });
+
+  await rejectWebhook({
+    res,
+    statusCode: 403,
+    message: 'IP address not authorized',
+    error: 'Forbidden',
+    req: context.req,
+    logAllAttempts,
+    attemptLog: {
+      carrierId: context.carrier.id,
+      signatureValid: false,
+      errorMessage: 'IP address not whitelisted',
+      responseStatus: 403,
+    },
+  });
+  return false;
+}
+
+async function ensureValidSignature(context, res, logAllAttempts) {
+  const webhookSecret = context.carrier.webhook_secret;
+  if (!webhookSecret) {
+    logger.error('Carrier has no webhook secret configured', {
+      carrierId: context.carrier.id,
+      carrierCode: context.carrier.code,
+    });
+
+    sendWebhookError(
+      res,
+      500,
+      'Webhook authentication not configured for this carrier',
+      'Internal Server Error'
+    );
+    return false;
+  }
+
+  const signatureCheck = verifyHmacSignature(
+    context.signature,
+    context.timestamp,
+    context.req,
+    webhookSecret
+  );
+
+  if (signatureCheck.isValid) {
+    return true;
+  }
+
+  logger.warn('Webhook authentication failed: Invalid signature', {
+    ...context.logData,
+    carrierId: context.carrier.id,
+    carrierCode: context.carrier.code,
+    expectedSignature: `${signatureCheck.expectedSignature.substring(0, 10)}...`,
+    providedSignature: `${signatureCheck.providedSignature.substring(0, 10)}...`,
+  });
+
+  await rejectWebhook({
+    res,
+    statusCode: 401,
+    message: 'Invalid webhook signature',
+    error: 'Unauthorized',
+    req: context.req,
+    logAllAttempts,
+    attemptLog: {
+      carrierId: context.carrier.id,
+      signatureValid: false,
+      errorMessage: 'Invalid HMAC signature',
+      responseStatus: 401,
+    },
+  });
+  return false;
+}
+
+async function authenticateWebhookRequest(req, res, next, { timestampToleranceSec, logAllAttempts }) {
+  const startTime = Date.now();
+  const signature = req.headers['x-webhook-signature'] || req.headers['x-signature'];
+  const timestamp = req.headers['x-webhook-timestamp'] || req.headers['x-timestamp'];
+  const carrierId = req.headers['x-carrier-id'] || req.body.carrierId;
+
+  const context = {
+    req,
+    signature,
+    timestamp,
+    carrierId,
+    logData: buildLogData(req, carrierId, signature, timestamp),
+    carrier: null,
+    timestampCheck: null,
+  };
+
+  if (!await ensureRequiredHeaders(context, res, logAllAttempts)) return;
+  if (!await ensureTimestampWithinTolerance(context, res, logAllAttempts, timestampToleranceSec)) return;
+  if (!await resolveCarrierOrReject(context, res, logAllAttempts)) return;
+  if (!await ensureIpAllowed(context, res, logAllAttempts)) return;
+  if (!await ensureValidSignature(context, res, logAllAttempts)) return;
+
+  const processingTime = Date.now() - startTime;
+  logger.info('Webhook authenticated successfully', {
+    ...context.logData,
+    carrierId: context.carrier.id,
+    carrierCode: context.carrier.code,
+    processingTimeMs: processingTime,
+  });
+
+  await maybeLogAttempt(logAllAttempts, req, {
+    carrierId: context.carrier.id,
+    signatureValid: true,
+    responseStatus: 200,
+    processingTimeMs: processingTime,
+  });
+
+  req.authenticatedCarrier = context.carrier;
+  req.webhookTimestamp = context.timestampCheck.requestTimestamp;
+  next();
+}
+
 /**
  * Verify webhook signature using HMAC-SHA256
  * Prevents:
@@ -30,223 +330,11 @@ export function verifyWebhookSignature(options = {}) {
   } = options;
 
   return async (req, res, next) => {
-    const startTime = Date.now();
-    
     try {
-      // Extract authentication headers
-      const signature = req.headers['x-webhook-signature'] || req.headers['x-signature'];
-      const timestamp = req.headers['x-webhook-timestamp'] || req.headers['x-timestamp'];
-      const carrierId = req.headers['x-carrier-id'] || req.body.carrierId;
-      
-      // Log attempt
-      const logData = {
-        endpoint: req.path,
-        method: req.method,
-        carrierId,
-        hasSignature: !!signature,
-        hasTimestamp: !!timestamp,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent']
-      };
-
-      // Validate required headers
-      if (!signature || !timestamp || !carrierId) {
-        logger.warn('Webhook authentication failed: Missing headers', logData);
-        
-        if (logAllAttempts) {
-          await logWebhookAttempt(req, {
-            carrierId,
-            signatureValid: false,
-            errorMessage: 'Missing required headers (signature, timestamp, or carrierId)',
-            responseStatus: 401
-          });
-        }
-        
-        return sendWebhookError(
-          res,
-          401,
-          'Missing required authentication headers',
-          'Unauthorized',
-          { required: ['x-carrier-id', 'x-webhook-signature', 'x-webhook-timestamp'] }
-        );
-      }
-
-      // Validate timestamp (prevent replay attacks)
-      const requestTimestamp = parseInt(timestamp, 10);
-      const currentTimestamp = Math.floor(Date.now() / 1000);
-      const timeDifference = Math.abs(currentTimestamp - requestTimestamp);
-
-      if (timeDifference > timestampToleranceSec) {
-        logger.warn('Webhook authentication failed: Timestamp too old', {
-          ...logData,
-          requestTimestamp,
-          currentTimestamp,
-          timeDifference,
-          tolerance: timestampToleranceSec
-        });
-
-        if (logAllAttempts) {
-          await logWebhookAttempt(req, {
-            carrierId,
-            signatureValid: false,
-            errorMessage: `Timestamp too old (${timeDifference}s > ${timestampToleranceSec}s tolerance)`,
-            responseStatus: 401
-          });
-        }
-
-        return sendWebhookError(
-          res,
-          401,
-          'Request timestamp too old or too far in future',
-          'Unauthorized',
-          { tolerance: `${timestampToleranceSec} seconds` }
-        );
-      }
-
-      // Get carrier's webhook secret from database
-      const carrier = await carrierRepo.findByIdWithWebhookConfig(carrierId);
-
-      if (!carrier) {
-        logger.warn('Webhook authentication failed: Unknown carrier', { ...logData, carrierId });
-        
-        if (logAllAttempts) {
-          await logWebhookAttempt(req, {
-            carrierId,
-            signatureValid: false,
-            errorMessage: 'Unknown carrier ID',
-            responseStatus: 401
-          });
-        }
-
-        return sendWebhookError(res, 401, 'Unknown carrier', 'Unauthorized');
-      }
-
-      // Check if webhooks are enabled for this carrier
-      if (!carrier.webhook_enabled) {
-        logger.warn('Webhook authentication failed: Webhooks disabled for carrier', {
-          ...logData,
-          carrierId: carrier.id,
-          carrierCode: carrier.code
-        });
-
-        if (logAllAttempts) {
-          await logWebhookAttempt(req, {
-            carrierId: carrier.id,
-            signatureValid: false,
-            errorMessage: 'Webhooks disabled for this carrier',
-            responseStatus: 403
-          });
-        }
-
-        return sendWebhookError(res, 403, 'Webhooks are disabled for this carrier', 'Forbidden');
-      }
-
-      // Optional: IP whitelist check
-      if (carrier.ip_whitelist && Array.isArray(carrier.ip_whitelist)) {
-        if (!carrier.ip_whitelist.includes(req.ip)) {
-          logger.warn('Webhook authentication failed: IP not whitelisted', {
-            ...logData,
-            requestIp: req.ip,
-            allowedIps: carrier.ip_whitelist
-          });
-
-          if (logAllAttempts) {
-            await logWebhookAttempt(req, {
-              carrierId: carrier.id,
-              signatureValid: false,
-              errorMessage: 'IP address not whitelisted',
-              responseStatus: 403
-            });
-          }
-
-          return sendWebhookError(res, 403, 'IP address not authorized', 'Forbidden');
-        }
-      }
-
-      // Verify HMAC signature
-      const webhookSecret = carrier.webhook_secret;
-      if (!webhookSecret) {
-        logger.error('Carrier has no webhook secret configured', {
-          carrierId: carrier.id,
-          carrierCode: carrier.code
-        });
-
-        return sendWebhookError(
-          res,
-          500,
-          'Webhook authentication not configured for this carrier',
-          'Internal Server Error'
-        );
-      }
-
-      // Recreate the signed payload (timestamp.rawBody).
-      // Use req.rawBody (captured before JSON parsing) to match the bytes the carrier
-      // signed — re-serialising req.body would change key order and break verification.
-      const payload = req.rawBody || JSON.stringify(req.body);
-      const signedPayload = `${timestamp}.${payload}`;
-
-      // Calculate expected signature using HMAC-SHA256
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(signedPayload)
-        .digest('hex');
-
-      // Compare signatures using timing-safe comparison
-      const providedSignature = signature.replace('sha256=', '');
-
-      // timingSafeEqual requires both buffers to have the same byte length;
-      // different lengths always mean a mismatch — return false without leaking timing info.
-      const expectedBuf = Buffer.from(expectedSignature);
-      const providedBuf = Buffer.from(providedSignature);
-      const isValid = expectedBuf.length === providedBuf.length &&
-        crypto.timingSafeEqual(expectedBuf, providedBuf);
-
-      if (!isValid) {
-        logger.warn('Webhook authentication failed: Invalid signature', {
-          ...logData,
-          carrierId: carrier.id,
-          carrierCode: carrier.code,
-          expectedSignature: expectedSignature.substring(0, 10) + '...',
-          providedSignature: providedSignature.substring(0, 10) + '...'
-        });
-
-        if (logAllAttempts) {
-          await logWebhookAttempt(req, {
-            carrierId: carrier.id,
-            signatureValid: false,
-            errorMessage: 'Invalid HMAC signature',
-            responseStatus: 401
-          });
-        }
-
-        return sendWebhookError(res, 401, 'Invalid webhook signature', 'Unauthorized');
-      }
-
-      // Success! Signature is valid
-      const processingTime = Date.now() - startTime;
-      
-      logger.info('Webhook authenticated successfully', {
-        ...logData,
-        carrierId: carrier.id,
-        carrierCode: carrier.code,
-        processingTimeMs: processingTime
+      await authenticateWebhookRequest(req, res, next, {
+        timestampToleranceSec,
+        logAllAttempts,
       });
-
-      // Log successful webhook
-      if (logAllAttempts) {
-        await logWebhookAttempt(req, {
-          carrierId: carrier.id,
-          signatureValid: true,
-          responseStatus: 200,
-          processingTimeMs: processingTime
-        });
-      }
-
-      // Attach carrier info to request for downstream handlers
-      req.authenticatedCarrier = carrier;
-      req.webhookTimestamp = requestTimestamp;
-      
-      next();
 
     } catch (error) {
       logger.error('Webhook authentication error', {

@@ -8,7 +8,9 @@ class BaseRepository {
     this.pool = pool;
   }
 
-  // Execute SQL query with optional transaction client or Transaction instance
+  /**
+   * Execute SQL query with optional raw client or Transaction wrapper.
+   */
   async query(text, params, client = null) {
     // Support both Transaction class and raw client
     if (client instanceof Transaction) {
@@ -18,7 +20,9 @@ class BaseRepository {
     return await db.query(text, params);
   }
 
-  // Get client from Transaction or return as-is
+  /**
+   * Resolve underlying pg client from Transaction wrapper when needed.
+   */
   _getClient(txOrClient) {
     if (txOrClient instanceof Transaction) {
       return txOrClient.getClient();
@@ -26,7 +30,9 @@ class BaseRepository {
     return txOrClient;
   }
 
-  // Build organization filter for multi-tenant data isolation
+  /**
+   * Build organization filter fragment for multi-tenant data isolation.
+   */
   buildOrgFilter(organizationId, tableAlias = null) {
     // Superadmin (organizationId = null) can see all organizations
     if (organizationId === null || organizationId === undefined) {
@@ -43,7 +49,9 @@ class BaseRepository {
     };
   }
 
-  // Find all records with optional filtering, sorting, pagination, and organization scoping
+  /**
+   * Find records with optional filters, sorting, pagination, and org scoping.
+   */
   async findAll(conditions = {}, options = {}, client = null) {
     const { 
       limit = 50, 
@@ -117,7 +125,9 @@ class BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Find single record matching conditions
+  /**
+   * Find a single record by exact-match conditions.
+   */
   async findOne(conditions, client = null) {
     const keys = Object.keys(conditions);
     const whereClause = keys.map((key, idx) => `${key} = $${idx + 1}`).join(' AND ');
@@ -127,7 +137,9 @@ class BaseRepository {
     return result.rows[0] || null;
   }
 
-  // Create new record and return it
+  /**
+   * Create a new record and return inserted row.
+   */
   async create(data, client = null) {
     const keys = Object.keys(data);
     const values = Object.values(data);
@@ -143,7 +155,9 @@ class BaseRepository {
     return result.rows[0];
   }
 
-  // Update record by ID and return updated record
+  /**
+   * Update record by id and return updated row.
+   */
   async update(id, data, client = null) {
     const keys = Object.keys(data);
     const values = Object.values(data);
@@ -160,14 +174,18 @@ class BaseRepository {
     return result.rows[0];
   }
 
-  // Delete record by ID and return deleted record
+  /**
+   * Delete record by id and return deleted row.
+   */
   async delete(id, client = null) {
     const query = `DELETE FROM ${this.tableName} WHERE id = $1 RETURNING *`;
     const result = await this.query(query, [id], client);
     return result.rows[0];
   }
 
-  // Count records matching conditions with optional organization filtering
+  /**
+   * Count records matching conditions with optional organization filtering.
+   */
   async count(conditions = {}, organizationId = undefined, client = null) {
     let query = `SELECT COUNT(*) FROM ${this.tableName}`;
     const params = [];

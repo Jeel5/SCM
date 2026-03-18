@@ -32,6 +32,12 @@ const ORDER_VALID_TRANSITIONS = {
 
 const IN_TRANSIT_CANCEL_STATUSES = new Set(['shipped', 'in_transit', 'out_for_delivery']);
 
+/**
+ * Safely parse JSON-like values.
+ * @param {string|Object|null|undefined} value
+ * @param {Object} fallback
+ * @returns {Object}
+ */
 function parseJsonValue(value, fallback = {}) {
   if (!value) return fallback;
   if (typeof value === 'object') return value;
@@ -42,6 +48,11 @@ function parseJsonValue(value, fallback = {}) {
   }
 }
 
+/**
+ * Extract normalized coordinates from arbitrary address payloads.
+ * @param {Object} address
+ * @returns {{lat: number, lon: number}|null}
+ */
 function toCoordinates(address = {}) {
   const lat = Number(address.lat ?? address.latitude ?? address.coordinates?.lat);
   const lon = Number(address.lon ?? address.lng ?? address.longitude ?? address.coordinates?.lng);
@@ -49,6 +60,12 @@ function toCoordinates(address = {}) {
   return { lat, lon };
 }
 
+/**
+ * Great-circle distance in kilometers between two geo points.
+ * @param {{lat: number, lon: number}} a
+ * @param {{lat: number, lon: number}} b
+ * @returns {number}
+ */
 function haversineKm(a, b) {
   const R = 6371;
   const toRad = (x) => (x * Math.PI) / 180;
@@ -61,6 +78,12 @@ function haversineKm(a, b) {
   return R * c;
 }
 
+/**
+ * Estimate reverse shipping cost from geo distance.
+ * @param {Object} originAddress
+ * @param {Object} destinationAddress
+ * @returns {{estimatedCost: number, distanceKm: number|null}}
+ */
 function estimateReverseShippingCost(originAddress, destinationAddress) {
   const from = toCoordinates(originAddress);
   const to = toCoordinates(destinationAddress);
@@ -72,9 +95,205 @@ function estimateReverseShippingCost(originAddress, destinationAddress) {
   return { estimatedCost, distanceKm };
 }
 
+/**
+ * Merge a raw address with optional warehouse coordinates.
+ * @param {Object|null|undefined} address
+ * @param {Object|null|undefined} coordinates
+ * @param {Object|null} fallback
+ * @returns {Object|null}
+ */
+function buildAddressWithCoordinates(address, coordinates, fallback = null) {
+  if (!address && !coordinates) return fallback;
+  return {
+    ...(address || {}),
+    coordinates: coordinates
+      ? {
+          lat: Number(coordinates.lat),
+          lng: Number(coordinates.lng),
+        }
+      : undefined,
+  };
+}
+
+/**
+ * Execute async work serially for each item while avoiding await-in-loop constructs.
+ * @param {Array} items
+ * @param {(item: any) => Promise<void>} worker
+ * @returns {Promise<void>}
+ */
+function runSerial(items, worker) {
+  return items.reduce(
+    (chain, item) => chain.then(() => worker(item)),
+    Promise.resolve()
+  );
+}
+
+/**
+ * Resolve order items against product catalog and assign warehouses with stock.
+ * @param {Array} items
+ * @param {string|null|undefined} orgId
+ * @param {object} tx
+ * @returns {Promise<Array>}
+ */
+async function resolveAndEnrichOrderItems(items, orgId, tx) {
+  const enrichedItems = [];
+
+  await runSerial(items, async (item) => {
+    let product = null;
+
+    if (item.product_id) {
+      product = await ProductRepository.findById(item.product_id, orgId, tx);
+    } else if (item.sku) {
+      product = await ProductRepository.findBySku(item.sku, orgId, tx);
+    }
+
+    if (!product) {
+      throw new BusinessLogicError(
+        item.sku
+          ? `Product with SKU "${item.sku}" not found in catalog. Products must be created via the MDM API and assigned inventory before orders can be placed. Use GET /api/webhooks/:orgToken/catalog to list available products.`
+          : 'Product not found. Each item must reference a valid product_id or SKU that exists in the catalog with available inventory.'
+      );
+    }
+
+    const enrichedItem = {
+      product_id: product?.id || item.product_id || null,
+      sku: product?.sku || item.sku,
+      product_name: item.product_name || product?.name || 'Unknown',
+      quantity: item.quantity,
+      unit_price: item.unit_price || parseFloat(product?.selling_price) || 0,
+      discount: item.discount || 0,
+      tax: item.tax || 0,
+      total_price: item.total_price || ((item.unit_price || parseFloat(product?.selling_price) || 0) * item.quantity),
+      weight: item.weight || parseFloat(product?.weight) || null,
+      dimensions: item.dimensions ? JSON.stringify(item.dimensions) : (product?.dimensions || null),
+      is_fragile: item.is_fragile ?? product?.is_fragile ?? false,
+      is_hazardous: item.is_hazardous ?? product?.is_hazmat ?? false,
+      is_perishable: item.is_perishable ?? product?.is_perishable ?? false,
+      requires_cold_storage: item.requires_cold_storage ?? product?.requires_cold_storage ?? false,
+      item_type: item.item_type || product?.item_type || 'general',
+      package_type: item.package_type || product?.package_type || 'box',
+      handling_instructions: item.handling_instructions || product?.handling_instructions || null,
+      requires_insurance: item.requires_insurance ?? product?.requires_insurance ?? false,
+      declared_value: item.declared_value || parseFloat(product?.declared_value) || null,
+      warehouse_id: item.warehouse_id || null,
+    };
+
+    if (!enrichedItem.warehouse_id && orgId && enrichedItem.sku) {
+      const warehouseId = await InventoryRepository.findBestWarehouseForSku(
+        enrichedItem.sku,
+        orgId,
+        enrichedItem.quantity,
+        tx
+      );
+      if (warehouseId) {
+        enrichedItem.warehouse_id = warehouseId;
+        logger.debug(`Auto-assigned warehouse ${warehouseId} for SKU ${enrichedItem.sku}`);
+      } else {
+        throw new BusinessLogicError(
+          `Insufficient inventory for SKU "${enrichedItem.sku}". Required quantity: ${enrichedItem.quantity}. Add stock via the inventory API before placing orders for this product.`
+        );
+      }
+    } else if (!enrichedItem.warehouse_id) {
+      throw new BusinessLogicError(
+        `No warehouse assigned for SKU "${enrichedItem.sku || 'unknown'}" and no organization context to look up inventory. Ensure the order includes organization_id and the product has inventory assigned.`
+      );
+    }
+
+    enrichedItems.push(enrichedItem);
+  });
+
+  return enrichedItems;
+}
+
+/**
+ * Compute server-authoritative order totals from line items and request charges.
+ * @param {Array} enrichedItems
+ * @param {Object} orderData
+ * @returns {{subtotal: number, tax_amount: number, shipping_amount: number, discount_amount: number, total_amount: number}}
+ */
+function calculateServerOrderTotals(enrichedItems, orderData) {
+  const subtotal = enrichedItems.reduce((sum, item) => {
+    const lineTotal = (item.unit_price * item.quantity) - (item.discount || 0);
+    return sum + lineTotal;
+  }, 0);
+  const taxAmount = enrichedItems.reduce((sum, item) => sum + (item.tax || 0), 0);
+  const shippingAmount = orderData.shipping_amount || 0;
+  const discountAmount = orderData.discount_amount || 0;
+  const totalAmount = subtotal + taxAmount + shippingAmount - discountAmount;
+
+  return {
+    subtotal,
+    tax_amount: taxAmount,
+    shipping_amount: shippingAmount,
+    discount_amount: discountAmount,
+    total_amount: totalAmount,
+  };
+}
+
+/**
+ * Reserve inventory for each enriched order item with warehouse assignment.
+ * @param {Array} enrichedItems
+ * @param {object} tx
+ * @returns {Promise<void>}
+ */
+async function reserveInventoryForItems(enrichedItems, tx) {
+  await runSerial(enrichedItems, async (item) => {
+    if (!item.warehouse_id || !item.sku) return;
+
+    const reserved = await InventoryRepository.reserveStock(
+      item.sku,
+      item.warehouse_id,
+      item.quantity,
+      tx
+    );
+
+    if (!reserved) {
+      throw new BusinessLogicError(
+        `Insufficient stock for SKU "${item.sku}". Required: ${item.quantity}. Check available inventory and try again.`
+      );
+    }
+  });
+}
+
+/**
+ * Build base order payload before item enrichment and total calculation.
+ * Totals are computed server-side afterward.
+ */
+function buildOrderRecord(orderData, generatedOrderNumber) {
+  return {
+    order_number: generatedOrderNumber,
+    external_order_id: orderData.external_order_id || null,
+    platform: orderData.platform || 'api',
+    customer_name: orderData.customer_name,
+    customer_email: orderData.customer_email,
+    customer_phone: orderData.customer_phone || null,
+    status: 'created',
+    priority: orderData.priority || 'standard',
+    order_type: orderData.order_type || 'regular',
+    organization_id: orderData.organization_id || null,
+    is_cod: orderData.is_cod || false,
+    subtotal: null,
+    tax_amount: 0,
+    shipping_amount: orderData.shipping_amount || 0,
+    discount_amount: orderData.discount_amount || 0,
+    total_amount: 0,
+    currency: orderData.currency || 'INR',
+    shipping_address: JSON.stringify(orderData.shipping_address),
+    billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
+    estimated_delivery: orderData.estimated_delivery || null,
+    notes: orderData.notes || null,
+    special_instructions: orderData.special_instructions || null,
+    tags: orderData.tags ? JSON.stringify(orderData.tags) : null,
+  };
+}
+
 // Order Service - contains business logic and orchestrates order operations
 class OrderService {
-  // Get paginated orders with optional filtering
+  /**
+   * Fetch paginated orders and aggregate status counters.
+   * @param {Object} params
+   * @returns {Promise<{orders: Array, stats: Object, pagination: Object}>}
+   */
   async getOrders({ page = 1, limit = 20, status, search, sortBy = 'created_at', sortOrder = 'DESC', organizationId = undefined }) {
     const [{ orders, totalCount }, statsRow] = await Promise.all([
       OrderRepository.findOrders({
@@ -107,14 +326,136 @@ class OrderService {
     };
   }
 
-  // Get order by ID including all items, throws error if not found
+  /**
+   * Fetch a single order with item details.
+   * @param {string} id
+   * @param {string|undefined} organizationId
+   * @returns {Promise<Object>}
+   */
   async getOrderById(id, organizationId = undefined) {
     const order = await OrderRepository.findOrderWithItems(id, organizationId);
     assertExists(order, 'Order');
     return order;
   }
 
-  // Create new order with items, reserves inventory, and requests carrier assignment - ALL in one transaction
+  /**
+   * Create pending carrier assignments for a newly created order.
+   * @param {Object} order
+   * @param {Array} eligibleCarriers
+   * @param {Object} baseContext
+   * @param {Object} tx
+   * @returns {Promise<{assignments: Array, carriersToNotify: Array}>}
+   */
+  async createCarrierAssignmentsForOrder(order, eligibleCarriers, baseContext, tx) {
+    const results = await Promise.all(
+      eligibleCarriers.map(async (carrier) => {
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+
+        const requestPayload = {
+          orderId: order.id,
+          orderNumber: order.order_number,
+          customerName: order.customer_name,
+          customerEmail: order.customer_email,
+          customerPhone: order.customer_phone,
+          serviceType: baseContext.serviceType,
+          totalAmount: parseFloat(order.total_amount),
+          shippingAddress: baseContext.deliveryAddress,
+          pickupAddress: baseContext.pickupAddress,
+          deliveryAddress: baseContext.deliveryAddress,
+          items: baseContext.orderItems || [],
+          requestedAt: new Date(),
+        };
+
+        const idempotencyKey = `${order.id}-carrier-${carrier.id}-${Date.now()}`;
+        const assignment = await CarrierRepository.createCarrierAssignment(
+          {
+            orderId: order.id,
+            carrierId: carrier.id,
+            organizationId: baseContext.organizationId || null,
+            serviceType: baseContext.serviceType,
+            status: 'pending',
+            pickupAddress: baseContext.pickupAddress,
+            deliveryAddress: baseContext.deliveryAddress,
+            estimatedPickup: new Date(Date.now() + 2 * 60 * 60 * 1000),
+            estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            requestPayload,
+            expiresAt,
+            idempotencyKey,
+          },
+          tx
+        );
+
+        logger.info('Created carrier assignment in transaction', {
+          assignmentId: assignment.id,
+          carrierId: carrier.id,
+          orderId: order.id,
+          idempotencyKey,
+        });
+
+        return { assignment, carrier, requestPayload };
+      })
+    );
+
+    return {
+      assignments: results.map((entry) => entry.assignment),
+      carriersToNotify: results,
+    };
+  }
+
+  /**
+   * Prepare carrier assignments for a newly created order when assignment is requested.
+   * Returns empty arrays when no eligible carrier is available.
+   */
+  async maybePrepareCarrierAssignments(order, enrichedItems, orderData, orgId, tx) {
+    const serviceType = order.priority || 'standard';
+    const primaryWarehouseId = enrichedItems.find((i) => i.warehouse_id)?.warehouse_id || null;
+    const pickupWarehouse = primaryWarehouseId
+      ? await WarehouseRepository.findByIdWithDetails(primaryWarehouseId, orgId, tx)
+      : null;
+
+    const deliveryAddress = typeof order.shipping_address === 'string'
+      ? JSON.parse(order.shipping_address)
+      : order.shipping_address;
+
+    const pickupAddress = buildAddressWithCoordinates(
+      pickupWarehouse?.address,
+      pickupWarehouse?.coordinates,
+      deliveryAddress
+    );
+
+    const eligibleCarriers = await CarrierRepository.findEligibleCarriers(serviceType, 3, tx);
+    if (eligibleCarriers.length === 0) {
+      logger.warn('No available carriers for new order. Order will remain in pending_carrier_assignment.', {
+        orderId: order.id,
+        serviceType,
+      });
+      return { assignments: [], carriersToNotify: [] };
+    }
+
+    const assignmentResult = await this.createCarrierAssignmentsForOrder(
+      order,
+      eligibleCarriers,
+      {
+        serviceType,
+        deliveryAddress,
+        pickupAddress,
+        orderItems: orderData.items || [],
+        organizationId: orgId || null,
+      },
+      tx
+    );
+
+    await OrderRepository.updateStatus(order.id, 'pending_carrier_assignment', tx);
+    return assignmentResult;
+  }
+
+  /**
+   * Create an order, reserve inventory, and optionally open carrier bidding.
+   * @param {Object} orderData
+   * @param {boolean} requestCarrierAssignment
+   * @returns {Promise<Object>}
+   */
   async createOrder(orderData, requestCarrierAssignment = true) {
     const startTime = Date.now();
     
@@ -125,9 +466,6 @@ class OrderService {
 
     try {
       const result = await withTransaction(async (tx) => {
-        // Prepare order data
-        // Build order record with all fields from request
-        // Generate human-readable order number if not supplied — sequence-based to avoid races
         let generatedOrderNumber = orderData.order_number;
         if (!generatedOrderNumber) {
           const now = new Date();
@@ -135,246 +473,27 @@ class OrderService {
           const seqPart = await OrderRepository.nextOrderNumberSeq(tx);
           generatedOrderNumber = `ORD-${datePart}-${seqPart}`;
         }
+        const orderRecord = buildOrderRecord(orderData, generatedOrderNumber);
 
-        const orderRecord = {
-          order_number: generatedOrderNumber,
-          external_order_id: orderData.external_order_id || null,
-          platform: orderData.platform || 'api',
-          customer_name: orderData.customer_name,
-          customer_email: orderData.customer_email,
-          customer_phone: orderData.customer_phone || null,
-          status: 'created', // always starts as 'created' — not settable by client
-          priority: orderData.priority || 'standard',
-          order_type: orderData.order_type || 'regular',
-          organization_id: orderData.organization_id || null,
-          is_cod: orderData.is_cod || false,
-          // Totals are populated after server-side calculation below
-          subtotal: null,
-          tax_amount: 0,
-          shipping_amount: orderData.shipping_amount || 0,
-          discount_amount: orderData.discount_amount || 0,
-          total_amount: 0,
-          currency: orderData.currency || 'INR',
-          shipping_address: JSON.stringify(orderData.shipping_address),
-          billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
-          estimated_delivery: orderData.estimated_delivery || null,
-          notes: orderData.notes || null,
-          special_instructions: orderData.special_instructions || null,
-          tags: orderData.tags ? JSON.stringify(orderData.tags) : null
-        };
-
-        // ── Product Validation & Warehouse Allocation ────────────────────────────
-        // For each item:
-        //   1. Match SKU/product_id → product in products table (MUST exist — no auto-create)
-        //   2. Auto-assign warehouse with sufficient stock (MUST have available inventory)
-        //   3. Reserve stock — order is REJECTED if stock is insufficient
-        //
-        // PRODUCTION RULE: Products must be created via the MDM API and assigned
-        // inventory in a warehouse BEFORE orders (webhook or API) can reference them.
-        // Use GET /api/webhooks/:orgToken/catalog to fetch orderable products.
         const orgId = orderData.organization_id;
-        const enrichedItems = [];
-
-        for (const item of orderData.items) {
-          let product = null;
-
-          // 1. Resolve product by product_id or SKU — must already exist in catalog
-          if (item.product_id) {
-            product = await ProductRepository.findById(item.product_id, orgId, tx);
-          } else if (item.sku) {
-            product = await ProductRepository.findBySku(item.sku, orgId, tx);
-          }
-
-          // Product MUST exist — no auto-creation for any order type
-          if (!product) {
-            throw new BusinessLogicError(
-              item.sku
-                ? `Product with SKU "${item.sku}" not found in catalog. ` +
-                  `Products must be created via the MDM API and assigned inventory before orders can be placed. ` +
-                  `Use GET /api/webhooks/:orgToken/catalog to list available products.`
-                : `Product not found. Each item must reference a valid product_id or SKU that exists in the catalog with available inventory.`
-            );
-          }
-
-          // Enrich item with product data where not already provided
-          const enrichedItem = {
-            product_id: product?.id || item.product_id || null,
-            sku: product?.sku || item.sku,
-            product_name: item.product_name || product?.name || 'Unknown',
-            quantity: item.quantity,
-            unit_price: item.unit_price || parseFloat(product?.selling_price) || 0,
-            discount: item.discount || 0,
-            tax: item.tax || 0,
-            total_price: item.total_price || ((item.unit_price || parseFloat(product?.selling_price) || 0) * item.quantity),
-            weight: item.weight || parseFloat(product?.weight) || null,
-            dimensions: item.dimensions ? JSON.stringify(item.dimensions) : (product?.dimensions || null),
-            is_fragile: item.is_fragile ?? product?.is_fragile ?? false,
-            is_hazardous: item.is_hazardous ?? product?.is_hazmat ?? false,
-            is_perishable: item.is_perishable ?? product?.is_perishable ?? false,
-            requires_cold_storage: item.requires_cold_storage ?? product?.requires_cold_storage ?? false,
-            item_type: item.item_type || product?.item_type || 'general',
-            package_type: item.package_type || product?.package_type || 'box',
-            handling_instructions: item.handling_instructions || product?.handling_instructions || null,
-            requires_insurance: item.requires_insurance ?? product?.requires_insurance ?? false,
-            declared_value: item.declared_value || parseFloat(product?.declared_value) || null,
-            warehouse_id: item.warehouse_id || null,
-          };
-
-          // 4. Require warehouse with available stock — no warehouse = reject order
-          if (!enrichedItem.warehouse_id && orgId && enrichedItem.sku) {
-            const warehouseId = await InventoryRepository.findBestWarehouseForSku(
-              enrichedItem.sku, orgId, enrichedItem.quantity, tx
-            );
-            if (warehouseId) {
-              enrichedItem.warehouse_id = warehouseId;
-              logger.debug(`Auto-assigned warehouse ${warehouseId} for SKU ${enrichedItem.sku}`);
-            } else {
-              throw new BusinessLogicError(
-                `Insufficient inventory for SKU "${enrichedItem.sku}". ` +
-                `Required quantity: ${enrichedItem.quantity}. ` +
-                `Add stock via the inventory API before placing orders for this product.`
-              );
-            }
-          } else if (!enrichedItem.warehouse_id) {
-            throw new BusinessLogicError(
-              `No warehouse assigned for SKU "${enrichedItem.sku || 'unknown'}" and no organization context to look up inventory. ` +
-              `Ensure the order includes organization_id and the product has inventory assigned.`
-            );
-          }
-
-          enrichedItems.push(enrichedItem);
-        }
-
-        // SERVER-SIDE recalculation of financial totals — never trust client-supplied values
-        const serverSubtotal = enrichedItems.reduce((sum, item) => {
-          const lineTotal = (item.unit_price * item.quantity) - (item.discount || 0);
-          return sum + lineTotal;
-        }, 0);
-        const serverTaxAmount = enrichedItems.reduce((sum, item) => sum + (item.tax || 0), 0);
-        const shippingAmount = orderData.shipping_amount || 0;
-        const discountAmount = orderData.discount_amount || 0;
-        const serverTotal = serverSubtotal + serverTaxAmount + shippingAmount - discountAmount;
-
-        // Override any client-supplied totals with server-calculated values
-        orderRecord.subtotal = serverSubtotal;
-        orderRecord.tax_amount = serverTaxAmount;
-        orderRecord.shipping_amount = shippingAmount;
-        orderRecord.discount_amount = discountAmount;
-        orderRecord.total_amount = serverTotal;
+        const enrichedItems = await resolveAndEnrichOrderItems(orderData.items, orgId, tx);
+        Object.assign(orderRecord, calculateServerOrderTotals(enrichedItems, orderData));
 
         // Create order with items in transaction
         const order = await OrderRepository.createOrderWithItems(orderRecord, enrichedItems, tx);
 
-        // Reserve inventory for each item that has a warehouse assignment
-        for (const item of enrichedItems) {
-          if (item.warehouse_id && item.sku) {
-            const reserved = await InventoryRepository.reserveStock(
-              item.sku,
-              item.warehouse_id,
-              item.quantity,
-              tx
-            );
-            
-            if (!reserved) {
-              throw new BusinessLogicError(
-                `Insufficient stock for SKU "${item.sku}". ` +
-                `Required: ${item.quantity}. Check available inventory and try again.`
-              );
-            }
-          }
-        }
+        await reserveInventoryForItems(enrichedItems, tx);
 
-        // Request carrier assignment within same transaction
         let assignments = [];
         let carriersToNotify = [];
-        
         if (requestCarrierAssignment) {
-          const serviceType = order.priority || 'standard';
-
-          const primaryWarehouseId = enrichedItems.find(i => i.warehouse_id)?.warehouse_id || null;
-          const pickupWarehouse = primaryWarehouseId
-            ? await WarehouseRepository.findByIdWithDetails(primaryWarehouseId, orgId, tx)
-            : null;
-
-          const deliveryAddress = typeof order.shipping_address === 'string'
-            ? JSON.parse(order.shipping_address)
-            : order.shipping_address;
-
-          const pickupAddress = pickupWarehouse
-            ? {
-                ...(pickupWarehouse.address || {}),
-                coordinates: pickupWarehouse.coordinates
-                  ? {
-                      lat: Number(pickupWarehouse.coordinates.lat),
-                      lng: Number(pickupWarehouse.coordinates.lng),
-                    }
-                  : undefined,
-              }
-            : deliveryAddress;
-          
-          // Find eligible carriers (only available ones)
-          const eligibleCarriers = await CarrierRepository.findEligibleCarriers(serviceType, 3, tx);
-
-          if (eligibleCarriers.length === 0) {
-            logger.warn(`No available carriers for new order. Order will remain in pending_carrier_assignment.`, { orderId: order.id, serviceType });
-            // Don't throw error - let retry service handle this
-            // Order stays in pending_carrier_assignment status
-          } else {
-
-          // Create carrier assignments within same transaction
-          for (const carrier of eligibleCarriers) {
-            const expiresAt = new Date();
-            expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minute window per batch
-
-            const requestPayload = {
-              orderId: order.id,
-              orderNumber: order.order_number,
-              customerName: order.customer_name,
-              customerEmail: order.customer_email,
-              customerPhone: order.customer_phone,
-              serviceType,
-              totalAmount: parseFloat(order.total_amount),
-              shippingAddress: deliveryAddress,
-              pickupAddress,
-              deliveryAddress,
-              items: orderData.items || [],
-              requestedAt: new Date()
-            };
-
-            const idempotencyKey = `${order.id}-carrier-${carrier.id}-${Date.now()}`;
-
-            const assignment = await CarrierRepository.createCarrierAssignment(
-              {
-                orderId: order.id,
-                carrierId: carrier.id,
-                organizationId: orgId || null,
-                serviceType,
-                status: 'pending',
-                pickupAddress,
-                deliveryAddress,
-                estimatedPickup: new Date(Date.now() + 2 * 60 * 60 * 1000),
-                estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000),
-                requestPayload,
-                expiresAt,
-                idempotencyKey,
-              },
-              tx
-            );
-
-            assignments.push(assignment);
-            carriersToNotify.push({ assignment, carrier, requestPayload });
-
-            logger.info(`Created carrier assignment in transaction`, {
-              assignmentId: assignment.id,
-              carrierId: carrier.id,
-              orderId: order.id,
-              idempotencyKey
-            });
-          }
-
-          // Update order status to pending_carrier_assignment
-          await OrderRepository.updateStatus(order.id, 'pending_carrier_assignment', tx);
-          }
+          ({ assignments, carriersToNotify } = await this.maybePrepareCarrierAssignments(
+            order,
+            enrichedItems,
+            orderData,
+            orgId,
+            tx
+          ));
         }
 
         return { order, assignments, carriersToNotify };
@@ -413,7 +532,13 @@ class OrderService {
     }
   }
 
-  // Update order status with state-machine validation + inventory lifecycle
+  /**
+   * Update order status with transition validation and inventory side effects.
+   * @param {string} id
+   * @param {string} status
+   * @param {string|undefined} organizationId
+   * @returns {Promise<Object>}
+   */
   async updateOrderStatus(id, status, organizationId = undefined) {
     return withTransaction(async (tx) => {
       // Lock the order row inside the transaction to prevent concurrent status races
@@ -440,8 +565,8 @@ class OrderService {
       if (status === 'cancelled' || status === 'shipped') {
         const items = await OrderRepository.findOrderItems(id, tx);
         const affectedWarehouses = new Set();
-        for (const item of items) {
-          if (!item.warehouse_id || !item.sku) continue;
+        await runSerial(items, async (item) => {
+          if (!item.warehouse_id || !item.sku) return;
           if (status === 'cancelled') {
             // If already in transit, stock has left the warehouse and must return via reverse logistics.
             if (!IN_TRANSIT_CANCEL_STATUSES.has(oldStatus)) {
@@ -452,15 +577,15 @@ class OrderService {
             await InventoryRepository.deductStock(item.sku, item.warehouse_id, item.quantity, tx);
             affectedWarehouses.add(item.warehouse_id);
           }
-        }
+        });
         // Recompute utilization for every warehouse that lost stock
-        for (const wid of affectedWarehouses) {
-          try {
-            await WarehouseRepository.refreshUtilization(wid, tx);
-          } catch (e) {
-            logger.warn('refreshUtilization failed (non-fatal)', { warehouseId: wid, error: e.message });
-          }
-        }
+        await Promise.all(
+          [...affectedWarehouses].map((wid) =>
+            WarehouseRepository.refreshUtilization(wid, tx).catch((e) => {
+              logger.warn('refreshUtilization failed (non-fatal)', { warehouseId: wid, error: e.message });
+            })
+          )
+        );
       }
 
       const updatedOrder = await OrderRepository.updateStatus(id, status, organizationId, tx);
@@ -485,8 +610,8 @@ class OrderService {
   async commitOrderStock(orderId, tx = null) {
     const items = await OrderRepository.findOrderItems(orderId, tx);
     const affectedWarehouses = new Set();
-    for (const item of items) {
-      if (!item.warehouse_id || !item.sku) continue;
+    await runSerial(items, async (item) => {
+      if (!item.warehouse_id || !item.sku) return;
       const result = await InventoryRepository.deductStock(item.sku, item.warehouse_id, item.quantity, tx);
       if (!result) {
         logger.warn('deductStock returned null — possible double-deduction or insufficient qty', {
@@ -494,17 +619,22 @@ class OrderService {
         });
       }
       affectedWarehouses.add(item.warehouse_id);
-    }
-    for (const wid of affectedWarehouses) {
-      try {
-        await WarehouseRepository.refreshUtilization(wid, tx);
-      } catch (e) {
-        logger.warn('refreshUtilization failed (non-fatal)', { warehouseId: wid, error: e.message });
-      }
-    }
+    });
+    await Promise.all(
+      [...affectedWarehouses].map((wid) =>
+        WarehouseRepository.refreshUtilization(wid, tx).catch((e) => {
+          logger.warn('refreshUtilization failed (non-fatal)', { warehouseId: wid, error: e.message });
+        })
+      )
+    );
   }
 
-  // Update order details (addresses, notes, delivery dates)
+  /**
+   * Update mutable order fields.
+   * @param {string} id
+   * @param {Object} updates
+   * @returns {Promise<Object>}
+   */
   async updateOrder(id, updates) {
     // Prepare update data
     const updateData = {};
@@ -514,11 +644,11 @@ class OrderService {
       'estimated_delivery', 'actual_delivery', 'notes'
     ];
 
-    for (const field of allowedFields) {
+    allowedFields.forEach((field) => {
       if (updates[field] !== undefined) {
         updateData[field] = updates[field];
       }
-    }
+    });
 
     if (updates.shipping_address) {
       updateData.shipping_address = JSON.stringify(updates.shipping_address);
@@ -535,6 +665,376 @@ class OrderService {
     const order = await OrderRepository.update(id, updateData);
     assertExists(order, 'Order');
     return order;
+  }
+
+  /**
+   * Load and validate source/destination warehouses for transfer orders.
+   */
+  async loadTransferWarehouses(transferData, tx) {
+    const fromWarehouse = await WarehouseRepository.findByIdWithDetails(
+      transferData.from_warehouse_id,
+      undefined,
+      tx
+    );
+    const toWarehouse = await WarehouseRepository.findByIdWithDetails(
+      transferData.to_warehouse_id,
+      undefined,
+      tx
+    );
+
+    assertExists(fromWarehouse, 'Source warehouse');
+    assertExists(toWarehouse, 'Destination warehouse');
+
+    if (!fromWarehouse.is_active) {
+      throw new BusinessLogicError('Source warehouse is not active');
+    }
+    if (!toWarehouse.is_active) {
+      throw new BusinessLogicError('Destination warehouse is not active');
+    }
+
+    return {
+      fromWarehouse,
+      toWarehouse,
+      fromWarehouseName: fromWarehouse.name || fromWarehouse.warehouse_name || 'Source Warehouse',
+      toWarehouseName: toWarehouse.name || toWarehouse.warehouse_name || 'Destination Warehouse',
+      fromWarehouseCode: fromWarehouse.code || fromWarehouse.warehouse_code || null,
+      toWarehouseCode: toWarehouse.code || toWarehouse.warehouse_code || null,
+    };
+  }
+
+  /**
+   * Resolve transfer items to catalog products and verify source availability.
+   */
+  async resolveTransferItems(items, fromWarehouseId, organizationId, tx) {
+    const resolvedItems = [];
+
+    await runSerial(items, async (item) => {
+      let product = null;
+      if (item.product_id) {
+        product = await ProductRepository.findById(item.product_id, organizationId, tx);
+      }
+      if (!product && item.sku) {
+        product = await ProductRepository.findBySku(item.sku, organizationId, tx);
+      }
+
+      if (!product) {
+        throw new NotFoundError(`Product not found for transfer item SKU '${item.sku || 'unknown'}'`);
+      }
+
+      const inventory = await InventoryRepository.findBySKUAndWarehouse(
+        product.sku,
+        fromWarehouseId,
+        tx
+      );
+
+      if (!inventory) {
+        throw new NotFoundError(`SKU ${product.sku} not found in source warehouse`);
+      }
+
+      if (inventory.quantity_available < item.quantity) {
+        throw new BusinessLogicError(
+          `Insufficient stock for SKU ${product.sku}. Available: ${inventory.quantity_available}, Requested: ${item.quantity}`
+        );
+      }
+
+      resolvedItems.push({
+        ...item,
+        product_id: product.id,
+        sku: product.sku,
+        product_name: item.product_name || product.name,
+      });
+    });
+
+    return resolvedItems;
+  }
+
+  /**
+   * Build canonical transfer-order payload for repository persistence.
+   */
+  buildTransferOrderPayload(transferData, warehouseContext, resolvedItems, trnSeq) {
+    const priority = transferData.priority || 'standard';
+    const totalAmount = resolvedItems.reduce(
+      (sum, item) => sum + (item.unit_cost || 0) * item.quantity,
+      0
+    );
+
+    return {
+      totalAmount,
+      orderData: {
+        order_number: `TRF-${trnSeq}`,
+        order_type: 'transfer',
+        customer_name: `Transfer: ${warehouseContext.fromWarehouseName} → ${warehouseContext.toWarehouseName}`,
+        customer_email: warehouseContext.toWarehouse.contact_email || 'transfers@system.local',
+        customer_phone: warehouseContext.toWarehouse.contact_phone || null,
+        status: 'created',
+        priority,
+        total_amount: totalAmount,
+        currency: 'INR',
+        shipping_address: warehouseContext.toWarehouse.address,
+        billing_address: warehouseContext.fromWarehouse.address,
+        estimated_delivery: transferData.expected_delivery_date || null,
+        notes: `TRANSFER ORDER\nReason: ${transferData.reason}\nRequested by: ${transferData.requested_by || 'System'}\nNotes: ${transferData.notes || 'N/A'}`,
+        special_instructions: 'INTERNAL TRANSFER - Handle with care',
+        tags: JSON.stringify(['transfer', 'internal', priority]),
+        items: resolvedItems.map((item) => ({
+          product_id: item.product_id,
+          sku: item.sku,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit_price: item.unit_cost || 0,
+          total_price: (item.unit_cost || 0) * item.quantity,
+          warehouse_id: transferData.from_warehouse_id,
+          item_type: 'general',
+          package_type: 'box',
+        })),
+      },
+    };
+  }
+
+  /**
+   * Reserve source inventory for all transfer items.
+   */
+  async reserveTransferInventory(resolvedItems, fromWarehouseId, tx) {
+    await runSerial(resolvedItems, async (item) => {
+      const reserved = await InventoryRepository.reserveStock(
+        item.sku,
+        fromWarehouseId,
+        item.quantity,
+        tx
+      );
+
+      if (!reserved) {
+        throw new BusinessLogicError(`Failed to reserve inventory for SKU: ${item.sku}`);
+      }
+    });
+  }
+
+  /**
+   * Determine default delivery date based on transfer priority.
+   */
+  computeTransferDeliveryDate(priority) {
+    const deliveryDate = new Date();
+    if (priority === 'express') {
+      deliveryDate.setDate(deliveryDate.getDate() + 1);
+    } else if (priority === 'bulk') {
+      deliveryDate.setDate(deliveryDate.getDate() + 5);
+    } else {
+      deliveryDate.setDate(deliveryDate.getDate() + 3);
+    }
+    return deliveryDate;
+  }
+
+  /**
+   * Create shipment record for an internal transfer order.
+   */
+  async createTransferShipment(order, transferData, warehouseContext, tx) {
+    const priority = transferData.priority || 'standard';
+    const pickupDate = new Date();
+    pickupDate.setHours(pickupDate.getHours() + 2);
+    const fallbackDeliveryDate = this.computeTransferDeliveryDate(priority);
+
+    const shipment = await ShipmentRepository.createTransferShipment(
+      {
+        orderId: order.id,
+        warehouseId: transferData.from_warehouse_id,
+        originAddress: buildAddressWithCoordinates(
+          warehouseContext.fromWarehouse.address,
+          warehouseContext.fromWarehouse.coordinates
+        ),
+        destinationAddress: buildAddressWithCoordinates(
+          warehouseContext.toWarehouse.address,
+          warehouseContext.toWarehouse.coordinates
+        ),
+        estimatedPickup: pickupDate,
+        estimatedDelivery: transferData.expected_delivery_date || fallbackDeliveryDate,
+        notes: `Transfer from ${warehouseContext.fromWarehouseName} to ${warehouseContext.toWarehouseName}`,
+      },
+      tx
+    );
+
+    return {
+      shipment,
+      pickupDate,
+      deliveryDate: transferData.expected_delivery_date || fallbackDeliveryDate,
+      priority,
+    };
+  }
+
+  /**
+   * Optionally create pending carrier assignment for transfer visibility in carrier portal.
+   */
+  async createTransferCarrierAssignment(order, shipment, transferData, warehouseContext, resolvedItems, organizationId, pickupDate, deliveryDate, priority, tx) {
+    let targetCarrier = await CarrierRepository.findByCode('INTERNAL', organizationId, tx);
+    if (!targetCarrier) {
+      const fallbackCarriers = await CarrierRepository.findEligibleCarriers(priority, 1, tx);
+      targetCarrier = fallbackCarriers[0] || null;
+    }
+
+    if (!targetCarrier) {
+      return null;
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    const requestPayload = {
+      orderId: order.id,
+      orderNumber: order.order_number,
+      orderType: 'transfer',
+      serviceType: priority,
+      customerName: order.customer_name,
+      totalAmount: parseFloat(order.total_amount),
+      transfer: {
+        fromWarehouseId: warehouseContext.fromWarehouse.id,
+        fromWarehouseCode: warehouseContext.fromWarehouseCode,
+        fromWarehouseName: warehouseContext.fromWarehouseName,
+        toWarehouseId: warehouseContext.toWarehouse.id,
+        toWarehouseCode: warehouseContext.toWarehouseCode,
+        toWarehouseName: warehouseContext.toWarehouseName,
+      },
+      shipment: {
+        id: shipment.id,
+        trackingNumber: shipment.tracking_number,
+        estimatedDelivery: shipment.estimated_delivery_date,
+      },
+      items: resolvedItems || [],
+      requestedAt: new Date(),
+    };
+
+    return CarrierRepository.createCarrierAssignment(
+      {
+        orderId: order.id,
+        carrierId: targetCarrier.id,
+        organizationId: organizationId || null,
+        serviceType: priority,
+        status: 'pending',
+        pickupAddress: buildAddressWithCoordinates(
+          warehouseContext.fromWarehouse.address,
+          warehouseContext.fromWarehouse.coordinates
+        ),
+        deliveryAddress: buildAddressWithCoordinates(
+          warehouseContext.toWarehouse.address,
+          warehouseContext.toWarehouse.coordinates
+        ),
+        estimatedPickup: pickupDate,
+        estimatedDelivery: deliveryDate,
+        requestPayload,
+        expiresAt,
+        idempotencyKey: `${order.id}-carrier-${targetCarrier.id}-transfer-${Date.now()}`,
+      },
+      tx
+    );
+  }
+
+  /**
+   * Build transfer-order response shape and emit audit log.
+   */
+  buildTransferResult(order, shipment, transferAssignment, warehouseContext, resolvedItems, totalAmount) {
+    logger.info('Transfer order created', {
+      orderId: order.id,
+      orderNumber: order.order_number,
+      shipmentId: shipment.id,
+      assignmentId: transferAssignment?.id || null,
+      fromWarehouse: warehouseContext.fromWarehouseName,
+      toWarehouse: warehouseContext.toWarehouseName,
+      itemCount: resolvedItems.length,
+      totalAmount,
+    });
+
+    return {
+      order,
+      shipment,
+      assignment: transferAssignment,
+      fromWarehouse: {
+        id: warehouseContext.fromWarehouse.id,
+        name: warehouseContext.fromWarehouseName,
+        code: warehouseContext.fromWarehouseCode,
+      },
+      toWarehouse: {
+        id: warehouseContext.toWarehouse.id,
+        name: warehouseContext.toWarehouseName,
+        code: warehouseContext.toWarehouseCode,
+      },
+    };
+  }
+
+  /**
+   * Execute transfer-order creation inside an active transaction.
+   */
+  async createTransferOrderInTransaction(transferData, organizationId, tx) {
+    const warehouseContext = await this.loadTransferWarehouses(transferData, tx);
+    const resolvedItems = await this.resolveTransferItems(
+      transferData.items,
+      transferData.from_warehouse_id,
+      organizationId,
+      tx
+    );
+    const trnSeq = await OrderRepository.nextTransferOrderSeq(tx);
+    const { orderData, totalAmount } = this.buildTransferOrderPayload(
+      transferData,
+      warehouseContext,
+      resolvedItems,
+      trnSeq
+    );
+
+    const order = await OrderRepository.createOrderWithItems(
+      {
+        order_number: orderData.order_number,
+        customer_name: orderData.customer_name,
+        customer_email: orderData.customer_email,
+        customer_phone: orderData.customer_phone,
+        status: orderData.status,
+        priority: orderData.priority,
+        order_type: orderData.order_type,
+        organization_id: organizationId || null,
+        is_cod: false,
+        subtotal: totalAmount,
+        tax_amount: 0,
+        shipping_amount: 0,
+        discount_amount: 0,
+        total_amount: totalAmount,
+        currency: orderData.currency,
+        shipping_address: JSON.stringify(orderData.shipping_address),
+        billing_address: JSON.stringify(orderData.billing_address),
+        estimated_delivery: orderData.estimated_delivery,
+        notes: orderData.notes,
+        special_instructions: orderData.special_instructions,
+        tags: orderData.tags,
+      },
+      orderData.items,
+      tx
+    );
+
+    await this.reserveTransferInventory(resolvedItems, transferData.from_warehouse_id, tx);
+
+    const { shipment, pickupDate, deliveryDate, priority } = await this.createTransferShipment(
+      order,
+      transferData,
+      warehouseContext,
+      tx
+    );
+
+    const transferAssignment = await this.createTransferCarrierAssignment(
+      order,
+      shipment,
+      transferData,
+      warehouseContext,
+      resolvedItems,
+      organizationId,
+      pickupDate,
+      deliveryDate,
+      priority,
+      tx
+    );
+
+    return this.buildTransferResult(
+      order,
+      shipment,
+      transferAssignment,
+      warehouseContext,
+      resolvedItems,
+      totalAmount
+    );
   }
 
   /**
@@ -566,300 +1066,9 @@ class OrderService {
     const startTime = Date.now();
 
     try {
-      const result = await withTransaction(async (tx) => {
-        // 1. Fetch warehouse details
-        const fromWarehouse = await WarehouseRepository.findByIdWithDetails(
-          transferData.from_warehouse_id,
-          undefined,
-          tx
-        );
-        const toWarehouse = await WarehouseRepository.findByIdWithDetails(
-          transferData.to_warehouse_id,
-          undefined,
-          tx
-        );
-
-        assertExists(fromWarehouse, 'Source warehouse');
-        assertExists(toWarehouse, 'Destination warehouse');
-
-        const fromWarehouseName = fromWarehouse.name || fromWarehouse.warehouse_name || 'Source Warehouse';
-        const toWarehouseName = toWarehouse.name || toWarehouse.warehouse_name || 'Destination Warehouse';
-        const fromWarehouseCode = fromWarehouse.code || fromWarehouse.warehouse_code || null;
-        const toWarehouseCode = toWarehouse.code || toWarehouse.warehouse_code || null;
-
-        if (!fromWarehouse.is_active) {
-          throw new BusinessLogicError('Source warehouse is not active');
-        }
-        if (!toWarehouse.is_active) {
-          throw new BusinessLogicError('Destination warehouse is not active');
-        }
-
-        // 2. Resolve products + check inventory availability at source warehouse
-        const resolvedItems = [];
-        for (const item of transferData.items) {
-          let product = null;
-          if (item.product_id) {
-            product = await ProductRepository.findById(item.product_id, organizationId, tx);
-          }
-          if (!product && item.sku) {
-            product = await ProductRepository.findBySku(item.sku, organizationId, tx);
-          }
-
-          if (!product) {
-            throw new NotFoundError(`Product not found for transfer item SKU '${item.sku || 'unknown'}'`);
-          }
-
-          const inventory = await InventoryRepository.findBySKUAndWarehouse(
-            product.sku,
-            transferData.from_warehouse_id,
-            tx
-          );
-
-          if (!inventory) {
-            throw new NotFoundError(`SKU ${product.sku} not found in source warehouse`);
-          }
-
-          if (inventory.quantity_available < item.quantity) {
-            throw new BusinessLogicError(
-              `Insufficient stock for SKU ${product.sku}. Available: ${inventory.quantity_available}, Requested: ${item.quantity}`
-            );
-          }
-
-          resolvedItems.push({
-            ...item,
-            product_id: product.id,
-            sku: product.sku,
-            product_name: item.product_name || product.name,
-          });
-        }
-
-        // 3. Transform transfer request into order format
-        const totalAmount = resolvedItems.reduce(
-          (sum, item) => sum + (item.unit_cost || 0) * item.quantity,
-          0
-        );
-
-        const trnSeq = await OrderRepository.nextTransferOrderSeq(tx);
-
-        const orderData = {
-          order_number: `TRF-${trnSeq}`,
-          order_type: 'transfer',
-          customer_name: `Transfer: ${fromWarehouseName} → ${toWarehouseName}`,
-          customer_email: toWarehouse.contact_email || 'transfers@system.local',
-          customer_phone: toWarehouse.contact_phone || null,
-          status: 'created',
-          priority: transferData.priority || 'standard',
-          total_amount: totalAmount,
-          currency: 'INR',
-          shipping_address: toWarehouse.address,
-          billing_address: fromWarehouse.address,
-          estimated_delivery: transferData.expected_delivery_date || null,
-          notes: `TRANSFER ORDER\nReason: ${transferData.reason}\nRequested by: ${transferData.requested_by || 'System'}\nNotes: ${transferData.notes || 'N/A'}`,
-          special_instructions: `INTERNAL TRANSFER - Handle with care`,
-          tags: JSON.stringify(['transfer', 'internal', transferData.priority]),
-          items: resolvedItems.map(item => ({
-            product_id: item.product_id,
-            sku: item.sku,
-            product_name: item.product_name,
-            quantity: item.quantity,
-            unit_price: item.unit_cost || 0,
-            total_price: (item.unit_cost || 0) * item.quantity,
-            warehouse_id: transferData.from_warehouse_id,
-            item_type: 'general',
-            package_type: 'box'
-          }))
-        };
-
-        // 4. Create order using existing infrastructure (but don't request carrier assignment)
-        const order = await OrderRepository.createOrderWithItems(
-          {
-            order_number: orderData.order_number,
-            customer_name: orderData.customer_name,
-            customer_email: orderData.customer_email,
-            customer_phone: orderData.customer_phone,
-            status: orderData.status,
-            priority: orderData.priority,
-            order_type: orderData.order_type,
-            organization_id: organizationId || null,
-            is_cod: false,
-            subtotal: totalAmount,
-            tax_amount: 0,
-            shipping_amount: 0,
-            discount_amount: 0,
-            total_amount: totalAmount,
-            currency: orderData.currency,
-            shipping_address: JSON.stringify(orderData.shipping_address),
-            billing_address: JSON.stringify(orderData.billing_address),
-            estimated_delivery: orderData.estimated_delivery,
-            notes: orderData.notes,
-            special_instructions: orderData.special_instructions,
-            tags: orderData.tags
-          },
-          orderData.items,
-          tx
-        );
-
-        // 5. Reserve inventory at source warehouse
-        for (const item of resolvedItems) {
-          const reserved = await InventoryRepository.reserveStock(
-            item.sku,
-            transferData.from_warehouse_id,
-            item.quantity,
-            tx
-          );
-
-          if (!reserved) {
-            throw new BusinessLogicError(`Failed to reserve inventory for SKU: ${item.sku}`);
-          }
-        }
-
-        // 6. Auto-create shipment for tracking (internal carrier)
-        // Calculate estimated dates
-        const pickupDate = new Date();
-        pickupDate.setHours(pickupDate.getHours() + 2); // Pickup in 2 hours
-
-        let deliveryDate = new Date();
-        if (transferData.priority === 'express') {
-          deliveryDate.setDate(deliveryDate.getDate() + 1); // Next day
-        } else if (transferData.priority === 'bulk') {
-          deliveryDate.setDate(deliveryDate.getDate() + 5); // 5 days
-        } else {
-          deliveryDate.setDate(deliveryDate.getDate() + 3); // 3 days (standard)
-        }
-
-        const shipment = await ShipmentRepository.createTransferShipment(
-          {
-            orderId: order.id,
-            warehouseId: transferData.from_warehouse_id,
-            originAddress: {
-              ...(fromWarehouse.address || {}),
-              coordinates: fromWarehouse.coordinates
-                ? {
-                    lat: Number(fromWarehouse.coordinates.lat),
-                    lng: Number(fromWarehouse.coordinates.lng),
-                  }
-                : undefined,
-            },
-            destinationAddress: {
-              ...(toWarehouse.address || {}),
-              coordinates: toWarehouse.coordinates
-                ? {
-                    lat: Number(toWarehouse.coordinates.lat),
-                    lng: Number(toWarehouse.coordinates.lng),
-                  }
-                : undefined,
-            },
-            estimatedPickup: pickupDate,
-            estimatedDelivery: transferData.expected_delivery_date || deliveryDate,
-            notes: `Transfer from ${fromWarehouseName} to ${toWarehouseName}`,
-          },
-          tx
-        );
-
-        // 7. Create a pending assignment for the internal/demo carrier so it appears
-        // in the carrier portal flow as well.
-        let transferAssignment = null;
-        let targetCarrier = await CarrierRepository.findByCode('INTERNAL', organizationId, tx);
-        if (!targetCarrier) {
-          const fallbackCarriers = await CarrierRepository.findEligibleCarriers(
-            transferData.priority || 'standard',
-            1,
-            tx
-          );
-          targetCarrier = fallbackCarriers[0] || null;
-        }
-
-        if (targetCarrier) {
-          const expiresAt = new Date();
-          expiresAt.setHours(expiresAt.getHours() + 24);
-
-          const requestPayload = {
-            orderId: order.id,
-            orderNumber: order.order_number,
-            orderType: 'transfer',
-            serviceType: transferData.priority || 'standard',
-            customerName: order.customer_name,
-            totalAmount: parseFloat(order.total_amount),
-            transfer: {
-              fromWarehouseId: fromWarehouse.id,
-              fromWarehouseCode: fromWarehouseCode,
-              fromWarehouseName: fromWarehouseName,
-              toWarehouseId: toWarehouse.id,
-              toWarehouseCode: toWarehouseCode,
-              toWarehouseName: toWarehouseName,
-            },
-            shipment: {
-              id: shipment.id,
-              trackingNumber: shipment.tracking_number,
-              estimatedDelivery: shipment.estimated_delivery_date,
-            },
-            items: resolvedItems || [],
-            requestedAt: new Date(),
-          };
-
-          transferAssignment = await CarrierRepository.createCarrierAssignment(
-            {
-              orderId: order.id,
-              carrierId: targetCarrier.id,
-              organizationId: organizationId || null,
-              serviceType: transferData.priority || 'standard',
-              status: 'pending',
-              pickupAddress: {
-                ...(fromWarehouse.address || {}),
-                coordinates: fromWarehouse.coordinates
-                  ? {
-                      lat: Number(fromWarehouse.coordinates.lat),
-                      lng: Number(fromWarehouse.coordinates.lng),
-                    }
-                  : undefined,
-              },
-              deliveryAddress: {
-                ...(toWarehouse.address || {}),
-                coordinates: toWarehouse.coordinates
-                  ? {
-                      lat: Number(toWarehouse.coordinates.lat),
-                      lng: Number(toWarehouse.coordinates.lng),
-                    }
-                  : undefined,
-              },
-              estimatedPickup: pickupDate,
-              estimatedDelivery: transferData.expected_delivery_date || deliveryDate,
-              requestPayload,
-              expiresAt,
-              idempotencyKey: `${order.id}-carrier-${targetCarrier.id}-transfer-${Date.now()}`,
-            },
-            tx
-          );
-        }
-
-        // Log event
-        logger.info('Transfer order created', {
-          orderId: order.id,
-          orderNumber: order.order_number,
-          shipmentId: shipment.id,
-          assignmentId: transferAssignment?.id || null,
-          fromWarehouse: fromWarehouseName,
-          toWarehouse: toWarehouseName,
-          itemCount: resolvedItems.length,
-          totalAmount
-        });
-
-        return {
-          order,
-          shipment,
-          assignment: transferAssignment,
-          fromWarehouse: {
-            id: fromWarehouse.id,
-            name: fromWarehouseName,
-            code: fromWarehouseCode
-          },
-          toWarehouse: {
-            id: toWarehouse.id,
-            name: toWarehouseName,
-            code: toWarehouseCode
-          }
-        };
-      });
+      const result = await withTransaction((tx) =>
+        this.createTransferOrderInTransaction(transferData, organizationId, tx)
+      );
 
       logPerformance('createTransferOrder', Date.now() - startTime);
       
@@ -879,7 +1088,10 @@ class OrderService {
   }
 
   /**
-   * Cancel order and release inventory
+   * Cancel an order and either release reserved stock or create reverse shipment.
+   * @param {string} id
+   * @param {string|undefined} organizationId
+   * @returns {Promise<Object>}
    */
   async cancelOrder(id, organizationId = undefined) {
     return withTransaction(async (tx) => {
@@ -946,10 +1158,10 @@ class OrderService {
 
         await ShipmentRepository.updateStatus(latestShipment.id, 'returned', undefined, currentLocation, tx);
       } else {
-        for (const item of items) {
-          if (!item.warehouse_id || !item.sku) continue;
+        await runSerial(items, async (item) => {
+          if (!item.warehouse_id || !item.sku) return;
           await InventoryRepository.releaseStock(item.sku, item.warehouse_id, item.quantity, tx);
-        }
+        });
       }
 
       const cancelledOrder = await OrderRepository.updateStatus(id, 'cancelled', organizationId, tx);
@@ -970,6 +1182,13 @@ class OrderService {
     });
   }
 
+  /**
+   * Initiate a return record for delivered orders.
+   * @param {string} orderId
+   * @param {Object} payload
+   * @param {string|undefined} organizationId
+   * @returns {Promise<Object>}
+   */
   async initiateReturnForDeliveredOrder(orderId, payload = {}, organizationId = undefined) {
     return withTransaction(async (tx) => {
       const order = await OrderRepository.findOrderWithItems(orderId, organizationId, tx);

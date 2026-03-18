@@ -66,40 +66,213 @@ async function api(method, path, body, extra = {}) {
 let passed = 0, failed = 0;
 const issues = [];
 
+/** Record a successful assertion in the harness output. */
 function pass(label) {
   console.log(`  ✅  ${label}`);
   passed++;
 }
+/** Record a failed assertion in the harness output. */
 function fail(label, detail = '') {
   console.log(`  ❌  ${label}${detail ? ' — ' + detail : ''}`);
   failed++;
   issues.push({ label, detail });
 }
+/** Evaluate condition and route result to pass/fail counters. */
 function check(label, condition, detail = '') {
   condition ? pass(label) : fail(label, detail);
 }
+/** Print a visual section header in test logs. */
 function section(title) {
   console.log(`\n${'═'.repeat(60)}\n  ${title}\n${'═'.repeat(60)}`);
 }
+/** Fetch first row for a SQL statement. */
 async function dbRow(sql, params) {
   const r = await db(sql, params);
   return r.rows[0] || null;
 }
+/** Fetch count from count/cnt alias in SQL result. */
 async function dbCount(sql, params) {
   const r = await db(sql, params);
   return parseInt(r.rows[0]?.count ?? r.rows[0]?.cnt ?? 0, 10);
 }
+/** Fetch all rows for a SQL statement. */
 async function dbRows(sql, params) {
   const r = await db(sql, params);
   return r.rows;
 }
+/** Run raw SQL query and return native pg response. */
 async function dbQuery(sql, params) {
   return db(sql, params);
 }
 
+/**
+ * Execute async operations sequentially for test steps that must preserve order.
+ */
+function runSerial(items, worker) {
+  return items.reduce(
+    (chain, item) => chain.then(() => worker(item)),
+    Promise.resolve()
+  );
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
+/** Generate a short unique suffix for test artifacts. */
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+/** Apply shipment status transitions and verify DB side-effects after each update. */
+async function runShipmentTransitionsWithChecks(shipmentId, transitions) {
+  await runSerial(transitions, async (t) => {
+    const tr = await api('PATCH', `/shipments/${shipmentId}/status`, {
+      status: t.status,
+      location: t.location,
+      notes: t.notes,
+      timestamp: new Date().toISOString(),
+    });
+    check(`PATCH /shipments/:id/status → ${t.status} (200)`,
+      [200, 204].includes(tr.status),
+      `status=${tr.status} body=${JSON.stringify(tr.data).slice(0,150)}`);
+
+    const updRow = await dbRow(`SELECT status FROM shipments WHERE id = $1`, [shipmentId]);
+    check(`DB shipments.status = ${t.status}`, updRow?.status === t.status,
+      `actual=${updRow?.status}`);
+
+    const evCount = await dbCount(
+      `SELECT COUNT(*) AS count FROM shipment_events WHERE shipment_id = $1`, [shipmentId]
+    );
+    check(`shipment_events count grew after ${t.status}`, evCount > 0, `count=${evCount}`);
+
+    await sleep(200);
+  });
+}
+
+/** Apply return status transitions and assert DB status after each step. */
+async function runReturnTransitionsWithChecks(returnId, transitions) {
+  await runSerial(transitions, async (st) => {
+    const tr = await api('PATCH', `/returns/${returnId}`, {
+      status: st,
+      inspection_notes: `Integration test — transition to ${st}`,
+    });
+    check(`PATCH /returns/:id → ${st} (200)`, [200,204].includes(tr.status),
+      `status=${tr.status} body=${JSON.stringify(tr.data).slice(0,150)}`);
+
+    const rUpd = await dbRow(`SELECT status FROM returns WHERE id = $1`, [returnId]);
+    check(`DB returns.status = ${st}`, rUpd?.status === st, `actual=${rUpd?.status}`);
+    await sleep(200);
+  });
+}
+
+/** Validate order-item/product/inventory side effects for webhook-created orders. */
+async function verifyWebhookOrderSideEffects(orderId, sku, organizationId, warehouseId) {
+  if (orderId) {
+    const itemRows = await dbRows(
+      `SELECT * FROM order_items WHERE order_id = $1`, [orderId]
+    );
+    check('order_items rows created', itemRows.length > 0, 'no items found');
+    if (itemRows.length > 0) {
+      check('order_items.sku correct', itemRows.some(i => i.sku === sku),
+        `skus=${itemRows.map(i=>i.sku).join(',')}`);
+      check('order_items.quantity = 2', itemRows[0]?.quantity === 2,
+        `qty=${itemRows[0]?.quantity}`);
+    }
+
+    const prodRow = await dbRow(
+      `SELECT * FROM products WHERE sku = $1 AND organization_id = $2`, [sku, organizationId]
+    );
+    check('products row exists', !!prodRow, `sku=${sku}`);
+  }
+
+  const webhookLog = await dbRow(
+    `SELECT * FROM webhook_logs ORDER BY created_at DESC LIMIT 1`
+  );
+  if (webhookLog) {
+    pass('webhook_logs has entry');
+    console.log(`     webhook_logs latest → endpoint=${webhookLog.endpoint} status=${webhookLog.response_status}`);
+  } else {
+    console.log('     webhook_logs — empty (may not log internal webhook calls)');
+  }
+
+  if (warehouseId) {
+    const invRow = await dbRow(
+      `SELECT * FROM inventory WHERE sku = $1 AND organization_id = $2`, [sku, organizationId]
+    );
+    check('inventory row exists after order', !!invRow);
+    if (invRow) {
+      console.log(`     inventory → available=${invRow.available_quantity} reserved=${invRow.reserved_quantity}`);
+    }
+  }
+}
+
+/** Create shipment for an order and fall back to latest DB shipment when API returns no id. */
+async function createOrFetchShipment(targetOrderId, carrierId, carrierName) {
+  const createRes = await api('POST', '/shipments', {
+    order_id: targetOrderId,
+    carrier_id: carrierId,
+    carrier_name: carrierName,
+    service_type: 'standard',
+    weight: 0.5,
+    dimensions: { length: 10, width: 10, height: 5 },
+    origin: {
+      city: 'Mumbai',
+      country: 'IN',
+      state: 'Maharashtra',
+      postal_code: '400001',
+    },
+    destination: {
+      city: 'Delhi',
+      country: 'IN',
+      state: 'Delhi',
+      postal_code: '110001',
+    },
+  });
+  check('POST /shipments → 201', createRes.status === 201,
+    `status=${createRes.status} body=${JSON.stringify(createRes.data).slice(0,200)}`);
+
+  let createdShipmentId = createRes.data?.data?.id || createRes.data?.id;
+  let createdTrackingNumber = createRes.data?.data?.tracking_number || createRes.data?.tracking_number;
+
+  if (!createdShipmentId) {
+    const sRow = await dbRow(
+      `SELECT id, tracking_number FROM shipments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [targetOrderId]
+    );
+    createdShipmentId = sRow?.id;
+    createdTrackingNumber = sRow?.tracking_number;
+    if (createdShipmentId) pass('Shipment found in DB (fallback)');
+  }
+
+  return { shipmentId: createdShipmentId, trackingNumber: createdTrackingNumber };
+}
+
+/** Validate timeline and inventory/stock movement side effects after shipment delivery. */
+async function verifyShipmentDeliverySideEffects(shipmentId, sku, organizationId) {
+  const tl = await api('GET', `/shipments/${shipmentId}/timeline`);
+  check('GET /shipments/:id/timeline → 200', tl.status === 200, `status=${tl.status}`);
+  const events = tl.data?.data?.events || tl.data?.events || tl.data?.data || [];
+  check('Timeline has events', Array.isArray(events) && events.length > 0,
+    `events=${JSON.stringify(events).slice(0,80)}`);
+
+  const invRow = await dbRow(
+    `SELECT quantity, available_quantity, reserved_quantity, in_transit_quantity
+     FROM inventory WHERE sku = $1 AND organization_id = $2`,
+    [sku, organizationId]
+  );
+  if (invRow) {
+    console.log(`     inventory after delivery → qty=${invRow.quantity} available=${invRow.available_quantity} reserved=${invRow.reserved_quantity} in_transit=${invRow.in_transit_quantity}`);
+  }
+
+  const smProd = await dbRow(`SELECT id FROM products WHERE sku = $1 AND organization_id = $2`, [sku, organizationId]);
+  const smRows = smProd ? await dbRows(
+    `SELECT * FROM stock_movements WHERE product_id = $1 ORDER BY created_at DESC LIMIT 5`,
+    [smProd.id]
+  ) : [];
+  if (smRows.length > 0) {
+    pass(`stock_movements has ${smRows.length} entries`);
+    console.log(`     stock_movements latest → type=${smRows[0].movement_type} qty=${smRows[0].quantity} ref=${smRows[0].reference_id}`);
+  } else {
+    console.log('     stock_movements — no entries (may use order reference, not product_id directly)');
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -114,6 +287,7 @@ function uid() {
 //  Tables with ON DELETE CASCADE are handled automatically; the rest are
 //  explicitly deleted in the correct sequence below.
 // ════════════════════════════════════════════════════════════════════════════
+/** Remove integration test artifacts before/after test runs. */
 async function cleanup(label = '') {
   const tag = label ? ` (${label})` : '';
   console.log(`\n🧹 Cleaning up test data${tag}...`);
@@ -203,6 +377,7 @@ async function cleanup(label = '') {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 0 — Auth
 // ════════════════════════════════════════════════════════════════════════════
+/** Authenticate and cache JWT used by subsequent API requests. */
 async function stepAuth() {
   section('0. Authentication');
   const r = await api('POST', '/auth/login', {
@@ -227,6 +402,7 @@ async function stepAuth() {
 // ════════════════════════════════════════════════════════════════════════════
 let warehouseId, carrierId, carrierName, productSku;
 
+/** Ensure prerequisite master data exists before workflow tests start. */
 async function stepPreflight() {
   section('1. Pre-flight — Warehouses / Carriers / Products');
 
@@ -303,6 +479,7 @@ async function stepPreflight() {
 // ════════════════════════════════════════════════════════════════════════════
 let orderId, externalOrderId;
 
+/** Validate webhook order ingestion and DB side effects. */
 async function stepOrderWebhook() {
   section('2. Webhook Order Creation');
 
@@ -357,46 +534,7 @@ async function stepOrderWebhook() {
       `total=${orderRow.total_amount}`);
   }
 
-  // Check DB: order_items
-  if (orderId) {
-    const itemRows = await dbRows(
-      `SELECT * FROM order_items WHERE order_id = $1`, [orderId]
-    );
-    check('order_items rows created', itemRows.length > 0, 'no items found');
-    if (itemRows.length > 0) {
-      check('order_items.sku correct', itemRows.some(i => i.sku === productSku),
-        `skus=${itemRows.map(i=>i.sku).join(',')}`);
-      check('order_items.quantity = 2', itemRows[0]?.quantity == 2,
-        `qty=${itemRows[0]?.quantity}`);
-    }
-    // Check DB: products auto-created / exists
-    const prodRow = await dbRow(
-      `SELECT * FROM products WHERE sku = $1 AND organization_id = $2`, [productSku, ORG]
-    );
-    check('products row exists', !!prodRow, `sku=${productSku}`);
-  }
-
-  // Check DB: webhook_logs (no org_id column — query by recency)
-  const webhookLog = await dbRow(
-    `SELECT * FROM webhook_logs ORDER BY created_at DESC LIMIT 1`
-  );
-  if (webhookLog) {
-    pass('webhook_logs has entry');
-    console.log(`     webhook_logs latest → endpoint=${webhookLog.endpoint} status=${webhookLog.response_status}`);
-  } else {
-    console.log('     webhook_logs — empty (may not log internal webhook calls)');
-  }
-
-  // Check DB: inventory reserved on order creation (if the system reserves on create)
-  if (warehouseId) {
-    const invRow = await dbRow(
-      `SELECT * FROM inventory WHERE sku = $1 AND organization_id = $2`, [productSku, ORG]
-    );
-    check('inventory row exists after order', !!invRow);
-    if (invRow) {
-      console.log(`     inventory → available=${invRow.available_quantity} reserved=${invRow.reserved_quantity}`);
-    }
-  }
+  await verifyWebhookOrderSideEffects(orderId, productSku, ORG, warehouseId);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -404,6 +542,7 @@ async function stepOrderWebhook() {
 // ════════════════════════════════════════════════════════════════════════════
 let restOrderId;
 
+/** Validate REST order creation path and downstream records. */
 async function stepOrderRest() {
   section('3. Order via REST API');
 
@@ -462,6 +601,7 @@ async function stepOrderRest() {
 // ════════════════════════════════════════════════════════════════════════════
 let assignmentId;
 
+/** Validate carrier assignment creation and acceptance flow. */
 async function stepCarrierAssignment() {
   section('4. Carrier Assignment');
 
@@ -517,6 +657,7 @@ async function stepCarrierAssignment() {
 // ════════════════════════════════════════════════════════════════════════════
 let shipmentId, trackingNumber;
 
+/** Validate shipment lifecycle transitions and tracking events. */
 async function stepShipment() {
   section('5. Shipment Creation & Status Transitions');
 
@@ -526,43 +667,8 @@ async function stepShipment() {
     return;
   }
 
-  // Create shipment — schema requires: carrier_name, origin.city/country, destination.city/country
-  const createRes = await api('POST', '/shipments', {
-    order_id: targetOrderId,
-    carrier_id: carrierId,
-    carrier_name: carrierName,
-    service_type: 'standard',
-    weight: 0.5,
-    dimensions: { length: 10, width: 10, height: 5 },
-    origin: {
-      city: 'Mumbai',
-      country: 'IN',
-      state: 'Maharashtra',
-      postal_code: '400001',
-    },
-    destination: {
-      city: 'Delhi',
-      country: 'IN',
-      state: 'Delhi',
-      postal_code: '110001',
-    },
-  });
-  check('POST /shipments → 201', createRes.status === 201,
-    `status=${createRes.status} body=${JSON.stringify(createRes.data).slice(0,200)}`);
-  shipmentId = createRes.data?.data?.id || createRes.data?.id;
-  trackingNumber = createRes.data?.data?.tracking_number || createRes.data?.tracking_number;
-
-  if (!shipmentId) {
-    // Try to find one created for this order
-    const sRow = await dbRow(
-      `SELECT id, tracking_number FROM shipments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
-      [targetOrderId]
-    );
-    shipmentId = sRow?.id;
-    trackingNumber = sRow?.tracking_number;
-    if (shipmentId) pass('Shipment found in DB (fallback)');
-    else { fail('No shipment created'); return; }
-  }
+  ({ shipmentId, trackingNumber } = await createOrFetchShipment(targetOrderId, carrierId, carrierName));
+  if (!shipmentId) { fail('No shipment created'); return; }
 
   // DB: shipments
   const sRow = await dbRow(`SELECT * FROM shipments WHERE id = $1`, [shipmentId]);
@@ -598,65 +704,15 @@ async function stepShipment() {
     { status: 'delivered',          location: { city: 'Delhi',  country: 'IN', state: 'Delhi' },        notes: 'Delivered successfully' },
   ];
 
-  for (const t of transitions) {
-    const tr = await api('PATCH', `/shipments/${shipmentId}/status`, {
-      status: t.status,
-      location: t.location,
-      notes: t.notes,
-      timestamp: new Date().toISOString(),
-    });
-    check(`PATCH /shipments/:id/status → ${t.status} (200)`,
-      [200, 204].includes(tr.status),
-      `status=${tr.status} body=${JSON.stringify(tr.data).slice(0,150)}`);
+  await runShipmentTransitionsWithChecks(shipmentId, transitions);
 
-    // Verify DB after each transition
-    const updRow = await dbRow(`SELECT status FROM shipments WHERE id = $1`, [shipmentId]);
-    check(`DB shipments.status = ${t.status}`, updRow?.status === t.status,
-      `actual=${updRow?.status}`);
-
-    // Verify shipment_events
-    const evCount = await dbCount(
-      `SELECT COUNT(*) AS count FROM shipment_events WHERE shipment_id = $1`, [shipmentId]
-    );
-    check(`shipment_events count grew after ${t.status}`, evCount > 0, `count=${evCount}`);
-
-    await sleep(200);
-  }
-
-  // GET timeline
-  const tl = await api('GET', `/shipments/${shipmentId}/timeline`);
-  check('GET /shipments/:id/timeline → 200', tl.status === 200, `status=${tl.status}`);
-  const events = tl.data?.data?.events || tl.data?.events || tl.data?.data || [];
-  check('Timeline has events', Array.isArray(events) && events.length > 0,
-    `events=${JSON.stringify(events).slice(0,80)}`);
-
-  // DB: inventory — delivered should deduct inventory
-  const invRow = await dbRow(
-    `SELECT quantity, available_quantity, reserved_quantity, in_transit_quantity
-     FROM inventory WHERE sku = $1 AND organization_id = $2`,
-    [productSku, ORG]
-  );
-  if (invRow) {
-    console.log(`     inventory after delivery → qty=${invRow.quantity} available=${invRow.available_quantity} reserved=${invRow.reserved_quantity} in_transit=${invRow.in_transit_quantity}`);
-  }
-
-  // DB: stock_movements — query via product_id since table lacks org_id/sku
-  const smProd = await dbRow(`SELECT id FROM products WHERE sku = $1 AND organization_id = $2`, [productSku, ORG]);
-  const smRows = smProd ? await dbRows(
-    `SELECT * FROM stock_movements WHERE product_id = $1 ORDER BY created_at DESC LIMIT 5`,
-    [smProd.id]
-  ) : [];
-  if (smRows.length > 0) {
-    pass(`stock_movements has ${smRows.length} entries`);
-    console.log(`     stock_movements latest → type=${smRows[0].movement_type} qty=${smRows[0].quantity} ref=${smRows[0].reference_id}`);
-  } else {
-    console.log('     stock_movements — no entries (may use order reference, not product_id directly)');
-  }
+  await verifyShipmentDeliverySideEffects(shipmentId, productSku, ORG);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 6 — SLA Tracking
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate SLA calculations and violation records. */
 async function stepSLA() {
   section('6. SLA Tracking');
 
@@ -706,6 +762,7 @@ async function stepSLA() {
 // ════════════════════════════════════════════════════════════════════════════
 let exceptionId;
 
+/** Validate exception creation and resolution flow. */
 async function stepExceptions() {
   section('7. Exception Handling');
 
@@ -768,6 +825,7 @@ async function stepExceptions() {
 // ════════════════════════════════════════════════════════════════════════════
 let returnId;
 
+/** Validate returns lifecycle and return item records. */
 async function stepReturns() {
   section('8. Returns Lifecycle');
 
@@ -815,24 +873,13 @@ async function stepReturns() {
   const riRows = await dbRows(`SELECT * FROM return_items WHERE return_id = $1`, [returnId]);
   check('return_items rows created', riRows.length > 0, 'no return_items');
   if (riRows.length > 0) {
-    check('return_items.quantity = 1', riRows[0].quantity == 1, `qty=${riRows[0].quantity}`);
+    check('return_items.quantity = 1', riRows[0].quantity === 1, `qty=${riRows[0].quantity}`);
   }
 
   // Transition statuses using DB-valid values:
   // requested → approved → received → inspecting → inspection_passed → refunded
   const transitions = ['approved', 'received', 'inspecting', 'inspection_passed', 'refunded'];
-  for (const st of transitions) {
-    const tr = await api('PATCH', `/returns/${returnId}`, {
-      status: st,
-      inspection_notes: `Integration test — transition to ${st}`,
-    });
-    check(`PATCH /returns/:id → ${st} (200)`, [200,204].includes(tr.status),
-      `status=${tr.status} body=${JSON.stringify(tr.data).slice(0,150)}`);
-
-    const rUpd = await dbRow(`SELECT status FROM returns WHERE id = $1`, [returnId]);
-    check(`DB returns.status = ${st}`, rUpd?.status === st, `actual=${rUpd?.status}`);
-    await sleep(200);
-  }
+  await runReturnTransitionsWithChecks(returnId, transitions);
 
   // DB: stock_movements for return
   const smRetRows = await dbRows(
@@ -866,6 +913,7 @@ async function stepReturns() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 9 — Finance Records
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate invoice and payment-related finance records. */
 async function stepFinance() {
   section('9. Finance Records');
 
@@ -914,6 +962,7 @@ async function stepFinance() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 10 — Inventory Endpoints
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate inventory reservation and stock mutation paths. */
 async function stepInventory() {
   section('10. Inventory');
 
@@ -943,9 +992,9 @@ async function stepInventory() {
   );
   if (invRow) {
     const requiredCols = ['organization_id','sku','warehouse_id','available_quantity','reserved_quantity','quantity'];
-    for (const col of requiredCols) {
+    requiredCols.forEach((col) => {
       check(`inventory.${col} present`, invRow[col] !== undefined, `missing column ${col}`);
-    }
+    });
   }
 
   // Allocation rules — no dedicated API endpoint in this backend
@@ -968,6 +1017,7 @@ async function stepInventory() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 11 — Analytics & Dashboard
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate analytics endpoints and aggregate metrics. */
 async function stepAnalytics() {
   section('11. Analytics & Dashboard');
 
@@ -993,6 +1043,7 @@ async function stepAnalytics() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 12 — Jobs & Background Processing
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate background job queue and execution bookkeeping. */
 async function stepJobs() {
   section('12. Jobs & Background Processing');
 
@@ -1041,6 +1092,7 @@ async function stepJobs() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 13 — Notifications
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate notifications generation and persistence. */
 async function stepNotifications() {
   section('13. Notifications');
 
@@ -1069,6 +1121,7 @@ async function stepNotifications() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 14 — Audit Logs & Sessions
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate audit log capture for key operations. */
 async function stepAudit() {
   section('14. Audit Logs & Sessions');
 
@@ -1098,6 +1151,7 @@ async function stepAudit() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 15 — MDM Data: Warehouses, Suppliers, Channels, Carriers
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate MDM endpoints for products, warehouses, and carriers. */
 async function stepMDM() {
   section('15. MDM — Warehouses / Carriers / Suppliers / Channels');
 
@@ -1153,6 +1207,7 @@ async function stepMDM() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 16 — Transfer Order Flow
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate internal transfer-order creation flow. */
 async function stepTransferOrder() {
   section('16. Transfer Order Flow');
 
@@ -1192,6 +1247,7 @@ async function stepTransferOrder() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 17 — Shipping Quotes
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate shipping-quote retrieval and selection flow. */
 async function stepShippingQuotes() {
   section('17. Shipping Quotes');
 
@@ -1249,6 +1305,7 @@ async function stepShippingQuotes() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 18 — Alerts & Monitoring
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate alert trigger and retrieval behavior. */
 async function stepAlerts() {
   section('18. Alerts & Monitoring');
 
@@ -1296,6 +1353,7 @@ async function stepAlerts() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 19 — Error Handling Validation
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate representative API error-handling behavior. */
 async function stepErrorHandling() {
   section('19. Error Handling — Validation Responses');
 
@@ -1337,6 +1395,7 @@ async function stepErrorHandling() {
 // ════════════════════════════════════════════════════════════════════════════
 //  STEP 20 — Complete DB table coverage check
 // ════════════════════════════════════════════════════════════════════════════
+/** Validate that critical DB tables receive workflow data. */
 async function stepDBCoverage() {
   section('20. Full DB Table Coverage Check');
 

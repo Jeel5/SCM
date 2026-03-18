@@ -86,10 +86,10 @@ export function GetDemoPage() {
         <div className="grid lg:grid-cols-2 min-h-screen">
 
           {/* ── Left panel ─────────────────────────────────────── */}
-          <div className="relative bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-[#0a0f1e] dark:to-[#0a0f1e] flex flex-col justify-center px-8 py-24 lg:py-32 lg:px-16 xl:px-24 overflow-hidden">
+          <div className="relative bg-linear-to-br from-blue-50 to-indigo-100 dark:from-[#0a0f1e] dark:to-[#0a0f1e] flex flex-col justify-center px-8 py-24 lg:py-32 lg:px-16 xl:px-24 overflow-hidden">
             {/* Background glow */}
-            <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full bg-blue-600/10 blur-[100px] pointer-events-none" />
-            <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-600/10 blur-[80px] pointer-events-none" />
+            <div className="absolute -top-40 -left-40 w-125 h-125 rounded-full bg-blue-600/10 blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 right-0 w-100 h-100 rounded-full bg-indigo-600/10 blur-3xl pointer-events-none" />
 
             {/* Grid */}
             <div className="absolute inset-0 opacity-[0.04]" style={{
@@ -99,7 +99,7 @@ export function GetDemoPage() {
 
             <div className="relative z-10">
               <Link to="/" className="inline-flex items-center gap-2.5 mb-10">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
+                <div className="h-10 w-10 rounded-xl bg-linear-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
                   <Truck className="h-5 w-5 text-white" />
                 </div>
                 <span className="text-xl font-bold text-gray-900 dark:text-white">TwinChain</span>
@@ -107,7 +107,7 @@ export function GetDemoPage() {
 
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-gray-900 dark:text-white leading-tight mb-4">
                 See TwinChain<br />
-                <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+                <span className="bg-linear-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
                   in action
                 </span>
               </h1>
@@ -137,7 +137,7 @@ export function GetDemoPage() {
           </div>
 
           {/* ── Right panel — form ──────────────────────────────── */}
-          <div className="flex items-center justify-center px-6 py-16 lg:py-0 lg:px-12 xl:px-20 bg-gradient-to-b from-white to-blue-50/40 dark:from-gray-950 dark:to-gray-950">
+          <div className="flex items-center justify-center px-6 py-16 lg:py-0 lg:px-12 xl:px-20 bg-linear-to-b from-white to-blue-50/40 dark:from-gray-950 dark:to-gray-950">
             <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/80 backdrop-blur-sm p-6 sm:p-7 shadow-sm">
               {submitted ? (
                 <motion.div
@@ -194,7 +194,7 @@ export function GetDemoPage() {
                       type="submit"
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      className="w-full h-12 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all text-sm"
+                      className="w-full h-12 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all text-sm"
                     >
                       Request a demo
                     </motion.button>

@@ -194,7 +194,7 @@ export class ConfidenceCalculator {
             sameZone = true;
           } else if (fromRow.zone_code && toRow.zone_code) {
             const distanceKm = await postalZoneRepo.findZoneDistance(fromRow.zone_code, toRow.zone_code);
-            if (distanceKm !== null) {
+            if (Number.isFinite(distanceKm)) {
               zoneBucket = distanceKm < 100 ? 'same' : distanceKm < 300 ? 'adjacent' : distanceKm < 600 ? 'moderate' : 'long';
             }
           } else if (fromRow.lat && fromRow.lon && toRow.lat && toRow.lon) {
@@ -215,7 +215,7 @@ export class ConfidenceCalculator {
     }
 
     // Fall back to prefix approximation when DB had no usable data
-    if (!sameZone && zoneBucket === null) {
+    if (!sameZone && typeof zoneBucket !== 'string') {
       const fromPrefix = fromPincode.substring(0, 3);
       const toPrefix   = toPincode.substring(0, 3);
       if (fromPrefix === toPrefix) {

@@ -26,7 +26,7 @@ export function Card({ children, className, hover = false, gradient = false, pad
       className={cn(
         'rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm transition-colors duration-300',
         hover && 'transition-all duration-300 cursor-pointer',
-        gradient && 'bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900',
+        gradient && 'bg-linear-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900',
         paddingClasses[padding],
         className
       )}

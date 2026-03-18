@@ -59,7 +59,7 @@ export function Avatar({ src, alt, name, size = 'md', status, className }: Avata
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className={cn(
-            'rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center font-medium text-white ring-2 ring-white',
+            'rounded-full bg-linear-to-br from-blue-500 to-indigo-600 flex items-center justify-center font-medium text-white ring-2 ring-white',
             sizes[size]
           )}
         >

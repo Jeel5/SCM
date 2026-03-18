@@ -140,13 +140,11 @@ export const getShippingQuotes = asyncHandler(async (req, res) => {
     }
 
     // Validate items have actual measured data
-    for (const item of items) {
-      if (!item.weight) {
-        throw new AppError('Each item must have actual weight (measured at warehouse)', 400);
-      }
-      if (!item.dimensions) {
-        throw new AppError('Each item must have actual dimensions (measured at warehouse)', 400);
-      }
+    if (items.some((item) => !item.weight)) {
+      throw new AppError('Each item must have actual weight (measured at warehouse)', 400);
+    }
+    if (items.some((item) => !item.dimensions)) {
+      throw new AppError('Each item must have actual dimensions (measured at warehouse)', 400);
     }
 
     logger.info('Getting quotes from all carriers', {
@@ -245,10 +243,8 @@ export const getShippingQuotesLegacy = asyncHandler(async (req, res) => {
     }
 
     // Validate items
-    for (const item of items) {
-      if (!item.weight) {
-        throw new AppError('Each item must have a weight', 400);
-      }
+    if (items.some((item) => !item.weight)) {
+      throw new AppError('Each item must have a weight', 400);
     }
 
     logger.info('Getting shipping quotes', {

@@ -29,7 +29,7 @@ export function ShipmentDetailsModal({
     <Modal isOpen={isOpen} onClose={onClose} title={`Shipment ${shipment.trackingNumber}`} size="4xl">
       <div className="space-y-6">
         {/* Status Header */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-linear-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="flex items-center gap-4">
             <div className="h-14 w-14 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
               <Truck className="h-7 w-7 text-blue-600 dark:text-blue-400" />
@@ -54,7 +54,7 @@ export function ShipmentDetailsModal({
         </div>
 
         {/* Route Info */}
-        <div className="relative p-5 bg-gradient-to-r from-green-50 to-blue-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="relative p-5 bg-linear-to-r from-green-50 to-blue-50 dark:from-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
             <div className="text-center md:text-left">
               <div className="inline-flex items-center gap-2 mb-2">
@@ -68,7 +68,7 @@ export function ShipmentDetailsModal({
             <div className="flex items-center justify-center">
               <div className="flex flex-col items-center">
                 <div className="relative w-full h-12 flex items-center justify-center">
-                  <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 rounded-full"></div>
+                  <div className="absolute left-0 right-0 h-1 bg-linear-to-r from-green-500 via-blue-500 to-purple-500 rounded-full"></div>
                   <div className="relative z-10 flex items-center justify-center gap-2">
                     <div className="h-3 w-3 rounded-full bg-green-500 ring-4 ring-white dark:ring-gray-800"></div>
                     <Navigation className="h-6 w-6 text-blue-600 dark:text-blue-400 animate-pulse" />
@@ -103,15 +103,15 @@ export function ShipmentDetailsModal({
         <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
         {/* Tab Content */}
-        <div className="min-h-[400px]">
+        <div className="min-h-96">
           {activeTab === 'map' && (
-            <div className="h-[500px]">
+            <div className="h-125">
               <ShipmentMap shipment={shipment} />
             </div>
           )}
 
           {activeTab === 'timeline' && (
-            <div className="max-h-[500px] overflow-y-auto pr-2">
+            <div className="max-h-125 overflow-y-auto pr-2">
               {shipment.events && shipment.events.length > 0 ? (
                 <ShipmentTimeline events={shipment.events} />
               ) : (

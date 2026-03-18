@@ -121,11 +121,11 @@ export function LoginPage() {
         initial={{ opacity: 0, x: -30 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6 }}
-        className="relative lg:w-1/2 flex flex-col justify-between px-10 py-12 lg:px-16 xl:px-24 bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-[#0a0f1e] dark:to-[#0d1530] overflow-hidden"
+        className="relative lg:w-1/2 flex flex-col justify-between px-10 py-12 lg:px-16 xl:px-24 bg-linear-to-br from-blue-600 to-indigo-700 dark:from-[#0a0f1e] dark:to-[#0d1530] overflow-hidden"
       >
         {/* Background glows */}
-        <div className="absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-white/10 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-400/20 dark:bg-indigo-600/20 blur-[100px] pointer-events-none" />
+        <div className="absolute -top-32 -left-32 w-125 h-125 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-100 h-100 rounded-full bg-indigo-400/20 dark:bg-indigo-600/20 blur-3xl pointer-events-none" />
         {/* Subtle grid */}
         <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.6) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.6) 1px,transparent 1px)', backgroundSize: '50px 50px' }} />
 
@@ -186,7 +186,7 @@ export function LoginPage() {
         className="relative lg:w-1/2 flex flex-col justify-center px-8 py-12 lg:px-16 xl:px-24 bg-white dark:bg-gray-950 overflow-y-auto"
       >
         {/* Soft glow */}
-        <div className="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-blue-100 dark:bg-blue-950/40 blur-[120px] pointer-events-none" />
+        <div className="absolute top-0 right-0 w-100 h-100 rounded-full bg-blue-100 dark:bg-blue-950/40 blur-3xl pointer-events-none" />
 
         <div className="relative z-10 w-full max-w-sm mx-auto">
 
@@ -244,7 +244,7 @@ export function LoginPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   disabled={isLoading}
-                  className="w-full h-12 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="w-full h-12 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 text-white font-medium shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                   {isLoading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -302,7 +302,7 @@ export function LoginPage() {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleDemoLogin}
                 disabled={isLoading}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="w-full h-12 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 text-white font-medium shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {isLoading ? (
                   <span className="flex items-center justify-center gap-2">
