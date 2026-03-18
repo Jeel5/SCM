@@ -1,6 +1,6 @@
 # SCM Demo Portals
 
-> Last updated: 2026-02-22  
+> Last updated: 2026-03-18
 > All three portals are standalone HTML pages — no build step required.
 
 ---

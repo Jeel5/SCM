@@ -4,6 +4,25 @@ Last updated: 2026-03-18
 
 ## Fixed in this pass
 
+- Documentation drift cleanup (core docs):
+  - Updated documentation index and stack notes to reflect current runtime reality (BullMQ workers, React 19, hybrid architecture state).
+  - Replaced architecture structure doc that described an ideal-only layout with a current-state + migration-path document.
+  - Added a concrete refactor roadmap file for phased cleanup.
+  - Files: `docs/README.md`, `docs/architecture/STRUCTURE.md`, `docs/guides/REFACTOR_ROADMAP_2026_03.md`.
+
+- Monolith reduction in import pipeline:
+  - Extracted CSV/import normalization helpers from `jobHandlers.js` into `backend/jobs/importUtils.js`.
+  - `jobHandlers.js` now focuses more on orchestration and domain flow, reducing local cognitive load and making further per-import splitting easier.
+  - Files: `backend/jobs/importUtils.js`, `backend/jobs/jobHandlers.js`.
+
+- Import pipeline decomposition (phase 2):
+  - Extracted shared import runner into `backend/jobs/importRunner.js` (progress emits, error summarization, cache invalidation, cleanup).
+  - Split domain import handlers into:
+    - `backend/jobs/importHandlers/masterDataImportHandlers.js` (warehouses, carriers, suppliers, channels, team, products)
+    - `backend/jobs/importHandlers/commerceImportHandlers.js` (inventory, orders, shipments)
+  - `backend/jobs/jobHandlers.js` now acts as job registry/orchestration glue instead of carrying import internals.
+  - Size impact: `jobHandlers.js` reduced from ~1490 lines to ~738 lines.
+
 - Notifications not appearing in real-time:
   - Root cause: frontend listens for `notification:new`, but backend notification creation did not emit socket events.
   - Fix: sockets now join per-user rooms (`user:{userId}`), added `emitToUser`, and `notificationService.createNotification` now emits `notification:new` payloads.

@@ -1,7 +1,7 @@
 # TwinChain SCM — Documentation Index
 
-> Last updated: 2026-02-27  
-> System version: 2.1.0
+> Last updated: 2026-03-18
+> System version: 2.2.0
 
 ---
 
@@ -10,6 +10,7 @@
 | Goal | Document |
 |---|---|
 | Understand the full system | [architecture/SYSTEM_OVERVIEW.md](architecture/SYSTEM_OVERVIEW.md) |
+| Understand current vs target code layout | [architecture/STRUCTURE.md](architecture/STRUCTURE.md) |
 | Run the demo portals | [demo/README.md](demo/README.md) |
 | Integrate via webhooks | [webhooks/README_WEBHOOKS.md](webhooks/README_WEBHOOKS.md) |
 | Understand carrier assignment | [carrier-integration/CARRIER_PORTAL.md](carrier-integration/CARRIER_PORTAL.md) |
@@ -84,6 +85,7 @@
 | **PROGRESS_REPORT.md** | Project progress report and system overview |
 | **REVIEW_FINDINGS.md** | Per-file review session findings and fix record |
 | **FUTURE_WORK.md** | Out-of-scope future improvements (post-MVP, non-blocking) |
+| **REFACTOR_ROADMAP_2026_03.md** | Current refactor priorities for stabilizing architecture and reducing complexity |
 
 ---
 
@@ -93,10 +95,10 @@
 |---|---|
 | Backend | Node.js 20, Express 5, ES Modules |
 | Database | PostgreSQL 16 |
-| Background Jobs | Custom job worker (polls `background_jobs` table every 5s) |
-| Cron Scheduling | Custom cron scheduler (checks `cron_schedules` table every 60s) |
+| Background Jobs | BullMQ (`jobs` queue) + dedicated workers (`backend/queues`) |
+| Cron Scheduling | DB-backed scheduler + BullMQ repeatable jobs |
 | Auth | JWT (access + refresh tokens), HMAC for carrier webhooks |
-| Frontend | React 18, TypeScript, Vite, TanStack Query |
+| Frontend | React 19, TypeScript, Vite, TanStack Query |
 | Demo Portals | Standalone HTML pages in `/demo/` |
 | Containerization | Docker Compose (backend, frontend, postgres, redis) |
 
@@ -109,3 +111,18 @@
 - All API routes are prefixed `/api`
 - Webhook routes live under `/api/webhooks`
 - Demo-only routes live under `/api/demo` (return 404 in production)
+
+Documentation freshness note:
+- "Last updated" at file top indicates doc freshness.
+- Inline timestamps inside payload examples are often historical sample values and do not imply stale functionality.
+
+---
+
+## Important Note On Architecture State
+
+The codebase currently runs in a hybrid state:
+
+- Current runtime layout is primarily `controllers/`, `services/`, `repositories/`, `routes/`.
+- Target layout is domain-modular (`modules/*`) with clearer bounded contexts.
+
+See `docs/architecture/STRUCTURE.md` for the migration plan and current refactor guardrails.

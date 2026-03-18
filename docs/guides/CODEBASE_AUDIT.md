@@ -1,5 +1,7 @@
 # Codebase Audit
 
+Freshness note (2026-03-18): This audit remains useful but some status rows can lag behind active refactor work. Cross-check with `DEEP_AUDIT_PROGRESS.md` for latest execution state.
+
 Organized by problem type. Each section lists locations found and the status of the fix.
 **Status key:** ✅ Fixed | ⚠️ Documented / stub in place | ❌ Not yet fixed
 

@@ -1,7 +1,7 @@
 # TwinChain SCM — System Overview
 
-> Last updated: 2026-02-22  
-> Reflects the actual current state of the codebase.
+> Last updated: 2026-03-18
+> Partial live reference. For current architecture boundaries, see `docs/architecture/STRUCTURE.md`.
 
 ---
 
@@ -54,8 +54,8 @@
 ┌─────────────┐  ┌──────────────────────────────────────────┐
 │ PostgreSQL  │  │         Background Job System            │
 │  (port 5432)│  │                                          │
-│             │  │  JobWorker — polls every 5s              │
-│  scm_db     │  │  CronScheduler — checks every 60s        │
+│             │  │  BullMQ workers (ops/imports/notifs)     │
+│  scm_db     │  │  DB-backed cron scheduler + repeatables  │
 │  20+ tables │  │  jobHandlers — process_order,            │
 └─────────────┘  │    sla_monitoring, assignment_retry, ... │
                  └──────────────────────────────────────────┘
@@ -72,9 +72,9 @@
 | Database | PostgreSQL 16, `pg` driver | Connection pool (max 20) |
 | Auth | `jsonwebtoken` (JWT), `bcrypt` | Access + refresh token pattern |
 | Logging | `pino` + `pino-pretty`, `winston` | Structured JSON logs to file |
-| Validation | Custom lightweight validators | `class-validator` schemas per entity |
+| Validation | Joi + request validation middleware | schemas in `backend/validators/` |
 | HTTP Client | `axios` | Used by carrier notification service |
-| Frontend | React 18, TypeScript, Vite, TanStack Query | |
+| Frontend | React 19, TypeScript, Vite, TanStack Query | |
 | Containerization | Docker Compose | backend, frontend, postgres, redis |
 
 ---
@@ -387,19 +387,16 @@ Database name: `scm_db`.  Full DDL: see `init.sql`.
 
 ## 8. Background Job System
 
-### Job Worker (`backend/jobs/jobWorker.js`)
+### Queue Workers (`backend/jobs/jobWorker.js`)
 
-- Polls `background_jobs` every **5 seconds**
-- Processes up to **5 jobs concurrently**
-- On success: `status='completed'`, `result=<json>`
-- On failure: `status='failed'`, `error_message=<string>`, increments `attempts`
-- Max retries configurable per job (`max_retries` column)
-- Graceful shutdown: waits up to 30s for in-flight jobs
+- Uses BullMQ workers on separate queues (operations, imports, notifications).
+- Workers pick jobs from Redis-backed queues and mirror execution state to DB via `jobsService`/`jobsRepo`.
+- Retries use BullMQ backoff settings; exhausted retries can move jobs to DLQ.
 
 ### Cron Scheduler (`backend/jobs/cronScheduler.js`)
 
-- Checks `cron_schedules` every **60 seconds**
-- For each row where `next_run <= NOW()`: creates a `background_jobs` row, updates `last_run`, calculates `next_run` via `cron-parser`
+- Reads DB cron schedule definitions and enqueues repeatable BullMQ jobs.
+- Maintains schedule metadata while execution happens in queue workers.
 
 ### Job Handlers (`backend/jobs/jobHandlers.js`)
 
@@ -458,7 +455,7 @@ Database name: `scm_db`.  Full DDL: see `init.sql`.
    - jobsService.createJob('process_order', payload)
    - Returns 200 { job_id } immediately
 
-3. JobWorker picks up job within 5 seconds
+3. BullMQ worker picks up the queued job
 
 4. jobHandlers.handleProcessOrder(payload)
    a. INSERT INTO orders (with organization_id, external_order_id, platform, customer_*, status='created')

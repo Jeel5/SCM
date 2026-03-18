@@ -1,6 +1,12 @@
 Project: TwinChain
 Digital Twin Control Tower for End-to-End Supply Chain Management
 
+Status note (2026-03-18): This file is historical narrative.
+Use these as current sources of truth:
+- `DEEP_AUDIT_PROGRESS.md`
+- `docs/guides/REFACTOR_ROADMAP_2026_03.md`
+- `docs/architecture/STRUCTURE.md`
+
 System Overview
 The system is a web-based Digital Twin Control Tower that represents real-world supply chain operations including orders, inventory, warehouses, shipments, carriers, SLAs, exceptions, and returns. It provides real-time visibility, prediction, and operational control through a centralized dashboard.
 

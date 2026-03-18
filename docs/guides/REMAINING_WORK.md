@@ -5,6 +5,11 @@ Full task details → ARCHITECTURE_TASKS.md
 Full fix patterns  → PATTERNS.md
 ════════════════════════════════════════════════════════════════════
 
+NOTE (2026-03-18): This tracker is now legacy and may contain stale status lines.
+Active execution tracking moved to:
+- `DEEP_AUDIT_PROGRESS.md`
+- `docs/guides/REFACTOR_ROADMAP_2026_03.md`
+
 LEGEND: ❌ Not Started | 🟡 Partial | ✅ Complete | 🔴 Has Critical Bugs
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

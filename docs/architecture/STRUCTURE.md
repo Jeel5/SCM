@@ -1,213 +1,65 @@
-You are assisting development of a large-scale **Supply Chain Management (SCM) Platform**.
+# Codebase Structure: Current State and Target State
 
-IMPORTANT: This project is NOT a simple Express CRUD app.
-It follows a **Domain Modular Architecture** designed for enterprise scalability.
+> Last updated: 2026-03-18
 
----
+## Current runtime structure (what exists today)
 
-## ARCHITECTURE PRINCIPLES
+Backend currently runs with a layered layout:
 
-1. Domain-Based Structure (NOT Layer-Based)
+- `backend/controllers/`
+- `backend/services/`
+- `backend/repositories/`
+- `backend/routes/`
+- `backend/jobs/`
+- `backend/queues/`
+- `backend/sockets/`
+- `backend/utils/`, `backend/validators/`, `backend/middlewares/`
 
-All features must be organized by BUSINESS DOMAIN, not by technical layer.
+Frontend is route/page oriented with shared UI and hooks:
 
-❌ DO NOT create global folders like:
+- `frontend/src/pages/`
+- `frontend/src/components/`
+- `frontend/src/hooks/`
+- `frontend/src/api/`
+- `frontend/src/stores/`
 
-* controllers/
-* services/
-* repositories/
-* routes/
+This is the source of truth for production behavior today.
 
-✅ Instead, each domain owns everything related to it.
+## Target architecture direction (incremental)
 
-Example:
+We are moving toward stronger domain ownership, but we are not doing a risky big-bang rewrite.
 
-modules/
-orders/
-order.controller.js
-order.service.js
-order.repository.js
-order.routes.js
-order.validator.js
+Target shape:
 
-Each module is self-contained.
+- Domain-owned modules for business areas (orders, shipments, inventory, returns, finance, SLA, notifications, etc.)
+- Thin HTTP adapter layer
+- Service layer as workflow/state owner
+- Repository layer as SQL-only boundary
+- Shared platform services for auth, jobs, logging, caching, sockets
 
----
+## Refactor policy
 
-2. High-Level Folder Structure
+1. Do not add new business logic to route files.
+2. Prefer extracting complexity into domain-focused files rather than expanding existing monolith files.
+3. Keep status/state transitions centralized in service state machines.
+4. Keep API contracts stable; add compatibility mapping at boundaries when necessary.
+5. Update docs whenever behavior changes.
 
----
+## Current known structural debt
 
-backend/
-app/                  -> Express bootstrap & route registration
-modules/              -> Business domains
-platform/             -> Cross-cutting system capabilities
-infrastructure/       -> External integrations
-shared/               -> reusable utilities
-migrations/           -> database schema
+- Some large files still mix orchestration and transformation logic.
+- Status enums are not fully centralized across backend + frontend.
+- Some historical docs describe idealized layout instead of current runtime layout.
 
----
+## Active cleanup examples
 
-3. MODULE RESPONSIBILITIES
+- Import helpers extracted from `backend/jobs/jobHandlers.js` to `backend/jobs/importUtils.js`.
+- Real-time notifications standardized with per-user socket rooms and `notification:new` event emission from `notificationService`.
+- Returns/finance status aggregations aligned to canonical workflow statuses with legacy compatibility.
 
----
+## What "good" looks like for new code
 
-Create or modify code ONLY inside the correct module.
-
-Current domains include:
-
-* orders
-* inventory
-* warehouse
-* shipments
-* carriers
-* returns
-* finance (invoices, billing)
-* sla (monitoring & violations)
-* notifications
-* organizations (multi-tenant)
-* users & settings
-
-Each module contains:
-
-* controller (HTTP handling)
-* service (business logic)
-* repository (database access)
-* routes
-* validators
-* domain logic
-
-Never mix responsibilities across modules.
-
----
-
-4. PLATFORM LAYER (Cross-Cutting Concerns)
-
----
-
-platform/
-auth/           -> authentication
-rbac/           -> permissions
-database/       -> db connection & transactions
-jobs/           -> background workers & cron
-errors/         -> error classes & handler
-middleware/     -> express middleware
-logging/
-
-These are framework-level capabilities.
-Business logic must NOT be placed here.
-
----
-
-5. INFRASTRUCTURE LAYER
-
----
-
-Used only for external systems:
-
-Examples:
-
-* OSRM routing
-* Carrier APIs
-* Email/SMS providers
-* Webhooks
-* Queues
-
-Rule:
-Infrastructure NEVER contains business rules.
-
----
-
-6. SERVICE DESIGN RULES
-
----
-
-Services:
-
-* orchestrate workflows
-* contain business logic
-* may call multiple repositories
-* may call infrastructure adapters
-
-Repositories:
-
-* ONLY database access
-* NO business decisions
-
-Controllers:
-
-* request validation
-* call service
-* return response
-
----
-
-7. CODING EXPECTATIONS
-
----
-
-When generating code:
-
-* Follow existing naming conventions
-* Keep modules isolated
-* Prefer composition over shared global utilities
-* Avoid circular dependencies
-* Do not introduce new global folders
-* Reuse shared utilities if available
-* Keep transactions inside services
-* External API calls happen outside DB transactions
-
----
-
-8. SYSTEM CONTEXT
-
----
-
-This platform includes:
-
-* Order Management System (OMS)
-* Warehouse Execution (WES)
-* Transportation Management (TMS)
-* SLA Monitoring & Exception Management
-* Carrier Integration Platform
-* Automated Billing & Invoicing
-* Background Job Processing
-* Multi-tenant Organizations
-* Real-time Shipment Tracking
-
-Design all solutions assuming enterprise scale.
-
----
-
-9. WHEN ADDING NEW FEATURES
-
----
-
-Always:
-
-1. Identify correct domain module.
-2. Add files inside that module.
-3. Avoid creating cross-module coupling.
-4. Keep business logic inside services.
-5. Keep infrastructure isolated.
-
----
-
-10. THINK LIKE A SENIOR BACKEND ARCHITECT
-
----
-
-Prioritize:
-
-* maintainability
-* scalability
-* domain ownership
-* clear boundaries
-* production readiness
-
-Never design features like a small tutorial project.
-This is an enterprise logistics platform.
-
----
-
-## END OF ARCHITECTURE CONTEXT
+- A single domain rule should have one owner.
+- SQL should be testable and isolated.
+- Socket events and API responses should have documented contracts.
+- No duplicate fallback logic spread across multiple layers unless explicitly compatibility-related.
