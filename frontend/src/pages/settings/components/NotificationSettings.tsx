@@ -57,20 +57,25 @@ export function NotificationSettings() {
 
   // Load preferences from backend on mount — convert snake_case backend keys to camelCase UI keys
   useEffect(() => {
-    settingsApi.getNotificationPreferences().then((res) => {
-      const d = res.data as any;
-      if (!d) return;
-      const types = d.notification_types || {};
-      setSettings((prev) => ({
-        ...prev,
-        emailNotifications: d.email_enabled   ?? prev.emailNotifications,
-        pushNotifications:  d.push_enabled    ?? prev.pushNotifications,
-        orderUpdates:       types.orders      ?? prev.orderUpdates,
-        shipmentAlerts:     types.shipments   ?? prev.shipmentAlerts,
-        exceptionAlerts:    types.exceptions  ?? prev.exceptionAlerts,
-        weeklyReport:       types.system_updates ?? prev.weeklyReport,
-      }));
-    }).catch(() => { /* use defaults */ });
+    void (async () => {
+      try {
+        const res = await settingsApi.getNotificationPreferences();
+        const d = res.data as any;
+        if (!d) return;
+        const types = d.notification_types || {};
+        setSettings((prev) => ({
+          ...prev,
+          emailNotifications: d.email_enabled ?? prev.emailNotifications,
+          pushNotifications: d.push_enabled ?? prev.pushNotifications,
+          orderUpdates: types.orders ?? prev.orderUpdates,
+          shipmentAlerts: types.shipments ?? prev.shipmentAlerts,
+          exceptionAlerts: types.exceptions ?? prev.exceptionAlerts,
+          weeklyReport: types.system_updates ?? prev.weeklyReport,
+        }));
+      } catch {
+        // Use defaults
+      }
+    })();
   }, []);
 
   const toggleSetting = (key: keyof typeof settings) => {

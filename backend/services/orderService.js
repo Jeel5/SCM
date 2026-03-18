@@ -92,11 +92,11 @@ class OrderService {
     return {
       orders,
       stats: {
-        totalOrders: parseInt(statsRow.total_orders || 0),
-        processing: parseInt(statsRow.processing || 0),
-        shipped: parseInt(statsRow.shipped || 0),
-        delivered: parseInt(statsRow.delivered || 0),
-        returned: parseInt(statsRow.returned || 0),
+        totalOrders: parseInt(statsRow.total_orders || 0, 10),
+        processing: parseInt(statsRow.processing || 0, 10),
+        shipped: parseInt(statsRow.shipped || 0, 10),
+        delivered: parseInt(statsRow.delivered || 0, 10),
+        returned: parseInt(statsRow.returned || 0, 10),
       },
       pagination: {
         page,

@@ -51,7 +51,7 @@ export function generateId(): string {
 // Truncate text
 export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength - 3) + '...';
+  return `${text.substring(0, maxLength - 3)}...`;
 }
 
 // Status color mapping

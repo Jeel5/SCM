@@ -20,8 +20,8 @@ export const listShipments = asyncHandler(async (req, res) => {
   const { status, carrier_id, search, page, limit } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
 
   // Cache paginated + filtered list (including batch-loaded events) for 30 seconds
   const cacheKey = `ship:list:${orgSeg(organizationId)}:${hashParams({ status, carrier_id, search, page: pageNum, limit: limitNum })}`;

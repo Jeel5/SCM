@@ -1,5 +1,5 @@
 const API_BASE = 'http://localhost:3000/api';
-const DEFAULT_ORG_TOKEN = '661e0b56fb823ff60573b5257a6b7f3bc9ba66ee864ea2b4ab050cc6d05a801d';
+const DEFAULT_ORG_TOKEN = 'REPLACE_WITH_DEMO_WEBHOOK_TOKEN';
 
 // ──────────── Org credentials ────────────
 let selectedOrgToken = localStorage.getItem('demo.orgToken') || DEFAULT_ORG_TOKEN;

@@ -4,7 +4,6 @@ import { Plus, Download, Upload, Eye } from 'lucide-react';
 import { exportToCSV } from '@/lib/export';
 import { importApi, ordersApi } from '@/api/services';
 import { useSocketEvent } from '@/hooks';
-import { useToast } from '@/components/ui';
 import {
   Card,
   Button,
@@ -14,6 +13,7 @@ import {
   Tabs,
   PermissionGate,
   Badge,
+  useToast,
 } from '@/components/ui';
 import { formatCurrency, formatRelativeTime } from '@/lib/utils';
 import type { Order } from '@/types';

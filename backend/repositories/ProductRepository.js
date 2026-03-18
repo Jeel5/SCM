@@ -19,23 +19,23 @@ class ProductRepository extends BaseRepository {
     let pc = 1;
 
     if (organizationId) {
-      query += ` AND (p.organization_id = $${pc++} OR p.organization_id IS NULL)`;
+      query += ` AND (p.organization_id = $${pc += 1} OR p.organization_id IS NULL)`;
       params.push(organizationId);
     }
     if (category) {
-      query += ` AND p.category = $${pc++}`;
+      query += ` AND p.category = $${pc += 1}`;
       params.push(category);
     }
     if (is_active !== undefined && is_active !== null) {
-      query += ` AND p.is_active = $${pc++}`;
+      query += ` AND p.is_active = $${pc += 1}`;
       params.push(is_active);
     }
     if (search) {
       query += ` AND (p.name ILIKE $${pc} OR p.sku ILIKE $${pc})`;
       params.push(`%${search}%`);
-      pc++;
+      pc += 1;
     }
-    query += ` ORDER BY p.name ASC LIMIT $${pc++} OFFSET $${pc++}`;
+    query += ` ORDER BY p.name ASC LIMIT $${pc += 1} OFFSET $${pc += 1}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -59,7 +59,7 @@ class ProductRepository extends BaseRepository {
     `;
 
     if (organizationId) {
-      query += ` AND (p.organization_id = $${p++} OR p.organization_id IS NULL)`;
+      query += ` AND (p.organization_id = $${p += 1} OR p.organization_id IS NULL)`;
       params.push(organizationId);
     }
 
@@ -77,7 +77,7 @@ class ProductRepository extends BaseRepository {
    */
   async findById(id, organizationId = undefined, client = null) {
     const params = [id];
-    let clause = organizationId
+    const clause = organizationId
       ? ' AND (organization_id = $2 OR organization_id IS NULL)'
       : '';
     if (organizationId) params.push(organizationId);
@@ -121,12 +121,12 @@ class ProductRepository extends BaseRepository {
       orgJoin  = ` AND (p.organization_id = $${pc} OR p.organization_id IS NULL)`;
       orgWhere = ` AND (i.organization_id = $${pc} OR i.organization_id IS NULL)`;
       params.push(organizationId);
-      pc++;
+      pc += 1;
     }
 
     let catWhere = '';
     if (category) {
-      catWhere = ` AND p.category = $${pc++}`;
+      catWhere = ` AND p.category = $${pc += 1}`;
       params.push(category);
     }
 
@@ -302,7 +302,7 @@ class ProductRepository extends BaseRepository {
       `SELECT COUNT(*) AS cnt FROM inventory WHERE product_id = $1 AND quantity > 0 LIMIT 1`,
       [id], client
     );
-    return parseInt(result.rows[0]?.cnt) > 0;
+    return parseInt(result.rows[0]?.cnt, 10) > 0;
   }
 }
 

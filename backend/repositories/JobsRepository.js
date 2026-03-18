@@ -50,10 +50,10 @@ class JobsRepository extends BaseRepository {
     const params = [];
     let pc = 1;
 
-    if (organizationId) { conditions.push(`j.organization_id = $${pc++}`); params.push(organizationId); }
-    if (status)         { conditions.push(`j.status = $${pc++}`);          params.push(status); }
-    if (job_type)       { conditions.push(`j.job_type = $${pc++}`);        params.push(job_type); }
-    if (priority)       { conditions.push(`j.priority = $${pc++}`);        params.push(priority); }
+    if (organizationId) { conditions.push(`j.organization_id = $${pc += 1}`); params.push(organizationId); }
+    if (status)         { conditions.push(`j.status = $${pc += 1}`);          params.push(status); }
+    if (job_type)       { conditions.push(`j.job_type = $${pc += 1}`);        params.push(job_type); }
+    if (priority)       { conditions.push(`j.priority = $${pc += 1}`);        params.push(priority); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -65,12 +65,12 @@ class JobsRepository extends BaseRepository {
        LEFT JOIN users u ON j.created_by = u.id
        ${where}
        ORDER BY j.priority ASC, j.scheduled_for ASC, j.created_at DESC
-       LIMIT $${pc++} OFFSET $${pc++}`,
+       LIMIT $${pc += 1} OFFSET $${pc += 1}`,
       params, client
     );
 
     const rows = result.rows;
-    const totalCount = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
+    const totalCount = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
     return { jobs: rows, totalCount };
   }
 
@@ -393,7 +393,7 @@ class JobsRepository extends BaseRepository {
       params, client
     );
     const rows = result.rows;
-    const totalCount = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
+    const totalCount = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
     return { jobs: rows, totalCount };
   }
 

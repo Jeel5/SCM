@@ -13,8 +13,8 @@ export const listReturns = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status, reason } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
 
   // Cache filtered paginated list for 30 seconds
   const cacheKey = `returns:list:${orgSeg(organizationId)}:${hashParams({ page: pageNum, limit: limitNum, status, reason })}`;
@@ -27,12 +27,12 @@ export const listReturns = asyncHandler(async (req, res) => {
     ]);
     return {
       stats: {
-        totalReturns: parseInt(statsRow.total_returns || 0),
-        pending: parseInt(statsRow.pending || 0),
-        requested: parseInt(statsRow.pending || 0),
-        approved: parseInt(statsRow.approved || 0),
-        rejected: parseInt(statsRow.rejected || 0),
-        completed: parseInt(statsRow.completed || 0),
+        totalReturns: parseInt(statsRow.total_returns || 0, 10),
+        pending: parseInt(statsRow.pending || 0, 10),
+        requested: parseInt(statsRow.pending || 0, 10),
+        approved: parseInt(statsRow.approved || 0, 10),
+        rejected: parseInt(statsRow.rejected || 0, 10),
+        completed: parseInt(statsRow.completed || 0, 10),
       },
       data: returns.map(r => ({
         id: r.id,
@@ -230,18 +230,18 @@ export const getReturnStats = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      totalReturns: parseInt(stats.total_returns),
+      totalReturns: parseInt(stats.total_returns, 10),
       byStatus: {
-        pending:    parseInt(stats.pending),
-        requested:  parseInt(stats.pending),
-        approved:   parseInt(stats.approved),
-        processing: parseInt(stats.processing),
-        completed:  parseInt(stats.completed),
-        rejected:   parseInt(stats.rejected),
+        pending:    parseInt(stats.pending, 10),
+        requested:  parseInt(stats.pending, 10),
+        approved:   parseInt(stats.approved, 10),
+        processing: parseInt(stats.processing, 10),
+        completed:  parseInt(stats.completed, 10),
+        rejected:   parseInt(stats.rejected, 10),
       },
       totalRefunds:     parseFloat(stats.total_refunds),
       totalRestockFees: parseFloat(stats.total_restock_fees),
-      byReason: reasons.map(r => ({ reason: r.reason, count: parseInt(r.count) })),
+      byReason: reasons.map(r => ({ reason: r.reason, count: parseInt(r.count, 10) })),
     },
   });
 });

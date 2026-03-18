@@ -64,13 +64,13 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (warehouse_id) {
-      query += ` AND i.warehouse_id = $${paramCount++}`;
+      query += ` AND i.warehouse_id = $${paramCount += 1}`;
       params.push(warehouse_id);
     }
 
@@ -81,7 +81,7 @@ class InventoryRepository extends BaseRepository {
         p.name ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
-      paramCount++;
+      paramCount += 1;
     }
 
     if (stock_state === 'low_stock' || low_stock) {
@@ -97,14 +97,14 @@ class InventoryRepository extends BaseRepository {
     }
 
     query += ` ORDER BY i.updated_at DESC`;
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
 
     return {
       items: result.rows,
-      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
+      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count, 10) : 0
     };
   }
 
@@ -131,7 +131,7 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -163,7 +163,7 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -192,13 +192,13 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (warehouseId) {
-      query += ` AND i.warehouse_id = $${paramCount++}`;
+      query += ` AND i.warehouse_id = $${paramCount += 1}`;
       params.push(warehouseId);
     }
 
@@ -231,13 +231,13 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (warehouseId) {
-      query += ` AND i.warehouse_id = $${paramCount++}`;
+      query += ` AND i.warehouse_id = $${paramCount += 1}`;
       params.push(warehouseId);
     }
 
@@ -312,7 +312,7 @@ class InventoryRepository extends BaseRepository {
 
     for (const field of ALLOWED) {
       if (updates[field] !== undefined) {
-        setClauses.push(`${field} = $${paramCount++}`);
+        setClauses.push(`${field} = $${paramCount += 1}`);
         params.push(updates[field]);
       }
     }
@@ -515,11 +515,11 @@ class InventoryRepository extends BaseRepository {
     `;
 
     if (movement_type) {
-      query += ` AND sm.movement_type = $${paramCount++}`;
+      query += ` AND sm.movement_type = $${paramCount += 1}`;
       params.push(movement_type);
     }
 
-    query += ` ORDER BY sm.created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` ORDER BY sm.created_at DESC LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -572,7 +572,7 @@ class InventoryRepository extends BaseRepository {
        WHERE p.sku = $1 AND i.available_quantity >= $2`,
       [sku, minQty], client
     );
-    return parseInt(result.rows[0].warehouse_count);
+    return parseInt(result.rows[0].warehouse_count, 10);
   }
 
   /**

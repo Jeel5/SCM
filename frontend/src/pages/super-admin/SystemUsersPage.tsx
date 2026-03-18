@@ -160,7 +160,7 @@ export function SystemUsersPage() {
                         size="sm"
                         variant="outline"
                         leftIcon={<LogIn className="h-3.5 w-3.5" />}
-                        disabled={u.role === 'superadmin' || !!impersonatingUserId}
+                        disabled={u.role === 'superadmin' || Boolean(impersonatingUserId)}
                         isLoading={impersonatingUserId === u.id}
                         onClick={() => void handleImpersonate(u)}
                       >

@@ -92,7 +92,7 @@ class CarrierAssignmentRepository extends BaseRepository {
             `SELECT COUNT(DISTINCT carrier_id) AS tried_count FROM carrier_assignments WHERE order_id = $1`,
             [orderId], client
         );
-        return parseInt(result.rows[0]?.tried_count || 0);
+        return parseInt(result.rows[0]?.tried_count || 0, 10);
     }
 
     async findPendingByCarrier(carrierId, filters = {}, client = null) {
@@ -109,11 +109,11 @@ class CarrierAssignmentRepository extends BaseRepository {
         const params = [carrierId];
         let paramCount = 2;
         if (filters.status) {
-            query += ` AND ca.status = $${paramCount++}`;
+            query += ` AND ca.status = $${paramCount += 1}`;
             params.push(filters.status);
         }
         if (filters.serviceType) {
-            query += ` AND ca.service_type = $${paramCount++}`;
+            query += ` AND ca.service_type = $${paramCount += 1}`;
             params.push(filters.serviceType);
         }
         query += ` ORDER BY ca.requested_at DESC`;

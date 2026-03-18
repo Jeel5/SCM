@@ -143,7 +143,7 @@ export function useAnalytics(timeRange: string) {
         if (useMockApi) {
           const [metricsRes, ordersRes, carrierRes, warehouseRes] = await Promise.all([
             mockApi.getDashboardMetrics(),
-            mockApi.getOrdersChart(parseInt(timeRange) || 30),
+            mockApi.getOrdersChart(parseInt(timeRange, 10) || 30),
             mockApi.getCarrierPerformance(),
             mockApi.getWarehouseUtilization(),
           ]);

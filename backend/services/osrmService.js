@@ -12,7 +12,7 @@ class OSRMService {
   constructor() {
     // Use public OSRM API (free, demo-friendly)
     this.baseUrl = process.env.OSRM_URL || 'http://router.project-osrm.org';
-    this.timeout = parseInt(process.env.OSRM_TIMEOUT) || 5000; // 5 second timeout
+    this.timeout = parseInt(process.env.OSRM_TIMEOUT, 10) || 5000; // 5 second timeout
   }
 
   /**

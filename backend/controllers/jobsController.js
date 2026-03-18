@@ -8,14 +8,14 @@ export const listJobs = asyncHandler(async (req, res) => {
   const { status, job_type, priority, page = 1, limit = 20 } = req.validatedQuery ?? req.query;
   const organizationId = req.user?.organizationId;
   // Cap limit to prevent runaway queries
-  const cappedLimit = Math.min(parseInt(limit) || 20, 100);
+  const cappedLimit = Math.min(parseInt(limit, 10) || 20, 100);
 
   const filters = {};
   if (status) filters.status = status;
   if (job_type) filters.job_type = job_type;
-  if (priority) filters.priority = parseInt(priority);
+  if (priority) filters.priority = parseInt(priority, 10);
 
-  const result = await jobsService.getJobs(filters, parseInt(page), cappedLimit, organizationId);
+  const result = await jobsService.getJobs(filters, parseInt(page, 10), cappedLimit, organizationId);
 
   res.json({ success: true, data: result.jobs, pagination: result.pagination });
 });
@@ -91,14 +91,14 @@ export const getJobStats = asyncHandler(async (req, res) => {
   const stats = {
     by_status: rows.reduce((acc, row) => {
       acc[row.status] = {
-        count: parseInt(row.count),
+        count: parseInt(row.count, 10),
         avg_execution_time: row.avg_execution_time_seconds
           ? parseFloat(row.avg_execution_time_seconds)
           : null,
       };
       return acc;
     }, {}),
-    total_24h: rows.reduce((sum, row) => sum + parseInt(row.count), 0),
+    total_24h: rows.reduce((sum, row) => sum + parseInt(row.count, 10), 0),
   };
 
   res.json({ success: true, data: stats });
@@ -150,7 +150,7 @@ export const getDeadLetterQueue = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.validatedQuery ?? req.query;
   const organizationId = req.user?.organizationId;
 
-  const result = await jobsService.getDeadLetterQueue(parseInt(page), parseInt(limit), organizationId);
+  const result = await jobsService.getDeadLetterQueue(parseInt(page, 10), parseInt(limit, 10), organizationId);
 
   res.json({ success: true, data: result.jobs, pagination: result.pagination });
 });
@@ -166,7 +166,7 @@ export const retryFromDeadLetterQueue = asyncHandler(async (req, res) => {
 export const purgeDeadLetterQueue = asyncHandler(async (req, res) => {
   const { older_than_days = 30 } = req.validatedQuery ?? req.query;
 
-  const deletedCount = await jobsService.purgeDeadLetterQueue(parseInt(older_than_days));
+  const deletedCount = await jobsService.purgeDeadLetterQueue(parseInt(older_than_days, 10));
 
   res.json({ success: true, message: `Purged ${deletedCount} jobs from dead letter queue` });
 });

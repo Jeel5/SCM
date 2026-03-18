@@ -62,3 +62,20 @@ The platform has reached a point where feature delivery outpaced structural cons
 - Extracted shared import execution path to `backend/jobs/importRunner.js`.
 - Split import handlers into `backend/jobs/importHandlers/masterDataImportHandlers.js` and `backend/jobs/importHandlers/commerceImportHandlers.js`.
 - Introduced shared return status contract in `backend/config/returnStatuses.js` and wired returns/finance/order service and validator usage to it.
+- Extracted report-generation job logic from `backend/jobs/jobHandlers.js` into `backend/jobs/reportHandlers.js`.
+- Extracted webhook-processing job logic from `backend/jobs/jobHandlers.js` into `backend/jobs/webhookHandlers.js`.
+- Extracted scheduled/maintenance job logic from `backend/jobs/jobHandlers.js` into `backend/jobs/scheduledHandlers.js`, leaving `jobHandlers.js` as registry wiring.
+- Added route contract tests for `GET /api/finance/summary` (auth guard + response-shape checks).
+- Added route contract tests for `GET /api/returns` (auth guard + stats/list mapping checks).
+- Added notification realtime smoke test for `notificationService.createNotification` emit contract.
+- Completed Batch 1 security disposition and first hardening patches (`demo` token placeholder, SRI attributes, backend non-root + healthcheck, frontend healthcheck).
+- Completed first `backend/controllers/mdmController.js` maintainability slice by extracting shared warehouse mappers and normalizing `parseInt(..., 10)` usage.
+- Logged policy decision to treat `demo/` as out-of-scope simulation/testing for strict remediation gates.
+- Completed first `backend/repositories/WarehouseRepository.js` maintainability slice (shared pagination total parser + radix normalization in stats parsing).
+- Completed first `backend/repositories/ShipmentRepository.js` maintainability slice (shared pagination total parser + radix normalization in on-time stats parsing).
+- Completed first `backend/controllers/analyticsController.js` maintainability slice (explicit radix normalization for analytics response parsing).
+- Completed first `backend/services/orderService.js` maintainability slice (explicit radix normalization for order status stats parsing).
+- Completed first `backend/controllers/returnsController.js` maintainability slice (explicit radix normalization for pagination/stats parsing).
+- Completed first `backend/repositories/OrganizationRepository.js` maintainability slice (shared pagination total-count parser reuse).
+- Completed first `backend/repositories/UserRepository.js` maintainability slice (shared pagination total-count parser reuse).
+- Completed fast multi-file radix normalization batch in `ProductRepository`, `CarrierAssignmentRepository`, `NotificationRepository`, `BaseRepository`, and `queues/index.js` with one consolidated test run.

@@ -7,6 +7,10 @@ class WarehouseRepository extends BaseRepository {
     super('warehouses');
   }
 
+  parseTotalCount(rows) {
+    return rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+  }
+
   // Get warehouses with pagination and filtering
   async findWarehouses({ page = 1, limit = 20, is_active = null, warehouse_type = null, search = null, organizationId = undefined }, client = null) {
     const offset = (page - 1) * limit;
@@ -24,18 +28,18 @@ class WarehouseRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'w');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (is_active !== null) {
-      query += ` AND w.is_active = $${paramCount++}`;
+      query += ` AND w.is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
 
     if (warehouse_type) {
-      query += ` AND w.warehouse_type = $${paramCount++}`;
+      query += ` AND w.warehouse_type = $${paramCount += 1}`;
       params.push(warehouse_type);
     }
 
@@ -47,18 +51,18 @@ class WarehouseRepository extends BaseRepository {
         w.address->>'state' ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
-      paramCount++;
+      paramCount += 1;
     }
 
     query += ` ORDER BY w.name ASC`;
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
     
     return {
       warehouses: result.rows,
-      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
+      totalCount: this.parseTotalCount(result.rows)
     };
   }
 
@@ -162,77 +166,77 @@ class WarehouseRepository extends BaseRepository {
 
     // Build dynamic SET clause based on provided fields
     if (warehouseData.name !== undefined) {
-      updates.push(`name = $${paramCount++}`);
+      updates.push(`name = $${paramCount += 1}`);
       params.push(warehouseData.name);
     }
 
     if (warehouseData.warehouse_type !== undefined) {
-      updates.push(`warehouse_type = $${paramCount++}`);
+      updates.push(`warehouse_type = $${paramCount += 1}`);
       params.push(warehouseData.warehouse_type);
     }
 
     if (warehouseData.address !== undefined) {
-      updates.push(`address = $${paramCount++}`);
+      updates.push(`address = $${paramCount += 1}`);
       params.push(JSON.stringify(warehouseData.address));
     }
 
     if (warehouseData.coordinates !== undefined) {
-      updates.push(`coordinates = $${paramCount++}`);
+      updates.push(`coordinates = $${paramCount += 1}`);
       params.push(warehouseData.coordinates ? JSON.stringify(warehouseData.coordinates) : null);
     }
 
     if (warehouseData.capacity !== undefined) {
-      updates.push(`capacity = $${paramCount++}`);
+      updates.push(`capacity = $${paramCount += 1}`);
       params.push(warehouseData.capacity);
     }
 
     if (warehouseData.current_utilization !== undefined) {
-      updates.push(`current_utilization = $${paramCount++}`);
+      updates.push(`current_utilization = $${paramCount += 1}`);
       params.push(warehouseData.current_utilization);
     }
 
     if (warehouseData.contact_email !== undefined) {
-      updates.push(`contact_email = $${paramCount++}`);
+      updates.push(`contact_email = $${paramCount += 1}`);
       params.push(warehouseData.contact_email);
     }
 
     if (warehouseData.contact_phone !== undefined) {
-      updates.push(`contact_phone = $${paramCount++}`);
+      updates.push(`contact_phone = $${paramCount += 1}`);
       params.push(warehouseData.contact_phone);
     }
 
     if (warehouseData.is_active !== undefined) {
-      updates.push(`is_active = $${paramCount++}`);
+      updates.push(`is_active = $${paramCount += 1}`);
       params.push(warehouseData.is_active);
     }
 
     if (warehouseData.gstin !== undefined) {
-      updates.push(`gstin = $${paramCount++}`);
+      updates.push(`gstin = $${paramCount += 1}`);
       params.push(warehouseData.gstin || null);
     }
 
     if (warehouseData.has_cold_storage !== undefined) {
-      updates.push(`has_cold_storage = $${paramCount++}`);
+      updates.push(`has_cold_storage = $${paramCount += 1}`);
       params.push(warehouseData.has_cold_storage);
     }
 
     if (warehouseData.temperature_min_celsius !== undefined) {
-      updates.push(`temperature_min_celsius = $${paramCount++}`);
+      updates.push(`temperature_min_celsius = $${paramCount += 1}`);
       params.push(warehouseData.temperature_min_celsius);
     }
 
     if (warehouseData.temperature_max_celsius !== undefined) {
-      updates.push(`temperature_max_celsius = $${paramCount++}`);
+      updates.push(`temperature_max_celsius = $${paramCount += 1}`);
       params.push(warehouseData.temperature_max_celsius);
     }
 
     if (warehouseData.customs_bonded_warehouse !== undefined) {
-      updates.push(`customs_bonded_warehouse = $${paramCount++}`);
+      updates.push(`customs_bonded_warehouse = $${paramCount += 1}`);
       params.push(warehouseData.customs_bonded_warehouse);
     }
 
     if (warehouseData.certifications !== undefined) {
-      updates.push(`certifications = $${paramCount++}`);
+      updates.push(`certifications = $${paramCount += 1}`);
       params.push(warehouseData.certifications);
     }
 
@@ -331,7 +335,7 @@ class WarehouseRepository extends BaseRepository {
         i.product_name ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
-      paramCount++;
+      paramCount += 1;
     }
 
     if (low_stock) {
@@ -339,14 +343,14 @@ class WarehouseRepository extends BaseRepository {
     }
 
     query += ` ORDER BY i.product_name ASC`;
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
     
     return {
       items: result.rows,
-      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
+      totalCount: this.parseTotalCount(result.rows)
     };
   }
 
@@ -406,7 +410,10 @@ class WarehouseRepository extends BaseRepository {
       [warehouseIds], client
     );
     return result.rows.reduce((acc, row) => {
-      acc[row.warehouse_id] = { inventory_count: parseInt(row.inventory_count), total_qty: parseInt(row.total_qty) };
+      acc[row.warehouse_id] = {
+        inventory_count: parseInt(row.inventory_count, 10),
+        total_qty: parseInt(row.total_qty, 10),
+      };
       return acc;
     }, {});
   }

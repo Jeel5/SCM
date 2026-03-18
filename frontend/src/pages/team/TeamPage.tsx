@@ -333,7 +333,7 @@ export function TeamPage() {
           onSuccess={() => fetchUsers(true)}
       />
       <EditUserModal
-        isOpen={!!editUser}
+        isOpen={Boolean(editUser)}
         onClose={() => setEditUser(null)}
           onSuccess={() => fetchUsers(true)}
         user={editUser}

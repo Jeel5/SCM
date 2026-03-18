@@ -106,7 +106,7 @@ class SlaRepository extends BaseRepository {
     for (const [key, col] of Object.entries(fieldMap)) {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
         params.push(data[key]);
-        fields.push(`${col} = $${p++}`);
+        fields.push(`${col} = $${p += 1}`);
       }
     }
 
@@ -114,8 +114,8 @@ class SlaRepository extends BaseRepository {
 
     params.push(id);
     const whereClause = organizationId
-      ? `id = $${p++} AND (organization_id = $${p++} OR organization_id IS NULL)`
-      : `id = $${p++}`;
+      ? `id = $${p += 1} AND (organization_id = $${p += 1} OR organization_id IS NULL)`
+      : `id = $${p += 1}`;
     if (organizationId) params.push(organizationId);
 
     const result = await this.query(
@@ -162,13 +162,13 @@ class SlaRepository extends BaseRepository {
       SELECT sp.*
       FROM   sla_policies sp
       WHERE  sp.is_active = true
-        AND  (sp.organization_id = $${p++} OR sp.organization_id IS NULL)
+        AND  (sp.organization_id = $${p += 1} OR sp.organization_id IS NULL)
     `;
 
     // Carrier: match exact carrier or wildcard (NULL)
     if (carrierId) {
       params.push(carrierId);
-      sql += ` AND (sp.carrier_id IS NULL OR sp.carrier_id = $${p++})`;
+      sql += ` AND (sp.carrier_id IS NULL OR sp.carrier_id = $${p += 1})`;
     } else {
       sql += ` AND sp.carrier_id IS NULL`;
     }
@@ -176,19 +176,19 @@ class SlaRepository extends BaseRepository {
     // Origin zone: match or wildcard
     if (originZone) {
       params.push(originZone);
-      sql += ` AND (sp.origin_zone_type IS NULL OR sp.origin_zone_type = $${p++})`;
+      sql += ` AND (sp.origin_zone_type IS NULL OR sp.origin_zone_type = $${p += 1})`;
     }
 
     // Destination zone: match or wildcard
     if (destinationZone) {
       params.push(destinationZone);
-      sql += ` AND (sp.destination_zone_type IS NULL OR sp.destination_zone_type = $${p++})`;
+      sql += ` AND (sp.destination_zone_type IS NULL OR sp.destination_zone_type = $${p += 1})`;
     }
 
     // Service type: match or wildcard
     if (serviceType) {
       params.push(serviceType);
-      sql += ` AND (sp.service_type IS NULL OR sp.service_type = $${p++})`;
+      sql += ` AND (sp.service_type IS NULL OR sp.service_type = $${p += 1})`;
     }
 
     // Specificity ranking: more constrained policies beat generic ones
@@ -236,8 +236,8 @@ class SlaRepository extends BaseRepository {
     let p = 1;
     const where = ['1=1'];
 
-    if (organizationId) { params.push(organizationId); where.push(`sv.organization_id = $${p++}`); }
-    if (status)          { params.push(status);          where.push(`sv.status = $${p++}`); }
+    if (organizationId) { params.push(organizationId); where.push(`sv.organization_id = $${p += 1}`); }
+    if (status)          { params.push(status);          where.push(`sv.status = $${p += 1}`); }
 
     const baseQuery = `
       SELECT sv.*, s.tracking_number, sp.name AS policy_name
@@ -252,13 +252,13 @@ class SlaRepository extends BaseRepository {
     params.push(limit, offset);
 
     const [dataResult, countResult] = await Promise.all([
-      this.query(baseQuery + ` ORDER BY sv.violated_at DESC LIMIT $${p++} OFFSET $${p}`, params),
+      this.query(baseQuery + ` ORDER BY sv.violated_at DESC LIMIT $${p += 1} OFFSET $${p}`, params),
       this.query(`SELECT COUNT(*) FROM (${baseQuery}) AS _cnt`, countParams),
     ]);
 
     return {
       rows: dataResult.rows,
-      total: parseInt(countResult.rows[0]?.count || 0),
+      total: parseInt(countResult.rows[0]?.count || 0, 10),
     };
   }
 
@@ -315,9 +315,9 @@ class SlaRepository extends BaseRepository {
     let p = 1;
     const where = ['1=1'];
 
-    if (organizationId) { params.push(organizationId); where.push(`e.organization_id = $${p++}`); }
-    if (severity)        { params.push(severity);        where.push(`e.severity = $${p++}`); }
-    if (status)          { params.push(status);          where.push(`e.status = $${p++}`); }
+    if (organizationId) { params.push(organizationId); where.push(`e.organization_id = $${p += 1}`); }
+    if (severity)        { params.push(severity);        where.push(`e.severity = $${p += 1}`); }
+    if (status)          { params.push(status);          where.push(`e.status = $${p += 1}`); }
 
     const baseQuery = `
       SELECT e.*, s.tracking_number, o.order_number
@@ -332,13 +332,13 @@ class SlaRepository extends BaseRepository {
     params.push(limit, offset);
 
     const [dataResult, countResult] = await Promise.all([
-      this.query(baseQuery + ` ORDER BY e.created_at DESC LIMIT $${p++} OFFSET $${p}`, params),
+      this.query(baseQuery + ` ORDER BY e.created_at DESC LIMIT $${p += 1} OFFSET $${p}`, params),
       this.query(`SELECT COUNT(*) FROM (${baseQuery}) AS _cnt`, countParams),
     ]);
 
     return {
       rows: dataResult.rows,
-      total: parseInt(countResult.rows[0]?.count || 0),
+      total: parseInt(countResult.rows[0]?.count || 0, 10),
     };
   }
 
@@ -352,7 +352,7 @@ class SlaRepository extends BaseRepository {
 
     if (organizationId) {
       params.push(organizationId);
-      where.push(`e.organization_id = $${p++}`);
+      where.push(`e.organization_id = $${p += 1}`);
     }
 
     const result = await this.query(

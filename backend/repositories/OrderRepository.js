@@ -41,14 +41,14 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'o');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     // Status filter
     if (status) {
-      query += ` AND o.status = $${paramCount++}`;
+      query += ` AND o.status = $${paramCount += 1}`;
       params.push(status);
     }
 
@@ -60,7 +60,7 @@ class OrderRepository extends BaseRepository {
         o.customer_email ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
-      paramCount++;
+      paramCount += 1;
     }
 
     // Group by for aggregation
@@ -73,14 +73,14 @@ class OrderRepository extends BaseRepository {
     query += ` ORDER BY o.${orderByColumn} ${orderDirection}`;
 
     // Pagination
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
     
     return {
       orders: result.rows,
-      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
+      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count, 10) : 0
     };
   }
 
@@ -115,7 +115,7 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'o');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -191,7 +191,7 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -225,7 +225,7 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -283,18 +283,18 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (dateFrom) {
-      query += ` AND created_at >= $${paramCount++}`;
+      query += ` AND created_at >= $${paramCount += 1}`;
       params.push(dateFrom);
     }
 
     if (dateTo) {
-      query += ` AND created_at <= $${paramCount++}`;
+      query += ` AND created_at <= $${paramCount += 1}`;
       params.push(dateTo);
     }
 
@@ -323,7 +323,7 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'o');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${p++}`;
+        query += ` AND ${orgFilter.clause}$${p += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -367,7 +367,7 @@ class OrderRepository extends BaseRepository {
     `;
 
     if (organizationId !== undefined) {
-      query += ` AND organization_id = $${paramCount++}`;
+      query += ` AND organization_id = $${paramCount += 1}`;
       params.push(organizationId);
     }
 

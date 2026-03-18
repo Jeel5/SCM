@@ -57,7 +57,7 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
           lat: formData.lat,
           lng: formData.lng,
         } : null,
-        capacity: formData.capacity ? parseInt(formData.capacity) : 10000,
+        capacity: formData.capacity ? parseInt(formData.capacity, 10) : 10000,
         contact_email: formData.contact_email,
         contact_phone: formData.contact_phone || null,
         is_active: formData.is_active,

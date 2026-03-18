@@ -53,7 +53,7 @@ export function WarehouseDetailsModal({
 
   const lng = warehouse.location?.lng || 78.9629;
   const lat = warehouse.location?.lat || 20.5937;
-  const hasCoords = !!(warehouse.location?.lng && warehouse.location?.lat);
+  const hasCoords = Boolean(warehouse.location?.lng && warehouse.location?.lat);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={warehouse.name} size="full">

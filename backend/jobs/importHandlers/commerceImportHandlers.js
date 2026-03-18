@@ -48,7 +48,7 @@ export async function handleImportInventory(payload) {
       }
       if (!productId) throw new Error(`Cannot resolve product for SKU '${row.sku}'`);
 
-      const qty = parseInt(row.quantity) || 0;
+      const qty = parseInt(row.quantity, 10) || 0;
       if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO inventory
@@ -61,7 +61,7 @@ export async function handleImportInventory(payload) {
            updated_at         = NOW()`,
         [organizationId, warehouseId, productId,
           row.sku, row.product_name || row.sku, qty,
-          row.reorder_point ? parseInt(row.reorder_point) : null,
+          row.reorder_point ? parseInt(row.reorder_point, 10) : null,
           row.unit_cost ? parseFloat(row.unit_cost) : null]
       );
     },
@@ -344,7 +344,7 @@ export async function handleImportOrders(payload) {
       if (!row.customer_name) throw new Error('customer_name is required');
       if (!row.sku) throw new Error('sku is required');
       const unitPrice = parseFloat(row.unit_price) || 0;
-      const qty = parseInt(row.quantity) || 1;
+      const qty = parseInt(row.quantity, 10) || 1;
       const lineTotal = unitPrice * qty;
 
       const rawPriority = String(row.priority || 'standard').toLowerCase();

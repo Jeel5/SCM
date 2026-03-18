@@ -47,7 +47,7 @@ const INDIA_BOUNDS = {
 };
 
 function hasValidCoordinates(location: Warehouse['location'] | undefined | null): location is { lat: number; lng: number } {
-  return !!location
+  return Boolean(location)
     && Number.isFinite(location.lat)
     && Number.isFinite(location.lng)
     && Math.abs(location.lat) <= 90
@@ -75,7 +75,7 @@ function normalizeIndiaCoordinates(location: { lat: number; lng: number }): { la
 
 function hashString(value: string): number {
   let hash = 0;
-  for (let i = 0; i < value.length; i++) {
+  for (let i = 0; i < value.length; i += 1) {
     hash = ((hash << 5) - hash) + value.charCodeAt(i);
     hash |= 0;
   }

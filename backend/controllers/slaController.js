@@ -102,8 +102,8 @@ export const getEta = asyncHandler(async (req, res) => {
 
 export const getSlaViolations = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status } = req.validatedQuery || req.query;
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
   // Use injectOrgContext result — consistent with all other handlers (T3-06)
   const organizationId = req.orgContext?.organizationId;
 
@@ -142,25 +142,25 @@ export const getSlaDashboard = asyncHandler(async (req, res) => {
   const { compliance, violations, carriers } = await slaRepo.getSlaDashboard(organizationId);
 
   const onTimeRate = compliance.total_shipments > 0
-    ? (parseInt(compliance.on_time) / parseInt(compliance.total_shipments) * 100).toFixed(1)
+    ? (parseInt(compliance.on_time, 10) / parseInt(compliance.total_shipments, 10) * 100).toFixed(1)
     : 0;
 
   res.json({
     success: true,
     data: {
       overallCompliance: parseFloat(onTimeRate),
-      totalShipments: parseInt(compliance.total_shipments),
-      onTimeDeliveries: parseInt(compliance.on_time),
+      totalShipments: parseInt(compliance.total_shipments, 10),
+      onTimeDeliveries: parseInt(compliance.on_time, 10),
       violations: violations.reduce((acc, v) => {
         // Map DB status 'open' to 'pending' to match frontend type key
         const key = v.status === 'open' ? 'pending' : v.status;
-        acc[key] = parseInt(v.count);
+        acc[key] = parseInt(v.count, 10);
         return acc;
       }, { pending: 0, resolved: 0, waived: 0 }),
       topCarriers: carriers.map(c => ({
         name: c.name,
         reliabilityScore: parseFloat(c.reliability_score),
-        shipmentCount: parseInt(c.shipment_count)
+        shipmentCount: parseInt(c.shipment_count, 10)
       }))
     }
   });
@@ -168,8 +168,8 @@ export const getSlaDashboard = asyncHandler(async (req, res) => {
 
 export const listExceptions = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, severity, status } = req.validatedQuery || req.query;
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
   const organizationId = req.orgContext?.organizationId;
 
   const { rows, total } = await slaRepo.findExceptions({
@@ -180,11 +180,11 @@ export const listExceptions = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     stats: {
-      totalExceptions: parseInt(statsRow.total_exceptions || 0),
-      open: parseInt(statsRow.open || 0),
-      inProgress: parseInt(statsRow.in_progress || 0),
-      resolved: parseInt(statsRow.resolved || 0),
-      critical: parseInt(statsRow.critical || 0),
+      totalExceptions: parseInt(statsRow.total_exceptions || 0, 10),
+      open: parseInt(statsRow.open || 0, 10),
+      inProgress: parseInt(statsRow.in_progress || 0, 10),
+      resolved: parseInt(statsRow.resolved || 0, 10),
+      critical: parseInt(statsRow.critical || 0, 10),
     },
     data: rows.map(e => ({
       id: e.id,

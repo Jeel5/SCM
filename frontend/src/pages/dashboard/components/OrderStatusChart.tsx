@@ -25,7 +25,7 @@ const STATUS_CONFIG: { key: keyof DashboardMetrics; label: string; color: string
 
 const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name?: string; value?: number; payload?: Record<string, unknown> }> }) => {
   if (active && payload && payload.length) {
-    const item = payload[0];
+    const [item] = payload;
     return (
       <div className="bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
         <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{item.name}</p>

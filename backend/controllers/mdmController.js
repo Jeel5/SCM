@@ -9,6 +9,29 @@ import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { generateInternalBarcode } from '../utils/barcodeGenerator.js';
 
+function mapWarehouseAddress(address) {
+  return {
+    street: address?.street || '',
+    city: address?.city || '',
+    state: address?.state || '',
+    postalCode: address?.postal_code || address?.postalCode || '',
+    country: address?.country || 'India',
+  };
+}
+
+function mapWarehouseScmFields(warehouse) {
+  return {
+    gstin: warehouse.gstin || null,
+    hasColdStorage: warehouse.has_cold_storage || false,
+    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
+    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
+    dailyInboundCapacity: undefined,
+    dailyOutboundCapacity: undefined,
+    customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
+    certifications: warehouse.certifications || [],
+  };
+}
+
 // ========== WAREHOUSES ==========
 
 // Get warehouses list with filters
@@ -52,13 +75,7 @@ export const listWarehouses = asyncHandler(async (req, res) => {
       code: w.code,
       name: w.name,
       type: w.warehouse_type,
-      address: {
-        street: w.address?.street || '',
-        city: w.address?.city || '',
-        state: w.address?.state || '',
-        postalCode: w.address?.postal_code || w.address?.postalCode || '',
-        country: w.address?.country || 'India',
-      },
+      address: mapWarehouseAddress(w.address),
       coordinates: w.coordinates,
       capacity,
       currentUtilization: totalQty,
@@ -70,15 +87,7 @@ export const listWarehouses = asyncHandler(async (req, res) => {
       contactEmail: w.contact_email,
       contactPhone: w.contact_phone,
       operatingHours: w.operating_hours || { open: '00:00', close: '23:59', timezone: 'UTC' },
-      // SCM operational fields
-      gstin: w.gstin || null,
-      hasColdStorage: w.has_cold_storage || false,
-      temperatureMinCelsius: w.temperature_min_celsius != null ? parseFloat(w.temperature_min_celsius) : null,
-      temperatureMaxCelsius: w.temperature_max_celsius != null ? parseFloat(w.temperature_max_celsius) : null,
-      dailyInboundCapacity: undefined,
-      dailyOutboundCapacity: undefined,
-      customsBondedWarehouse: w.customs_bonded_warehouse || false,
-      certifications: w.certifications || [],
+      ...mapWarehouseScmFields(w),
       createdAt: w.created_at,
       updatedAt: w.updated_at
     };
@@ -120,13 +129,7 @@ export const getWarehouse = asyncHandler(async (req, res) => {
     code: warehouse.code,
     name: warehouse.name,
     type: warehouse.warehouse_type,
-    address: {
-      street: warehouse.address?.street || '',
-      city: warehouse.address?.city || '',
-      state: warehouse.address?.state || '',
-      postalCode: warehouse.address?.postal_code || warehouse.address?.postalCode || '',
-      country: warehouse.address?.country || 'India',
-    },
+    address: mapWarehouseAddress(warehouse.address),
     coordinates: warehouse.coordinates,
     capacity,
     currentUtilization: totalQty,
@@ -138,15 +141,7 @@ export const getWarehouse = asyncHandler(async (req, res) => {
     contactEmail: warehouse.contact_email,
     contactPhone: warehouse.contact_phone,
     operatingHours: warehouse.operating_hours || { open: '00:00', close: '23:59', timezone: 'UTC' },
-    // SCM operational fields
-    gstin: warehouse.gstin || null,
-    hasColdStorage: warehouse.has_cold_storage || false,
-    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
-    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
-    dailyInboundCapacity: undefined,
-    dailyOutboundCapacity: undefined,
-    customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
-    certifications: warehouse.certifications || [],
+    ...mapWarehouseScmFields(warehouse),
     createdAt: warehouse.created_at,
     updatedAt: warehouse.updated_at
   };
@@ -192,13 +187,7 @@ export const createWarehouse = asyncHandler(async (req, res) => {
     code: warehouse.code,
     name: warehouse.name,
     type: warehouse.warehouse_type,
-    address: {
-      street: warehouse.address?.street || '',
-      city: warehouse.address?.city || '',
-      state: warehouse.address?.state || '',
-      postalCode: warehouse.address?.postal_code || warehouse.address?.postalCode || '',
-      country: warehouse.address?.country || 'India',
-    },
+    address: mapWarehouseAddress(warehouse.address),
     coordinates: warehouse.coordinates,
     capacity: warehouse.capacity,
     currentUtilization: warehouse.current_utilization,
@@ -206,15 +195,7 @@ export const createWarehouse = asyncHandler(async (req, res) => {
     status: warehouse.is_active ? 'active' : 'inactive',
     contactEmail: warehouse.contact_email,
     contactPhone: warehouse.contact_phone,
-    // SCM operational fields
-    gstin: warehouse.gstin || null,
-    hasColdStorage: warehouse.has_cold_storage || false,
-    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
-    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
-    dailyInboundCapacity: undefined,
-    dailyOutboundCapacity: undefined,
-    customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
-    certifications: warehouse.certifications || [],
+    ...mapWarehouseScmFields(warehouse),
     createdAt: warehouse.created_at
   };
 
@@ -243,13 +224,7 @@ export const updateWarehouse = asyncHandler(async (req, res) => {
     code: warehouse.code,
     name: warehouse.name,
     type: warehouse.warehouse_type,
-    address: {
-      street: warehouse.address?.street || '',
-      city: warehouse.address?.city || '',
-      state: warehouse.address?.state || '',
-      postalCode: warehouse.address?.postal_code || warehouse.address?.postalCode || '',
-      country: warehouse.address?.country || 'India',
-    },
+    address: mapWarehouseAddress(warehouse.address),
     coordinates: warehouse.coordinates,
     capacity: warehouse.capacity,
     currentUtilization: warehouse.current_utilization,
@@ -257,15 +232,7 @@ export const updateWarehouse = asyncHandler(async (req, res) => {
     status: warehouse.is_active ? 'active' : 'inactive',
     contactEmail: warehouse.contact_email,
     contactPhone: warehouse.contact_phone,
-    // SCM operational fields
-    gstin: warehouse.gstin || null,
-    hasColdStorage: warehouse.has_cold_storage || false,
-    temperatureMinCelsius: warehouse.temperature_min_celsius != null ? parseFloat(warehouse.temperature_min_celsius) : null,
-    temperatureMaxCelsius: warehouse.temperature_max_celsius != null ? parseFloat(warehouse.temperature_max_celsius) : null,
-    dailyInboundCapacity: undefined,
-    dailyOutboundCapacity: undefined,
-    customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
-    certifications: warehouse.certifications || [],
+    ...mapWarehouseScmFields(warehouse),
     updatedAt: warehouse.updated_at
   };
 
@@ -315,17 +282,17 @@ export const getWarehouseStats = asyncHandler(async (req, res) => {
     capacity: stats.capacity,
     currentUtilization: stats.current_utilization,
     inventory: {
-      totalItems: parseInt(stats.total_items) || 0,
-      totalQuantity: parseInt(stats.total_quantity) || 0,
-      availableQuantity: parseInt(stats.available_quantity) || 0,
-      reservedQuantity: parseInt(stats.reserved_quantity) || 0,
-      lowStockItems: parseInt(stats.low_stock_items) || 0
+      totalItems: parseInt(stats.total_items, 10) || 0,
+      totalQuantity: parseInt(stats.total_quantity, 10) || 0,
+      availableQuantity: parseInt(stats.available_quantity, 10) || 0,
+      reservedQuantity: parseInt(stats.reserved_quantity, 10) || 0,
+      lowStockItems: parseInt(stats.low_stock_items, 10) || 0
     },
     pickLists: {
-      total: parseInt(stats.total_pick_lists) || 0,
-      pending: parseInt(stats.pending_pick_lists) || 0,
-      active: parseInt(stats.active_pick_lists) || 0,
-      completed: parseInt(stats.completed_pick_lists) || 0
+      total: parseInt(stats.total_pick_lists, 10) || 0,
+      pending: parseInt(stats.pending_pick_lists, 10) || 0,
+      active: parseInt(stats.active_pick_lists, 10) || 0,
+      completed: parseInt(stats.completed_pick_lists, 10) || 0
     }
   };
 
@@ -384,8 +351,8 @@ function formatCarrier(c) {
     reliabilityScore: c.reliability_score ? parseFloat(c.reliability_score) : null,
     avgDeliveryDays: c.avg_delivery_days ? parseFloat(c.avg_delivery_days) : null,
     dailyCapacity: c.daily_capacity || null,
-    activeShipments: parseInt(c.active_shipments) || 0,
-    totalShipments: parseInt(c.total_shipments) || 0,
+    activeShipments: parseInt(c.active_shipments, 10) || 0,
+    totalShipments: parseInt(c.total_shipments, 10) || 0,
     onTimeRate: c.on_time_rate ? parseFloat(c.on_time_rate) : null,
     contactEmail: c.contact_email || null,
     contactPhone: c.contact_phone || null,
@@ -413,8 +380,8 @@ export const listCarriers = asyncHandler(async (req, res) => {
   }
 
   const { carriers, totalCount } = await CarrierRepository.findCarriers({
-    page: parseInt(page),
-    limit: parseInt(limit),
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
     is_active: is_active !== undefined ? is_active === 'true' : null,
     availability_status: availability_status || null,
     service_type: service_type || null,
@@ -426,10 +393,10 @@ export const listCarriers = asyncHandler(async (req, res) => {
     success: true,
     data: carriers.map(formatCarrier),
     pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
       total: totalCount,
-      totalPages: Math.ceil(totalCount / parseInt(limit))
+      totalPages: Math.ceil(totalCount / parseInt(limit, 10))
     }
   });
 });
@@ -557,8 +524,8 @@ export const getCarrierRateCards = asyncHandler(async (req, res) => {
 // GET /products
 export const listProducts = asyncHandler(async (req, res) => {
   const { category, is_active, search, page = 1, limit = 50 } = req.query;
-  const limitNum  = parseInt(limit);
-  const offset    = (parseInt(page) - 1) * limitNum;
+  const limitNum  = parseInt(limit, 10);
+  const offset    = (parseInt(page, 10) - 1) * limitNum;
   const organizationId = req.orgContext?.organizationId;
 
   const rows = await ProductRepository.findProducts({
@@ -571,19 +538,19 @@ export const listProducts = asyncHandler(async (req, res) => {
   });
   const statsRow = await ProductRepository.getProductStats({ organizationId });
 
-  const totalCount = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
+  const totalCount = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
 
   res.json({
     success: true,
     stats: {
-      totalProducts: parseInt(statsRow.total_products || 0),
-      active: parseInt(statsRow.active_products || 0),
-      inactive: parseInt(statsRow.inactive_products || 0),
-      categories: parseInt(statsRow.category_count || 0),
+      totalProducts: parseInt(statsRow.total_products || 0, 10),
+      active: parseInt(statsRow.active_products || 0, 10),
+      inactive: parseInt(statsRow.inactive_products || 0, 10),
+      categories: parseInt(statsRow.category_count || 0, 10),
     },
     data: rows,
     pagination: {
-      page: parseInt(page),
+      page: parseInt(page, 10),
       limit: limitNum,
       total: totalCount,
       totalPages: Math.ceil(totalCount / limitNum)

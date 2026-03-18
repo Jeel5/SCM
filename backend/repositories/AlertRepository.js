@@ -109,19 +109,19 @@ class AlertRepository extends BaseRepository {
     let paramCount = 1;
 
     if (filters.organizationId) {
-      conditions.push(`organization_id = $${paramCount++}`);
+      conditions.push(`organization_id = $${paramCount += 1}`);
       params.push(filters.organizationId);
     }
     if (filters.status) {
-      conditions.push(`status = $${paramCount++}`);
+      conditions.push(`status = $${paramCount += 1}`);
       params.push(filters.status);
     }
     if (filters.severity) {
-      conditions.push(`severity = $${paramCount++}`);
+      conditions.push(`severity = $${paramCount += 1}`);
       params.push(filters.severity);
     }
     if (filters.alert_type) {
-      conditions.push(`alert_type = $${paramCount++}`);
+      conditions.push(`alert_type = $${paramCount += 1}`);
       params.push(filters.alert_type);
     }
 
@@ -134,7 +134,7 @@ class AlertRepository extends BaseRepository {
        LEFT JOIN alert_rules ar ON a.rule_id = ar.id
        ${whereClause}
        ORDER BY triggered_at DESC
-       LIMIT $${paramCount++} OFFSET $${paramCount++}`,
+       LIMIT $${paramCount += 1} OFFSET $${paramCount += 1}`,
       params,
       client
     );
@@ -150,19 +150,19 @@ class AlertRepository extends BaseRepository {
     let paramCount = 1;
 
     if (filters.organizationId) {
-      conditions.push(`organization_id = $${paramCount++}`);
+      conditions.push(`organization_id = $${paramCount += 1}`);
       params.push(filters.organizationId);
     }
     if (filters.status) {
-      conditions.push(`status = $${paramCount++}`);
+      conditions.push(`status = $${paramCount += 1}`);
       params.push(filters.status);
     }
     if (filters.severity) {
-      conditions.push(`severity = $${paramCount++}`);
+      conditions.push(`severity = $${paramCount += 1}`);
       params.push(filters.severity);
     }
     if (filters.alert_type) {
-      conditions.push(`alert_type = $${paramCount++}`);
+      conditions.push(`alert_type = $${paramCount += 1}`);
       params.push(filters.alert_type);
     }
 
@@ -172,7 +172,7 @@ class AlertRepository extends BaseRepository {
       params,
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   // ── Recipient Lookups ─────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ class AlertRepository extends BaseRepository {
       [],
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**
@@ -237,7 +237,7 @@ class AlertRepository extends BaseRepository {
       [],
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**
@@ -252,7 +252,7 @@ class AlertRepository extends BaseRepository {
       [],
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**
@@ -267,7 +267,7 @@ class AlertRepository extends BaseRepository {
       [],
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**
@@ -290,7 +290,7 @@ class AlertRepository extends BaseRepository {
       [],
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**

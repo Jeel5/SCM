@@ -15,7 +15,7 @@ function createQueue(name) {
   return new Queue(name, {
     connection: createRedisConnection(),
     defaultJobOptions: {
-      attempts: parseInt(process.env.JOB_MAX_RETRIES) || 3,
+      attempts: parseInt(process.env.JOB_MAX_RETRIES, 10) || 3,
       backoff: {
         type: 'exponential',
         delay: 5000, // 5s, 25s, 125s

@@ -430,7 +430,7 @@ export function SystemHealthPage() {
       </Modal>
 
       <Modal
-        isOpen={!!editingBanner}
+        isOpen={Boolean(editingBanner)}
         onClose={() => {
           setEditingBanner(null);
           setBannerForm({ title: '', message: '', severity: 'warning', starts_at: '', ends_at: '' });

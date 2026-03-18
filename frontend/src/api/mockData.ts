@@ -727,8 +727,8 @@ export const mockApi = {
     return { 
       data: { 
         user, 
-        accessToken: 'mock-jwt-access-token-' + generateId(),
-        refreshToken: 'mock-jwt-refresh-token-' + generateId()
+        accessToken: `mock-jwt-access-token-${generateId()}`,
+        refreshToken: `mock-jwt-refresh-token-${generateId()}`
       }, 
       success: true 
     };

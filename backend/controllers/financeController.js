@@ -10,8 +10,8 @@ import { asyncHandler, NotFoundError, ConflictError, AppError, AuthorizationErro
 export const getInvoices = asyncHandler(async (req, res) => {
   const queryParams = req.validatedQuery || req.query;
   const { status, carrier_id: carrierId, page = 1, limit = 20 } = queryParams;
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
   const organizationId = req.orgContext?.organizationId;
 
   const { invoices, totalCount } = await financeRepo.findInvoices({
@@ -124,8 +124,8 @@ export const updateInvoice = asyncHandler(async (req, res) => {
 export const getRefunds = asyncHandler(async (req, res) => {
   const queryParams = req.validatedQuery || req.query;
   const { status, page = 1, limit = 20 } = queryParams;
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
   const organizationId = req.orgContext?.organizationId;
 
   const { refunds, totalCount } = await financeRepo.findRefunds({
@@ -171,8 +171,8 @@ export const processRefund = asyncHandler(async (req, res) => {
 export const getDisputes = asyncHandler(async (req, res) => {
   const queryParams = req.validatedQuery || req.query;
   const { page = 1, limit = 20 } = queryParams;
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
   const organizationId = req.orgContext?.organizationId;
 
   const { disputes, totalCount } = await financeRepo.findDisputes({

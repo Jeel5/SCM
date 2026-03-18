@@ -54,7 +54,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>)
 
 export function WarehouseUtilizationChart({ data }: WarehouseUtilizationChartProps) {
   const chartData = data.map(wh => ({
-    name: wh.warehouseName.length > 12 ? wh.warehouseName.slice(0, 12) + '…' : wh.warehouseName,
+    name: wh.warehouseName.length > 12 ? `${wh.warehouseName.slice(0, 12)}...` : wh.warehouseName,
     fullName: wh.warehouseName,
     used: wh.used,
     available: Math.max((wh.capacity || 0) - wh.used, 0),

@@ -62,40 +62,40 @@ class CarrierRepository extends BaseRepository {
         // NOTE: carriers can be org-scoped OR system-wide (organization_id IS NULL).
         // When an org user fetches carriers, return their org's carriers + system-wide ones.
         if (organizationId !== undefined) {
-            query += ` AND (c.organization_id = $${paramCount++} OR c.organization_id IS NULL)`;
+            query += ` AND (c.organization_id = $${paramCount += 1} OR c.organization_id IS NULL)`;
             params.push(organizationId);
         }
 
         if (is_active !== null) {
-            query += ` AND c.is_active = $${paramCount++}`;
+            query += ` AND c.is_active = $${paramCount += 1}`;
             params.push(is_active);
         }
 
         if (availability_status) {
-            query += ` AND c.availability_status = $${paramCount++}`;
+            query += ` AND c.availability_status = $${paramCount += 1}`;
             params.push(availability_status);
         }
 
         if (service_type) {
-            query += ` AND c.service_type = $${paramCount++}`;
+            query += ` AND c.service_type = $${paramCount += 1}`;
             params.push(service_type);
         }
 
         if (search) {
             query += ` AND (c.name ILIKE $${paramCount} OR c.code ILIKE $${paramCount})`;
             params.push(`%${search}%`);
-            paramCount++;
+            paramCount += 1;
         }
 
         query += ` ORDER BY c.reliability_score DESC, c.name ASC`;
-        query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+        query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
         params.push(limit, offset);
 
         const result = await this.query(query, params, client);
 
         return {
             carriers: result.rows,
-            totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
+            totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count, 10) : 0
         };
     }
 
@@ -121,7 +121,7 @@ class CarrierRepository extends BaseRepository {
     `;
 
         if (organizationId !== undefined) {
-            query += ` AND (c.organization_id = $${paramCount++} OR c.organization_id IS NULL)`;
+            query += ` AND (c.organization_id = $${paramCount += 1} OR c.organization_id IS NULL)`;
             params.push(organizationId);
         }
 
@@ -162,16 +162,16 @@ class CarrierRepository extends BaseRepository {
     `;
 
         if (serviceType) {
-            query += ` AND (service_type = $${paramCount++} OR service_type = 'all')`;
+            query += ` AND (service_type = $${paramCount += 1} OR service_type = 'all')`;
             params.push(serviceType);
         }
 
         if (organizationId !== undefined) {
-            query += ` AND (organization_id = $${paramCount++} OR organization_id IS NULL)`;
+            query += ` AND (organization_id = $${paramCount += 1} OR organization_id IS NULL)`;
             params.push(organizationId);
         }
 
-        query += ` ORDER BY reliability_score DESC LIMIT $${paramCount++}`;
+        query += ` ORDER BY reliability_score DESC LIMIT $${paramCount += 1}`;
         params.push(limit);
         const result = await this.query(query, params, client);
         return result.rows;
@@ -248,14 +248,14 @@ class CarrierRepository extends BaseRepository {
 
         for (const field of ALLOWED) {
             if (updates[field] !== undefined) {
-                setClauses.push(`${field} = $${paramCount++}`);
+                setClauses.push(`${field} = $${paramCount += 1}`);
                 params.push(updates[field]);
             }
         }
 
         // Handle service_areas JSON separately
         if (updates.service_areas !== undefined) {
-            setClauses.push(`service_areas = $${paramCount++}`);
+            setClauses.push(`service_areas = $${paramCount += 1}`);
             params.push(JSON.stringify(updates.service_areas));
         }
 

@@ -31,14 +31,14 @@ function formatInventoryItem(row) {
     productCategory: row.product_category || null,
     unitCost: row.unit_cost != null ? parseFloat(row.unit_cost) : null,
     // Quantities (all integers)
-    quantity: parseInt(row.quantity) || 0,
-    availableQuantity: parseInt(row.available_quantity) || 0,
-    reservedQuantity: parseInt(row.reserved_quantity) || 0,
-    damagedQuantity: parseInt(row.damaged_quantity) || 0,
-    inTransitQuantity: parseInt(row.in_transit_quantity) || 0,
+    quantity: parseInt(row.quantity, 10) || 0,
+    availableQuantity: parseInt(row.available_quantity, 10) || 0,
+    reservedQuantity: parseInt(row.reserved_quantity, 10) || 0,
+    damagedQuantity: parseInt(row.damaged_quantity, 10) || 0,
+    inTransitQuantity: parseInt(row.in_transit_quantity, 10) || 0,
     // Thresholds
-    reorderPoint: row.reorder_point !== null ? parseInt(row.reorder_point) : null,
-    maxStockLevel: row.max_stock_level !== null ? parseInt(row.max_stock_level) : null,
+    reorderPoint: row.reorder_point !== null ? parseInt(row.reorder_point, 10) : null,
+    maxStockLevel: row.max_stock_level !== null ? parseInt(row.max_stock_level, 10) : null,
     // Derived flags
     isLowStock: row.reorder_point != null
       ? row.available_quantity <= row.reorder_point
@@ -84,8 +84,8 @@ export const getInventory = asyncHandler(async (req, res) => {
   const { page, limit, warehouse_id, search, low_stock, stock_state } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
 
   // Cache filtered paginated list for 30 seconds
   const cacheKey = `inv:list:${orgSeg(organizationId)}:${hashParams({ page: pageNum, limit: limitNum, warehouse_id, search, low_stock, stock_state })}`;
@@ -377,8 +377,8 @@ export const getStockMovements = asyncHandler(async (req, res) => {
   if (!item) throw new NotFoundError('Inventory item');
 
   const movements = await InventoryRepository.findMovements(id, {
-    page: parseInt(page),
-    limit: parseInt(limit)
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10)
   });
 
   res.json({ success: true, data: movements });

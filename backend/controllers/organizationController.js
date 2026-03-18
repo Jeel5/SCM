@@ -111,10 +111,10 @@ export const getOrganization = asyncHandler(async (req, res) => {
     createdAt: organization.created_at,
     updatedAt: organization.updated_at,
     stats: {
-      activeUsers: parseInt(stats.active_users) || 0,
-      activeWarehouses: parseInt(stats.active_warehouses) || 0,
-      totalOrders: parseInt(stats.total_orders) || 0,
-      totalShipments: parseInt(stats.total_shipments) || 0
+      activeUsers: parseInt(stats.active_users, 10) || 0,
+      activeWarehouses: parseInt(stats.active_warehouses, 10) || 0,
+      totalOrders: parseInt(stats.total_orders, 10) || 0,
+      totalShipments: parseInt(stats.total_shipments, 10) || 0
     }
   };
 
@@ -448,24 +448,24 @@ export const getGlobalStats = asyncHandler(async (req, res) => {
     success: true,
     data: {
       tenants: {
-        total: parseInt(stats.total_tenants),
-        active: parseInt(stats.active_tenants),
-        suspended: parseInt(stats.suspended_tenants),
-        deleted: parseInt(stats.deleted_tenants),
+        total: parseInt(stats.total_tenants, 10),
+        active: parseInt(stats.active_tenants, 10),
+        suspended: parseInt(stats.suspended_tenants, 10),
+        deleted: parseInt(stats.deleted_tenants, 10),
       },
       users: {
-        totalActive: parseInt(stats.total_active_users),
+        totalActive: parseInt(stats.total_active_users, 10),
       },
       orders: {
-        total: parseInt(stats.total_orders),
-        last30d: parseInt(stats.orders_last_30d),
+        total: parseInt(stats.total_orders, 10),
+        last30d: parseInt(stats.orders_last_30d, 10),
       },
       shipments: {
-        active: parseInt(stats.active_shipments),
-        last30d: parseInt(stats.shipments_last_30d),
+        active: parseInt(stats.active_shipments, 10),
+        last30d: parseInt(stats.shipments_last_30d, 10),
       },
       alerts: {
-        active: parseInt(stats.active_alerts),
+        active: parseInt(stats.active_alerts, 10),
       },
       revenue: {
         last30d: parseFloat(stats.revenue_last_30d) || 0,
@@ -477,9 +477,9 @@ export const getGlobalStats = asyncHandler(async (req, res) => {
         subscriptionTier: t.subscription_tier,
         isActive: t.is_active,
         suspendedAt: t.suspended_at,
-        slaViolations30d: parseInt(t.sla_violations_30d),
-        openExceptions: parseInt(t.open_exceptions),
-        activeUsers: parseInt(t.active_users),
+        slaViolations30d: parseInt(t.sla_violations_30d, 10),
+        openExceptions: parseInt(t.open_exceptions, 10),
+        activeUsers: parseInt(t.active_users, 10),
         lastUserLogin: t.last_user_login,
       })),
     },

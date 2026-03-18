@@ -106,7 +106,7 @@ export function LocationPicker({
       const results = await response.json();
       
       if (results && results.length > 0) {
-        const { lat, lon } = results[0];
+        const [{ lat, lon }] = results;
         const newMarker = { lat: parseFloat(lat), lng: parseFloat(lon) };
         setMarker(newMarker);
         onLocationChange(newMarker.lat, newMarker.lng);

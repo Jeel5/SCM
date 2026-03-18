@@ -63,9 +63,9 @@ export const getAnalytics = asyncHandler(async (req, res) => {
     ]);
 
     const shipmentsByCarrierFormatted = shipmentsByCarrier.rows.map(r => {
-      const delivered = parseInt(r.delivered);
-      const total = parseInt(r.total_shipments);
-      const onTime = parseInt(r.on_time_deliveries);
+      const delivered = parseInt(r.delivered, 10);
+      const total = parseInt(r.total_shipments, 10);
+      const onTime = parseInt(r.on_time_deliveries, 10);
       return {
         carrier: r.carrier,
         carrierId: r.carrier_id,
@@ -81,56 +81,56 @@ export const getAnalytics = asyncHandler(async (req, res) => {
       timeRange: range,
       ordersOverTime: ordersOverTime.rows.map(r => ({
         date: r.date,
-        count: parseInt(r.count),
+        count: parseInt(r.count, 10),
         value: parseFloat(r.value),
-        delivered: parseInt(r.delivered),
-        inTransit: parseInt(r.in_transit),
-        pending: parseInt(r.pending)
+        delivered: parseInt(r.delivered, 10),
+        inTransit: parseInt(r.in_transit, 10),
+        pending: parseInt(r.pending, 10)
       })),
       shipmentsByCarrier: shipmentsByCarrierFormatted,
       topProducts: topProducts.rows.map(r => ({
         name: r.name,
         sku: r.sku,
         category: r.category,
-        unitsSold: parseInt(r.units_sold),
+        unitsSold: parseInt(r.units_sold, 10),
         revenue: parseFloat(r.revenue),
-        orderCount: parseInt(r.order_count)
+        orderCount: parseInt(r.order_count, 10)
       })),
       warehouseUtilization: warehouseUtil.rows.map(r => ({
         name: r.name,
         code: r.code,
         capacity: r.capacity,
-        currentStock: parseInt(r.current_stock),
-        utilization: r.capacity > 0 ? Math.round((parseInt(r.current_stock) / r.capacity) * 100) : 0,
-        shipmentsProcessed: parseInt(r.shipments_processed),
-        ordersFulfilled: parseInt(r.orders_fulfilled)
+        currentStock: parseInt(r.current_stock, 10),
+        utilization: r.capacity > 0 ? Math.round((parseInt(r.current_stock, 10) / r.capacity) * 100) : 0,
+        shipmentsProcessed: parseInt(r.shipments_processed, 10),
+        ordersFulfilled: parseInt(r.orders_fulfilled, 10)
       })),
       slaViolations: slaViolations.rows.map(r => ({
         date: r.date,
-        violations: parseInt(r.violations),
+        violations: parseInt(r.violations, 10),
         totalPenalties: parseFloat(r.total_penalties)
       })),
       exceptionsByType: exceptionsByType.rows.map(r => ({
         type: r.exception_type,
         severity: r.severity,
-        count: parseInt(r.count),
-        resolved: parseInt(r.resolved),
+        count: parseInt(r.count, 10),
+        resolved: parseInt(r.resolved, 10),
         avgResolutionHours: r.avg_resolution_hours ? parseFloat(r.avg_resolution_hours).toFixed(1) : null
       })),
       returnsAnalysis: {
-        totalReturns: parseInt(returnsAnalysis.rows[0].total_returns),
-        refunded: parseInt(returnsAnalysis.rows[0].refunded),
+        totalReturns: parseInt(returnsAnalysis.rows[0].total_returns, 10),
+        refunded: parseInt(returnsAnalysis.rows[0].refunded, 10),
         totalRefundAmount: parseFloat(returnsAnalysis.rows[0].total_refund_amount),
         avgRefundAmount: parseFloat(returnsAnalysis.rows[0].avg_refund_amount),
-        qualityPassed: parseInt(returnsAnalysis.rows[0].quality_passed),
-        qualityFailed: parseInt(returnsAnalysis.rows[0].quality_failed)
+        qualityPassed: parseInt(returnsAnalysis.rows[0].quality_passed, 10),
+        qualityFailed: parseInt(returnsAnalysis.rows[0].quality_failed, 10)
       },
       financialMetrics: {
         totalRevenue: parseFloat(financialMetrics.rows[0].total_revenue),
         totalShippingCost: parseFloat(financialMetrics.rows[0].total_shipping_cost),
         totalPenalties: parseFloat(financialMetrics.rows[0].total_penalties),
         totalRefunds: parseFloat(financialMetrics.rows[0].total_refunds),
-        totalOrders: parseInt(financialMetrics.rows[0].total_orders),
+        totalOrders: parseInt(financialMetrics.rows[0].total_orders, 10),
         avgOrderValue: parseFloat(financialMetrics.rows[0].avg_order_value)
       }
     };

@@ -189,8 +189,8 @@ export const listUsers = asyncHandler(async (req, res) => {
   const queryParams = req.validatedQuery || req.query;
   const { role, is_active, search, page = 1, limit = 20 } = queryParams;
   const organizationId = req.orgContext?.organizationId;
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
 
   const { users, totalCount } = await userRepo.findUsers({
     page: pageNum, limit: limitNum, role,

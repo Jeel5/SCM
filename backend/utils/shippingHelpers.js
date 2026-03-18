@@ -221,7 +221,7 @@ export class ConfidenceCalculator {
       if (fromPrefix === toPrefix) {
         sameZone = true;
       } else {
-        const diff = Math.abs(parseInt(fromPrefix) - parseInt(toPrefix));
+        const diff = Math.abs(parseInt(fromPrefix, 10) - parseInt(toPrefix, 10));
         zoneBucket = diff === 0 ? 'same' : diff < 50 ? 'adjacent' : diff < 150 ? 'moderate' : 'long';
       }
     }

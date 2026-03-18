@@ -43,12 +43,12 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         dashboardRepo.getTopProducts(organizationId, days),
       ]);
 
-    const delivered = parseInt(shipments.delivered) || 0;
-    const onTime   = parseInt(shipments.on_time)   || 0;
+    const delivered = parseInt(shipments.delivered, 10) || 0;
+    const onTime   = parseInt(shipments.on_time, 10)   || 0;
     const onTimeRate  = delivered > 0 ? parseFloat((onTime / delivered * 100).toFixed(1)) : 0;
 
-    const prevDelivered = parseInt(shipments.prev_delivered) || 0;
-    const prevOnTime    = parseInt(shipments.prev_on_time)   || 0;
+    const prevDelivered = parseInt(shipments.prev_delivered, 10) || 0;
+    const prevOnTime    = parseInt(shipments.prev_on_time, 10)   || 0;
     const prevOnTimeRate = prevDelivered > 0 ? parseFloat((prevOnTime / prevDelivered * 100).toFixed(1)) : 0;
 
     const avgDeliveryDaysRaw = parseFloat(Number(shipments.avg_delivery_days).toFixed(1)) || 0;
@@ -59,8 +59,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const activityMap = {};
     for (const row of warehouseActivity) {
       activityMap[row.warehouse_id] = {
-        inbound: parseInt(row.inbound_units) || 0,
-        outbound: parseInt(row.outbound_units) || 0,
+        inbound: parseInt(row.inbound_units, 10) || 0,
+        outbound: parseInt(row.outbound_units, 10) || 0,
       };
     }
 
@@ -68,20 +68,20 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
       period: periodKey,
       days,
       orders: {
-        total:      parseInt(orders.total),
-        pending:    parseInt(orders.pending),
-        processing: parseInt(orders.processing),
-        shipped:    parseInt(orders.shipped),
-        delivered:  parseInt(orders.delivered),
-        cancelled:  parseInt(orders.cancelled) || 0,
-        returned:   parseInt(orders.returned)  || 0,
+        total:      parseInt(orders.total, 10),
+        pending:    parseInt(orders.pending, 10),
+        processing: parseInt(orders.processing, 10),
+        shipped:    parseInt(orders.shipped, 10),
+        delivered:  parseInt(orders.delivered, 10),
+        cancelled:  parseInt(orders.cancelled, 10) || 0,
+        returned:   parseInt(orders.returned, 10)  || 0,
         totalValue: parseFloat(orders.total_value),
         change:     pctChange(orders.total, orders.prev_total),
         revenueChange: pctChange(orders.total_value, orders.prev_total_value),
       },
       shipments: {
-        total:      parseInt(shipments.total),
-        inTransit:  parseInt(shipments.in_transit),
+        total:      parseInt(shipments.total, 10),
+        inTransit:  parseInt(shipments.in_transit, 10),
         delivered,
         onTimeRate,
         avgDeliveryDays,
@@ -93,23 +93,23 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
       },
       inventory: { lowStockAlerts: lowStock },
       returns: {
-        pending: parseInt(pendingReturns.pending_returns) || 0,
+        pending: parseInt(pendingReturns.pending_returns, 10) || 0,
         change:  pctChange(pendingReturns.pending_returns, pendingReturns.prev_pending_returns),
       },
       exceptions: {
-        active: parseInt(activeExceptions.active_exceptions) || 0,
+        active: parseInt(activeExceptions.active_exceptions, 10) || 0,
         change: pctChange(activeExceptions.current_created, activeExceptions.prev_created),
       },
       ordersTrend: ordersTrend.map(r => ({
         date: r.date,
-        count: parseInt(r.count),
+        count: parseInt(r.count, 10),
         value: parseFloat(r.value),
       })),
       warehouseActivity: activityMap,
       topProducts: topProducts.map(r => ({
         name: r.name,
         sku: r.sku,
-        unitsSold: parseInt(r.units_sold),
+        unitsSold: parseInt(r.units_sold, 10),
         revenue: parseFloat(r.revenue),
       })),
     };

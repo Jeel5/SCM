@@ -7,6 +7,10 @@ class UserRepository extends BaseRepository {
     super('users');
   }
 
+  parseTotalCount(rows) {
+    return rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+  }
+
   // Find user by name
   async findByUsername(username, client = null) {
     const query = `SELECT * FROM users WHERE name = $1`;
@@ -45,18 +49,18 @@ class UserRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (role) {
-      query += ` AND role = $${paramCount++}`;
+      query += ` AND role = $${paramCount += 1}`;
       params.push(role);
     }
 
     if (is_active !== null) {
-      query += ` AND is_active = $${paramCount++}`;
+      query += ` AND is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
 
@@ -66,18 +70,18 @@ class UserRepository extends BaseRepository {
         email ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
-      paramCount++;
+      paramCount += 1;
     }
 
     query += ` ORDER BY created_at DESC`;
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
     
     return {
       users: result.rows,
-      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
+      totalCount: this.parseTotalCount(result.rows)
     };
   }
 

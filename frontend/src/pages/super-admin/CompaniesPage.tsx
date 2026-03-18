@@ -105,7 +105,7 @@ export function CompaniesPage() {
 
   const activeCount = organizations.filter((o) => o.isActive).length;
   const inactiveCount = organizations.filter((o) => !o.isActive).length;
-  const suspendedCount = organizations.filter((o) => !!o.suspendedAt).length;
+  const suspendedCount = organizations.filter((o) => Boolean(o.suspendedAt)).length;
 
   const handleSuspend = async () => {
     if (!suspendOrg) return;
@@ -427,7 +427,7 @@ export function CompaniesPage() {
                           if (value === 'audit') void openAuditViewer(org);
                           if (value === 'billing') void openBillingViewer(org);
                           if (value === 'suspend' && !org.suspendedAt && !org.isDeleted) setSuspendOrg(org);
-                          if (value === 'reactivate' && !!org.suspendedAt && !org.isDeleted) setReactivateOrg(org);
+                          if (value === 'reactivate' && Boolean(org.suspendedAt) && !org.isDeleted) setReactivateOrg(org);
                           if (value === 'delete' && org.isActive) setDeletingOrg(org);
                         }}
                       />
@@ -448,7 +448,7 @@ export function CompaniesPage() {
       />
 
       <EditOrgModal
-        isOpen={!!editingOrg}
+        isOpen={Boolean(editingOrg)}
         onClose={() => setEditingOrg(null)}
         onSuccess={refetch}
         organization={editingOrg}
@@ -456,7 +456,7 @@ export function CompaniesPage() {
 
       {/* Confirm Deactivate Modal */}
       <Modal
-        isOpen={!!deletingOrg}
+        isOpen={Boolean(deletingOrg)}
         onClose={() => setDeletingOrg(null)}
         title="Deactivate Organization"
         size="sm"
@@ -479,7 +479,7 @@ export function CompaniesPage() {
       </Modal>
 
       <Modal
-        isOpen={!!suspendOrg}
+        isOpen={Boolean(suspendOrg)}
         onClose={() => {
           setSuspendOrg(null);
           setSuspendReason('');
@@ -505,7 +505,7 @@ export function CompaniesPage() {
       </Modal>
 
       <Modal
-        isOpen={!!reactivateOrg}
+        isOpen={Boolean(reactivateOrg)}
         onClose={() => setReactivateOrg(null)}
         title="Reactivate Organization"
         size="sm"
@@ -522,7 +522,7 @@ export function CompaniesPage() {
       </Modal>
 
       <Modal
-        isOpen={!!auditOrg}
+        isOpen={Boolean(auditOrg)}
         onClose={() => setAuditOrg(null)}
         title={`Audit Log${auditOrg ? ` - ${auditOrg.name}` : ''}`}
         size="lg"
@@ -561,7 +561,7 @@ export function CompaniesPage() {
       </Modal>
 
       <Modal
-        isOpen={!!billingOrg}
+        isOpen={Boolean(billingOrg)}
         onClose={() => setBillingOrg(null)}
         title={`Billing Summary${billingOrg ? ` - ${billingOrg.name}` : ''}`}
         size="md"

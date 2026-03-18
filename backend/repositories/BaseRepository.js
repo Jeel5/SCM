@@ -64,7 +64,7 @@ class BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        whereClauses.push(`${orgFilter.clause}$${paramCount++}`);
+        whereClauses.push(`${orgFilter.clause}$${paramCount += 1}`);
         params.push(...orgFilter.params);
       }
     }
@@ -72,7 +72,7 @@ class BaseRepository {
     // Add other conditions
     if (Object.keys(conditions).length > 0) {
       Object.keys(conditions).forEach(key => {
-        whereClauses.push(`${key} = $${paramCount++}`);
+        whereClauses.push(`${key} = $${paramCount += 1}`);
         params.push(conditions[key]);
       });
     }
@@ -90,7 +90,7 @@ class BaseRepository {
     query += ` ORDER BY ${safeOrderBy} ${safeOrder}`;
 
     // Add LIMIT and OFFSET
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -178,7 +178,7 @@ class BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        whereClauses.push(`${orgFilter.clause}$${paramCount++}`);
+        whereClauses.push(`${orgFilter.clause}$${paramCount += 1}`);
         params.push(...orgFilter.params);
       }
     }
@@ -186,7 +186,7 @@ class BaseRepository {
     // Add other conditions
     if (Object.keys(conditions).length > 0) {
       Object.keys(conditions).forEach(key => {
-        whereClauses.push(`${key} = $${paramCount++}`);
+        whereClauses.push(`${key} = $${paramCount += 1}`);
         params.push(conditions[key]);
       });
     }
@@ -197,7 +197,7 @@ class BaseRepository {
     }
 
     const result = await this.query(query, params, client);
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**

@@ -104,7 +104,7 @@ export async function estimateDistanceFromPincode(fromPincode, toPincode) {
   const fromZone = fromPincode.substring(0, 3);
   const toZone   = toPincode.substring(0, 3);
   if (fromZone === toZone) return 50;
-  const zoneDiff = Math.abs(parseInt(fromZone) - parseInt(toZone));
+  const zoneDiff = Math.abs(parseInt(fromZone, 10) - parseInt(toZone, 10));
   if (zoneDiff <= 50) return 300;
   return 800;
 }

@@ -279,7 +279,7 @@ export function SuppliersTab() {
       />
 
       <Modal
-        isOpen={!!viewingSupplier}
+        isOpen={Boolean(viewingSupplier)}
         onClose={() => setViewingSupplier(null)}
         title="Supplier Details"
         size="md"

@@ -32,7 +32,7 @@ class DashboardRepository extends BaseRepository {
     super('orders');
   }
 
-  // --- internal helpers ---
+  // --- internal helpers -= 1-
   /** Build parameterised args [orgId?, intervalString] and return {orgClause, args, intIdx} */
   _buildParams(organizationId, days, alias = '') {
     const prefix = alias ? `${alias}.` : '';
@@ -107,7 +107,7 @@ class DashboardRepository extends BaseRepository {
        WHERE available_quantity <= 5${orgClause}`,
       orgArgs, client
     );
-    return parseInt(result.rows[0].low_stock);
+    return parseInt(result.rows[0].low_stock, 10);
   }
 
   /**

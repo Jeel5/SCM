@@ -12,8 +12,8 @@ export const listOrders = asyncHandler(async (req, res) => {
   const { status, search, page, limit, sortBy, sortOrder } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
-  const pageNum  = parseInt(page)  || 1;
-  const limitNum = Math.min(parseInt(limit) || 20, 100);
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
 
   // Cache paginated + filtered list for 30 seconds
   const cacheKey = `orders:list:${orgSeg(organizationId)}:${hashParams({ status, search, page: pageNum, limit: limitNum, sortBy, sortOrder })}`;
@@ -44,7 +44,7 @@ export const listOrders = asyncHandler(async (req, res) => {
           weight: item.weight,
           warehouseId: item.warehouse_id
         })),
-        itemCount: parseInt(row.item_count || 0),
+        itemCount: parseInt(row.item_count || 0, 10),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         estimatedDelivery: row.estimated_delivery,

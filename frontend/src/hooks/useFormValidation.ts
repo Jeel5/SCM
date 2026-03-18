@@ -71,7 +71,8 @@ export function getErrorMessages(errors: Record<string, string[] | undefined>) {
   
   for (const [field, fieldErrors] of Object.entries(errors)) {
     if (fieldErrors && fieldErrors.length > 0) {
-      messages[field] = fieldErrors[0]; // Take first error message
+      const [firstError] = fieldErrors;
+      messages[field] = firstError; // Take first error message
     }
   }
   

@@ -36,11 +36,11 @@ class NotificationRepository extends BaseRepository {
     let paramCount = 2;
 
     if (filters.isRead !== undefined) {
-      conditions.push(`is_read = $${paramCount++}`);
+      conditions.push(`is_read = $${paramCount += 1}`);
       params.push(filters.isRead);
     }
     if (filters.type) {
-      conditions.push(`type = $${paramCount++}`);
+      conditions.push(`type = $${paramCount += 1}`);
       params.push(filters.type);
     }
 
@@ -67,11 +67,11 @@ class NotificationRepository extends BaseRepository {
     let paramCount = 2;
 
     if (filters.isRead !== undefined) {
-      conditions.push(`is_read = $${paramCount++}`);
+      conditions.push(`is_read = $${paramCount += 1}`);
       params.push(filters.isRead);
     }
     if (filters.type) {
-      conditions.push(`type = $${paramCount++}`);
+      conditions.push(`type = $${paramCount += 1}`);
       params.push(filters.type);
     }
 
@@ -81,7 +81,7 @@ class NotificationRepository extends BaseRepository {
       params,
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**
@@ -151,7 +151,7 @@ class NotificationRepository extends BaseRepository {
       [userId],
       client
     );
-    return parseInt(result.rows[0].count);
+    return parseInt(result.rows[0].count, 10);
   }
 
   /**

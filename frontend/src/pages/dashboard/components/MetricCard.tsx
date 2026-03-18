@@ -16,7 +16,7 @@ export interface MetricCardProps {
 export function MetricCard({ title, value, change, icon, iconBg, link }: MetricCardProps) {
   const isPositive = change >= 0;
   const Content = (
-    <Card hover={!!link} className="relative overflow-hidden">
+    <Card hover={Boolean(link)} className="relative overflow-hidden">
       {/* Decorative gradient */}
       <div className={cn('absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20', iconBg)} />
       

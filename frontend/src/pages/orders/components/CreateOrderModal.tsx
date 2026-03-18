@@ -95,8 +95,8 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
       const stock: StockInfo[] = inventoryData.map((inv: Record<string, unknown>) => ({
         warehouseId: inv.warehouseId || inv.warehouse_id,
         warehouseName: inv.warehouseName || inv.warehouse_name || 'Unknown',
-        availableQuantity: parseInt(String(inv.availableQuantity ?? inv.available_quantity ?? 0)),
-        reservedQuantity: parseInt(String(inv.reservedQuantity ?? inv.reserved_quantity ?? 0)),
+        availableQuantity: parseInt(String(inv.availableQuantity ?? inv.available_quantity ?? 0), 10),
+        reservedQuantity: parseInt(String(inv.reservedQuantity ?? inv.reserved_quantity ?? 0), 10),
         sku: (inv.sku || product.sku) as string,
       }));
       const totalAvailable = stock.reduce((s, w) => s + w.availableQuantity, 0);
@@ -136,12 +136,12 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
 
   // Update item quantity
   const updateItemQuantity = (index: number, qty: number) => {
-    setItems(prev => prev.map((item, i) => i === index ? { ...item, quantity: qty } : item));
+    setItems(prev => prev.map((item, i) => (i === index ? { ...item, quantity: qty } : item)));
   };
 
   // Update item price
   const updateItemPrice = (index: number, price: number) => {
-    setItems(prev => prev.map((item, i) => i === index ? { ...item, unitPrice: Math.max(0, price) } : item));
+    setItems(prev => prev.map((item, i) => (i === index ? { ...item, unitPrice: Math.max(0, price) } : item)));
   };
 
   // Calculate totals

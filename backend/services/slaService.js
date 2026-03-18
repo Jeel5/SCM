@@ -97,15 +97,15 @@ class SLAService {
   async calculateCarrierPerformance(carrierId, periodStart, periodEnd) {
     // Get shipment statistics
     const stats = await slaRepository.findCarrierShipmentStats(carrierId, periodStart, periodEnd);
-    const total = parseInt(stats.total_shipments);
+    const total = parseInt(stats.total_shipments, 10);
 
     if (total === 0) {
       return { score: 75, reliability: 0.75 }; // Default for new carriers
     }
 
-    const onTime = parseInt(stats.on_time);
-    const late = parseInt(stats.late);
-    const failed = parseInt(stats.failed);
+    const onTime = parseInt(stats.on_time, 10);
+    const late = parseInt(stats.late, 10);
+    const failed = parseInt(stats.failed, 10);
 
     // Calculate on-time delivery rate (0-100)
     const onTimeRate = (onTime / total) * 100;
@@ -116,7 +116,7 @@ class SLAService {
 
     // Get SLA violations count
     const violations = await slaRepository.findCarrierViolationStats(carrierId, periodStart, periodEnd);
-    const violationCount = parseInt(violations.violation_count);
+    const violationCount = parseInt(violations.violation_count, 10);
     const violationRate = (violationCount / total) * 100;
     const violationPenalty = violationRate * 3; // 3 points per 1% violation rate
 

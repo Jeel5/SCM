@@ -14,13 +14,17 @@ export function SecuritySettings() {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [isRevokingAll, setIsRevokingAll] = useState(false);
   const [sessions, setSessions] = useState<Array<{ id: string; device: string; ip: string; lastActive: string; current: boolean }>>([]);
+
   useEffect(() => {
-    settingsApi.getActiveSessions().then((res) => {
-      setSessions(res.data || []);
-    }).catch(() => {
-      // Fallback if sessions endpoint not ready
-      setSessions([]);
-    });
+    void (async () => {
+      try {
+        const res = await settingsApi.getActiveSessions();
+        setSessions(res.data || []);
+      } catch {
+        // Fallback if sessions endpoint not ready
+        setSessions([]);
+      }
+    })();
   }, []);
 
   const handleChangePassword = async () => {

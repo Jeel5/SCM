@@ -72,7 +72,7 @@ export async function getRoute(
       return null;
     }
 
-    const route = data.routes[0];
+    const [route] = data.routes;
     
     return {
       coordinates: route.geometry.coordinates as [number, number][],

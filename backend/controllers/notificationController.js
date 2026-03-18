@@ -14,8 +14,8 @@ export const getNotifications = asyncHandler(async (req, res) => {
   const result = await notificationService.getUserNotifications(
     userId,
     filters,
-    parseInt(page),
-    parseInt(limit)
+    parseInt(page, 10),
+    parseInt(limit, 10)
   );
 
   res.json({

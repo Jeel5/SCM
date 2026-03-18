@@ -159,7 +159,7 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
         requiresColdStorage: form.requires_cold_storage,
         isHazmat: form.is_hazmat,
         isPerishable: form.is_perishable,
-        warrantyPeriodDays: form.warranty_period_days ? parseInt(form.warranty_period_days) : 0,
+        warrantyPeriodDays: form.warranty_period_days ? parseInt(form.warranty_period_days, 10) : 0,
         tags: tagsArr,
         isActive: form.is_active,
       };

@@ -269,7 +269,7 @@ export function ChannelsTab() {
       />
 
       <Modal
-        isOpen={!!viewingChannel}
+        isOpen={Boolean(viewingChannel)}
         onClose={() => setViewingChannel(null)}
         title="Channel Details"
         size="md"

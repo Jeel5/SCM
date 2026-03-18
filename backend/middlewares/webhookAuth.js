@@ -72,7 +72,7 @@ export function verifyWebhookSignature(options = {}) {
       }
 
       // Validate timestamp (prevent replay attacks)
-      const requestTimestamp = parseInt(timestamp);
+      const requestTimestamp = parseInt(timestamp, 10);
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const timeDifference = Math.abs(currentTimestamp - requestTimestamp);
 

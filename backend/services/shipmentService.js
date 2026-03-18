@@ -32,10 +32,10 @@ class ShipmentService {
       shipments,
       totalCount,
       stats: {
-        totalShipments: parseInt(statsRow.total_shipments || 0),
-        inTransit: parseInt(statsRow.in_transit || 0),
-        outForDelivery: parseInt(statsRow.out_for_delivery || 0),
-        delivered: parseInt(statsRow.delivered || 0),
+        totalShipments: parseInt(statsRow.total_shipments || 0, 10),
+        inTransit: parseInt(statsRow.in_transit || 0, 10),
+        outForDelivery: parseInt(statsRow.out_for_delivery || 0, 10),
+        delivered: parseInt(statsRow.delivered || 0, 10),
       },
     };
   }

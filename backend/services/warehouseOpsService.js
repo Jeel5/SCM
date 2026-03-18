@@ -129,7 +129,7 @@ class WarehouseOpsService {
 
     // Check if all items are packed
     const check = await warehouseOpsRepo.getPackingProgress(orderId);
-    const allPacked = parseInt(check.total) === parseInt(check.packed);
+    const allPacked = parseInt(check.total, 10) === parseInt(check.packed, 10);
 
     if (allPacked) {
       await warehouseOpsRepo.updateOrderStatus(orderId, 'packed');
@@ -153,7 +153,7 @@ class WarehouseOpsService {
 
       // Verify all items are packed
       const check = await warehouseOpsRepo.countPackedVsTotal(orderId, tx);
-      if (parseInt(check.total) !== parseInt(check.packed)) {
+      if (parseInt(check.total, 10) !== parseInt(check.packed, 10)) {
         throw new BusinessLogicError('Not all items are packed yet');
       }
 

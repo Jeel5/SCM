@@ -7,6 +7,10 @@ class OrganizationRepository extends BaseRepository {
     super('organizations');
   }
 
+  parseTotalCount(rows) {
+    return rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+  }
+
   // Ensure the org code sequence exists and is at least aligned to current data.
   async ensureOrgCodeSequence(client = null) {
     await this.query(
@@ -79,7 +83,7 @@ class OrganizationRepository extends BaseRepository {
     }
 
     if (is_active !== null && is_active !== undefined && typeof is_active !== 'object') {
-      query += ` AND o.is_active = $${paramCount++}`;
+      query += ` AND o.is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
 
@@ -90,17 +94,17 @@ class OrganizationRepository extends BaseRepository {
         o.email ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
-      paramCount++;
+      paramCount += 1;
     }
 
     query += ` ORDER BY o.created_at DESC`;
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
     
     const organizations = result.rows;
-    const totalCount = organizations.length > 0 ? parseInt(organizations[0].total_count) : 0;
+    const totalCount = this.parseTotalCount(organizations);
     
     return { organizations, totalCount };
   }
@@ -175,72 +179,72 @@ class OrganizationRepository extends BaseRepository {
     let paramCount = 1;
 
     if (orgData.name !== undefined) {
-      updates.push(`name = $${paramCount++}`);
+      updates.push(`name = $${paramCount += 1}`);
       params.push(orgData.name);
     }
 
     if (orgData.email !== undefined) {
-      updates.push(`email = $${paramCount++}`);
+      updates.push(`email = $${paramCount += 1}`);
       params.push(orgData.email);
     }
 
     if (orgData.phone !== undefined) {
-      updates.push(`phone = $${paramCount++}`);
+      updates.push(`phone = $${paramCount += 1}`);
       params.push(orgData.phone);
     }
 
     if (orgData.website !== undefined) {
-      updates.push(`website = $${paramCount++}`);
+      updates.push(`website = $${paramCount += 1}`);
       params.push(orgData.website);
     }
 
     if (orgData.address !== undefined) {
-      updates.push(`address = $${paramCount++}`);
+      updates.push(`address = $${paramCount += 1}`);
       params.push(orgData.address);
     }
 
     if (orgData.city !== undefined) {
-      updates.push(`city = $${paramCount++}`);
+      updates.push(`city = $${paramCount += 1}`);
       params.push(orgData.city);
     }
 
     if (orgData.state !== undefined) {
-      updates.push(`state = $${paramCount++}`);
+      updates.push(`state = $${paramCount += 1}`);
       params.push(orgData.state);
     }
 
     if (orgData.country !== undefined) {
-      updates.push(`country = $${paramCount++}`);
+      updates.push(`country = $${paramCount += 1}`);
       params.push(orgData.country);
     }
 
     if (orgData.postal_code !== undefined) {
-      updates.push(`postal_code = $${paramCount++}`);
+      updates.push(`postal_code = $${paramCount += 1}`);
       params.push(orgData.postal_code);
     }
 
     if (orgData.timezone !== undefined) {
-      updates.push(`timezone = $${paramCount++}`);
+      updates.push(`timezone = $${paramCount += 1}`);
       params.push(orgData.timezone);
     }
 
     if (orgData.currency !== undefined) {
-      updates.push(`currency = $${paramCount++}`);
+      updates.push(`currency = $${paramCount += 1}`);
       params.push(orgData.currency);
     }
 
     if (orgData.logo_url !== undefined) {
-      updates.push(`logo_url = $${paramCount++}`);
+      updates.push(`logo_url = $${paramCount += 1}`);
       params.push(orgData.logo_url);
     }
 
     if (orgData.subscription_tier !== undefined) {
-      updates.push(`subscription_tier = $${paramCount++}`);
+      updates.push(`subscription_tier = $${paramCount += 1}`);
       params.push(orgData.subscription_tier);
     }
 
     if (orgData.is_active !== undefined) {
-      updates.push(`is_active = $${paramCount++}`);
+      updates.push(`is_active = $${paramCount += 1}`);
       params.push(orgData.is_active);
     }
 
@@ -406,7 +410,7 @@ class OrganizationRepository extends BaseRepository {
 
     return {
       users: result.rows,
-      totalCount: result.rows.length ? parseInt(result.rows[0].total_count, 10) : 0,
+      totalCount: this.parseTotalCount(result.rows),
     };
   }
 
@@ -544,11 +548,11 @@ class OrganizationRepository extends BaseRepository {
     let idx = 1;
 
     for (const [k, v] of Object.entries(data || {})) {
-      updates.push(`${k} = $${idx++}`);
+      updates.push(`${k} = $${idx += 1}`);
       params.push(v);
     }
 
-    updates.push(`updated_by = $${idx++}`);
+    updates.push(`updated_by = $${idx += 1}`);
     params.push(actorId || null);
     updates.push(`updated_at = NOW()`);
     params.push(id);

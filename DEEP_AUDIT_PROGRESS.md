@@ -23,6 +23,117 @@ Last updated: 2026-03-18
   - `backend/jobs/jobHandlers.js` now acts as job registry/orchestration glue instead of carrying import internals.
   - Size impact: `jobHandlers.js` reduced from ~1490 lines to ~738 lines.
 
+- Job handler decomposition (phase 3):
+  - Extracted report generation orchestration and report-specific builders into `backend/jobs/reportHandlers.js`.
+  - Removed report data access dependencies from `jobHandlers.js` and kept registry wiring only.
+  - Size impact: `jobHandlers.js` reduced from ~738 lines to ~618 lines in this slice.
+  - Files: `backend/jobs/reportHandlers.js`, `backend/jobs/jobHandlers.js`.
+
+- Job handler decomposition (phase 4):
+  - Extracted webhook-oriented handlers (`process_order`, `update_tracking`, `sync_inventory`, `process_return`, `process_rates`) into `backend/jobs/webhookHandlers.js`.
+  - Removed webhook service/repository dependencies from `jobHandlers.js`; it now focuses on scheduled job handlers and registry mapping.
+  - Size impact: `jobHandlers.js` reduced from ~618 lines to ~337 lines in this slice.
+  - Files: `backend/jobs/webhookHandlers.js`, `backend/jobs/jobHandlers.js`.
+
+- Job handler decomposition (phase 5):
+  - Extracted remaining scheduled/maintenance handlers (`sla_monitoring`, `exception_escalation`, `invoice_generation`, `return_pickup_reminder`, `data_cleanup`, `notification_dispatch`, `inventory_sync`, `carrier_assignment_retry`) into `backend/jobs/scheduledHandlers.js`.
+  - `backend/jobs/jobHandlers.js` is now a thin registry that only wires handler maps and import namespaces.
+  - Size impact: `jobHandlers.js` reduced from ~337 lines to ~62 lines in this slice.
+  - Files: `backend/jobs/scheduledHandlers.js`, `backend/jobs/jobHandlers.js`.
+
+- Critical contract test coverage (finance summary):
+  - Added deterministic route test for `GET /api/finance/summary` with repository mocking, including auth guard and canonical response-shape assertions.
+  - File: `backend/tests/routes/finance.test.js`.
+
+- Critical contract test coverage (returns list):
+  - Added deterministic route test for `GET /api/returns` with repository mocking, including auth guard, pagination/stats assertions, and canonical list mapping checks.
+  - File: `backend/tests/routes/returns.test.js`.
+
+- Notification realtime smoke coverage:
+  - Added service-level test for `notificationService.createNotification` to verify persistence + `emitToUser(..., 'notification:new', ...)` dispatch contract.
+  - File: `backend/tests/services/notificationService.test.js`.
+
+- Batch 1 security triage + low-risk hardening:
+  - Added disposition log for report security findings with explicit statuses (`FIX_NOW`, `ACCEPT_WITH_NOTE`, `REVIEW_POLICY`).
+  - Replaced hardcoded demo token literal in `demo/customer.js` with placeholder `REPLACE_WITH_DEMO_WEBHOOK_TOKEN`.
+  - Added SRI integrity attributes for external MapLibre CSS/JS in `demo/customer.html`.
+  - Hardened backend container with non-root runtime user and `/health`-based Docker `HEALTHCHECK`.
+  - Hardened `backend/utils/cryptoUtils.js` decryption by explicitly setting GCM `authTagLength`.
+  - Added frontend container `HEALTHCHECK`; frontend non-root runtime remains policy-coordinated follow-up.
+  - Files: `docs/guides/SECURITY_DISPOSITION_2026-03-18.md`, `docs/guides/KEEP_OR_CHANGE_REVIEW_LIST_2026-03-18.md`, `demo/customer.js`, `demo/customer.html`, `backend/Dockerfile`, `frontend/Dockerfile`.
+  - User policy decision: `demo/` is simulation/testing scope and excluded from strict remediation gating.
+
+- MDM controller micro-refactor (safe cleanup slice):
+  - Reduced response-mapping duplication by extracting shared warehouse mappers in `mdmController`.
+  - Added explicit radix (`10`) to all `parseInt` calls in `mdmController` to clear anti-pattern noise without behavior change.
+  - File: `backend/controllers/mdmController.js`.
+
+- Warehouse repository micro-refactor (safe cleanup slice):
+  - Added small shared total-count parser to reduce pagination duplication.
+  - Added explicit radix (`10`) for warehouse inventory stats parsing.
+  - File: `backend/repositories/WarehouseRepository.js`.
+
+- Shipment repository micro-refactor (safe cleanup slice):
+  - Added small shared total-count parser for shipment pagination result mapping.
+  - Added explicit radix (`10`) in on-time rate numeric parsing.
+  - File: `backend/repositories/ShipmentRepository.js`.
+
+- Analytics controller micro-refactor (safe cleanup slice):
+  - Normalized analytics numeric parsing to explicit `parseInt(..., 10)` usage across response mapping.
+  - File: `backend/controllers/analyticsController.js`.
+
+- Order service micro-refactor (safe cleanup slice):
+  - Normalized order status stats parsing to explicit `parseInt(..., 10)` usage.
+  - File: `backend/services/orderService.js`.
+
+- Returns controller micro-refactor (safe cleanup slice):
+  - Normalized pagination and stats integer parsing to explicit `parseInt(..., 10)` usage.
+  - File: `backend/controllers/returnsController.js`.
+
+- Organization repository micro-refactor (safe cleanup slice):
+  - Added shared pagination total-count parser and routed list/global-user queries through it.
+  - File: `backend/repositories/OrganizationRepository.js`.
+
+- User repository micro-refactor (safe cleanup slice):
+  - Added shared pagination total-count parser for user list response mapping.
+  - File: `backend/repositories/UserRepository.js`.
+
+- Fast batch cleanup (multi-file radix normalization):
+  - Normalized remaining `parseInt` radix usage in:
+    - `backend/repositories/ProductRepository.js`
+    - `backend/repositories/CarrierAssignmentRepository.js`
+    - `backend/repositories/NotificationRepository.js`
+    - `backend/repositories/BaseRepository.js`
+    - `backend/queues/index.js`
+  - Batch validated with one consolidated backend test run.
+
+- Fast batch cleanup (cross-layer radix sweep):
+  - Applied explicit radix normalization across remaining backend and frontend callsites touched in this pass (controllers, repositories, services, import handlers, and selected UI/API mappers).
+  - Fixed one codemod edge case in `frontend/src/pages/orders/components/CreateOrderModal.tsx` where nested `String(...)` parsing needed manual correction to `parseInt(String(...), 10)`.
+  - Consolidated validation run completed after this wider batch.
+
+- Fast batch cleanup (low-risk style anti-patterns):
+  - Replaced simple string concatenations with template literals in targeted hotspots (`WarehouseUtilizationChart`, `api/client`, `api/mockData`, `lib/utils`).
+  - Replaced one non-reassigned `let` with `const` in `backend/repositories/ProductRepository.js`.
+  - Per-file diagnostics check completed; no new file-specific issues introduced by this slice.
+
+- Fast batch cleanup (frontend coercion + import hygiene):
+  - Normalized double-negation coercions to `Boolean(...)` across frontend state and modal/open-state paths (stores, warehouses, partners, team, super-admin pages, metric cards).
+  - Removed duplicate `@/components/ui` import usage pattern in `OrdersPage` and `ShipmentsPage` by consolidating `useToast` into grouped imports.
+  - Reworked settings page bootstrap effects (`SecuritySettings`, `ProfileSettings`, `NotificationSettings`) from promise chains into async IIFEs to clear promise-flow anti-pattern noise.
+  - Diagnostics check on all touched files: clean.
+
+- Fast batch cleanup (destructuring + syntax):
+  - Applied `prefer-destructuring` fixes in `OrderStatusChart`, `useFormValidation`, `routing`, and `LocationPicker`.
+  - Removed unnecessary trailing semicolon from public not-found page component.
+  - Diagnostics check on this slice: clean.
+
+- Fast batch cleanup (arrow clarity):
+  - Removed `no-confusing-arrow` style patterns by wrapping conditional arrow returns explicitly in:
+    - `frontend/src/pages/orders/components/CreateOrderModal.tsx`
+    - `frontend/src/pages/products/ProductsPage.tsx`
+  - Diagnostics check on this slice: clean.
+
 - Return status contract centralization:
   - Added shared status contract in `backend/config/returnStatuses.js` with transitions and grouped status arrays.
   - Rewired service, repository, and validator layers to consume shared constants instead of duplicating status literals.
@@ -98,8 +209,18 @@ Last updated: 2026-03-18
 
 ## Verified after fixes
 
-- Backend tests: pass (`6 passed`, `1 skipped`).
+- Backend tests: pass (`11 passed`, `1 skipped`).
 - Frontend build: pass (`vite build` successful).
+- Backend tests re-run after latest MDM/security slices: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after shipment repository slice: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after analytics controller slice: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after order service slice: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after returns controller slice: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after organization repository slice: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after user repository slice: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after fast multi-file radix batch: pass (`11 passed`, `1 skipped`).
+- Backend tests re-run after cross-layer radix sweep: pass (`11 passed`, `1 skipped`).
+- Frontend build re-run after cross-layer radix sweep: pass (`vite build` successful).
 
 ## Open items from user report (pending next pass)
 

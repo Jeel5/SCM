@@ -77,7 +77,7 @@ export function CreateSLAPolicyModal({
       addToast('Policy name is required', 'error');
       return;
     }
-    if (!form.deliveryHours || parseInt(form.deliveryHours) < 1) {
+    if (!form.deliveryHours || parseInt(form.deliveryHours, 10) < 1) {
       addToast('Delivery hours must be at least 1', 'error');
       return;
     }
@@ -89,13 +89,13 @@ export function CreateSLAPolicyModal({
         serviceType:             form.serviceType,
         originZoneType:          form.originZoneType || null,
         destinationZoneType:     form.destinationZoneType || null,
-        targetDeliveryHours:     parseInt(form.deliveryHours),
+        targetDeliveryHours:     parseInt(form.deliveryHours, 10),
         penaltyAmount:           parseFloat(form.penaltyPerHour) || 0,
         maxPenaltyAmount:        form.maxPenaltyAmount ? parseFloat(form.maxPenaltyAmount) : null,
         penaltyType:             form.penaltyType as 'fixed' | 'percentage',
-        warningThresholdPercent: parseInt(form.warningThresholdPercent) || 80,
+        warningThresholdPercent: parseInt(form.warningThresholdPercent, 10) || 80,
         isActive:                true,
-        priority:                parseInt(form.priority) || 5,
+        priority:                parseInt(form.priority, 10) || 5,
       });
       addToast(`Policy "${form.name}" created successfully`, 'success');
       onCreated(response.data);
@@ -200,7 +200,7 @@ export function CreateSLAPolicyModal({
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Warning Threshold — {form.warningThresholdPercent}% of transit time
             <span className="text-gray-400 ml-1 font-normal">
-              (= {Math.floor((parseInt(form.deliveryHours) || 0) * (parseInt(form.warningThresholdPercent) || 80) / 100)} hrs)
+              (= {Math.floor((parseInt(form.deliveryHours, 10) || 0) * (parseInt(form.warningThresholdPercent, 10) || 80) / 100)} hrs)
             </span>
           </label>
           <input

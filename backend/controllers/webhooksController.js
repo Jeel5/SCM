@@ -409,7 +409,7 @@ export const handleCatalogWebhook = asyncHandler(async (req, res) => {
   if (!orgId) throw new ValidationError('Invalid organization token');
 
   const { category, limit = 200 } = req.query;
-  const parsedLimit = Math.min(parseInt(limit) || 200, 500);
+  const parsedLimit = Math.min(parseInt(limit, 10) || 200, 500);
 
   const products = await ProductRepository.findAvailableProducts({
     organizationId: orgId,
@@ -475,7 +475,7 @@ export const handleStockCheck = asyncHandler(async (req, res) => {
   const { sku, quantity = 1 } = req.query;
   if (!sku) throw new ValidationError('sku query parameter is required');
 
-  const qty = Math.max(1, parseInt(quantity) || 1);
+  const qty = Math.max(1, parseInt(quantity, 10) || 1);
   const warehouseId = await InventoryRepository.findBestWarehouseForSku(sku, orgId, qty);
   const inStock = warehouseId !== null;
   const warehouse = warehouseId

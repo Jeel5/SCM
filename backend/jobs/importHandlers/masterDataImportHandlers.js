@@ -73,7 +73,7 @@ export async function handleImportCarriers(payload) {
         [organizationId, code, row.name, svcType,
           row.contact_email || null, row.contact_phone || null, row.website || null,
           row.reliability_score ? parseFloat(row.reliability_score) : 0.85,
-          row.avg_delivery_days ? parseInt(row.avg_delivery_days) : 3,
+          row.avg_delivery_days ? parseInt(row.avg_delivery_days, 10) : 3,
           String(row.is_active || 'true').toLowerCase() !== 'false',
           'available']
       );
@@ -100,7 +100,7 @@ export async function handleImportSuppliers(payload) {
           row.contact_email || null, row.contact_phone || null, row.website || null,
           row.address || null, row.city || null, row.state || null,
           row.country || 'India', row.postal_code || null,
-          row.lead_time_days ? parseInt(row.lead_time_days) : 7,
+          row.lead_time_days ? parseInt(row.lead_time_days, 10) : 7,
           row.reliability_score ? parseFloat(row.reliability_score) : 0.85,
           String(row.is_active || 'true').toLowerCase() !== 'false']
       );

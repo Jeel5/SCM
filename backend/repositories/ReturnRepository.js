@@ -28,18 +28,18 @@ class ReturnRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'r');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (status) {
-      query += ` AND r.status = $${paramCount++}`;
+      query += ` AND r.status = $${paramCount += 1}`;
       params.push(status);
     }
 
     if (reason) {
-      query += ` AND r.reason = $${paramCount++}`;
+      query += ` AND r.reason = $${paramCount += 1}`;
       params.push(reason);
     }
 
@@ -50,18 +50,18 @@ class ReturnRepository extends BaseRepository {
         r.customer_email ILIKE $${paramCount}
       )`;
       params.push(`%${search}%`);
-      paramCount++;
+      paramCount += 1;
     }
 
     query += ` ORDER BY r.created_at DESC`;
-    query += ` LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
     
     return {
       returns: result.rows,
-      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0
+      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count, 10) : 0
     };
   }
 
@@ -162,12 +162,12 @@ class ReturnRepository extends BaseRepository {
     let paramCount = 2;
 
     if (additionalData.notes) {
-      updates.push(`quality_check_notes = $${paramCount++}`);
+      updates.push(`quality_check_notes = $${paramCount += 1}`);
       params.push(additionalData.notes);
     }
 
     if (additionalData.refund_amount !== undefined) {
-      updates.push(`refund_amount = $${paramCount++}`);
+      updates.push(`refund_amount = $${paramCount += 1}`);
       params.push(additionalData.refund_amount);
     }
 
@@ -182,13 +182,13 @@ class ReturnRepository extends BaseRepository {
     let query = `
       UPDATE returns
       SET ${updates.join(', ')}
-      WHERE id = $${paramCount++}`;
+      WHERE id = $${paramCount += 1}`;
 
     // Add organization filter for multi-tenancy
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -218,26 +218,26 @@ class ReturnRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'r');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (status) {
-      query += ` AND r.status = $${paramCount++}`;
+      query += ` AND r.status = $${paramCount += 1}`;
       params.push(status);
     }
 
     if (reason) {
-      query += ` AND r.reason = $${paramCount++}`;
+      query += ` AND r.reason = $${paramCount += 1}`;
       params.push(reason);
     }
 
-    query += ` ORDER BY r.created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount}`;
+    query += ` ORDER BY r.created_at DESC LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
-    const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count, 10) : 0;
     return { returns: result.rows, totalCount };
   }
 
@@ -261,7 +261,7 @@ class ReturnRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'r');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${p++}`;
+        query += ` AND ${orgFilter.clause}$${p += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -386,18 +386,18 @@ class ReturnRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (dateFrom) {
-      query += ` AND created_at >= $${paramCount++}`;
+      query += ` AND created_at >= $${paramCount += 1}`;
       params.push(dateFrom);
     }
 
     if (dateTo) {
-      query += ` AND created_at <= $${paramCount++}`;
+      query += ` AND created_at <= $${paramCount += 1}`;
       params.push(dateTo);
     }
 
@@ -420,7 +420,7 @@ class ReturnRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount++}`;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }

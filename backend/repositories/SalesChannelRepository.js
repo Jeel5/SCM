@@ -19,31 +19,31 @@ class SalesChannelRepository extends BaseRepository {
              COUNT(*) OVER() AS total_count
       FROM sales_channels sc
       LEFT JOIN warehouses w ON sc.default_warehouse_id = w.id
-      WHERE sc.organization_id = $${idx++}
+      WHERE sc.organization_id = $${idx += 1}
     `;
     params.push(organizationId);
 
     if (is_active !== null) {
-      query += ` AND sc.is_active = $${idx++}`;
+      query += ` AND sc.is_active = $${idx += 1}`;
       params.push(is_active);
     }
     if (platform_type) {
-      query += ` AND sc.platform_type = $${idx++}`;
+      query += ` AND sc.platform_type = $${idx += 1}`;
       params.push(platform_type);
     }
     if (search) {
       query += ` AND (sc.name ILIKE $${idx} OR sc.code ILIKE $${idx})`;
       params.push(`%${search}%`);
-      idx++;
+      idx += 1;
     }
 
-    query += ` ORDER BY sc.created_at DESC LIMIT $${idx++} OFFSET $${idx}`;
+    query += ` ORDER BY sc.created_at DESC LIMIT $${idx += 1} OFFSET $${idx}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
     return {
       channels: result.rows,
-      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0,
+      totalCount: result.rows.length > 0 ? parseInt(result.rows[0].total_count, 10) : 0,
     };
   }
 
@@ -122,7 +122,7 @@ class SalesChannelRepository extends BaseRepository {
         let val = data[key];
         if (key === 'code') val = val.toUpperCase().trim();
         if (key === 'config') val = JSON.stringify(val);
-        fields.push(`${key} = $${idx++}`);
+        fields.push(`${key} = $${idx += 1}`);
         params.push(val);
       }
     }
@@ -132,7 +132,7 @@ class SalesChannelRepository extends BaseRepository {
     params.push(id, organizationId);
     const result = await this.query(
       `UPDATE sales_channels SET ${fields.join(', ')}, updated_at = NOW()
-       WHERE id = $${idx++} AND organization_id = $${idx}
+       WHERE id = $${idx += 1} AND organization_id = $${idx}
        RETURNING *`,
       params,
       client

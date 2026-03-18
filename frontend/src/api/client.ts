@@ -16,7 +16,7 @@ export const api = axios.create({
   timeout: 30000,
 });
 
-// --------------- Silent Token Refresh ---------------
+// --------------- Silent Token Refresh -= 1-------------
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: () => void;
@@ -54,7 +54,7 @@ api.interceptors.response.use(
   async (error: AxiosError<ApiError>) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // ---- 401: attempt a silent refresh before logging out ----
+    // ---- 401: attempt a silent refresh before logging out -= 1--
     if (error.response?.status === 401 && !originalRequest._retry && !shouldSkipRefresh(originalRequest.url)) {
       // Don't retry the refresh endpoint itself
       if (originalRequest.url?.includes('/auth/refresh')) {
@@ -90,7 +90,7 @@ api.interceptors.response.use(
       }
     }
     
-    // ---- Unified error message extraction ----
+    // ---- Unified error message extraction -= 1--
     // Backend sends message in two possible locations:
     //   1. data.message (unified format / validator middleware)
     //   2. data.error.message (legacy global error handler)
@@ -151,7 +151,7 @@ api.interceptors.response.use(
             .replace(/_/g, ' ')
             .replace(/([a-z])([A-Z])/g, '$1 $2')
             .replace(/\b\w/g, (c: string) => c.toUpperCase());
-          return label + ' ';
+          return `${label} `;
         })
         .replace(/is not allowed to be empty/gi, 'is required')
         .replace(/must be a valid uri/gi, 'must be a valid URL')

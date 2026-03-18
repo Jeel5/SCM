@@ -80,26 +80,29 @@ export function ProductsPage() {
     {
       key: 'category',
       header: 'Category',
-      render: (p: Product) =>
+      render: (p: Product) => (
         p.category
           ? <Badge variant="outline">{p.category}</Badge>
-          : <span className="text-gray-400">—</span>,
+          : <span className="text-gray-400">—</span>
+      ),
     },
     {
       key: 'sellingPrice',
       header: 'Selling Price',
-      render: (p: Product) =>
+      render: (p: Product) => (
         p.sellingPrice != null
           ? <span className="font-medium">{formatCurrency(p.sellingPrice, p.currency)}</span>
-          : <span className="text-gray-400">—</span>,
+          : <span className="text-gray-400">—</span>
+      ),
     },
     {
       key: 'weight',
       header: 'Weight',
-      render: (p: Product) =>
+      render: (p: Product) => (
         p.weight != null
           ? <span>{p.weight} kg</span>
-          : <span className="text-gray-400">—</span>,
+          : <span className="text-gray-400">—</span>
+      ),
     },
     {
       key: 'flags',

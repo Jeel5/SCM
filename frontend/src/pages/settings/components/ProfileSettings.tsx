@@ -20,18 +20,23 @@ export function ProfileSettings() {
 
   // Load full profile from server so phone (and other fields not in the JWT) are populated
   useEffect(() => {
-    authApi.getProfile().then((res) => {
-      const p = res.data as any;
-      if (!p) return;
-      setFirstName(p.name?.split(' ')[0] || '');
-      setLastName(p.name?.split(' ').slice(1).join(' ') || '');
-      setEmail(p.email || '');
-      setPhone(p.phone || '');
-      // Record server baseline for diffing
-      setServerName(p.name || '');
-      setServerEmail(p.email || '');
-      setServerPhone(p.phone || '');
-    }).catch(() => { /* keep defaults from auth store */ });
+    void (async () => {
+      try {
+        const res = await authApi.getProfile();
+        const p = res.data as any;
+        if (!p) return;
+        setFirstName(p.name?.split(' ')[0] || '');
+        setLastName(p.name?.split(' ').slice(1).join(' ') || '');
+        setEmail(p.email || '');
+        setPhone(p.phone || '');
+        // Record server baseline for diffing
+        setServerName(p.name || '');
+        setServerEmail(p.email || '');
+        setServerPhone(p.phone || '');
+      } catch {
+        // Keep defaults from auth store
+      }
+    })();
   }, []);
 
   const handleSave = async () => {
