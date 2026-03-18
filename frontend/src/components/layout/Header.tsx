@@ -12,6 +12,7 @@ import {
   HelpCircle,
   ShieldAlert,
   UserX,
+  Settings,
 } from 'lucide-react';
 import { cn, formatRelativeTime, getRoleDisplayName } from '@/lib/utils';
 import { useUIStore, useAuthStore, useNotificationStore } from '@/stores';
@@ -95,6 +96,7 @@ export function Header() {
 
   const userMenuItems = [
     { label: 'Help & Support', value: 'help', icon: <HelpCircle className="h-4 w-4" /> },
+    { label: 'Settings', value: 'settings', icon: <Settings className="h-4 w-4" /> },
     { label: 'Sign Out', value: 'logout', icon: <LogOut className="h-4 w-4" />, danger: true },
   ];
 
@@ -310,6 +312,8 @@ export function Header() {
               handleLogout();
             } else if (value === 'help') {
               navigate('/help');
+            } else if (value === 'settings') {
+              navigate('/settings');
             }
           }}
           align="right"

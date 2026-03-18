@@ -1,9 +1,17 @@
-- [x] removed this in superadmin add Organization
-	Admin temporary password is auto-generated and shown once after creation.
-	Organization code is generated automatically by the server.
+--Import issue Suplier:
+2026-03-18 14:16:08 [error]: Import suppliers failed {
+  "jobId": "c4688d3b-f27b-41aa-83a6-08e673593c98",
+  "total": 25,
+  "failed": 25,
+  "dryRun": false,
+  "errorSummary": "row 1: there is no unique or exclusion constraint matching the ON CONFLICT specification; row 2: there is no unique or exclusion constraint matching the ON CONFLICT specification; row 3: there is no unique or exclusion constraint matching the ON CONFLICT specification"
+}
+2026-03-18 14:16:08 [info]: ✅ Redis connected
+2026-03-18 14:16:08 [error]: ❌ BullMQ job failed: import:suppliers {
+  "queue": "imports_queue",
+  "bullId": "db-c4688d3b-f27b-41aa-83a6-08e673593c98",
+  "dbId": "c4688d3b-f27b-41aa-83a6-08e673593c98",
+  "attempts": 1,
+  "error": "row 1: there is no unique or exclusion constraint matching the ON CONFLICT specification; row 2: there is no unique or exclusion constraint matching the ON CONFLICT specification; row 3: there is no unique or exclusion constraint matching the ON CONFLICT specification"
+}
 
-- [x] fixed warehouses imported from CSV without coordinates not showing on map
-
-- [x] fixed pagination issue (shared table pagination behavior across pages)
-- [x] removed "0 zones" from warehouse card
-- [x] fixed products page next-page issue where even pages appeared stuck refreshing

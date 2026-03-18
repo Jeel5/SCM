@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   RotateCcw,
   BarChart3,
-  Settings,
   Building2,
   Timer,
   DollarSign,
@@ -160,13 +159,6 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     icon: <Users className="h-5 w-5" />,
     path: '/team',
     permission: 'team.manage',
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: <Settings className="h-5 w-5" />,
-    path: '/settings',
-    permission: 'settings.personal',
   },
 ];
 
