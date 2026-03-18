@@ -415,16 +415,34 @@ async function handleImportSuppliers(payload) {
     jobId, organizationId, rows, filePath, dryRun, maxRows, importType: 'suppliers',
     processRow: async (row, ctx) => {
       if (!row.name) throw new Error('name is required');
+      const code = String(row.code || row.name || 'supplier')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 50);
       if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO suppliers
-           (organization_id, name, contact_name, contact_email, contact_phone,
+           (organization_id, name, code, contact_name, contact_email, contact_phone,
             website, address, city, state, country, postal_code,
             lead_time_days, reliability_score, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-         ON CONFLICT (organization_id, name) DO UPDATE SET
-           contact_email = EXCLUDED.contact_email, updated_at = NOW()`,
-        [organizationId, row.name, row.contact_name || null,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         ON CONFLICT (organization_id, code) DO UPDATE SET
+           name = EXCLUDED.name,
+           contact_name = EXCLUDED.contact_name,
+           contact_email = EXCLUDED.contact_email,
+           contact_phone = EXCLUDED.contact_phone,
+           website = EXCLUDED.website,
+           address = EXCLUDED.address,
+           city = EXCLUDED.city,
+           state = EXCLUDED.state,
+           country = EXCLUDED.country,
+           postal_code = EXCLUDED.postal_code,
+           lead_time_days = EXCLUDED.lead_time_days,
+           reliability_score = EXCLUDED.reliability_score,
+           is_active = EXCLUDED.is_active,
+           updated_at = NOW()`,
+        [organizationId, row.name, code || 'SUPPLIER', row.contact_name || null,
          row.contact_email || null, row.contact_phone || null, row.website || null,
          row.address || null, row.city || null, row.state || null,
          row.country || 'India', row.postal_code || null,
