@@ -2,6 +2,17 @@
 
 Last updated: 2026-03-18
 
+## Progress Snapshot (at top)
+
+- Conservative solved estimate (high-volume mechanical classes tracked): **~86.6% complete** (`490 / 566`)
+- Baseline used (from report): `autofix/radix` 236, `autofix/no-plusplus` 224, `autofix/no-implicit-coercion` 24, `autofix/no-confusing-arrow` 12, `autofix/prefer-template` 22, `import/no-duplicates` 8, `autofix/prefer-destructuring` 40.
+- Current residue snapshot (code-pattern proxies):
+  - `radix`: `0` visible missing-radix callsites
+  - `no-plusplus`: `0` real increment/decrement callsites in JS/TS/TSX source
+  - `no-implicit-coercion` (`!!`): `0` in frontend source
+  - `no-confusing-arrow`: `3` candidates still present (mixed true/false positives)
+- Note: This percentage is intentionally conservative and class-scoped; final exact closure requires a fresh analyzer re-run against current HEAD.
+
 ## Fixed in this pass
 
 - Documentation drift cleanup (core docs):
@@ -133,6 +144,22 @@ Last updated: 2026-03-18
     - `frontend/src/pages/orders/components/CreateOrderModal.tsx`
     - `frontend/src/pages/products/ProductsPage.tsx`
   - Diagnostics check on this slice: clean.
+
+- Hotspot continuation after merge (friend handoff):
+  - Audited post-merge state and repaired codemod side effects in comment separators (`frontend/src/api/client.ts`, `backend/repositories/DashboardRepository.js`).
+  - Removed remaining real `no-plusplus` residues in active source logic:
+    - `backend/controllers/importController.js`
+    - `backend/services/settingsService.js`
+    - `backend/services/deliveryChargeService.js`
+  - Fixed two parameter-index regressions caused by increment replacement:
+    - `backend/repositories/WarehouseRepository.js`
+    - `backend/repositories/OrderRepository.js`
+  - Reduced additional hotspot ternary patterns in:
+    - `frontend/src/stores/index.ts`
+    - `frontend/src/pages/orders/components/CreateOrderModal.tsx`
+    - `backend/controllers/analyticsController.js`
+  - Diagnostics check across touched files: clean.
+  - `no-confusing-arrow` candidate proxy reduced from `12` to `6`.
 
 - Return status contract centralization:
   - Added shared status contract in `backend/config/returnStatuses.js` with transitions and grouped status arrays.

@@ -188,7 +188,7 @@ class WarehouseRepository extends BaseRepository {
 
     const fieldSerializers = {
       address: (v) => JSON.stringify(v),
-      coordinates: (v) => (v ? JSON.stringify(v) : null),
+      coordinates: (v) => JSON.stringify(v ?? null),
       gstin: (v) => v || null,
     };
 
@@ -212,7 +212,8 @@ class WarehouseRepository extends BaseRepository {
 
     mutableFields.forEach((field) => {
       if (warehouseData[field] !== undefined) {
-        updates.push(`${field} = $${paramCount += 1}`);
+        updates.push(`${field} = $${paramCount}`);
+        paramCount += 1;
         const serializer = fieldSerializers[field];
         params.push(serializer ? serializer(warehouseData[field]) : warehouseData[field]);
       }

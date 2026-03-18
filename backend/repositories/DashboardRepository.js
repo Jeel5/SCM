@@ -32,7 +32,7 @@ class DashboardRepository extends BaseRepository {
     super('orders');
   }
 
-  // --- internal helpers -= 1-
+  // --- internal helpers ---
   /** Build parameterised args [orgId?, intervalString] and return {orgClause, args, intIdx} */
   _buildParams(organizationId, days, alias = '') {
     const prefix = alias ? `${alias}.` : '';

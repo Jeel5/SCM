@@ -170,7 +170,7 @@ class OrderRepository extends BaseRepository {
       // Flatten all item parameters (order_id + all item fields)
       const itemsParams = items.flatMap(item => [
         order.id,
-        ...itemKeys.map(key => item[key] !== undefined ? item[key] : null)
+        ...itemKeys.map(key => item[key] ?? null)
       ]);
 
       const itemsResult = await this.query(itemsQuery, itemsParams, client);
@@ -196,7 +196,8 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
+        query += ` AND ${orgFilter.clause}$${paramCount}`;
+        paramCount += 1;
         params.push(...orgFilter.params);
       }
     }

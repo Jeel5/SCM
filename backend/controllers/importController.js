@@ -64,7 +64,7 @@ async function countCsvRows(filePath, maxRows = MAX_ROWS) {
   let lines = 0;
   for await (const line of rl) {
     if (!line.trim()) continue;
-    lines++;
+    lines += 1;
     if (lines - 1 > maxRows) {
       rl.close();
       stream.destroy();
@@ -148,12 +148,12 @@ function parseCsvLine(line) {
   let current = '';
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
+  for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') {
         current += '"';
-        i++;
+        i += 1;
       } else {
         inQuotes = !inQuotes;
       }

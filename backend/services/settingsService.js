@@ -39,7 +39,7 @@ export const settingsService = {
       if (allowedFields.includes(key) && value !== undefined) {
         fields.push(`${key} = $${paramCount}`);
         values.push(value);
-        paramCount++;
+        paramCount += 1;
       }
     });
 
@@ -183,20 +183,24 @@ export const settingsService = {
     let paramCount = 1;
 
     if (email_enabled !== undefined) {
-      fields.push(`email_enabled = $${paramCount++}`);
+      fields.push(`email_enabled = $${paramCount}`);
       values.push(email_enabled);
+      paramCount += 1;
     }
     if (push_enabled !== undefined) {
-      fields.push(`push_enabled = $${paramCount++}`);
+      fields.push(`push_enabled = $${paramCount}`);
       values.push(push_enabled);
+      paramCount += 1;
     }
     if (sms_enabled !== undefined) {
-      fields.push(`sms_enabled = $${paramCount++}`);
+      fields.push(`sms_enabled = $${paramCount}`);
       values.push(sms_enabled);
+      paramCount += 1;
     }
     if (notification_types !== undefined) {
-      fields.push(`notification_types = $${paramCount++}`);
+      fields.push(`notification_types = $${paramCount}`);
       values.push(JSON.stringify(notification_types));
+      paramCount += 1;
     }
 
     if (fields.length === 0) {

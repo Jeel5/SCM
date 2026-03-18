@@ -136,12 +136,18 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
 
   // Update item quantity
   const updateItemQuantity = (index: number, qty: number) => {
-    setItems(prev => prev.map((item, i) => (i === index ? { ...item, quantity: qty } : item)));
+    setItems(prev => prev.map((item, i) => {
+      if (i !== index) return item;
+      return { ...item, quantity: qty };
+    }));
   };
 
   // Update item price
   const updateItemPrice = (index: number, price: number) => {
-    setItems(prev => prev.map((item, i) => (i === index ? { ...item, unitPrice: Math.max(0, price) } : item)));
+    setItems(prev => prev.map((item, i) => {
+      if (i !== index) return item;
+      return { ...item, unitPrice: Math.max(0, price) };
+    }));
   };
 
   // Calculate totals
@@ -448,7 +454,10 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
                           min="1"
                           max={item.totalAvailable || undefined}
                           value={item.quantity || ''}
-                          onChange={(e) => updateItemQuantity(index, e.target.value === '' ? 0 : (parseInt(e.target.value, 10) || 0))}
+                          onChange={(e) => {
+                            const parsedQty = e.target.value === '' ? 0 : (parseInt(e.target.value, 10) || 0);
+                            updateItemQuantity(index, parsedQty);
+                          }}
                           className={`w-full px-3 py-1.5 border rounded-md text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 ${
                             exceedsStock ? 'border-red-400' : 'border-gray-300 dark:border-gray-600'
                           }`}

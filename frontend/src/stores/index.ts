@@ -99,10 +99,11 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
       notifications: state.notifications.map((n) =>
         n.id === id ? { ...n, isRead: true } : n
       ),
+      // Preserve previous behavior while avoiding nested ternary expression noise.
+      // If target notification is already read or missing, decrement by 0.
       unreadCount: Math.max(
         0,
-        state.unreadCount -
-          (state.notifications.find((n) => n.id === id && !n.isRead) ? 1 : 0)
+        state.unreadCount - Number(Boolean(state.notifications.find((n) => n.id === id && !n.isRead)))
       ),
     })),
   markAllAsRead: () =>
@@ -115,8 +116,7 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
       notifications: state.notifications.filter((n) => n.id !== id),
       unreadCount: Math.max(
         0,
-        state.unreadCount -
-          (state.notifications.find((n) => n.id === id && !n.isRead) ? 1 : 0)
+        state.unreadCount - Number(Boolean(state.notifications.find((n) => n.id === id && !n.isRead)))
       ),
     })),
   clearAll: () => set({ notifications: [], unreadCount: 0 }),

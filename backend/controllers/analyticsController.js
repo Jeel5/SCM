@@ -39,7 +39,10 @@ export const getAnalytics = asyncHandler(async (req, res) => {
     const intParam = organizationId ? 2 : 1;
     const baseArgs  = organizationId ? [organizationId, interval] : [interval];
     const orgClause = organizationId ? `AND organization_id = $${orgParam}` : '';
-    const orgClauseAlias = (alias) => organizationId ? `AND ${alias}.organization_id = $${orgParam}` : '';
+    const orgClauseAlias = (alias) => {
+      if (!organizationId) return '';
+      return `AND ${alias}.organization_id = $${orgParam}`;
+    };
     const intClause = `NOW() - $${intParam}::INTERVAL`;
 
     const [

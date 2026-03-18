@@ -21,7 +21,13 @@ export function PublicHeader() {
   const authLinkPath = isAuthenticated ? '/dashboard' : '/login';
   const authLinkLabel = isAuthenticated ? 'Go to Dashboard' : 'Log In';
 
-  const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
+  const toggleTheme = () => {
+    if (isDark) {
+      setTheme('light');
+      return;
+    }
+    setTheme('dark');
+  };
 
   return (
     <header

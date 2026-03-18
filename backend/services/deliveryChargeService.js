@@ -287,7 +287,7 @@ class DeliveryChargeService {
       date.setDate(date.getDate() + 1);
       const dayOfWeek = date.getDay();
       if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Sunday or Saturday
-        addedDays++;
+        addedDays += 1;
       }
     }
     
