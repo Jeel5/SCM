@@ -5,6 +5,7 @@ import CarrierRepository from '../repositories/CarrierRepository.js';
 import ShipmentRepository from '../repositories/ShipmentRepository.js';
 import ProductRepository from '../repositories/ProductRepository.js';
 import ReturnRepository from '../repositories/ReturnRepository.js';
+import { OPEN_RETURN_STATUSES } from '../config/returnStatuses.js';
 import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index.js';
 import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
@@ -979,7 +980,7 @@ class OrderService {
       }
 
       const existingReturns = await ReturnRepository.findByOrderId(orderId, organizationId, tx);
-      const openReturn = existingReturns.find(r => !['rejected', 'cancelled', 'completed', 'refunded', 'restocked'].includes(r.status));
+      const openReturn = existingReturns.find((r) => OPEN_RETURN_STATUSES.includes(r.status));
       if (openReturn) {
         throw new BusinessLogicError(`Order already has an active return (${openReturn.rma_number})`);
       }

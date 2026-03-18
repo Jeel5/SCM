@@ -1,5 +1,6 @@
 // Finance validation schemas
 import Joi from 'joi';
+import { RETURN_REFUND_ELIGIBLE_STATUSES } from '../config/returnStatuses.js';
 
 const INVOICE_STATUSES = ['pending', 'approved', 'disputed', 'paid', 'cancelled'];
 const DISPUTE_RESOLUTIONS = ['approved', 'rejected', 'partial'];
@@ -17,7 +18,7 @@ export const listInvoicesQuerySchema = Joi.object({
 export const listRefundsQuerySchema = Joi.object({
   page:       Joi.number().integer().min(1).default(1),
   limit:      Joi.number().integer().min(1).max(100).default(20),
-  status:     Joi.string().valid('approved', 'inspected', 'refunded').optional(),
+  status:     Joi.string().valid(...RETURN_REFUND_ELIGIBLE_STATUSES).optional(),
   date_range: Joi.string().valid('day', 'week', 'month', 'year').optional(),
 });
 

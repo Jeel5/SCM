@@ -2,17 +2,9 @@
 // IMPORTANT: Status values MUST match RETURN_VALID_TRANSITIONS in services/returnsService.js
 
 import Joi from 'joi';
+import { RETURN_STATUSES } from '../config/returnStatuses.js';
 
 // All valid return statuses — keep in sync with returnsService.RETURN_VALID_TRANSITIONS
-const RETURN_STATUSES = [
-  'requested', 'approved', 'rejected', 'received',
-  'inspecting', 'inspection_passed', 'inspection_failed',
-  'refunded', 'restocked', 'cancelled',
-  'pickup_scheduled', 'picked_up', 'in_transit',
-  // Legacy values kept for backward compatibility
-  'inspected', 'completed',
-];
-
 // All valid return reasons — keep in sync with createReturnSchema
 const RETURN_REASONS = [
   'damaged', 'defective', 'wrong_item', 'not_as_described',

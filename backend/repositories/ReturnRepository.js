@@ -1,5 +1,10 @@
 // Return Repository - handles product returns and refunds
 import BaseRepository from './BaseRepository.js';
+import {
+  RETURN_PENDING_STATUSES,
+  RETURN_PROCESSING_STATUSES,
+  RETURN_COMPLETED_STATUSES,
+} from '../config/returnStatuses.js';
 
 class ReturnRepository extends BaseRepository {
   constructor() {
@@ -240,15 +245,15 @@ class ReturnRepository extends BaseRepository {
    * Global return status counts (no pagination) for cards/tabs.
    */
   async getReturnStatusStats(organizationId = undefined, client = null) {
-    const params = [];
-    let p = 1;
+    const params = [RETURN_PENDING_STATUSES, RETURN_COMPLETED_STATUSES];
+    let p = 3;
     let query = `
       SELECT
         COUNT(*)::int AS total_returns,
-        COUNT(*) FILTER (WHERE r.status IN ('requested', 'pending', 'pickup_scheduled', 'picked_up', 'in_transit', 'received', 'inspecting'))::int AS pending,
+        COUNT(*) FILTER (WHERE r.status = ANY($1::text[]))::int AS pending,
         COUNT(*) FILTER (WHERE r.status = 'approved')::int AS approved,
         COUNT(*) FILTER (WHERE r.status = 'rejected')::int AS rejected,
-        COUNT(*) FILTER (WHERE r.status IN ('refunded', 'restocked', 'completed'))::int AS completed
+        COUNT(*) FILTER (WHERE r.status = ANY($2::text[]))::int AS completed
       FROM returns r
       WHERE 1=1
     `;
@@ -436,17 +441,18 @@ class ReturnRepository extends BaseRepository {
    * @returns {Promise<{ stats: object, reasons: Array }>}
    */
   async getLast30DayStats(organizationId = null, client = null) {
-    const orgClause = organizationId ? ' AND organization_id = $1' : '';
-    const orgArgs   = organizationId ? [organizationId] : [];
+    const baseArgs = [RETURN_PENDING_STATUSES, RETURN_PROCESSING_STATUSES, RETURN_COMPLETED_STATUSES];
+    const orgClause = organizationId ? ' AND organization_id = $4' : '';
+    const orgArgs = organizationId ? [...baseArgs, organizationId] : baseArgs;
 
     const [statsRes, reasonsRes] = await Promise.all([
       this.query(
         `SELECT
            COUNT(*) AS total_returns,
-           COUNT(*) FILTER (WHERE status IN ('requested', 'pending', 'pickup_scheduled', 'picked_up', 'in_transit', 'received', 'inspecting')) AS pending,
+           COUNT(*) FILTER (WHERE status = ANY($1::text[])) AS pending,
            COUNT(*) FILTER (WHERE status = 'approved')   AS approved,
-           COUNT(*) FILTER (WHERE status IN ('inspection_passed', 'inspection_failed', 'inspected')) AS processing,
-           COUNT(*) FILTER (WHERE status IN ('refunded', 'restocked', 'completed')) AS completed,
+           COUNT(*) FILTER (WHERE status = ANY($2::text[])) AS processing,
+           COUNT(*) FILTER (WHERE status = ANY($3::text[])) AS completed,
            COUNT(*) FILTER (WHERE status = 'rejected')   AS rejected,
            COALESCE(SUM(refund_amount), 0)                AS total_refunds,
            COALESCE(SUM(restocking_fee),   0)            AS total_restock_fees

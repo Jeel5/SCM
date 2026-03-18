@@ -23,6 +23,12 @@ Last updated: 2026-03-18
   - `backend/jobs/jobHandlers.js` now acts as job registry/orchestration glue instead of carrying import internals.
   - Size impact: `jobHandlers.js` reduced from ~1490 lines to ~738 lines.
 
+- Return status contract centralization:
+  - Added shared status contract in `backend/config/returnStatuses.js` with transitions and grouped status arrays.
+  - Rewired service, repository, and validator layers to consume shared constants instead of duplicating status literals.
+  - This includes return transition validation, return stats aggregation filters, finance refund eligibility filters, and order return-open checks.
+  - Files: `backend/config/returnStatuses.js`, `backend/services/returnsService.js`, `backend/repositories/ReturnRepository.js`, `backend/repositories/FinanceRepository.js`, `backend/validators/returnSchemas.js`, `backend/validators/financeSchemas.js`, `backend/services/orderService.js`.
+
 - Notifications not appearing in real-time:
   - Root cause: frontend listens for `notification:new`, but backend notification creation did not emit socket events.
   - Fix: sockets now join per-user rooms (`user:{userId}`), added `emitToUser`, and `notificationService.createNotification` now emits `notification:new` payloads.

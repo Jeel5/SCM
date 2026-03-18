@@ -4,26 +4,12 @@ import { logEvent } from '../utils/logger.js';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import returnRepo from '../repositories/ReturnRepository.js';
+import { RETURN_STATUS_TRANSITIONS } from '../config/returnStatuses.js';
 
 // ─── Return State Machine ──────────────────────────────────────────────────────────────────
 // Single source of truth for valid return status transitions.
 export const RETURN_VALID_TRANSITIONS = {
-  requested:          ['approved', 'rejected'],
-  approved:           ['received', 'rejected'],
-  received:           ['inspecting'],
-  inspecting:         ['inspection_passed', 'inspection_failed', 'rejected'],
-  inspection_passed:  ['refunded', 'restocked'],
-  inspection_failed:  ['rejected'],
-  refunded:           [],  // terminal
-  restocked:          [],  // terminal
-  rejected:           [],  // terminal
-  cancelled:          [],  // terminal
-  // Legacy mappings (keep for any existing records)
-  inspected:          ['refunded', 'restocked'],
-  completed:          [],
-  pickup_scheduled:   ['picked_up', 'rejected'],
-  picked_up:          ['in_transit', 'received'],
-  in_transit:         ['received'],
+  ...RETURN_STATUS_TRANSITIONS,
 };
 
 class ReturnsService {

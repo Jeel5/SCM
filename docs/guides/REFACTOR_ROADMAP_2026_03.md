@@ -61,3 +61,4 @@ The platform has reached a point where feature delivery outpaced structural cons
 - Updated docs index and architecture structure notes to reflect current hybrid architecture truthfully.
 - Extracted shared import execution path to `backend/jobs/importRunner.js`.
 - Split import handlers into `backend/jobs/importHandlers/masterDataImportHandlers.js` and `backend/jobs/importHandlers/commerceImportHandlers.js`.
+- Introduced shared return status contract in `backend/config/returnStatuses.js` and wired returns/finance/order service and validator usage to it.

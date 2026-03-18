@@ -1,5 +1,6 @@
 // Finance Repository - handles invoices, refunds, disputes, and financial summaries
 import BaseRepository from './BaseRepository.js';
+import { RETURN_REFUND_ELIGIBLE_STATUSES } from '../config/returnStatuses.js';
 
 class FinanceRepository extends BaseRepository {
   constructor() {
@@ -83,8 +84,8 @@ class FinanceRepository extends BaseRepository {
    */
   async findRefunds({ page = 1, limit = 20, status = null, organizationId = undefined } = {}, client = null) {
     const offset = (page - 1) * limit;
-    const params = [];
-    let p = 1;
+    const params = [RETURN_REFUND_ELIGIBLE_STATUSES];
+    let p = 2;
 
     let query = `
       SELECT
@@ -95,7 +96,7 @@ class FinanceRepository extends BaseRepository {
         COUNT(*) OVER() AS total_count
       FROM returns r
       LEFT JOIN orders o ON r.order_id = o.id
-      WHERE r.status IN ('approved', 'inspected', 'refunded')
+      WHERE r.status = ANY($1::text[])
     `;
 
     if (organizationId !== undefined) {
