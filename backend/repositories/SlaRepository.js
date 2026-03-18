@@ -274,9 +274,11 @@ class SlaRepository extends BaseRepository {
       this.query(`
         SELECT
           COUNT(*) AS total_shipments,
-          COUNT(CASE WHEN s.delivery_actual <= s.delivery_scheduled THEN 1 END) AS on_time
+          COUNT(CASE WHEN s.delivery_actual IS NOT NULL AND s.delivery_actual <= s.delivery_scheduled THEN 1 END) AS on_time
         FROM shipments s
         WHERE s.status = 'delivered'
+          AND s.sla_policy_id IS NOT NULL
+          AND s.delivery_scheduled IS NOT NULL
           AND s.created_at >= NOW() - INTERVAL '30 days'${organizationId ? ' AND s.organization_id = $1' : ''}
       `, orgArgs),
       this.query(`

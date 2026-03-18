@@ -698,9 +698,32 @@ export const settingsApi = {
 // ==================== FINANCE ====================
 export const financeApi = {
   async getSummary(range = 'month'): Promise<ApiResponse<{
-    invoices: { total: number; outstanding: number; paid: number; total_amount: number; outstanding_amount: number };
-    refunds: { total: number; processed: number; pending: number; total_amount: number };
-    disputes: { total: number; open: number; resolved: number };
+    invoices: {
+      total_invoices?: number;
+      total_amount?: number;
+      pending_amount?: number;
+      paid_amount?: number;
+      total_penalties?: number;
+      total?: number;
+      outstanding?: number;
+      paid?: number;
+      outstanding_amount?: number;
+    };
+    refunds: {
+      total_refunds?: number;
+      total_refund_amount?: number;
+      total_restocking_fees?: number;
+      total?: number;
+      processed?: number;
+      pending?: number;
+      total_amount?: number;
+    };
+    disputes: {
+      total_disputes?: number;
+      total?: number;
+      open?: number;
+      resolved?: number;
+    };
   }>> {
     return get('/finance/summary', { range });
   },
@@ -939,6 +962,10 @@ export const notificationsApi = {
 
   async deleteNotification(id: string): Promise<ApiResponse<null>> {
     return del(`/notifications/${id}`);
+  },
+
+  async deleteAllNotifications(): Promise<ApiResponse<null>> {
+    return del('/notifications');
   },
 };
 

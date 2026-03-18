@@ -31,10 +31,11 @@ export function OrdersPage() {
   const importRef = useRef<HTMLInputElement | null>(null);
 
   const pageSize = 10;
-  const { orders, totalOrders, stats, isLoading, refetch } = useOrders(page, pageSize);
+  const orderFilters = activeTab === 'all' ? undefined : { status: activeTab };
+  const { orders, totalOrders, stats, isLoading, refetch } = useOrders(page, pageSize, orderFilters);
 
   const handleExport = () => {
-    const exportData = filteredOrders.map(order => ({
+    const exportData = orders.map(order => ({
       order_number: order.orderNumber,
       customer_name: order.customerName,
       customer_email: order.customerEmail,
@@ -82,15 +83,19 @@ export function OrdersPage() {
     total: number;
     created: number;
     failed: number;
+    errors?: Array<{ row: number; message: string }>;
     errorMessage?: string;
   }>('import:complete', (evt) => {
     if (evt.importType !== 'orders') return;
     if (activeImportJobId && evt.jobId !== activeImportJobId) return;
 
     if (evt.created > 0) {
+      const errorPreview = evt.failed && evt.errors?.length
+        ? ` | Failed rows: ${evt.errors.slice(0, 3).map((e) => `${e.row}: ${e.message}`).join(' | ')}`
+        : '';
       success(
         'Orders import completed',
-        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}`
+        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}${errorPreview}`
       );
     } else {
       error('Orders import failed', evt.errorMessage || `0/${evt.total} created. Check import errors in job logs.`);
@@ -99,9 +104,6 @@ export function OrdersPage() {
     setActiveImportJobId(null);
     refetch();
   });
-
-  // Filter list by active tab
-  const filteredOrders = orders.filter((order) => activeTab === 'all' || order.status === activeTab);
 
   const tabs = [
     { id: 'all', label: 'All Orders', count: stats.totalOrders },
@@ -218,13 +220,20 @@ export function OrdersPage() {
       {/* Tabs */}
       <Card padding="none">
         <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onChange={(tabId) => {
+              setActiveTab(tabId);
+              setPage(1);
+            }}
+          />
         </div>
 
         {/* Data Table */}
         <DataTable
           columns={columns}
-          data={filteredOrders}
+          data={orders}
           isLoading={isLoading}
           searchPlaceholder="Search orders..."
           pagination={{

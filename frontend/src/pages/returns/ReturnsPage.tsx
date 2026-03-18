@@ -33,7 +33,8 @@ export function ReturnsPage() {
   const [activeTab, setActiveTab] = useState('all');
 
   const pageSize = 10;
-  const { returns, totalReturns, stats, isLoading, refetch } = useReturns(page, pageSize);
+  const returnsFilters = activeTab === 'all' ? undefined : { status: activeTab };
+  const { returns, totalReturns, stats, isLoading, refetch } = useReturns(page, pageSize, returnsFilters);
 
   // Refetch on real-time return events
   useSocketEvent('return:created', refetch);
@@ -50,15 +51,12 @@ export function ReturnsPage() {
     }
   };
 
-  // Filter list by active tab
-  const filteredReturns = returns.filter((returnItem) => activeTab === 'all' || returnItem.status === activeTab);
-
   const tabs = [
     { id: 'all', label: 'All Returns', count: stats.totalReturns },
-    { id: 'pending', label: 'Pending', count: stats.pending },
+    { id: 'requested', label: 'Requested', count: stats.pending },
     { id: 'approved', label: 'Approved', count: stats.approved },
     { id: 'rejected', label: 'Rejected', count: stats.rejected },
-    { id: 'completed', label: 'Completed', count: stats.completed },
+    { id: 'refunded', label: 'Refunded', count: stats.completed },
   ];
 
   const columns = [
@@ -167,7 +165,7 @@ export function ReturnsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Total Returns', value: stats.totalReturns, icon: RotateCcw, color: 'bg-purple-100 text-purple-600' },
-          { label: 'Pending', value: stats.pending, icon: Package, color: 'bg-yellow-100 text-yellow-600' },
+          { label: 'Requested', value: stats.pending, icon: Package, color: 'bg-yellow-100 text-yellow-600' },
           { label: 'Approved', value: stats.approved, icon: CheckCircle2, color: 'bg-green-100 text-green-600' },
           { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'bg-red-100 text-red-600' },
         ].map((stat) => (
@@ -191,12 +189,19 @@ export function ReturnsPage() {
       {/* Data Table */}
       <Card padding="none">
         <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onChange={(tabId) => {
+              setActiveTab(tabId);
+              setPage(1);
+            }}
+          />
         </div>
 
         <DataTable
           columns={columns}
-          data={filteredReturns}
+          data={returns}
           isLoading={isLoading}
           searchPlaceholder="Search by return or order ID..."
           pagination={{

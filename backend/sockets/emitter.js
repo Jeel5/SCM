@@ -5,6 +5,7 @@
  * Usage:
  *   import { emitToOrg, emitToShipment } from '../sockets/emitter.js';
  *   emitToOrg(organizationId, 'order:created', order);
+ *   emitToUser(userId, 'notification:new', payload);
  *   emitToShipment(shipmentId, 'shipment:location', locationData);
  */
 
@@ -31,4 +32,12 @@ export function emitToOrg(orgId, event, data) {
 export function emitToShipment(shipmentId, event, data) {
   if (!_io || !shipmentId) return;
   _io.to(`shipment:${shipmentId}`).emit(event, data);
+}
+
+/**
+ * Emit an event to a specific user's room.
+ */
+export function emitToUser(userId, event, data) {
+  if (!_io || !userId) return;
+  _io.to(`user:${userId}`).emit(event, data);
 }

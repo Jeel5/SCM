@@ -3,6 +3,7 @@ import notificationRepository from '../repositories/NotificationRepository.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
 import { NotFoundError } from '../errors/AppError.js';
+import { emitToUser } from '../sockets/emitter.js';
 
 export const notificationService = {
   /**
@@ -11,6 +12,16 @@ export const notificationService = {
   async createNotification(userId, type, title, message, link = null, metadata = null) {
     try {
       const notification = await notificationRepository.create(userId, type, title, message, link, metadata);
+
+      // Push the new notification to the recipient in realtime.
+      emitToUser(userId, 'notification:new', {
+        id: notification.id,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        link: notification.link,
+        created_at: notification.created_at,
+      });
 
       logger.info('Notification created', {
         userId,

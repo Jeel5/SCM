@@ -45,14 +45,16 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     const delivered = parseInt(shipments.delivered) || 0;
     const onTime   = parseInt(shipments.on_time)   || 0;
-    const onTimeRate  = delivered > 0 ? parseFloat((onTime / delivered * 100).toFixed(1)) : 100;
+    const onTimeRate  = delivered > 0 ? parseFloat((onTime / delivered * 100).toFixed(1)) : 0;
 
     const prevDelivered = parseInt(shipments.prev_delivered) || 0;
     const prevOnTime    = parseInt(shipments.prev_on_time)   || 0;
-    const prevOnTimeRate = prevDelivered > 0 ? parseFloat((prevOnTime / prevDelivered * 100).toFixed(1)) : 100;
+    const prevOnTimeRate = prevDelivered > 0 ? parseFloat((prevOnTime / prevDelivered * 100).toFixed(1)) : 0;
 
-    const avgDeliveryDays     = parseFloat(Number(shipments.avg_delivery_days).toFixed(1))     || 0;
-    const prevAvgDeliveryDays = parseFloat(Number(shipments.prev_avg_delivery_days).toFixed(1)) || 0;
+    const avgDeliveryDaysRaw = parseFloat(Number(shipments.avg_delivery_days).toFixed(1)) || 0;
+    const prevAvgDeliveryDaysRaw = parseFloat(Number(shipments.prev_avg_delivery_days).toFixed(1)) || 0;
+    const avgDeliveryDays = Math.max(0, avgDeliveryDaysRaw);
+    const prevAvgDeliveryDays = Math.max(0, prevAvgDeliveryDaysRaw);
 
     const activityMap = {};
     for (const row of warehouseActivity) {

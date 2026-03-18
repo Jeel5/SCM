@@ -183,7 +183,7 @@ class FinanceRepository extends BaseRepository {
            COALESCE(SUM(restocking_fee), 0) AS total_restocking_fees
          FROM returns
          WHERE status = 'refunded'
-           AND resolved_at >= NOW() - $1::INTERVAL${orgClause}`,
+           AND COALESCE(resolved_at, updated_at, created_at) >= NOW() - $1::INTERVAL${orgClause}`,
         baseParams, client
       ),
       this.query(

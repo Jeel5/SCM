@@ -23,6 +23,7 @@ import shipmentRepo from '../repositories/ShipmentRepository.js';
 import { generateInternalBarcode } from '../utils/barcodeGenerator.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import emailService from '../services/emailService.js';
+import { invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
 /**
  * SLA Monitoring Job
@@ -203,6 +204,24 @@ async function runImport({ jobId, organizationId, rows, filePath, importType, pr
     }
 
     emitToOrg(organizationId, 'import:complete', { jobId, importType, ...result });
+
+    if (!dryRun && created > 0) {
+      const invalidationsByType = {
+        warehouses: ['dash', 'analytics', 'inv:list', 'inv:stats', 'inv:lowstock'],
+        products: ['dash', 'analytics', 'inv:list'],
+        inventory: ['inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'],
+        orders: ['orders:list', 'dash', 'analytics'],
+        shipments: ['ship:list', 'dash', 'analytics'],
+        carriers: ['dash', 'analytics'],
+        channels: ['dash', 'analytics'],
+        suppliers: ['dash', 'analytics'],
+        team: ['dash', 'analytics'],
+      };
+
+      const prefixes = invalidationsByType[importType] || ['dash', 'analytics'];
+      await invalidatePatterns(invalidationTargets(organizationId, ...prefixes));
+    }
+
     logger.info(`✅ Import ${importType} complete`, { jobId, total: result.total, created, failed, dryRun });
     return result;
   } finally {

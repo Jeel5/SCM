@@ -82,7 +82,13 @@ export function NotificationsPage() {
   const handleClearAll = async () => {
     if (!confirm('Delete all notifications? This cannot be undone.')) return;
     clearAll();
-    toast.success('All notifications cleared');
+    try {
+      await notificationsApi.deleteAllNotifications();
+      toast.success('All notifications cleared');
+    } catch {
+      toast.error('Failed to clear notifications');
+      fetchNotifications();
+    }
   };
 
   const filteredNotifications = notifications.filter((n) => {

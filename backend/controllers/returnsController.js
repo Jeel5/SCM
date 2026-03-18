@@ -29,6 +29,7 @@ export const listReturns = asyncHandler(async (req, res) => {
       stats: {
         totalReturns: parseInt(statsRow.total_returns || 0),
         pending: parseInt(statsRow.pending || 0),
+        requested: parseInt(statsRow.pending || 0),
         approved: parseInt(statsRow.approved || 0),
         rejected: parseInt(statsRow.rejected || 0),
         completed: parseInt(statsRow.completed || 0),
@@ -232,6 +233,7 @@ export const getReturnStats = asyncHandler(async (req, res) => {
       totalReturns: parseInt(stats.total_returns),
       byStatus: {
         pending:    parseInt(stats.pending),
+        requested:  parseInt(stats.pending),
         approved:   parseInt(stats.approved),
         processing: parseInt(stats.processing),
         completed:  parseInt(stats.completed),

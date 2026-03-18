@@ -13,7 +13,7 @@ const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-export function useSLA(page: number, pageSize: number) {
+export function useSLA(page: number, pageSize: number, filters?: Record<string, unknown>) {
   const [policies, setPolicies] = useState<SLAPolicy[]>([]);
   const [violations, setViolations] = useState<SLAViolation[]>([]);
   const [totalViolations, setTotalViolations] = useState(0);
@@ -60,7 +60,7 @@ export function useSLA(page: number, pageSize: number) {
         } else {
           const [policiesRes, violationsRes, dashRes] = await Promise.all([
             slaApi.getSLAPolicies(),
-            slaApi.getSLAViolations(page, pageSize, undefined),
+            slaApi.getSLAViolations(page, pageSize, filters),
             slaApi.getSLADashboard(),
           ]);
           setPolicies(policiesRes.data || []);
@@ -102,7 +102,7 @@ export function useSLA(page: number, pageSize: number) {
         abortControllerRef.current = null;
       }
     };
-  }, [page, pageSize, useMockApi, refreshKey]);
+  }, [page, pageSize, useMockApi, refreshKey, JSON.stringify(filters || {})]);
 
   return { policies, violations, totalViolations, dashboardData, isLoading, refetch };
 }

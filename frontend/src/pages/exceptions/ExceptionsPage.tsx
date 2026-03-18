@@ -13,14 +13,15 @@ import { useExceptions } from './hooks/useExceptions';
 export function ExceptionsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const { exceptions, totalExceptions, stats, isLoading, refetch } = useExceptions(page, pageSize);
+  const [activeTab, setActiveTab] = useState('all');
+  const exceptionFilters = activeTab === 'all' ? undefined : { status: activeTab };
+  const { exceptions, totalExceptions, stats, isLoading, refetch } = useExceptions(page, pageSize, exceptionFilters);
 
   // Refetch on real-time exception events
   useSocketEvent('exception:created', refetch);
   useSocketEvent('exception:resolved', refetch);
   const [selectedException, setSelectedException] = useState<Exception | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('all');
 
   const handleExport = async () => {
     try {
@@ -37,9 +38,6 @@ export function ExceptionsPage() {
   const criticalCount = stats.critical;
   const openCount = stats.open;
   const resolvedCount = stats.resolved;
-
-  // Filter list by active tab
-  const filteredExceptions = exceptions.filter((exception) => activeTab === 'all' || exception.status === activeTab);
 
   const tabs = [
     { id: 'all', label: 'All Exceptions', count: stats.totalExceptions },
@@ -225,12 +223,19 @@ export function ExceptionsPage() {
       {/* Data Table */}
       <Card padding="none">
         <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onChange={(tabId) => {
+              setActiveTab(tabId);
+              setPage(1);
+            }}
+          />
         </div>
 
         <DataTable
           columns={columns}
-          data={filteredExceptions}
+          data={exceptions}
           isLoading={isLoading}
           searchPlaceholder="Search exceptions..."
           pagination={{

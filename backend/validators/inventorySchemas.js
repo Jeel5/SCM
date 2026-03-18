@@ -56,7 +56,8 @@ export const listInventoryQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(20),
   warehouse_id: Joi.string().uuid().optional(),
   search: Joi.string().max(100).optional().allow(''),
-  low_stock: Joi.boolean().optional().default(false)
+  low_stock: Joi.boolean().optional().default(false),
+  stock_state: Joi.string().valid('low_stock', 'out_of_stock', 'overstocked').optional()
 });
 
 /**

@@ -35,10 +35,11 @@ export function ShipmentsPage() {
   const importRef = useRef<HTMLInputElement | null>(null);
 
   const pageSize = 10;
-  const { shipments, totalShipments, stats, isLoading, refetch } = useShipments(page, pageSize);
+  const shipmentFilters = activeTab === 'all' ? undefined : { status: activeTab };
+  const { shipments, totalShipments, stats, isLoading, refetch } = useShipments(page, pageSize, shipmentFilters);
 
   const handleExport = () => {
-    const exportData = filteredShipments.map(shipment => ({
+    const exportData = shipments.map(shipment => ({
       tracking_number: shipment.trackingNumber,
       carrier: shipment.carrierName,
       status: shipment.status,
@@ -83,15 +84,19 @@ export function ShipmentsPage() {
     total: number;
     created: number;
     failed: number;
+    errors?: Array<{ row: number; message: string }>;
     errorMessage?: string;
   }>('import:complete', (evt) => {
     if (evt.importType !== 'shipments') return;
     if (activeImportJobId && evt.jobId !== activeImportJobId) return;
 
     if (evt.created > 0) {
+      const errorPreview = evt.failed && evt.errors?.length
+        ? ` | Failed rows: ${evt.errors.slice(0, 3).map((e) => `${e.row}: ${e.message}`).join(' | ')}`
+        : '';
       success(
         'Shipments import completed',
-        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}`
+        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}${errorPreview}`
       );
     } else {
       error('Shipments import failed', evt.errorMessage || `0/${evt.total} created. Check import errors in job logs.`);
@@ -106,9 +111,6 @@ export function ShipmentsPage() {
     acc[shipment.status] = (acc[shipment.status] || 0) + 1;
     return acc;
   }, {});
-
-  // Filter list by active tab
-  const filteredShipments = shipments.filter((shipment) => activeTab === 'all' || shipment.status === activeTab);
 
   const tabs = [
     { id: 'all', label: 'All Shipments', count: stats.totalShipments },
@@ -235,12 +237,19 @@ export function ShipmentsPage() {
       {/* Data Table */}
       <Card padding="none">
         <div className="p-2 sm:p-4 border-b border-gray-100 dark:border-gray-700">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onChange={(tabId) => {
+              setActiveTab(tabId);
+              setPage(1);
+            }}
+          />
         </div>
 
         <DataTable
           columns={columns}
-          data={filteredShipments}
+          data={shipments}
           isLoading={isLoading}
           searchPlaceholder="Search by tracking number..."
           pagination={{

@@ -143,7 +143,7 @@ export const getSlaDashboard = asyncHandler(async (req, res) => {
 
   const onTimeRate = compliance.total_shipments > 0
     ? (parseInt(compliance.on_time) / parseInt(compliance.total_shipments) * 100).toFixed(1)
-    : 100;
+    : 0;
 
   res.json({
     success: true,

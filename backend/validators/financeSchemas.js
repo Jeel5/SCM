@@ -17,14 +17,14 @@ export const listInvoicesQuerySchema = Joi.object({
 export const listRefundsQuerySchema = Joi.object({
   page:       Joi.number().integer().min(1).default(1),
   limit:      Joi.number().integer().min(1).max(100).default(20),
-  status:     Joi.string().valid('pending', 'processed', 'rejected').optional(),
+  status:     Joi.string().valid('approved', 'inspected', 'refunded').optional(),
   date_range: Joi.string().valid('day', 'week', 'month', 'year').optional(),
 });
 
 export const listDisputesQuerySchema = Joi.object({
   page:       Joi.number().integer().min(1).default(1),
   limit:      Joi.number().integer().min(1).max(100).default(20),
-  status:     Joi.string().valid('open', 'resolved', 'escalated').optional(),
+  status:     Joi.string().valid('disputed', 'approved', 'rejected', 'pending', 'paid', 'cancelled').optional(),
   date_range: Joi.string().valid('day', 'week', 'month', 'year').optional(),
 });
 

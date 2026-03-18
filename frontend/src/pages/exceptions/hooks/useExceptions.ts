@@ -13,7 +13,7 @@ const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-export function useExceptions(page: number, pageSize: number) {
+export function useExceptions(page: number, pageSize: number, filters?: Record<string, unknown>) {
   const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [totalExceptions, setTotalExceptions] = useState(0);
   const [stats, setStats] = useState({
@@ -46,7 +46,7 @@ export function useExceptions(page: number, pageSize: number) {
       try {
         const response = useMockApi
           ? await mockApi.getExceptions(page, pageSize)
-          : await exceptionsApi.getExceptions(page, pageSize, undefined);
+          : await exceptionsApi.getExceptions(page, pageSize, filters);
         setExceptions(response.data);
         setTotalExceptions(response.total);
         const fallback = {
@@ -79,7 +79,7 @@ export function useExceptions(page: number, pageSize: number) {
         abortControllerRef.current = null;
       }
     };
-  }, [page, pageSize, refreshKey, useMockApi]);
+  }, [page, pageSize, refreshKey, useMockApi, JSON.stringify(filters || {})]);
 
   return { exceptions, totalExceptions, stats, isLoading, refetch };
 }

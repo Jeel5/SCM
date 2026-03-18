@@ -14,7 +14,7 @@ const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-export function useInventory(page: number, pageSize: number) {
+export function useInventory(page: number, pageSize: number, filters?: Record<string, unknown>) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -57,7 +57,7 @@ export function useInventory(page: number, pageSize: number) {
         } else {
           // Use allSettled so a failing stats/low-stock call doesn't wipe the main list
           const [inventoryRes, warehouseRes, statsRes, lowStockRes] = await Promise.allSettled([
-            inventoryApi.getInventory(page, pageSize, undefined),
+            inventoryApi.getInventory(page, pageSize, filters),
             warehousesApi.getWarehouses(undefined),
             inventoryApi.getInventoryStats(undefined),
             inventoryApi.getLowStockItems(undefined),
@@ -115,7 +115,7 @@ export function useInventory(page: number, pageSize: number) {
         abortControllerRef.current = null;
       }
     };
-  }, [page, pageSize, useMockApi, refreshKey]);
+  }, [page, pageSize, useMockApi, refreshKey, JSON.stringify(filters || {})]);
 
   return { inventory, warehouses, totalItems, stats, lowStockList: lowStockItems, isLoading, refetch };
 }

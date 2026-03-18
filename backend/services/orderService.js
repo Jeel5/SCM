@@ -593,27 +593,47 @@ class OrderService {
           throw new BusinessLogicError('Destination warehouse is not active');
         }
 
-        // 2. Check inventory availability at source warehouse
+        // 2. Resolve products + check inventory availability at source warehouse
+        const resolvedItems = [];
         for (const item of transferData.items) {
+          let product = null;
+          if (item.product_id) {
+            product = await ProductRepository.findById(item.product_id, organizationId, tx);
+          }
+          if (!product && item.sku) {
+            product = await ProductRepository.findBySku(item.sku, organizationId, tx);
+          }
+
+          if (!product) {
+            throw new NotFoundError(`Product not found for transfer item SKU '${item.sku || 'unknown'}'`);
+          }
+
           const inventory = await InventoryRepository.findBySKUAndWarehouse(
-            item.sku,
+            product.sku,
             transferData.from_warehouse_id,
             tx
           );
 
           if (!inventory) {
-            throw new NotFoundError(`SKU ${item.sku} not found in source warehouse`);
+            throw new NotFoundError(`SKU ${product.sku} not found in source warehouse`);
           }
 
           if (inventory.quantity_available < item.quantity) {
             throw new BusinessLogicError(
-              `Insufficient stock for SKU ${item.sku}. Available: ${inventory.quantity_available}, Requested: ${item.quantity}`
+              `Insufficient stock for SKU ${product.sku}. Available: ${inventory.quantity_available}, Requested: ${item.quantity}`
             );
           }
+
+          resolvedItems.push({
+            ...item,
+            product_id: product.id,
+            sku: product.sku,
+            product_name: item.product_name || product.name,
+          });
         }
 
         // 3. Transform transfer request into order format
-        const totalAmount = transferData.items.reduce(
+        const totalAmount = resolvedItems.reduce(
           (sum, item) => sum + (item.unit_cost || 0) * item.quantity,
           0
         );
@@ -636,7 +656,7 @@ class OrderService {
           notes: `TRANSFER ORDER\nReason: ${transferData.reason}\nRequested by: ${transferData.requested_by || 'System'}\nNotes: ${transferData.notes || 'N/A'}`,
           special_instructions: `INTERNAL TRANSFER - Handle with care`,
           tags: JSON.stringify(['transfer', 'internal', transferData.priority]),
-          items: transferData.items.map(item => ({
+          items: resolvedItems.map(item => ({
             product_id: item.product_id,
             sku: item.sku,
             product_name: item.product_name,
@@ -679,7 +699,7 @@ class OrderService {
         );
 
         // 5. Reserve inventory at source warehouse
-        for (const item of transferData.items) {
+        for (const item of resolvedItems) {
           const reserved = await InventoryRepository.reserveStock(
             item.sku,
             transferData.from_warehouse_id,
@@ -772,7 +792,7 @@ class OrderService {
               trackingNumber: shipment.tracking_number,
               estimatedDelivery: shipment.estimated_delivery_date,
             },
-            items: transferData.items || [],
+            items: resolvedItems || [],
             requestedAt: new Date(),
           };
 
@@ -819,7 +839,7 @@ class OrderService {
           assignmentId: transferAssignment?.id || null,
           fromWarehouse: fromWarehouseName,
           toWarehouse: toWarehouseName,
-          itemCount: transferData.items.length,
+          itemCount: resolvedItems.length,
           totalAmount
         });
 

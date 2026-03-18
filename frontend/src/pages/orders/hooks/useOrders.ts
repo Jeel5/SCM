@@ -14,7 +14,7 @@ const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-export function useOrders(page: number, pageSize: number) {
+export function useOrders(page: number, pageSize: number, filters?: Record<string, unknown>) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [stats, setStats] = useState({
@@ -48,7 +48,7 @@ export function useOrders(page: number, pageSize: number) {
       try {
         const response = useMockApi
           ? await mockApi.getOrders(page, pageSize)
-          : await ordersApi.getOrders(page, pageSize, undefined);
+          : await ordersApi.getOrders(page, pageSize, filters);
         setOrders(response.data);
         setTotalOrders(response.total);
         const fallback = {
@@ -81,7 +81,7 @@ export function useOrders(page: number, pageSize: number) {
         abortControllerRef.current = null;
       }
     };
-  }, [page, pageSize, useMockApi, refreshKey]);
+  }, [page, pageSize, useMockApi, refreshKey, JSON.stringify(filters || {})]);
 
   // Refetch automatically on socket events
   useSocketEvent('order:created', refetch);

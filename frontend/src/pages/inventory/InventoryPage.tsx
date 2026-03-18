@@ -4,6 +4,7 @@ import { Package, Download, Upload, Plus, Eye } from 'lucide-react';
 import { Card, Button, DataTable, Badge, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { importApi, inventoryApi } from '@/api/services';
+import { useSocketEvent } from '@/hooks';
 import type { InventoryItem } from '@/types';
 import {
   StockLevelIndicator,
@@ -24,21 +25,64 @@ export function InventoryPage() {
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
   const { success, error } = useToast();
 
   const pageSize = 10;
-  const { inventory, warehouses, totalItems, stats, isLoading, refetch } = useInventory(page, pageSize);
+  const inventoryFilters = activeTab === 'all' ? undefined : { stock_state: activeTab };
+  const { inventory, warehouses, totalItems, stats, isLoading, refetch } = useInventory(page, pageSize, inventoryFilters);
 
   const handleImportCsv = async (file: File) => {
     try {
       const resp = await importApi.upload(file, 'inventory');
-      success('Inventory import started', `Job queued (${resp.totalRows} rows).`);
-      setTimeout(() => refetch(), 1500);
+      setActiveImportJobId(resp.jobId);
+      success('Inventory import started', `Job queued (${resp.totalRows} rows). Job ID: ${resp.jobId}`);
     } catch (e: any) {
       error('Import failed', e?.message || 'Could not read CSV file');
     }
   };
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    done: number;
+    total: number;
+  }>('import:progress', (evt) => {
+    if (evt.importType !== 'inventory') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+    if (evt.done === evt.total || evt.done % 100 === 0) {
+      refetch();
+    }
+  });
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    total: number;
+    created: number;
+    failed: number;
+    errors?: Array<{ row: number; message: string }>;
+    errorMessage?: string;
+  }>('import:complete', (evt) => {
+    if (evt.importType !== 'inventory') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+
+    if (evt.created > 0) {
+      const errorPreview = evt.failed && evt.errors?.length
+        ? ` | Failed rows: ${evt.errors.slice(0, 3).map((e) => `${e.row}: ${e.message}`).join(' | ')}`
+        : '';
+      success(
+        'Inventory import completed',
+        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}${errorPreview}`
+      );
+    } else {
+      error('Inventory import failed', evt.errorMessage || `0/${evt.total} created. Check import errors in job logs.`);
+    }
+
+    setActiveImportJobId(null);
+    refetch();
+  });
 
   const handleExport = () => {
     if (!inventory.length) return;
@@ -71,17 +115,8 @@ export function InventoryPage() {
   const totalValue = stats?.totalValue || stats?.totalInventoryValue || 0; // Depends on exact response
   const overstockedItems = 0; // Not returned directly by API stats without custom query
 
-  // Filter list by active tab
-  const filteredInventory = inventory.filter((item) => {
-    if (activeTab === 'all') return true;
-    if (activeTab === 'low_stock') return item.isLowStock;
-    if (activeTab === 'out_of_stock') return item.isOutOfStock;
-    if (activeTab === 'overstocked') return item.maxStockLevel != null && item.quantity > item.maxStockLevel * 0.9;
-    return true;
-  });
-
   const tabs = [
-    { id: 'all', label: 'All Items', count: inventory.length },
+    { id: 'all', label: 'All Items', count: totalItems },
     { id: 'low_stock', label: 'Low Stock', count: lowStockItems },
     { id: 'out_of_stock', label: 'Out of Stock', count: outOfStockItems },
     { id: 'overstocked', label: 'Overstocked', count: overstockedItems },
@@ -211,12 +246,19 @@ export function InventoryPage() {
       {/* Data Table */}
       <Card padding="none">
         <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onChange={(tabId) => {
+              setActiveTab(tabId);
+              setPage(1);
+            }}
+          />
         </div>
 
         <DataTable
           columns={columns}
-          data={filteredInventory}
+          data={inventory}
           isLoading={isLoading}
           searchPlaceholder="Search by product name or SKU..."
           pagination={{

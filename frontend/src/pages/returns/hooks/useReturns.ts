@@ -13,7 +13,7 @@ const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-export function useReturns(page: number, pageSize: number) {
+export function useReturns(page: number, pageSize: number, filters?: Record<string, unknown>) {
   const [returns, setReturns] = useState<Return[]>([]);
   const [totalReturns, setTotalReturns] = useState(0);
   const [stats, setStats] = useState({
@@ -46,15 +46,15 @@ export function useReturns(page: number, pageSize: number) {
       try {
         const response = useMockApi
           ? await mockApi.getReturns(page, pageSize)
-          : await returnsApi.getReturns(page, pageSize, undefined);
+          : await returnsApi.getReturns(page, pageSize, filters);
         setReturns(response.data);
         setTotalReturns(response.total);
         const fallback = {
           totalReturns: response.total,
-          pending: response.data.filter((r) => r.status === 'pending').length,
+          pending: response.data.filter((r) => r.status === 'requested').length,
           approved: response.data.filter((r) => r.status === 'approved').length,
           rejected: response.data.filter((r) => r.status === 'rejected').length,
-          completed: response.data.filter((r) => r.status === 'completed').length,
+          completed: response.data.filter((r) => ['refunded', 'restocked', 'completed'].includes(r.status)).length,
         };
         const responseWithStats = response as typeof response & { stats?: typeof fallback };
         setStats(responseWithStats.stats ?? fallback);
@@ -79,7 +79,7 @@ export function useReturns(page: number, pageSize: number) {
         abortControllerRef.current = null;
       }
     };
-  }, [page, pageSize, refreshKey, useMockApi]);
+  }, [page, pageSize, refreshKey, useMockApi, JSON.stringify(filters || {})]);
 
   return { returns, totalReturns, stats, isLoading, refetch };
 }

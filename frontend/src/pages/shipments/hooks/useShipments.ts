@@ -14,7 +14,7 @@ const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-export function useShipments(page: number, pageSize: number) {
+export function useShipments(page: number, pageSize: number, filters?: Record<string, unknown>) {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [totalShipments, setTotalShipments] = useState(0);
   const [stats, setStats] = useState({
@@ -46,7 +46,7 @@ export function useShipments(page: number, pageSize: number) {
       try {
         const response = useMockApi
           ? await mockApi.getShipments(page, pageSize)
-          : await shipmentsApi.getShipments(page, pageSize, undefined);
+          : await shipmentsApi.getShipments(page, pageSize, filters);
         setShipments(response.data);
         setTotalShipments(response.total);
         const fallback = {
@@ -78,7 +78,7 @@ export function useShipments(page: number, pageSize: number) {
         abortControllerRef.current = null;
       }
     };
-  }, [page, pageSize, useMockApi, refreshKey]);
+  }, [page, pageSize, useMockApi, refreshKey, JSON.stringify(filters || {})]);
 
   // Real-time refetch on socket events
   useSocketEvent('shipment:created', refetch);

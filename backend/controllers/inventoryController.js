@@ -81,17 +81,17 @@ async function refreshWarehouseUtilization(warehouseId, client = null) {
  */
 export const getInventory = asyncHandler(async (req, res) => {
   const queryParams = req.validatedQuery || req.query;
-  const { page, limit, warehouse_id, search, low_stock } = queryParams;
+  const { page, limit, warehouse_id, search, low_stock, stock_state } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
   const pageNum  = parseInt(page)  || 1;
   const limitNum = Math.min(parseInt(limit) || 20, 100);
 
   // Cache filtered paginated list for 30 seconds
-  const cacheKey = `inv:list:${orgSeg(organizationId)}:${hashParams({ page: pageNum, limit: limitNum, warehouse_id, search, low_stock })}`;
+  const cacheKey = `inv:list:${orgSeg(organizationId)}:${hashParams({ page: pageNum, limit: limitNum, warehouse_id, search, low_stock, stock_state })}`;
   const cached = await cacheWrap(cacheKey, 30, async () => {
     const { items, totalCount } = await InventoryRepository.findInventory({
-      page: pageNum, limit: limitNum, warehouse_id, search, low_stock, organizationId
+      page: pageNum, limit: limitNum, warehouse_id, search, low_stock, stock_state, organizationId
     });
     return { data: items.map(formatInventoryItem), totalCount };
   });

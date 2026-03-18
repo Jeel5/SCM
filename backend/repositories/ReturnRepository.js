@@ -245,10 +245,10 @@ class ReturnRepository extends BaseRepository {
     let query = `
       SELECT
         COUNT(*)::int AS total_returns,
-        COUNT(*) FILTER (WHERE r.status = 'pending')::int AS pending,
+        COUNT(*) FILTER (WHERE r.status IN ('requested', 'pending', 'pickup_scheduled', 'picked_up', 'in_transit', 'received', 'inspecting'))::int AS pending,
         COUNT(*) FILTER (WHERE r.status = 'approved')::int AS approved,
         COUNT(*) FILTER (WHERE r.status = 'rejected')::int AS rejected,
-        COUNT(*) FILTER (WHERE r.status = 'completed')::int AS completed
+        COUNT(*) FILTER (WHERE r.status IN ('refunded', 'restocked', 'completed'))::int AS completed
       FROM returns r
       WHERE 1=1
     `;
@@ -443,10 +443,10 @@ class ReturnRepository extends BaseRepository {
       this.query(
         `SELECT
            COUNT(*) AS total_returns,
-           COUNT(*) FILTER (WHERE status = 'pending')    AS pending,
+           COUNT(*) FILTER (WHERE status IN ('requested', 'pending', 'pickup_scheduled', 'picked_up', 'in_transit', 'received', 'inspecting')) AS pending,
            COUNT(*) FILTER (WHERE status = 'approved')   AS approved,
-           COUNT(*) FILTER (WHERE status = 'processing') AS processing,
-           COUNT(*) FILTER (WHERE status = 'completed')  AS completed,
+           COUNT(*) FILTER (WHERE status IN ('inspection_passed', 'inspection_failed', 'inspected')) AS processing,
+           COUNT(*) FILTER (WHERE status IN ('refunded', 'restocked', 'completed')) AS completed,
            COUNT(*) FILTER (WHERE status = 'rejected')   AS rejected,
            COALESCE(SUM(refund_amount), 0)                AS total_refunds,
            COALESCE(SUM(restocking_fee),   0)            AS total_restock_fees

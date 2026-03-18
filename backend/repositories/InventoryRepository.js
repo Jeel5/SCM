@@ -22,6 +22,7 @@ class InventoryRepository extends BaseRepository {
     warehouse_id = null,
     search = null,
     low_stock = false,
+    stock_state = null,
     organizationId = undefined
   }, client = null) {
     const offset = (page - 1) * limit;
@@ -83,8 +84,16 @@ class InventoryRepository extends BaseRepository {
       paramCount++;
     }
 
-    if (low_stock) {
-      query += ` AND i.available_quantity <= COALESCE(i.reorder_point, 0)`;
+    if (stock_state === 'low_stock' || low_stock) {
+      query += ` AND i.available_quantity <= COALESCE(i.reorder_point, 0) AND i.available_quantity > 0`;
+    }
+
+    if (stock_state === 'out_of_stock') {
+      query += ` AND i.available_quantity = 0`;
+    }
+
+    if (stock_state === 'overstocked') {
+      query += ` AND i.max_stock_level IS NOT NULL AND i.quantity > (i.max_stock_level * 0.9)`;
     }
 
     query += ` ORDER BY i.updated_at DESC`;

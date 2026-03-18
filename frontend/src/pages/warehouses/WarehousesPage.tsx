@@ -55,6 +55,24 @@ function hasValidCoordinates(location: Warehouse['location'] | undefined | null)
     && (location.lat !== 0 || location.lng !== 0);
 }
 
+function isInsideIndia(lat: number, lng: number): boolean {
+  return lat >= INDIA_BOUNDS.minLat
+    && lat <= INDIA_BOUNDS.maxLat
+    && lng >= INDIA_BOUNDS.minLng
+    && lng <= INDIA_BOUNDS.maxLng;
+}
+
+function normalizeIndiaCoordinates(location: { lat: number; lng: number }): { lat: number; lng: number } {
+  if (isInsideIndia(location.lat, location.lng)) return location;
+
+  // Common import issue: latitude/longitude swapped.
+  if (isInsideIndia(location.lng, location.lat)) {
+    return { lat: location.lng, lng: location.lat };
+  }
+
+  return location;
+}
+
 function hashString(value: string): number {
   let hash = 0;
   for (let i = 0; i < value.length; i++) {
@@ -138,7 +156,7 @@ export function WarehousesPage() {
   const warehousesWithCoords = warehouses.map((warehouse) => ({
     warehouse,
     coordinates: hasValidCoordinates(warehouse.location)
-      ? warehouse.location
+      ? normalizeIndiaCoordinates(warehouse.location)
       : fallbackCoordinates(warehouse),
   }));
   const mapCenter = warehousesWithCoords.length > 0

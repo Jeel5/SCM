@@ -93,6 +93,11 @@ export function initSocket(httpServer, corsOrigin) {
   io.on('connection', (socket) => {
     const { userId, role, organizationId } = socket.user;
 
+    // Join a per-user room for targeted notification delivery.
+    if (userId) {
+      socket.join(`user:${userId}`);
+    }
+
     // Join the org room so org-scoped broadcasts reach this socket
     if (role === 'superadmin') {
       socket.join('superadmin');
