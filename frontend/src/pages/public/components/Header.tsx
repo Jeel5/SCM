@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Truck, Menu, X, Sun, Moon } from 'lucide-react';
-import { useUIStore } from '../../../stores';
+import { useAuthStore, useUIStore } from '../../../stores';
 
 const navLinks = [
   { label: 'Features', href: '/#features' },
@@ -16,7 +16,10 @@ export function PublicHeader() {
   const scrolled = true;
   const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, setTheme } = useUIStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const authLinkPath = isAuthenticated ? '/dashboard' : '/login';
+  const authLinkLabel = isAuthenticated ? 'Go to Dashboard' : 'Log In';
 
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
@@ -64,12 +67,12 @@ export function PublicHeader() {
               {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
             <Link
-              to="/login"
+              to={authLinkPath}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                 scrolled ? 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800' : 'text-white/80 hover:text-white hover:bg-white/10'
               }`}
             >
-              Log In
+              {authLinkLabel}
             </Link>
             <Link
               to="/get-demo"
@@ -122,11 +125,11 @@ export function PublicHeader() {
               ))}
               <div className="pt-4 pb-2 flex flex-col gap-2 border-t border-gray-100 dark:border-gray-800 mt-3">
                 <Link
-                  to="/login"
+                  to={authLinkPath}
                   className="w-full text-center px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                   onClick={() => setMobileOpen(false)}
                 >
-                  Log in
+                  {isAuthenticated ? 'Go to Dashboard' : 'Log In'}
                 </Link>
                 <Link
                   to="/get-demo"
