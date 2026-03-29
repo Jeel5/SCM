@@ -38,6 +38,7 @@ export const settingsService = {
     Object.entries(updates).forEach(([key, value]) => {
       if (allowedFields.includes(key) && value !== undefined) {
         fields.push(`${key} = $${paramCount}`);
+        paramCount += 1;
         values.push(value);
         paramCount += 1;
       }
@@ -184,21 +185,25 @@ export const settingsService = {
 
     if (email_enabled !== undefined) {
       fields.push(`email_enabled = $${paramCount}`);
+      paramCount += 1;
       values.push(email_enabled);
       paramCount += 1;
     }
     if (push_enabled !== undefined) {
       fields.push(`push_enabled = $${paramCount}`);
+      paramCount += 1;
       values.push(push_enabled);
       paramCount += 1;
     }
     if (sms_enabled !== undefined) {
       fields.push(`sms_enabled = $${paramCount}`);
+      paramCount += 1;
       values.push(sms_enabled);
       paramCount += 1;
     }
     if (notification_types !== undefined) {
       fields.push(`notification_types = $${paramCount}`);
+      paramCount += 1;
       values.push(JSON.stringify(notification_types));
       paramCount += 1;
     }

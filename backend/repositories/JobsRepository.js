@@ -50,10 +50,14 @@ class JobsRepository extends BaseRepository {
     const params = [];
     let pc = 1;
 
-    if (organizationId) { conditions.push(`j.organization_id = $${pc += 1}`); params.push(organizationId); }
-    if (status)         { conditions.push(`j.status = $${pc += 1}`);          params.push(status); }
-    if (job_type)       { conditions.push(`j.job_type = $${pc += 1}`);        params.push(job_type); }
-    if (priority)       { conditions.push(`j.priority = $${pc += 1}`);        params.push(priority); }
+    if (organizationId) { conditions.push(`j.organization_id = $${pc}`); params.push(organizationId); }
+    pc += 1;
+    if (status)         { conditions.push(`j.status = $${pc}`);          params.push(status); }
+    pc += 1;
+    if (job_type)       { conditions.push(`j.job_type = $${pc}`);        params.push(job_type); }
+    pc += 1;
+    if (priority)       { conditions.push(`j.priority = $${pc}`);        params.push(priority); }
+    pc += 1;
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -65,7 +69,8 @@ class JobsRepository extends BaseRepository {
        LEFT JOIN users u ON j.created_by = u.id
        ${where}
        ORDER BY j.priority ASC, j.scheduled_for ASC, j.created_at DESC
-       LIMIT $${pc += 1} OFFSET $${pc += 1}`,
+       LIMIT $${pc} OFFSET $${pc}`,
+       pc += 2;
       params, client
     );
 

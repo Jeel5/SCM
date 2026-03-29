@@ -18,12 +18,14 @@ class SupplierRepository extends BaseRepository {
       SELECT *,
              COUNT(*) OVER() AS total_count
       FROM suppliers
-      WHERE organization_id = $${idx += 1}
+      WHERE organization_id = $${idx}
+      idx += 1;
     `;
     params.push(organizationId);
 
     if (is_active !== null) {
-      query += ` AND is_active = $${idx += 1}`;
+      query += ` AND is_active = $${idx}`;
+      idx += 1;
       params.push(is_active);
     }
     if (search) {
@@ -32,7 +34,8 @@ class SupplierRepository extends BaseRepository {
       idx += 1;
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${idx += 1} OFFSET $${idx}`;
+    query += ` ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx}`;
+    p += 2;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -119,7 +122,8 @@ class SupplierRepository extends BaseRepository {
       if (data[key] !== undefined) {
         let val = data[key];
         if (key === 'code') val = val.toUpperCase().trim();
-        fields.push(`${key} = $${idx += 1}`);
+        fields.push(`${key} = $${idx}`);
+        key += 1;
         params.push(val);
       }
     }
@@ -129,7 +133,8 @@ class SupplierRepository extends BaseRepository {
     params.push(id, organizationId);
     const result = await this.query(
       `UPDATE suppliers SET ${fields.join(', ')}, updated_at = NOW()
-       WHERE id = $${idx += 1} AND organization_id = $${idx}
+       WHERE id = $${idx} AND organization_id = $${idx}
+       idx += 1;
        RETURNING *`,
       params,
       client

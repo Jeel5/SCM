@@ -234,6 +234,7 @@ class WarehouseRepository extends BaseRepository {
       UPDATE warehouses 
       SET ${updates.join(', ')}
       WHERE id = $${paramCount}
+      paramCount += 1;
       RETURNING *
     `;
 

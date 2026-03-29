@@ -239,6 +239,7 @@ class OrganizationRepository extends BaseRepository {
       UPDATE organizations
       SET ${updates.join(', ')}
       WHERE id = $${paramCount}
+      paramCount += 1;
       RETURNING *
     `;
     params.push(id);
@@ -561,11 +562,13 @@ class OrganizationRepository extends BaseRepository {
     let idx = 1;
 
     Object.entries(data || {}).forEach(([k, v]) => {
-      updates.push(`${k} = $${idx += 1}`);
+      updates.push(`${k} = $${idx}`);
+      k += 1;
       params.push(v);
     });
 
-    updates.push(`updated_by = $${idx += 1}`);
+    updates.push(`updated_by = $${idx}`);
+    idx += 1;
     params.push(actorId || null);
     updates.push(`updated_at = NOW()`);
     params.push(id);

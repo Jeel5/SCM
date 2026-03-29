@@ -19,15 +19,18 @@ class ProductRepository extends BaseRepository {
     let pc = 1;
 
     if (organizationId) {
-      query += ` AND (p.organization_id = $${pc += 1} OR p.organization_id IS NULL)`;
+      query += ` AND (p.organization_id = $${pc} OR p.organization_id IS NULL)`;
+      pc += 1;
       params.push(organizationId);
     }
     if (category) {
-      query += ` AND p.category = $${pc += 1}`;
+      query += ` AND p.category = $${pc}`;
+      pc += 1;
       params.push(category);
     }
     if (is_active !== undefined && is_active !== null) {
-      query += ` AND p.is_active = $${pc += 1}`;
+      query += ` AND p.is_active = $${pc}`;
+      pc += 1;
       params.push(is_active);
     }
     if (search) {
@@ -35,7 +38,8 @@ class ProductRepository extends BaseRepository {
       params.push(`%${search}%`);
       pc += 1;
     }
-    query += ` ORDER BY p.name ASC LIMIT $${pc += 1} OFFSET $${pc += 1}`;
+    query += ` ORDER BY p.name ASC LIMIT $${pc} OFFSET $${pc + 1}`;
+    pc += 2;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -59,7 +63,8 @@ class ProductRepository extends BaseRepository {
     `;
 
     if (organizationId) {
-      query += ` AND (p.organization_id = $${p += 1} OR p.organization_id IS NULL)`;
+      query += ` AND (p.organization_id = $${p} OR p.organization_id IS NULL)`;
+      p += 1;
       params.push(organizationId);
     }
 
@@ -126,7 +131,8 @@ class ProductRepository extends BaseRepository {
 
     let catWhere = '';
     if (category) {
-      catWhere = ` AND p.category = $${pc += 1}`;
+      catWhere = ` AND p.category = $${pc}`;
+      pc += 1;
       params.push(category);
     }
 

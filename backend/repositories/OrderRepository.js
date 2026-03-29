@@ -337,7 +337,8 @@ class OrderRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'o');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${p += 1}`;
+        query += ` AND ${orgFilter.clause}$${p}`;
+        p += 1;
         params.push(...orgFilter.params);
       }
     }

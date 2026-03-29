@@ -275,7 +275,8 @@ class ReturnRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'r');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${p += 1}`;
+        query += ` AND ${orgFilter.clause}$${p}`;
+        p += 1;
         params.push(...orgFilter.params);
       }
     }

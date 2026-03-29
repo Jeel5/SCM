@@ -260,6 +260,7 @@ class CarrierRepository extends BaseRepository {
         for (const field of ALLOWED) {
             if (updates[field] !== undefined) {
                 setClauses.push(`${field} = $${paramCount}`);
+                paramCount += 1;
                 params.push(updates[field]);
                 paramCount += 1;
             }
@@ -268,6 +269,7 @@ class CarrierRepository extends BaseRepository {
         // Handle service_areas JSON separately
         if (updates.service_areas !== undefined) {
             setClauses.push(`service_areas = $${paramCount}`);
+            paramCount += 1;
             params.push(JSON.stringify(updates.service_areas));
             paramCount += 1;
         }
@@ -281,6 +283,7 @@ class CarrierRepository extends BaseRepository {
       UPDATE carriers
       SET ${setClauses.join(', ')}
       WHERE id = $${paramCount}
+      paramCount += 1;
       RETURNING *
     `;
 
