@@ -33,20 +33,18 @@ class ShipmentRepository extends BaseRepository {
       const orgFilter = this.buildOrgFilter(organizationId, 's');
       if (orgFilter.clause) {
         query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
         params.push(...orgFilter.params);
+        paramCount += 1;
       }
     }
 
     if (status) {
       query += ` AND s.status = $${paramCount}`;
-      paramCount += 1;
       params.push(status);
     }
 
     if (carrier_id) {
-      query += ` AND s.carrier_id = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND s.carrier_id = $${paramCount += 1}`;
       params.push(carrier_id);
     }
 
@@ -143,21 +141,21 @@ class ShipmentRepository extends BaseRepository {
       const orgFilter = this.buildOrgFilter(organizationId, 's');
       if (orgFilter.clause) {
         query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
         params.push(...orgFilter.params);
+        paramCount += 1;
       }
     }
 
     if (status) {
       query += ` AND s.status = $${paramCount}`;
-      paramCount += 1;
       params.push(status);
+      paramCount += 1;
     }
 
     if (carrier_id) {
       query += ` AND s.carrier_id = $${paramCount}`;
-      paramCount += 1;
       params.push(carrier_id);
+      paramCount += 1;
     }
 
     if (search) {
@@ -167,7 +165,6 @@ class ShipmentRepository extends BaseRepository {
     }
 
     query += ` ORDER BY s.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    paramCount += 2;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -197,8 +194,8 @@ class ShipmentRepository extends BaseRepository {
       const orgFilter = this.buildOrgFilter(organizationId, 's');
       if (orgFilter.clause) {
         query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
         params.push(...orgFilter.params);
+        paramCount += 1;
       }
     }
 
@@ -283,21 +280,21 @@ class ShipmentRepository extends BaseRepository {
 
     if (location) {
       query += `, current_location = $${paramCount}`;
-      paramCount += 1;
       params.push(JSON.stringify(location));
+      paramCount += 1;
     }
 
     query += ` WHERE id = $${paramCount}`;
-    paramCount += 1;
     params.push(shipmentId);
+    paramCount += 1;
 
     // Add organization filter for multi-tenancy
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
         query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
         params.push(...orgFilter.params);
+        paramCount += 1;
       }
     }
 
@@ -359,8 +356,8 @@ class ShipmentRepository extends BaseRepository {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
         query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
         params.push(...orgFilter.params);
+        paramCount += 1;
       }
     }
 
@@ -421,21 +418,21 @@ class ShipmentRepository extends BaseRepository {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
         query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
         params.push(...orgFilter.params);
+        paramCount += 1;
       }
     }
 
     if (dateFrom) {
       query += ` AND created_at >= $${paramCount}`;
-      paramCount += 1;
       params.push(dateFrom);
+      paramCount += 1;
     }
 
     if (dateTo) {
       query += ` AND created_at <= $${paramCount}`;
-      paramCount += 1;
       params.push(dateTo);
+      paramCount += 1;
     }
 
     const result = await this.query(query, params, client);
@@ -480,21 +477,21 @@ class ShipmentRepository extends BaseRepository {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
         query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
         params.push(...orgFilter.params);
+        paramCount += 1;
       }
     }
 
     if (dateFrom) {
       query += ` AND created_at >= $${paramCount}`;
-      paramCount += 1;
       params.push(dateFrom);
+      paramCount += 1;
     }
 
     if (dateTo) {
       query += ` AND created_at <= $${paramCount}`;
-      paramCount += 1;
       params.push(dateTo);
+      paramCount += 1;
     }
 
     query += ` GROUP BY carrier_id, carrier_name ORDER BY total_shipments DESC`;

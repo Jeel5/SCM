@@ -64,26 +64,22 @@ class CarrierRepository extends BaseRepository {
         // NOTE: carriers can be org-scoped OR system-wide (organization_id IS NULL).
         // When an org user fetches carriers, return their org's carriers + system-wide ones.
         if (organizationId !== undefined) {
-            query += ` AND (c.organization_id = $${paramCount} OR c.organization_id IS NULL)`;
-            paramCount += 1;
+            query += ` AND (c.organization_id = $${paramCount += 1} OR c.organization_id IS NULL)`;
             params.push(organizationId);
         }
 
         if (is_active !== null) {
-            query += ` AND c.is_active = $${paramCount}`;
-            paramCount += 1;
+            query += ` AND c.is_active = $${paramCount += 1}`;
             params.push(is_active);
         }
 
         if (availability_status) {
-            query += ` AND c.availability_status = $${paramCount}`;
-            paramCount += 1;
+            query += ` AND c.availability_status = $${paramCount += 1}`;
             params.push(availability_status);
         }
 
         if (service_type) {
-            query += ` AND c.service_type = $${paramCount}`;
-            paramCount += 1;
+            query += ` AND c.service_type = $${paramCount += 1}`;
             params.push(service_type);
         }
 
@@ -94,8 +90,7 @@ class CarrierRepository extends BaseRepository {
         }
 
         query += ` ORDER BY c.reliability_score DESC, c.name ASC`;
-        query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-        paramCount += 2;
+        query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
         params.push(limit, offset);
 
         const result = await this.query(query, params, client);
@@ -128,8 +123,7 @@ class CarrierRepository extends BaseRepository {
     `;
 
         if (organizationId !== undefined) {
-            query += ` AND (c.organization_id = $${paramCount} OR c.organization_id IS NULL)`;
-            paramCount += 1;
+            query += ` AND (c.organization_id = $${paramCount += 1} OR c.organization_id IS NULL)`;
             params.push(organizationId);
         }
 
@@ -170,19 +164,16 @@ class CarrierRepository extends BaseRepository {
     `;
 
         if (serviceType) {
-            query += ` AND (service_type = $${paramCount} OR service_type = 'all')`;
-            paramCount += 1;
+            query += ` AND (service_type = $${paramCount += 1} OR service_type = 'all')`;
             params.push(serviceType);
         }
 
         if (organizationId !== undefined) {
-            query += ` AND (organization_id = $${paramCount} OR organization_id IS NULL)`;
-            paramCount += 1;
+            query += ` AND (organization_id = $${paramCount += 1} OR organization_id IS NULL)`;
             params.push(organizationId);
         }
 
-        query += ` ORDER BY reliability_score DESC LIMIT $${paramCount}`;
-        paramCount += 1;
+        query += ` ORDER BY reliability_score DESC LIMIT $${paramCount += 1}`;
         params.push(limit);
         const result = await this.query(query, params, client);
         return result.rows;

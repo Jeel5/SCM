@@ -58,21 +58,18 @@ class UserRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (role) {
-      query += ` AND role = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND role = $${paramCount += 1}`;
       params.push(role);
     }
 
     if (typeof is_active === 'boolean') {
-      query += ` AND is_active = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
 
@@ -86,8 +83,7 @@ class UserRepository extends BaseRepository {
     }
 
     query += ` ORDER BY created_at DESC`;
-    query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    paramCount += 2;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);

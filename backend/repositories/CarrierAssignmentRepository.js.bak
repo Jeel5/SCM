@@ -124,13 +124,11 @@ class CarrierAssignmentRepository extends BaseRepository {
         const params = [carrierId];
         let paramCount = 2;
         if (filters.status) {
-            query += ` AND ca.status = $${paramCount}`;
-            paramCount += 1;
+            query += ` AND ca.status = $${paramCount += 1}`;
             params.push(filters.status);
         }
         if (filters.serviceType) {
-            query += ` AND ca.service_type = $${paramCount}`;
-            paramCount += 1;
+            query += ` AND ca.service_type = $${paramCount += 1}`;
             params.push(filters.serviceType);
         }
         query += ` ORDER BY ca.requested_at DESC`;

@@ -35,21 +35,18 @@ class WarehouseRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'w');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (typeof is_active === 'boolean') {
-      query += ` AND w.is_active = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND w.is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
 
     if (warehouse_type) {
-      query += ` AND w.warehouse_type = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND w.warehouse_type = $${paramCount += 1}`;
       params.push(warehouse_type);
     }
 
@@ -65,8 +62,7 @@ class WarehouseRepository extends BaseRepository {
     }
 
     query += ` ORDER BY w.name ASC`;
-    query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    paramCount += 2;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -334,8 +330,7 @@ class WarehouseRepository extends BaseRepository {
     }
 
     query += ` ORDER BY i.product_name ASC`;
-    query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    paramCount += 2;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);

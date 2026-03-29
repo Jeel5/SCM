@@ -94,8 +94,7 @@ class OrganizationRepository extends BaseRepository {
     }
 
     if (typeof is_active === 'boolean') {
-      query += ` AND o.is_active = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND o.is_active = $${paramCount += 1}`;
       params.push(is_active);
     }
 
@@ -110,8 +109,7 @@ class OrganizationRepository extends BaseRepository {
     }
 
     query += ` ORDER BY o.created_at DESC`;
-    query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    paramCount += 2;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -223,8 +221,7 @@ class OrganizationRepository extends BaseRepository {
 
     mutableFields.forEach((field) => {
       if (orgData[field] !== undefined) {
-        updates.push(`${field} = $${paramCount}`);
-        paramCount += 1;
+        updates.push(`${field} = $${paramCount += 1}`);
         params.push(orgData[field]);
       }
     });

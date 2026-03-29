@@ -36,13 +36,11 @@ class NotificationRepository extends BaseRepository {
     let paramCount = 2;
 
     if (filters.isRead !== undefined) {
-      conditions.push(`is_read = $${paramCount}`);
-      paramCount += 1;
+      conditions.push(`is_read = $${paramCount += 1}`);
       params.push(filters.isRead);
     }
     if (filters.type) {
-      conditions.push(`type = $${paramCount}`);
-      paramCount += 1;
+      conditions.push(`type = $${paramCount += 1}`);
       params.push(filters.type);
     }
 
@@ -69,13 +67,11 @@ class NotificationRepository extends BaseRepository {
     let paramCount = 2;
 
     if (filters.isRead !== undefined) {
-      conditions.push(`is_read = $${paramCount}`);
-      paramCount += 1;
+      conditions.push(`is_read = $${paramCount += 1}`);
       params.push(filters.isRead);
     }
     if (filters.type) {
-      conditions.push(`type = $${paramCount}`);
-      paramCount += 1;
+      conditions.push(`type = $${paramCount += 1}`);
       params.push(filters.type);
     }
 

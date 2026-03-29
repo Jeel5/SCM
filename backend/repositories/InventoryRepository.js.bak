@@ -64,15 +64,13 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (warehouse_id) {
-      query += ` AND i.warehouse_id = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND i.warehouse_id = $${paramCount += 1}`;
       params.push(warehouse_id);
     }
 
@@ -99,8 +97,7 @@ class InventoryRepository extends BaseRepository {
     }
 
     query += ` ORDER BY i.updated_at DESC`;
-    query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    paramCount += 2;
+    query += ` LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -134,8 +131,7 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -167,8 +163,7 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId);
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
@@ -197,15 +192,13 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (warehouseId) {
-      query += ` AND i.warehouse_id = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND i.warehouse_id = $${paramCount += 1}`;
       params.push(warehouseId);
     }
 
@@ -238,15 +231,13 @@ class InventoryRepository extends BaseRepository {
     if (organizationId !== undefined) {
       const orgFilter = this.buildOrgFilter(organizationId, 'i');
       if (orgFilter.clause) {
-        query += ` AND ${orgFilter.clause}$${paramCount}`;
-        paramCount += 1;
+        query += ` AND ${orgFilter.clause}$${paramCount += 1}`;
         params.push(...orgFilter.params);
       }
     }
 
     if (warehouseId) {
-      query += ` AND i.warehouse_id = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND i.warehouse_id = $${paramCount += 1}`;
       params.push(warehouseId);
     }
 
@@ -321,8 +312,7 @@ class InventoryRepository extends BaseRepository {
 
     ALLOWED.forEach((field) => {
       if (updates[field] !== undefined) {
-        setClauses.push(`${field} = $${paramCount}`);
-        paramCount += 1;
+        setClauses.push(`${field} = $${paramCount += 1}`);
         params.push(updates[field]);
       }
     });
@@ -525,13 +515,11 @@ class InventoryRepository extends BaseRepository {
     `;
 
     if (movement_type) {
-      query += ` AND sm.movement_type = $${paramCount}`;
-      paramCount += 1;
+      query += ` AND sm.movement_type = $${paramCount += 1}`;
       params.push(movement_type);
     }
 
-    query += ` ORDER BY sm.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    paramCount += 2;
+    query += ` ORDER BY sm.created_at DESC LIMIT $${paramCount += 1} OFFSET $${paramCount}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
