@@ -29,13 +29,14 @@ class FinanceRepository extends BaseRepository {
 
     if (organizationId !== undefined) {
       const f = this.buildOrgFilter(organizationId, 'i');
-      if (f.clause) { query += ` AND ${f.clause}$${p}`; params.push(...f.params); }
-      p += 1;
+      if (f.clause) {
+        query += ` AND ${f.clause}$${p}`;
+        params.push(...f.params);
+        p += 1;
+      }
     }
-    if (status)     { query += ` AND i.status = $${p}`;      params.push(status); }
-    p += 1;
-    if (carrier_id) { query += ` AND i.carrier_id = $${p}`;  params.push(carrier_id); }
-    p += 1;
+    if (status)     { query += ` AND i.status = $${p}`;      params.push(status); p += 1; }
+    if (carrier_id) { query += ` AND i.carrier_id = $${p}`;  params.push(carrier_id); p += 1; }
 
     query += ` ORDER BY i.created_at DESC LIMIT $${p} OFFSET $${p + 1}`;
     p += 2;
@@ -105,11 +106,13 @@ class FinanceRepository extends BaseRepository {
 
     if (organizationId !== undefined) {
       const f = this.buildOrgFilter(organizationId, 'r');
-      if (f.clause) { query += ` AND ${f.clause}$${p}`; params.push(...f.params); }
-      p += 1;
+      if (f.clause) {
+        query += ` AND ${f.clause}$${p}`;
+        params.push(...f.params);
+        p += 1;
+      }
     }
-    if (status) { query += ` AND r.status = $${p}`; params.push(status); }
-    p += 1;
+    if (status) { query += ` AND r.status = $${p}`; params.push(status); p += 1; }
 
     query += ` ORDER BY r.created_at DESC LIMIT $${p} OFFSET $${p + 1}`;
     p += 2;
@@ -142,8 +145,11 @@ class FinanceRepository extends BaseRepository {
 
     if (organizationId !== undefined) {
       const f = this.buildOrgFilter(organizationId, 'i');
-      if (f.clause) { query += ` AND ${f.clause}$${p}`; params.push(...f.params); }
-      p += 1;
+      if (f.clause) {
+        query += ` AND ${f.clause}$${p}`;
+        params.push(...f.params);
+        p += 1;
+      }
     }
 
     query += ` ORDER BY i.created_at DESC LIMIT $${p} OFFSET $${p + 1}`;
@@ -289,14 +295,10 @@ class FinanceRepository extends BaseRepository {
     const updates = [];
     const values = [];
     let p = 1;
-    if (patches.status       !== undefined) { updates.push(`status = $${p}`);       values.push(patches.status); }
-    p += 1;
-    if (patches.penalties    !== undefined) { updates.push(`penalties = $${p}`);    values.push(patches.penalties); }
-    p += 1;
-    if (patches.adjustments  !== undefined) { updates.push(`adjustments = $${p}`);  values.push(patches.adjustments); }
-    p += 1;
-    if (patches.final_amount !== undefined) { updates.push(`final_amount = $${p}`); values.push(patches.final_amount); }
-    p += 1;
+    if (patches.status       !== undefined) { updates.push(`status = $${p}`);       values.push(patches.status); p += 1; }
+    if (patches.penalties    !== undefined) { updates.push(`penalties = $${p}`);    values.push(patches.penalties); p += 1; }
+    if (patches.adjustments  !== undefined) { updates.push(`adjustments = $${p}`);  values.push(patches.adjustments); p += 1; }
+    if (patches.final_amount !== undefined) { updates.push(`final_amount = $${p}`); values.push(patches.final_amount); p += 1; }
     values.push(id);
     const result = await this.query(
       `UPDATE invoices SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${p} RETURNING *`,

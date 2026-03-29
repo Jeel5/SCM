@@ -50,18 +50,16 @@ class JobsRepository extends BaseRepository {
     const params = [];
     let pc = 1;
 
-    if (organizationId) { conditions.push(`j.organization_id = $${pc}`); params.push(organizationId); }
-    pc += 1;
-    if (status)         { conditions.push(`j.status = $${pc}`);          params.push(status); }
-    pc += 1;
-    if (job_type)       { conditions.push(`j.job_type = $${pc}`);        params.push(job_type); }
-    pc += 1;
-    if (priority)       { conditions.push(`j.priority = $${pc}`);        params.push(priority); }
-    pc += 1;
+    if (organizationId) { conditions.push(`j.organization_id = $${pc}`); params.push(organizationId); pc += 1; }
+    if (status)         { conditions.push(`j.status = $${pc}`);          params.push(status); pc += 1; }
+    if (job_type)       { conditions.push(`j.job_type = $${pc}`);        params.push(job_type); pc += 1; }
+    if (priority)       { conditions.push(`j.priority = $${pc}`);        params.push(priority); pc += 1; }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     // total_count via window so we only need one round-trip
+    const limitParam = pc;
+    const offsetParam = pc + 1;
     params.push(limit, offset);
     const result = await this.query(
       `SELECT j.*, u.name AS created_by_name, COUNT(*) OVER() AS total_count
@@ -69,8 +67,7 @@ class JobsRepository extends BaseRepository {
        LEFT JOIN users u ON j.created_by = u.id
        ${where}
        ORDER BY j.priority ASC, j.scheduled_for ASC, j.created_at DESC
-       LIMIT $${pc} OFFSET $${pc}`,
-       pc += 2;
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
       params, client
     );
 

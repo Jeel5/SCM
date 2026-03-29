@@ -20,9 +20,9 @@ class SalesChannelRepository extends BaseRepository {
       FROM sales_channels sc
       LEFT JOIN warehouses w ON sc.default_warehouse_id = w.id
       WHERE sc.organization_id = $${idx}
-      idx += 1;
     `;
     params.push(organizationId);
+    idx += 1;
 
     if (is_active !== null) {
       query += ` AND sc.is_active = $${idx}`;
@@ -40,8 +40,7 @@ class SalesChannelRepository extends BaseRepository {
       idx += 1;
     }
 
-    query += ` ORDER BY sc.created_at DESC LIMIT $${idx} OFFSET $${idx}`;
-    p += 2;
+    query += ` ORDER BY sc.created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -127,7 +126,7 @@ class SalesChannelRepository extends BaseRepository {
         if (key === 'code') val = val.toUpperCase().trim();
         if (key === 'config') val = JSON.stringify(val);
         fields.push(`${key} = $${idx}`);
-        key += 1;
+        idx += 1;
         params.push(val);
       }
     }
@@ -137,8 +136,7 @@ class SalesChannelRepository extends BaseRepository {
     params.push(id, organizationId);
     const result = await this.query(
       `UPDATE sales_channels SET ${fields.join(', ')}, updated_at = NOW()
-       WHERE id = $${idx} AND organization_id = $${idx}
-       idx += 1;
+       WHERE id = $${idx} AND organization_id = $${idx + 1}
        RETURNING *`,
       params,
       client

@@ -107,19 +107,22 @@ class SlaRepository extends BaseRepository {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
         params.push(data[key]);
         fields.push(`${col} = $${p}`);
-        col += 1;
+        p += 1;
       }
     });
 
     if (fields.length === 0) return null;
 
     params.push(id);
-    const whereClause = organizationId
-      ? `id = $${p} AND (organization_id = $${p} OR organization_id IS NULL)`
+    let whereClause;
+    if (organizationId) {
+      params.push(organizationId);
+      whereClause = `id = $${p} AND (organization_id = $${p + 1} OR organization_id IS NULL)`;
       p += 2;
-      : `id = $${p}`;
+    } else {
+      whereClause = `id = $${p}`;
       p += 1;
-    if (organizationId) params.push(organizationId);
+    }
 
     const result = await this.query(
       `UPDATE sla_policies SET ${fields.join(', ')}, updated_at = NOW() WHERE ${whereClause} RETURNING *`,
@@ -166,8 +169,8 @@ class SlaRepository extends BaseRepository {
       FROM   sla_policies sp
       WHERE  sp.is_active = true
         AND  (sp.organization_id = $${p} OR sp.organization_id IS NULL)
-        p += 1;
     `;
+    p += 1;
 
     // Carrier: match exact carrier or wildcard (NULL)
     if (carrierId) {
@@ -244,10 +247,8 @@ class SlaRepository extends BaseRepository {
     let p = 1;
     const where = ['1=1'];
 
-    if (organizationId) { params.push(organizationId); where.push(`sv.organization_id = $${p}`); }
-    p += 1;
-    if (status)          { params.push(status);          where.push(`sv.status = $${p}`); }
-    p += 1;
+    if (organizationId) { params.push(organizationId); where.push(`sv.organization_id = $${p}`); p += 1; }
+    if (status)         { params.push(status);         where.push(`sv.status = $${p}`); p += 1; }
 
     const baseQuery = `
       SELECT sv.*, s.tracking_number, sp.name AS policy_name
@@ -259,11 +260,12 @@ class SlaRepository extends BaseRepository {
 
     const countParams = [...params];
     const offset = (page - 1) * limit;
+    const limitParam = p;
+    const offsetParam = p + 1;
     params.push(limit, offset);
 
     const [dataResult, countResult] = await Promise.all([
-      this.query(baseQuery + ` ORDER BY sv.violated_at DESC LIMIT $${p} OFFSET $${p + 1}`, params),
-      p += 2;
+      this.query(baseQuery + ` ORDER BY sv.violated_at DESC LIMIT $${limitParam} OFFSET $${offsetParam}`, params),
       this.query(`SELECT COUNT(*) FROM (${baseQuery}) AS _cnt`, countParams),
     ]);
 
@@ -326,12 +328,9 @@ class SlaRepository extends BaseRepository {
     let p = 1;
     const where = ['1=1'];
 
-    if (organizationId) { params.push(organizationId); where.push(`e.organization_id = $${p}`); }
-    p += 1;
-    if (severity)        { params.push(severity);        where.push(`e.severity = $${p}`); }
-    p += 1;
-    if (status)          { params.push(status);          where.push(`e.status = $${p}`); }
-    p += 1;
+    if (organizationId) { params.push(organizationId); where.push(`e.organization_id = $${p}`); p += 1; }
+    if (severity)       { params.push(severity);       where.push(`e.severity = $${p}`); p += 1; }
+    if (status)         { params.push(status);         where.push(`e.status = $${p}`); p += 1; }
 
     const baseQuery = `
       SELECT e.*, s.tracking_number, o.order_number
@@ -343,11 +342,12 @@ class SlaRepository extends BaseRepository {
 
     const countParams = [...params];
     const offset = (page - 1) * limit;
+    const limitParam = p;
+    const offsetParam = p + 1;
     params.push(limit, offset);
 
     const [dataResult, countResult] = await Promise.all([
-      this.query(baseQuery + ` ORDER BY e.created_at DESC LIMIT $${p} OFFSET $${p + 1}`, params),
-      p += 2;
+      this.query(baseQuery + ` ORDER BY e.created_at DESC LIMIT $${limitParam} OFFSET $${offsetParam}`, params),
       this.query(`SELECT COUNT(*) FROM (${baseQuery}) AS _cnt`, countParams),
     ]);
 
