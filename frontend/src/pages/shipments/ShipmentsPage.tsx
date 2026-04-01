@@ -38,13 +38,21 @@ export function ShipmentsPage() {
   const shipmentFilters = activeTab === 'all' ? undefined : { status: activeTab };
   const { shipments, totalShipments, stats, isLoading, refetch } = useShipments(page, pageSize, shipmentFilters);
 
+  const formatAddressForRoute = (address?: Shipment['origin'] | Shipment['destination'] | null) => {
+    if (!address) return 'N/A';
+    const city = address.city?.trim();
+    const state = address.state?.trim();
+    if (city && state) return `${city}, ${state}`;
+    return city || state || 'N/A';
+  };
+
   const handleExport = () => {
     const exportData = shipments.map(shipment => ({
       tracking_number: shipment.trackingNumber,
       carrier: shipment.carrierName,
       status: shipment.status,
-      origin: `${shipment.origin.city}, ${shipment.origin.state}`,
-      destination: `${shipment.destination.city}, ${shipment.destination.state}`,
+      origin: formatAddressForRoute(shipment.origin),
+      destination: formatAddressForRoute(shipment.destination),
       weight: shipment.weight,
       cost: shipment.cost,
       estimated_delivery: shipment.estimatedDelivery,
@@ -149,9 +157,9 @@ export function ShipmentsPage() {
       header: 'Route',
       render: (shipment: Shipment) => (
         <div className="flex items-center gap-2">
-          <span className="text-gray-700 dark:text-gray-200">{shipment.origin.city}</span>
+          <span className="text-gray-700 dark:text-gray-200">{formatAddressForRoute(shipment.origin)}</span>
           <span className="text-gray-400 dark:text-gray-500">→</span>
-          <span className="text-gray-700 dark:text-gray-200">{shipment.destination.city}</span>
+          <span className="text-gray-700 dark:text-gray-200">{formatAddressForRoute(shipment.destination)}</span>
         </div>
       ),
     },

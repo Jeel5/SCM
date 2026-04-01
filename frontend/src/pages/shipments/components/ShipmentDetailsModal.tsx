@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Truck, Navigation, Package, MapPin, Calendar, DollarSign, Weight } from 'lucide-react';
+import { Truck, Navigation, Package, MapPin, Calendar, DollarSign } from 'lucide-react';
 import { Modal, StatusBadge, Tabs } from '@/components/ui';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { ShipmentTimeline } from './ShipmentTimeline';
@@ -19,6 +19,10 @@ export function ShipmentDetailsModal({
 
   if (!shipment) return null;
 
+  const origin = shipment.origin ?? { city: 'N/A', state: 'N/A', country: 'N/A' };
+  const destination = shipment.destination ?? { city: 'N/A', state: 'N/A', country: 'N/A' };
+  const weight = Number.isFinite(shipment.weight) ? shipment.weight : 0;
+
   const tabs = [
     { id: 'map', label: 'Live Tracking' },
     { id: 'timeline', label: 'Timeline' },
@@ -26,7 +30,7 @@ export function ShipmentDetailsModal({
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Shipment ${shipment.trackingNumber}`} size="4xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={`Shipment ${shipment.trackingNumber}`} size="3xl">
       <div className="space-y-6">
         {/* Status Header */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-linear-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
@@ -61,8 +65,8 @@ export function ShipmentDetailsModal({
                 <MapPin className="h-4 w-4 text-green-600 dark:text-green-400" />
                 <p className="text-sm font-medium text-green-600 dark:text-green-400">Origin</p>
               </div>
-              <p className="font-bold text-gray-900 dark:text-white text-lg">{shipment.origin.city}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{shipment.origin.state}, {shipment.origin.country}</p>
+              <p className="font-bold text-gray-900 dark:text-white text-lg">{origin.city || 'N/A'}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{origin.state || 'N/A'}, {origin.country || 'N/A'}</p>
             </div>
             
             <div className="flex items-center justify-center">
@@ -84,8 +88,8 @@ export function ShipmentDetailsModal({
                 <MapPin className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 <p className="text-sm font-medium text-purple-600 dark:text-purple-400">Destination</p>
               </div>
-              <p className="font-bold text-gray-900 dark:text-white text-lg">{shipment.destination.city}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{shipment.destination.state}, {shipment.destination.country}</p>
+              <p className="font-bold text-gray-900 dark:text-white text-lg">{destination.city || 'N/A'}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{destination.state || 'N/A'}, {destination.country || 'N/A'}</p>
             </div>
           </div>
           
@@ -137,7 +141,7 @@ export function ShipmentDetailsModal({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-500 dark:text-gray-400">Weight:</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{shipment.weight.toFixed(2)} kg</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">{weight.toFixed(2)} kg</span>
                   </div>
                   {shipment.dimensions && (
                     <div className="flex justify-between">
