@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowUpDown, AlertCircle } from 'lucide-react';
 import { Modal, Button, Select, useToast } from '@/components/ui';
-import { inventoryApi } from '@/api/services';
+import { inventoryApi, suppliersApi } from '@/api/services';
 import type { InventoryItem } from '@/types';
 
 interface AdjustStockModalProps {
@@ -15,8 +15,17 @@ export function AdjustStockModal({ item, isOpen, onClose, onSuccess }: AdjustSto
     const [type, setType] = useState('add');
     const [quantity, setQuantity] = useState('');
     const [reason, setReason] = useState('');
+    const [supplierId, setSupplierId] = useState('');
+    const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string; code: string; is_active?: boolean }>>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { success, error } = useToast();
+
+    useEffect(() => {
+        if (!isOpen) return;
+        suppliersApi.getSuppliers({ limit: 100 })
+            .then((res) => setSuppliers((res.data || []).filter((supplier) => supplier.is_active !== false)))
+            .catch(() => setSuppliers([]));
+    }, [isOpen]);
 
     if (!item) return null;
 
@@ -26,17 +35,28 @@ export function AdjustStockModal({ item, isOpen, onClose, onSuccess }: AdjustSto
             error('Please enter a valid quantity');
             return;
         }
+        if (type === 'add' && !supplierId) {
+            error('Please select a supplier for the restock request');
+            return;
+        }
 
         setIsSubmitting(true);
         try {
-            await inventoryApi.adjustStock(item.id, type, Number(quantity), reason || 'Manual adjustment');
-            success('Stock adjusted successfully');
+            await inventoryApi.adjustStock(
+                item.id,
+                type,
+                Number(quantity),
+                reason || 'Manual adjustment',
+                type === 'add' ? { supplier_id: supplierId } : undefined
+            );
+            success(type === 'add' ? 'Restock request created' : 'Stock adjusted successfully');
             onSuccess();
             onClose();
             // Reset form
             setType('add');
             setQuantity('');
             setReason('');
+            setSupplierId('');
         } catch (err: any) {
             error(err.message || 'Failed to adjust stock');
         } finally {
@@ -50,7 +70,7 @@ export function AdjustStockModal({ item, isOpen, onClose, onSuccess }: AdjustSto
                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-lg text-sm flex items-start gap-2">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <p>
-                        Current available stock is <strong>{item.quantity}</strong>. Adjusting stock will create an inventory movement record.
+                        Current available stock is <strong>{item.quantity}</strong>. Add stock now creates a supplier restock request; other actions still update inventory directly.
                     </p>
                 </div>
 
@@ -92,12 +112,26 @@ export function AdjustStockModal({ item, isOpen, onClose, onSuccess }: AdjustSto
                     />
                 </div>
 
+                {type === 'add' && (
+                    <div className="space-y-1">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Supplier *</label>
+                        <Select
+                            value={supplierId}
+                            onChange={(e) => setSupplierId(e.target.value)}
+                            options={[
+                                { value: '', label: 'Select supplier…' },
+                                ...suppliers.map((supplier) => ({ value: supplier.id, label: `${supplier.name} (${supplier.code})` })),
+                            ]}
+                        />
+                    </div>
+                )}
+
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
                         Cancel
                     </Button>
                     <Button type="submit" variant="primary" isLoading={isSubmitting} leftIcon={<ArrowUpDown className="h-4 w-4" />}>
-                        Adjust Stock
+                        {type === 'add' ? 'Create Restock Request' : 'Adjust Stock'}
                     </Button>
                 </div>
             </form>

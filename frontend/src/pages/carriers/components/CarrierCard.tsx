@@ -93,16 +93,16 @@ export function CarrierCard({
           </div>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500 dark:text-gray-400">Damage Rate</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">Exception Rate</span>
           <div className="flex items-center gap-2">
             <Progress
-              value={carrier.damageRate}
-              variant={carrier.damageRate > 5 ? 'error' : 'success'}
+              value={carrier.exceptionRate}
+              variant={carrier.exceptionRate > 5 ? 'error' : 'success'}
               size="sm"
               className="w-24"
             />
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              {carrier.damageRate}%
+              {carrier.exceptionRate}%
             </span>
           </div>
         </div>
@@ -123,7 +123,7 @@ export function CarrierCard({
           <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
         </div>
         <div className="text-center">
-          <p className="text-lg font-semibold text-gray-900 dark:text-white">{carrier.averageDeliveryTime}h</p>
+          <p className="text-lg font-semibold text-gray-900 dark:text-white">{carrier.averageDeliveryTime.toFixed(2)}d</p>
           <p className="text-xs text-gray-500 dark:text-gray-400">Avg Time</p>
         </div>
       </div>

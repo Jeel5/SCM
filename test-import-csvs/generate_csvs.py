@@ -85,6 +85,24 @@ suppliers = [
     {"name":"TerraFirm Construction","contact_name":"Rajiv Negi","contact_email":"rajiv@terrafirm.in","contact_phone":"+919812345024","website":"https://terrafirm.in","address":"Construction Materials Hub, IMT Manesar","city":"Gurugram","state":"Haryana","country":"India","postal_code":"122051","lead_time_days":30,"payment_terms":"Net 60","reliability_score":0.78},
     {"name":"FineTune Audio","contact_name":"Siddharth Rao","contact_email":"siddharth@finetune.in","contact_phone":"+919812345025","website":"https://finetune.in","address":"Electronics Park, T T Nagar","city":"Bhopal","state":"Madhya Pradesh","country":"India","postal_code":"462003","lead_time_days":10,"payment_terms":"Net 30","reliability_score":0.87},
 ]
+suppliers = [
+    {
+        "name": row["name"],
+        "contact_name": row.get("contact_name", ""),
+        "contact_email": row.get("contact_email", ""),
+        "contact_phone": row.get("contact_phone", ""),
+        "api_endpoint": row.get("website", ""),
+        "address": row.get("address", ""),
+        "city": row.get("city", ""),
+        "state": row.get("state", ""),
+        "country": row.get("country", "India"),
+        "postal_code": row.get("postal_code", ""),
+        "inbound_contact_name": row.get("contact_name", ""),
+        "inbound_contact_email": row.get("contact_email", ""),
+        "is_active": "true",
+    }
+    for row in suppliers
+]
 w("03_suppliers.csv", suppliers)
 
 # ──────────────────────────────────────────────
@@ -380,6 +398,30 @@ for i, order in enumerate(order_rows):
     })
 w("09_shipments.csv", shipment_rows)
 
+# ──────────────────────────────────────────────
+# 10  FINANCE INVOICES  (10)
+# ──────────────────────────────────────────────
+finance_rows = []
+finance_carriers = [c["name"] for c in carriers[:10]]
+for i, carrier_name in enumerate(finance_carriers, start=1):
+    base_amount = round(4200 + i * 575.5, 2)
+    penalties = round((i % 3) * 125.0, 2)
+    adjustments = round((i % 4) * 85.0, 2)
+    final_amount = round(base_amount + adjustments - penalties, 2)
+    finance_rows.append({
+        "invoice_number": f"FIN-2026-{i:03d}",
+        "carrier_name": carrier_name,
+        "billing_period_start": f"2026-01-{i:02d}",
+        "billing_period_end": f"2026-01-{(i + 14):02d}",
+        "total_shipments": 14 + i,
+        "base_amount": base_amount,
+        "penalties": penalties,
+        "adjustments": adjustments,
+        "final_amount": final_amount,
+        "status": "pending",
+    })
+w("10_finance.csv", finance_rows)
+
 print("\nAll CSV files generated in:", OUT)
 print("\nIMPORT ORDER:")
 print("  1. 01_warehouses.csv  — no deps")
@@ -391,3 +433,4 @@ print("  6. 06_products.csv    — no deps")
 print("  7. 07_inventory.csv   — warehouse placeholders auto-resolve by warehouse code")
 print("  8. 08_orders.csv      — depends on products existing (SKU must match)")
 print("  9. 09_shipments.csv   — depends on carriers + warehouses + orders; links by order_number")
+print(" 10. 10_finance.csv     — depends on carriers existing; validates invoice totals")

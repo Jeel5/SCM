@@ -29,8 +29,9 @@ export function CarriersPage() {
       const resp = await importApi.upload(file, 'carriers');
       toast.success('Carriers import started', `Job queued (${resp.totalRows} rows).`);
       setTimeout(() => refetch(), 1500);
-    } catch (e: any) {
-      toast.error('Import failed', e?.message || 'Could not read CSV file');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Could not read CSV file';
+      toast.error('Import failed', message);
     }
   };
 
@@ -48,9 +49,10 @@ export function CarriersPage() {
       setIsDetailsOpen(false);
       setSelectedCarrier(null);
       refetch();
-    } catch (error: any) {
-      if (!error.response) {
-        toast.error('Failed to deactivate carrier', error.message);
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'response' in error && !(error as { response?: unknown }).response) {
+        const message = error instanceof Error ? error.message : 'Failed to deactivate carrier';
+        toast.error('Failed to deactivate carrier', message);
       }
     }
   };
@@ -61,6 +63,7 @@ export function CarriersPage() {
     { id: 'inactive', label: 'Inactive', count: carriers.filter((c) => c.status === 'inactive').length },
     { id: 'suspended', label: 'Suspended', count: carriers.filter((c) => c.status === 'suspended').length },
   ];
+  const filteredCarriers = carriers.filter((c) => activeTab === 'all' || c.status === activeTab);
 
   // Calculate stats
   const avgOnTime = carriers.length
@@ -107,7 +110,7 @@ export function CarriersPage() {
     {
       key: 'avgTime',
       header: 'Avg. Time',
-      render: (carrier: Carrier) => <span className="dark:text-gray-300">{carrier.averageDeliveryTime}h</span>,
+      render: (carrier: Carrier) => <span className="dark:text-gray-300">{carrier.averageDeliveryTime.toFixed(2)}d</span>,
     },
     {
       key: 'status',
@@ -279,10 +282,25 @@ export function CarriersPage() {
           <div className="border-b border-gray-200 dark:border-gray-700">
             <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {carriers
-              .filter((c) => activeTab === 'all' || c.status === activeTab)
-              .map((carrier, index) => (
+          {filteredCarriers.length === 0 ? (
+            <Card>
+              <div className="py-12 text-center">
+                <p className="font-medium text-gray-900 dark:text-white">No carriers found</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Try changing filters or add a new carrier.
+                </p>
+                {activeTab !== 'all' && (
+                  <div className="mt-4">
+                    <Button variant="outline" size="sm" onClick={() => setActiveTab('all')}>
+                      Show All Carriers
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredCarriers.map((carrier, index) => (
                 <CarrierCard
                   key={carrier.id}
                   carrier={carrier}
@@ -296,7 +314,8 @@ export function CarriersPage() {
                   onDelete={() => handleDelete(carrier)}
                 />
               ))}
-          </div>
+            </div>
+          )}
         </>
       ) : (
         <Card padding="none">
@@ -305,7 +324,7 @@ export function CarriersPage() {
           </div>
           <DataTable
             columns={columns}
-            data={carriers.filter((c) => activeTab === 'all' || c.status === activeTab)}
+            data={filteredCarriers}
             isLoading={isLoading}
             searchPlaceholder="Search carriers..."
             onRowClick={(carrier) => {

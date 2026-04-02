@@ -1,0 +1,11 @@
+invoice_number,carrier_name,billing_period_start,billing_period_end,total_shipments,base_amount,penalties,adjustments,final_amount,status
+FIN-2026-001,BlueDart Express,2026-01-01,2026-01-15,15,4775.5,125.0,85.0,4735.5,pending
+FIN-2026-002,Delhivery Logistics,2026-01-02,2026-01-16,16,5351.0,250.0,170.0,5271.0,pending
+FIN-2026-003,Ecom Express,2026-01-03,2026-01-17,17,5926.5,0.0,255.0,6181.5,pending
+FIN-2026-004,DTDC Courier,2026-01-04,2026-01-18,18,6502.0,125.0,0.0,6377.0,pending
+FIN-2026-005,XpressBees,2026-01-05,2026-01-19,19,7077.5,250.0,85.0,6912.5,pending
+FIN-2026-006,Shadowfax Technologies,2026-01-06,2026-01-20,20,7653.0,0.0,170.0,7823.0,pending
+FIN-2026-007,FedEx India,2026-01-07,2026-01-21,21,8228.5,125.0,255.0,8358.5,pending
+FIN-2026-008,DHL Express India,2026-01-08,2026-01-22,22,8804.0,250.0,0.0,8554.0,pending
+FIN-2026-009,India Post EMS,2026-01-09,2026-01-23,23,9379.5,0.0,85.0,9464.5,pending
+FIN-2026-010,Amazon Logistics,2026-01-10,2026-01-24,24,9955.0,125.0,170.0,10000.0,pending

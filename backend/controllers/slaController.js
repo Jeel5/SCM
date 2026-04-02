@@ -4,6 +4,8 @@ import logger from '../utils/logger.js';
 import { asyncHandler, NotFoundError } from '../errors/index.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import { cacheWrap, orgSeg, invalidatePattern } from '../utils/cache.js';
+import slaService from '../services/slaService.js';
+import exceptionService from '../services/exceptionService.js';
 
 // Map a sla_policies DB row to the API response shape
 function mapPolicy(p) {
@@ -13,10 +15,8 @@ function mapPolicy(p) {
     serviceType:             p.service_type,
     carrierId:               p.carrier_id || null,
     carrierName:             p.carrier_name || null,
-    originZoneType:          p.origin_zone_type || null,
-    destinationZoneType:     p.destination_zone_type || null,
     // keep legacy 'region' field as a human-readable label
-    region:                  p.origin_region || p.origin_zone_type || 'All Regions',
+    region:                  p.origin_region || p.destination_region || 'All Regions',
     targetDeliveryHours:     p.delivery_hours,
     warningThresholdPercent: p.warning_threshold_percent ?? 80,
     warningThresholdHours:   Math.floor(p.delivery_hours * ((p.warning_threshold_percent ?? 80) / 100)),
@@ -152,8 +152,8 @@ export const getSlaDashboard = asyncHandler(async (req, res) => {
       totalShipments: parseInt(compliance.total_shipments, 10),
       onTimeDeliveries: parseInt(compliance.on_time, 10),
       violations: violations.reduce((acc, v) => {
-        // Map DB status 'open' to 'pending' to match frontend type key
-        const key = v.status === 'open' ? 'pending' : v.status;
+        // Map DB workflow statuses to frontend summary buckets.
+        const key = (v.status === 'open' || v.status === 'investigating') ? 'pending' : v.status;
         acc[key] = parseInt(v.count, 10);
         return acc;
       }, { pending: 0, resolved: 0, waived: 0 }),
@@ -183,6 +183,7 @@ export const listExceptions = asyncHandler(async (req, res) => {
       totalExceptions: parseInt(statsRow.total_exceptions || 0, 10),
       open: parseInt(statsRow.open || 0, 10),
       inProgress: parseInt(statsRow.in_progress || 0, 10),
+      investigating: parseInt(statsRow.investigating || statsRow.in_progress || 0, 10),
       resolved: parseInt(statsRow.resolved || 0, 10),
       critical: parseInt(statsRow.critical || 0, 10),
     },
@@ -266,5 +267,26 @@ export const resolveException = asyncHandler(async (req, res) => {
   emitToOrg(organizationId, 'exception:resolved', row);
 
   res.json({ success: true, data: row });
+});
+
+// Run SLA/exception monitoring immediately (manual operational trigger)
+export const runSlaMonitoringNow = asyncHandler(async (_req, res) => {
+  const [violations, exceptions] = await Promise.all([
+    slaService.monitorSLAViolations(),
+    exceptionService.autoDetectDelayExceptions(),
+  ]);
+
+  logger.info('Manual SLA monitoring run completed', {
+    violationsDetected: violations.length,
+    exceptionsDetected: exceptions.length,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      violationsDetected: violations.length,
+      exceptionsDetected: exceptions.length,
+    },
+  });
 });
 

@@ -19,7 +19,7 @@ export function useExceptions(page: number, pageSize: number, filters?: Record<s
   const [stats, setStats] = useState({
     totalExceptions: 0,
     open: 0,
-    inProgress: 0,
+    investigating: 0,
     resolved: 0,
     critical: 0,
   });
@@ -52,18 +52,36 @@ export function useExceptions(page: number, pageSize: number, filters?: Record<s
         const fallback = {
           totalExceptions: response.total,
           open: response.data.filter((e) => e.status === 'open').length,
-          inProgress: response.data.filter((e) => e.status === 'in_progress').length,
+          investigating: response.data.filter((e) => e.status === 'investigating' || e.status === 'in_progress').length,
           resolved: response.data.filter((e) => e.status === 'resolved').length,
           critical: response.data.filter((e) => e.severity === 'critical').length,
         };
         const responseWithStats = response as typeof response & { stats?: typeof fallback };
-        setStats(responseWithStats.stats ?? fallback);
+        if (responseWithStats.stats) {
+          const raw = responseWithStats.stats as {
+            totalExceptions?: number;
+            open?: number;
+            investigating?: number;
+            inProgress?: number;
+            resolved?: number;
+            critical?: number;
+          };
+          setStats({
+            totalExceptions: raw.totalExceptions ?? fallback.totalExceptions,
+            open: raw.open ?? fallback.open,
+            investigating: (raw.investigating ?? 0) + (raw.inProgress ?? 0),
+            resolved: raw.resolved ?? fallback.resolved,
+            critical: raw.critical ?? fallback.critical,
+          });
+        } else {
+          setStats(fallback);
+        }
       } catch (error) {
         if (isAbortError(error)) return;
         if (!isSoft) notifyLoadError('exceptions', error);
         setExceptions([]);
         setTotalExceptions(0);
-        setStats({ totalExceptions: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 });
+        setStats({ totalExceptions: 0, open: 0, investigating: 0, resolved: 0, critical: 0 });
       } finally {
         if (abortControllerRef.current === controller) {
           setIsLoading(false);

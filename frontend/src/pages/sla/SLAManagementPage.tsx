@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useSocketEvent } from '@/hooks/useSocket';
 import { motion } from 'framer-motion';
-import { Timer, AlertTriangle, CheckCircle, Clock, Download, RefreshCw, TrendingUp, TrendingDown, Plus } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent, Button, Tabs, DataTable, StatusBadge, PermissionGate } from '@/components/ui';
+import { Timer, AlertTriangle, CheckCircle, Clock, Download, TrendingUp, TrendingDown, Plus } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent, Button, Tabs, DataTable, StatusBadge, PermissionGate, Modal } from '@/components/ui';
 import { formatDate, formatPercentage } from '@/lib/utils';
 import { downloadApiFile, notifyError } from '@/lib/apiErrors';
 import type { SLAPolicy, SLAViolation } from '@/types';
@@ -13,8 +13,12 @@ export function SLAManagementPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [page, setPage] = useState(1);
   const [showCreatePolicy, setShowCreatePolicy] = useState(false);
+  const [selectedViolation, setSelectedViolation] = useState<SLAViolation | null>(null);
   const pageSize = 10;
   const { policies, violations, dashboardData, isLoading, totalViolations: violationsTotal, refetch } = useSLA(page, pageSize);
+
+  const getViolationShipmentLabel = (violation: SLAViolation) => violation.trackingNumber || violation.shipmentId || violation.id;
+  const getViolationPolicyLabel = (violation: SLAViolation) => violation.policyName || 'No SLA policy';
 
   // Refetch on real-time exception events (SLA violations are driven by exceptions)
   useSocketEvent('exception:created', refetch);
@@ -50,17 +54,6 @@ export function SLAManagementPage() {
       ),
     },
     {
-      key: 'zone',
-      header: 'Zone',
-      render: (policy: SLAPolicy) => (
-        <span className="text-gray-700 dark:text-gray-300 capitalize">
-          {policy.originZoneType && policy.destinationZoneType
-            ? `${policy.originZoneType} → ${policy.destinationZoneType}`
-            : policy.originZoneType || policy.destinationZoneType || 'All Zones'}
-        </span>
-      ),
-    },
-    {
       key: 'targetDeliveryHours',
       header: 'Target (hrs)',
       render: (policy: SLAPolicy) => <span className="text-gray-700 dark:text-gray-300">{policy.targetDeliveryHours}</span>,
@@ -82,11 +75,11 @@ export function SLAManagementPage() {
   const violationColumns = [
     {
       key: 'id',
-      header: 'Violation',
+      header: 'Shipment',
       render: (violation: SLAViolation) => (
         <div>
-          <p className="font-medium text-gray-900 dark:text-white">{violation.shipmentId}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{violation.policyName}</p>
+          <p className="font-medium text-gray-900 dark:text-white">{getViolationShipmentLabel(violation)}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{getViolationPolicyLabel(violation)}</p>
         </div>
       ),
     },
@@ -137,9 +130,6 @@ export function SLAManagementPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Monitor service level agreements and violations</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={refetch}>
-            Refresh
-          </Button>
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
@@ -253,8 +243,8 @@ export function SLAManagementPage() {
                   {violations.slice(0, 5).map((v) => (
                     <div key={v.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{v.shipmentId}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-300">{v.policyName}</p>
+                            <p className="font-medium text-gray-900 dark:text-white">{getViolationShipmentLabel(v)}</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-300">{getViolationPolicyLabel(v)}</p>
                       </div>
                       <span className="text-red-600 dark:text-red-400 font-medium">₹{v.penaltyAmount.toFixed(2)}</span>
                     </div>
@@ -311,6 +301,7 @@ export function SLAManagementPage() {
             isLoading={isLoading}
             searchPlaceholder="Search violations..."
             emptyMessage="No violations found"
+            onRowClick={(violation) => setSelectedViolation(violation)}
             pagination={{
               page,
               pageSize,
@@ -331,6 +322,57 @@ export function SLAManagementPage() {
         refetch();
       }}
     />
+
+    <Modal
+      isOpen={Boolean(selectedViolation)}
+      onClose={() => setSelectedViolation(null)}
+      title="Violation Details"
+      size="lg"
+    >
+      {selectedViolation && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Shipment</p>
+              <p className="font-medium text-gray-900 dark:text-white">{selectedViolation.trackingNumber || selectedViolation.shipmentId}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
+              <StatusBadge status={selectedViolation.status} />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Policy</p>
+              <p className="font-medium text-gray-900 dark:text-white">{getViolationPolicyLabel(selectedViolation)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Penalty</p>
+              <p className="font-medium text-gray-900 dark:text-white">₹{selectedViolation.penaltyAmount.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Violated At</p>
+              <p className="font-medium text-gray-900 dark:text-white">{selectedViolation.violatedAt ? formatDate(selectedViolation.violatedAt) : formatDate(selectedViolation.createdAt)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Delay</p>
+              <p className="font-medium text-gray-900 dark:text-white">{selectedViolation.delayHours.toFixed(2)} hours</p>
+            </div>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Root Cause</p>
+            <p className="text-gray-900 dark:text-white">{selectedViolation.rootCause || 'Late delivery'}</p>
+          </div>
+          {selectedViolation.notes && (
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Notes</p>
+              <p className="text-gray-900 dark:text-white">{selectedViolation.notes}</p>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setSelectedViolation(null)}>Close</Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   </>
   );
 }

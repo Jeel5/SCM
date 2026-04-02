@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Button, Input, Select } from '@/components/ui';
+import { Modal, Button, Input } from '@/components/ui';
 import { slaApi } from '@/api/services';
 import { useToast } from '@/components/ui/Toast';
 import type { SLAPolicy } from '@/types';
@@ -12,15 +12,6 @@ const SERVICE_TYPE_OPTIONS = [
   { value: 'bulk',      label: 'Bulk' },
 ];
 
-const ZONE_OPTIONS = [
-  { value: '',         label: 'All Zones (No Restriction)' },
-  { value: 'local',    label: 'Local (Same City)' },
-  { value: 'metro',    label: 'Metro (Major Cities)' },
-  { value: 'regional', label: 'Regional' },
-  { value: 'national', label: 'National' },
-  { value: 'remote',   label: 'Remote / Rural' },
-];
-
 const PENALTY_TYPE_OPTIONS = [
   { value: 'fixed',      label: 'Fixed ₹/hr' },
   { value: 'percentage', label: 'Percentage of order value' },
@@ -29,8 +20,6 @@ const PENALTY_TYPE_OPTIONS = [
 interface FormState {
   name: string;
   serviceType: string;
-  originZoneType: string;
-  destinationZoneType: string;
   deliveryHours: string;
   pickupHours: string;
   penaltyPerHour: string;
@@ -43,8 +32,6 @@ interface FormState {
 const INITIAL_FORM: FormState = {
   name: '',
   serviceType: 'standard',
-  originZoneType: '',
-  destinationZoneType: '',
   deliveryHours: '72',
   pickupHours: '4',
   penaltyPerHour: '0',
@@ -74,11 +61,11 @@ export function CreateSLAPolicyModal({
     e.preventDefault();
 
     if (!form.name.trim()) {
-      addToast('Policy name is required', 'error');
+      addToast({ type: 'error', title: 'Policy name is required' });
       return;
     }
     if (!form.deliveryHours || parseInt(form.deliveryHours, 10) < 1) {
-      addToast('Delivery hours must be at least 1', 'error');
+      addToast({ type: 'error', title: 'Delivery hours must be at least 1' });
       return;
     }
 
@@ -87,8 +74,6 @@ export function CreateSLAPolicyModal({
       const response = await slaApi.createSLAPolicy({
         name:                    form.name.trim(),
         serviceType:             form.serviceType,
-        originZoneType:          form.originZoneType || null,
-        destinationZoneType:     form.destinationZoneType || null,
         targetDeliveryHours:     parseInt(form.deliveryHours, 10),
         penaltyAmount:           parseFloat(form.penaltyPerHour) || 0,
         maxPenaltyAmount:        form.maxPenaltyAmount ? parseFloat(form.maxPenaltyAmount) : null,
@@ -97,12 +82,12 @@ export function CreateSLAPolicyModal({
         isActive:                true,
         priority:                parseInt(form.priority, 10) || 5,
       });
-      addToast(`Policy "${form.name}" created successfully`, 'success');
+      addToast({ type: 'success', title: `Policy "${form.name}" created successfully` });
       onCreated(response.data);
       setForm(INITIAL_FORM);
       onClose();
     } catch (err: any) {
-      addToast(err?.message || 'Failed to create SLA policy', 'error');
+      addToast({ type: 'error', title: err?.message || 'Failed to create SLA policy' });
     } finally {
       setIsSubmitting(false);
     }
@@ -138,38 +123,6 @@ export function CreateSLAPolicyModal({
           <p className="text-xs text-gray-500 mt-1">
             Matches orders with this priority/service type.
           </p>
-        </div>
-
-        {/* Zone */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Origin Zone
-            </label>
-            <select
-              value={form.originZoneType}
-              onChange={set('originZoneType')}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {ZONE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Destination Zone
-            </label>
-            <select
-              value={form.destinationZoneType}
-              onChange={set('destinationZoneType')}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {ZONE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* Transit times */}

@@ -86,7 +86,9 @@ export function InventoryDetailsModal({ item, isOpen, onClose, onAdjustStock, on
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">Reserved</p>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatNumber(item.reservedQuantity)}</p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">
+              {item.reservedQuantity > 0 ? formatNumber(item.reservedQuantity) : '—'}
+            </p>
           </div>
           <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">Damaged</p>

@@ -18,6 +18,8 @@ export function EditCarrierModal({ isOpen, onClose, onSuccess, carrier }: Props)
     contactPhone: '',
     contactEmail: '',
     website: '',
+    apiEndpoint: '',
+    webhookUrl: '',
     status: 'active',
     services: [] as string[],
   });
@@ -30,6 +32,8 @@ export function EditCarrierModal({ isOpen, onClose, onSuccess, carrier }: Props)
         contactPhone: carrier.contactPhone || '',
         contactEmail: carrier.contactEmail || '',
         website: carrier.website || '',
+        apiEndpoint: carrier.apiEndpoint || '',
+        webhookUrl: carrier.webhookUrl || '',
         status: carrier.status || 'active',
         services: carrier.services ?? carrier.servicesOffered ?? [],
       });
@@ -47,6 +51,8 @@ export function EditCarrierModal({ isOpen, onClose, onSuccess, carrier }: Props)
         contactEmail: formData.contactEmail,
         contactPhone: formData.contactPhone,
         website: formData.website,
+        apiEndpoint: formData.apiEndpoint,
+        webhookUrl: formData.webhookUrl,
         status: formData.status as Carrier['status'],
         servicesOffered: formData.services,
       });
@@ -108,6 +114,20 @@ export function EditCarrierModal({ isOpen, onClose, onSuccess, carrier }: Props)
           value={formData.website}
           onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
         />
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            label="API Endpoint"
+            placeholder="https://api.carrier.com/v1"
+            value={formData.apiEndpoint}
+            onChange={(e) => setFormData(prev => ({ ...prev, apiEndpoint: e.target.value }))}
+          />
+          <Input
+            label="Webhook URL"
+            placeholder="https://carrier.com/webhooks/scm"
+            value={formData.webhookUrl}
+            onChange={(e) => setFormData(prev => ({ ...prev, webhookUrl: e.target.value }))}
+          />
+        </div>
         <Select
           label="Status"
           value={formData.status}

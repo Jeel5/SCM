@@ -19,9 +19,9 @@ class SupplierRepository extends BaseRepository {
              COUNT(*) OVER() AS total_count
       FROM suppliers
       WHERE organization_id = $${idx}
-      idx += 1;
     `;
     params.push(organizationId);
+    idx += 1;
 
     if (is_active !== null) {
       query += ` AND is_active = $${idx}`;
@@ -34,8 +34,7 @@ class SupplierRepository extends BaseRepository {
       idx += 1;
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx}`;
-    p += 2;
+    query += ` ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`;
     params.push(limit, offset);
 
     const result = await this.query(query, params, client);
@@ -76,10 +75,10 @@ class SupplierRepository extends BaseRepository {
     const result = await this.query(
       `INSERT INTO suppliers
          (organization_id, name, code,
-          contact_name, contact_email, contact_phone, website,
+          contact_name, contact_email, contact_phone,
           address, city, state, country, postal_code,
-          lead_time_days, payment_terms, reliability_score, is_active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          api_endpoint, inbound_contact_name, inbound_contact_email, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
         data.organization_id,
@@ -88,15 +87,14 @@ class SupplierRepository extends BaseRepository {
         data.contact_name || null,
         data.contact_email || null,
         data.contact_phone || null,
-        data.website || null,
         data.address || null,
         data.city || null,
         data.state || null,
         data.country || 'India',
         data.postal_code || null,
-        data.lead_time_days ?? 7,
-        data.payment_terms || null,
-        data.reliability_score ?? 0.85,
+        data.api_endpoint || null,
+        data.inbound_contact_name || null,
+        data.inbound_contact_email || null,
         data.is_active !== false,
       ],
       client
@@ -114,8 +112,8 @@ class SupplierRepository extends BaseRepository {
 
     const allowed = [
       'name', 'code', 'contact_name', 'contact_email', 'contact_phone',
-      'website', 'address', 'city', 'state', 'country', 'postal_code',
-      'lead_time_days', 'payment_terms', 'reliability_score', 'is_active',
+      'address', 'city', 'state', 'country', 'postal_code',
+      'api_endpoint', 'inbound_contact_name', 'inbound_contact_email', 'is_active',
     ];
 
     for (const key of allowed) {
@@ -123,7 +121,7 @@ class SupplierRepository extends BaseRepository {
         let val = data[key];
         if (key === 'code') val = val.toUpperCase().trim();
         fields.push(`${key} = $${idx}`);
-        key += 1;
+        idx += 1;
         params.push(val);
       }
     }
@@ -133,8 +131,7 @@ class SupplierRepository extends BaseRepository {
     params.push(id, organizationId);
     const result = await this.query(
       `UPDATE suppliers SET ${fields.join(', ')}, updated_at = NOW()
-       WHERE id = $${idx} AND organization_id = $${idx}
-       idx += 1;
+       WHERE id = $${idx} AND organization_id = $${idx + 1}
        RETURNING *`,
       params,
       client

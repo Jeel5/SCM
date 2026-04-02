@@ -13,7 +13,7 @@ WITH base AS (
 policy AS (
   INSERT INTO sla_policies (
     organization_id, name, service_type, carrier_id,
-    origin_zone_type, destination_zone_type,
+    origin_region, destination_region,
     delivery_hours, pickup_hours,
     penalty_per_hour, max_penalty_amount, penalty_type,
     warning_threshold_percent, is_active, priority
@@ -23,8 +23,8 @@ policy AS (
     'Manual SLA Frontend Test Policy',
     'express',
     b.carrier_id,
-    'metro',
-    'regional',
+    'Metro Cities',
+    'Regional',
     24,
     4,
     50,

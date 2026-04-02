@@ -38,6 +38,8 @@ class FinanceRepository extends BaseRepository {
     if (status)     { query += ` AND i.status = $${p}`;      params.push(status); p += 1; }
     if (carrier_id) { query += ` AND i.carrier_id = $${p}`;  params.push(carrier_id); p += 1; }
 
+    query += ` AND i.invoice_type IN ('customer', 'carrier')`;
+
     query += ` ORDER BY i.created_at DESC LIMIT $${p} OFFSET $${p + 1}`;
     p += 2;
     params.push(limit, offset);
@@ -525,16 +527,15 @@ class FinanceRepository extends BaseRepository {
    * Approve a pending invoice.
    */
   async approveInvoice(invoiceId, approvedBy, organizationId = undefined, client = null) {
-    const orgCondition = organizationId ? ' AND organization_id = $3' : '';
+    const orgCondition = organizationId ? ' AND organization_id = $2' : '';
     const params = organizationId
-      ? [approvedBy, invoiceId, organizationId]
-      : [approvedBy, invoiceId];
+      ? [invoiceId, organizationId]
+      : [invoiceId];
     const res = await this.query(
       `UPDATE invoices
        SET status      = 'approved',
-           approved_at = NOW(),
-           approved_by = $1
-       WHERE id = $2 AND status = 'pending'${orgCondition}
+           updated_at  = NOW()
+       WHERE id = $1 AND status = 'pending'${orgCondition}
        RETURNING *`,
       params,
       client
@@ -552,9 +553,11 @@ class FinanceRepository extends BaseRepository {
       : [paymentMethod, paymentDate, invoiceId];
     const res = await this.query(
       `UPDATE invoices
-       SET status                = 'paid',
-           payment_method        = $1,
-           payment_received_date = $2
+       SET status         = 'paid',
+           payment_method = $1,
+           paid_at        = $2,
+           paid_amount    = COALESCE(paid_amount, final_amount),
+           updated_at     = NOW()
        WHERE id = $3 AND status = 'approved'${orgCondition}
        RETURNING *`,
       params,
@@ -623,6 +626,36 @@ class FinanceRepository extends BaseRepository {
     );
     return result.rows;
   }
-}
 
+  /**
+   * Create a customer invoice (FROM us TO customer).
+   * @param {object} fields - invoice details
+   * @param {object} client - pg transaction client
+   * @returns {object} inserted row
+   */
+  async createCustomerInvoice(fields, client) {
+    const {
+      organizationId, invoiceNumber, customerId, orderId,
+      totalAmount, taxAmount, finalAmount, status = 'pending',
+      dueDate
+    } = fields;
+    const result = await this.query(
+      `INSERT INTO invoices (
+         organization_id, invoice_number, customer_id, order_id,
+         base_amount, tax_amount, final_amount, status, due_date,
+         invoice_type, created_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'customer', NOW(), NOW())
+       RETURNING *`,
+      [
+        organizationId || null,
+        invoiceNumber, customerId, orderId,
+        totalAmount, taxAmount || 0, finalAmount, status,
+        dueDate || null
+      ],
+      client
+    );
+    return result.rows[0];
+  }
+}
 export default new FinanceRepository();

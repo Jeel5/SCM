@@ -1,16 +1,30 @@
 import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, CreditCard, TrendingUp, AlertTriangle, Download, RefreshCw, Upload, Plus } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent, Button, DataTable, PermissionGate, Modal, Input, Select, useToast } from '@/components/ui';
+import { DollarSign, CreditCard, TrendingUp, AlertTriangle, Download, Upload, Plus } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent, Button, DataTable, PermissionGate, Modal, Input, Select, Tabs, useToast } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
 import { carriersApi, financeApi } from '@/api/services';
 import { downloadApiFile, notifyError } from '@/lib/apiErrors';
 import { useFinance } from './hooks/useFinance';
+import type { FinanceTab } from './types';
 
 export function FinancePage() {
   const { data, isLoading, refetch } = useFinance();
   const { success, error } = useToast();
+  const [activeTab, setActiveTab] = useState<FinanceTab>('overview');
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [selectedRefund, setSelectedRefund] = useState<{
+    id: string;
+    orderNumber: string;
+    returnId: string;
+    amount: number;
+    status: string;
+    requestedAt: string;
+    processedAt: string;
+    customerName: string;
+    reason: string;
+    restockingFee: number;
+  } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [carriers, setCarriers] = useState<Array<{ id: string; name: string }>>([]);
@@ -78,6 +92,38 @@ export function FinancePage() {
       refetch();
     } catch (e: any) {
       error('Failed to add record', e?.response?.data?.error || e?.message || 'Please check input data');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleApproveInvoice = async (invoiceId: string) => {
+    setIsSubmitting(true);
+    try {
+      await financeApi.approveInvoice(invoiceId);
+      success('Invoice approved', 'Carrier invoice moved to approved status');
+      refetch();
+    } catch (e: any) {
+      error('Approval failed', e?.response?.data?.error || e?.message || 'Could not approve invoice');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMarkPaid = async (invoiceId: string) => {
+    const paymentMethod = window.prompt('Payment method (e.g. bank_transfer, upi, card):', 'bank_transfer') || '';
+    if (!paymentMethod.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      await financeApi.markInvoicePaid(invoiceId, {
+        payment_method: paymentMethod.trim(),
+        payment_date: new Date().toISOString(),
+      });
+      success('Invoice paid', 'Carrier payment has been recorded');
+      refetch();
+    } catch (e: any) {
+      error('Payment update failed', e?.response?.data?.error || e?.message || 'Could not mark invoice as paid');
     } finally {
       setIsSubmitting(false);
     }
@@ -159,7 +205,7 @@ export function FinancePage() {
           note: `${data.invoices?.length || 0} invoices pending`,
         },
         {
-          label: 'Refunds Processed',
+          label: 'Refunded Amount',
           value: formatCurrency(data.refundsProcessed),
           icon: DollarSign,
           color: 'bg-green-100 text-green-600',
@@ -208,6 +254,27 @@ export function FinancePage() {
       ),
     },
     { key: 'dueDate', header: 'Due Date' },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (inv: { id: string; status: string }) => (
+        <div className="flex gap-2">
+          {inv.status === 'pending' && (
+            <Button size="sm" variant="outline" onClick={() => handleApproveInvoice(inv.id)} disabled={isSubmitting}>
+              Approve
+            </Button>
+          )}
+          {inv.status === 'approved' && (
+            <Button size="sm" variant="primary" onClick={() => handleMarkPaid(inv.id)} disabled={isSubmitting}>
+              Mark Paid
+            </Button>
+          )}
+          {inv.status !== 'pending' && inv.status !== 'approved' && (
+            <span className="text-xs text-gray-500">No action</span>
+          )}
+        </div>
+      ),
+    },
   ];
 
   const refundColumns = [
@@ -223,17 +290,58 @@ export function FinancePage() {
       render: (ref: { status: string }) => (
         <span
           className={`px-2 py-1 text-xs rounded-full ${
-            ref.status === 'processed'
+            ref.status === 'refunded'
               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+              : ref.status === 'rejected'
+                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                : ref.status === 'inspected' || ref.status === 'approved'
+                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
               : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
           }`}
         >
-          {ref.status}
+          {ref.status === 'refunded'
+            ? 'Refunded'
+            : ref.status === 'inspected' || ref.status === 'approved'
+              ? 'Ready'
+              : ref.status === 'rejected'
+                ? 'Rejected'
+                : 'Pending'}
         </span>
       ),
     },
     { key: 'processedAt', header: 'Processed' },
   ];
+
+  const disputeColumns = [
+    { key: 'invoiceNumber', header: 'Invoice #' },
+    { key: 'carrier', header: 'Carrier' },
+    {
+      key: 'amount',
+      header: 'Amount',
+      render: (inv: { amount: number }) => formatCurrency(inv.amount),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (inv: { status: string }) => (
+        <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+          {inv.status}
+        </span>
+      ),
+    },
+    { key: 'createdAt', header: 'Created' },
+  ];
+
+  const financeTabs: Array<{ id: FinanceTab; label: string; count?: number }> = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'invoices', label: 'Invoices', count: data?.invoices?.length || 0 },
+    { id: 'refunds', label: 'Refunds', count: data?.refunds?.length || 0 },
+    { id: 'disputes', label: 'Disputes', count: data?.disputeRecords?.length || 0 },
+  ];
+
+  const hasAnyRecords = Boolean(
+    data?.invoices?.length || data?.refunds?.length || data?.disputeRecords?.length
+  );
 
   if (isLoading) {
     return (
@@ -258,9 +366,6 @@ export function FinancePage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Reconcile payouts, refunds, and invoices</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={refetch}>
-            Refresh
-          </Button>
           <Button variant="outline" leftIcon={<Download className="h-4 w-4" />} onClick={handleExport}>
             Export
           </Button>
@@ -305,64 +410,147 @@ export function FinancePage() {
         })}
       </div>
 
-      {/* Invoices Table */}
-      {data?.invoices && data.invoices.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Invoices</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DataTable
-              columns={invoiceColumns}
-              data={data.invoices}
-              isLoading={false}
-              emptyMessage="No invoices found"
-            />
-          </CardContent>
+      <Tabs tabs={financeTabs} activeTab={activeTab} onChange={(tab) => setActiveTab(tab as FinanceTab)} variant="underline" />
+
+      {activeTab === 'overview' && (
+        <>
+          {hasAnyRecords ? (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Invoices</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data?.invoices?.length ? (
+                    <ul className="space-y-3">
+                      {data.invoices.slice(0, 3).map((invoice) => (
+                        <li key={invoice.id} className="flex items-center justify-between gap-4 text-sm">
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{invoice.invoiceNumber}</p>
+                            <p className="text-gray-500 dark:text-gray-400">{invoice.carrier}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(invoice.amount)}</p>
+                            <p className="text-gray-500 dark:text-gray-400">{invoice.status}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No invoices yet</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Refunds</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data?.refunds?.length ? (
+                    <ul className="space-y-3">
+                      {data.refunds.slice(0, 3).map((refund) => (
+                        <li key={refund.id} className="flex items-center justify-between gap-4 text-sm">
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{refund.orderNumber}</p>
+                            <p className="text-gray-500 dark:text-gray-400">{refund.requestedAt}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(refund.amount)}</p>
+                            <p className="text-gray-500 dark:text-gray-400">
+                              {refund.status === 'refunded'
+                                ? 'Refunded'
+                                : refund.status === 'inspected' || refund.status === 'approved'
+                                  ? 'Ready'
+                                  : refund.status === 'rejected'
+                                    ? 'Rejected'
+                                    : 'Pending'}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No refunds yet</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Disputes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data?.disputeRecords?.length ? (
+                    <ul className="space-y-3">
+                      {data.disputeRecords.slice(0, 3).map((dispute) => (
+                        <li key={dispute.id} className="flex items-center justify-between gap-4 text-sm">
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{dispute.invoiceNumber}</p>
+                            <p className="text-gray-500 dark:text-gray-400">{dispute.carrier}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(dispute.amount)}</p>
+                            <p className="text-gray-500 dark:text-gray-400">{dispute.status}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No disputes yet</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>No records found</CardTitle>
+              </CardHeader>
+              <CardContent className="text-gray-600 dark:text-gray-400">
+                <p>No financial records are available for this workspace yet.</p>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {activeTab === 'invoices' && (
+        <Card padding="none">
+          <DataTable
+            columns={invoiceColumns}
+            data={data?.invoices || []}
+            isLoading={false}
+            searchPlaceholder="Search invoices..."
+            emptyMessage="No invoices found"
+          />
         </Card>
       )}
 
-      {/* Refunds Table */}
-      {data?.refunds && data.refunds.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Refunds</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DataTable
-              columns={refundColumns}
-              data={data.refunds}
-              isLoading={false}
-              emptyMessage="No refunds found"
-            />
-          </CardContent>
+      {activeTab === 'refunds' && (
+        <Card padding="none">
+          <DataTable
+            columns={refundColumns}
+            data={data?.refunds || []}
+            isLoading={false}
+            searchPlaceholder="Search refunds..."
+            emptyMessage="No refunds found"
+            onRowClick={(refund) => setSelectedRefund(refund)}
+          />
         </Card>
       )}
 
-      {/* Empty State */}
-      {(!data?.invoices || data.invoices.length === 0) &&
-        (!data?.refunds || data.refunds.length === 0) && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Connect Finance Data</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-gray-600">
-              <p>
-                This workspace does not have finance data yet. Connect your billing system or upload
-                CSV exports to see payouts, invoices, and refunds here.
-              </p>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>Upload payout CSVs from Stripe, Razorpay, or your PSP</li>
-                <li>Import refund reports to reconcile with returns</li>
-                <li>Track disputes and chargebacks alongside shipments</li>
-              </ul>
-              <div className="flex gap-3 pt-2">
-                <Button variant="primary" onClick={() => fileInputRef.current?.click()}>Upload CSV</Button>
-                <Button variant="outline">Configure Integration</Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+      {activeTab === 'disputes' && (
+        <Card padding="none">
+          <DataTable
+            columns={disputeColumns}
+            data={data?.disputeRecords || []}
+            isLoading={false}
+            searchPlaceholder="Search disputes..."
+            emptyMessage="No disputes found"
+          />
+        </Card>
+      )}
 
       <input
         ref={fileInputRef}
@@ -478,6 +666,66 @@ export function FinancePage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(selectedRefund)}
+        onClose={() => setSelectedRefund(null)}
+        title={selectedRefund ? `Refund ${selectedRefund.orderNumber}` : 'Refund details'}
+        size="lg"
+      >
+        {selectedRefund && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-gray-500 dark:text-gray-400">Customer</p>
+                <p className="font-medium text-gray-900 dark:text-white">{selectedRefund.customerName}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-gray-500 dark:text-gray-400">Status</p>
+                <p className="font-medium text-gray-900 dark:text-white">
+                  {selectedRefund.status === 'refunded'
+                    ? 'Refunded'
+                    : selectedRefund.status === 'inspected' || selectedRefund.status === 'approved'
+                      ? 'Ready'
+                      : selectedRefund.status === 'rejected'
+                        ? 'Rejected'
+                        : 'Pending'}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-gray-500 dark:text-gray-400">Requested</p>
+                <p className="font-medium text-gray-900 dark:text-white">{selectedRefund.requestedAt}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-gray-500 dark:text-gray-400">Processed</p>
+                <p className="font-medium text-gray-900 dark:text-white">{selectedRefund.processedAt}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-gray-500 dark:text-gray-400">Refund Amount</p>
+                <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(selectedRefund.amount)}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-gray-500 dark:text-gray-400">Restocking Fee</p>
+                <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(selectedRefund.restockingFee)}</p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50 text-sm space-y-2">
+              <div>
+                <p className="text-gray-500 dark:text-gray-400">Reason</p>
+                <p className="font-medium text-gray-900 dark:text-white">{selectedRefund.reason}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 dark:text-gray-400">Return Ref</p>
+                <p className="font-medium text-gray-900 dark:text-white">{selectedRefund.returnId}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

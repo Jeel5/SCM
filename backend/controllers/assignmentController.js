@@ -4,6 +4,8 @@ import { asyncHandler, AuthorizationError, NotFoundError, AuthenticationError, V
 import OrderRepository from '../repositories/OrderRepository.js';
 import CarrierAssignmentRepository from '../repositories/CarrierAssignmentRepository.js';
 import CarrierRepository from '../repositories/CarrierRepository.js';
+import { emitToOrg } from '../sockets/emitter.js';
+import { invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
 // ========== CARRIER ASSIGNMENTS ==========
 
@@ -46,6 +48,9 @@ export const requestCarrierAssignment = asyncHandler(async (req, res) => {
     orderId,
     { items: order.items || [] }
   );
+
+  await invalidatePatterns(invalidationTargets(order.organization_id, 'orders:list', 'dash', 'analytics'));
+  emitToOrg(order.organization_id, 'order:updated', { id: orderId, status: 'pending_carrier_assignment' });
 
   res.status(201).json({ success: true, data: result });
 });
@@ -133,6 +138,18 @@ export const acceptAssignment = asyncHandler(async (req, res) => {
     acceptanceData
   );
 
+  const orderId = result?.assignment?.order_id;
+  if (orderId) {
+    const updatedOrder = await OrderRepository.findById(orderId);
+    if (updatedOrder) {
+      await invalidatePatterns(invalidationTargets(updatedOrder.organization_id, 'orders:list', 'dash', 'analytics'));
+      emitToOrg(updatedOrder.organization_id, 'order:updated', {
+        id: updatedOrder.id,
+        status: updatedOrder.status,
+      });
+    }
+  }
+
   res.json({ success: true, data: result });
 });
 
@@ -153,6 +170,18 @@ export const rejectAssignment = asyncHandler(async (req, res) => {
     carrierId,
     reason
   );
+
+  const orderId = result?.assignment?.order_id;
+  if (orderId) {
+    const updatedOrder = await OrderRepository.findById(orderId);
+    if (updatedOrder) {
+      await invalidatePatterns(invalidationTargets(updatedOrder.organization_id, 'orders:list', 'dash', 'analytics'));
+      emitToOrg(updatedOrder.organization_id, 'order:updated', {
+        id: updatedOrder.id,
+        status: updatedOrder.status,
+      });
+    }
+  }
 
   res.json({ success: true, data: result });
 });

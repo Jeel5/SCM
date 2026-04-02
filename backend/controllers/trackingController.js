@@ -1,6 +1,8 @@
 import shipmentRepo from '../repositories/ShipmentRepository.js';
 import shipmentTrackingService from '../services/shipmentTrackingService.js';
 import { asyncHandler, NotFoundError, AppError, AuthorizationError } from '../errors/index.js';
+import { emitToOrg } from '../sockets/emitter.js';
+import { invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
 // ========== SHIPMENT TRACKING ==========
 
@@ -54,6 +56,37 @@ export const updateShipmentTracking = asyncHandler(async (req, res) => {
     shipmentId,
     trackingEvent
   );
+
+  const organizationId = updatedShipment.organization_id || shipment.organization_id || req.orgContext?.organizationId;
+  const orderId = updatedShipment.order_id || shipment.order_id || null;
+
+  emitToOrg(organizationId, 'shipment:updated', {
+    shipmentId,
+    status: updatedShipment.status,
+    trackingNumber,
+  });
+
+  if (updatedShipment.created_exception) {
+    emitToOrg(organizationId, 'exception:created', updatedShipment.created_exception);
+  }
+
+  if (orderId) {
+    emitToOrg(organizationId, 'order:updated', {
+      orderId,
+      shipmentStatus: updatedShipment.status,
+    });
+  }
+
+  await invalidatePatterns(invalidationTargets(
+    organizationId,
+    'ship:list',
+    'ship:details',
+    'orders:list',
+    'orders:detail',
+    'exceptions:list',
+    'dash',
+    'analytics',
+  ));
 
   res.json({
     success: true,

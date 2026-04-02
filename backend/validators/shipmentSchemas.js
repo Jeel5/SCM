@@ -5,8 +5,9 @@ import Joi from 'joi';
 
 // All valid shipment statuses — keep in sync with shipmentService.SHIPMENT_VALID_TRANSITIONS
 const SHIPMENT_STATUSES = [
-  'pending', 'picked_up', 'in_transit', 'out_for_delivery',
-  'delivered', 'cancelled', 'exception', 'returned',
+  'pending', 'manifested', 'picked_up', 'in_transit', 'at_hub',
+  'out_for_delivery', 'delivered', 'failed_delivery',
+  'rto_initiated', 'returned', 'lost',
 ];
 
 const locationSchema = Joi.object({

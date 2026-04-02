@@ -144,12 +144,12 @@ class WarehouseRepository extends BaseRepository {
         address, coordinates, capacity, current_utilization,
         contact_email, contact_phone,
         is_active,
-        gstin, has_cold_storage,
+        has_cold_storage,
         temperature_min_celsius, temperature_max_celsius,
-        customs_bonded_warehouse, certifications,
+        customs_bonded_warehouse,
         created_at, updated_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                $12, $13, $14, $15, $16, $17, NOW(), NOW())
+                $12, $13, $14, $15, NOW(), NOW())
       RETURNING *
     `;
     
@@ -165,13 +165,10 @@ class WarehouseRepository extends BaseRepository {
       warehouseData.contact_email,
       warehouseData.contact_phone || null,
       warehouseData.is_active !== false,
-      // SCM-scoped fields
-      warehouseData.gstin || null,
       warehouseData.has_cold_storage || false,
       warehouseData.temperature_min_celsius ?? null,
       warehouseData.temperature_max_celsius ?? null,
       warehouseData.customs_bonded_warehouse || false,
-      warehouseData.certifications ? warehouseData.certifications : [],
     ];
 
     const result = await this.query(query, params, client);
@@ -193,7 +190,6 @@ class WarehouseRepository extends BaseRepository {
     const fieldSerializers = {
       address: (v) => JSON.stringify(v),
       coordinates: (v) => JSON.stringify(v ?? null),
-      gstin: (v) => v || null,
     };
 
     const mutableFields = [
@@ -206,12 +202,10 @@ class WarehouseRepository extends BaseRepository {
       'contact_email',
       'contact_phone',
       'is_active',
-      'gstin',
       'has_cold_storage',
       'temperature_min_celsius',
       'temperature_max_celsius',
       'customs_bonded_warehouse',
-      'certifications',
     ];
 
     mutableFields.forEach((field) => {
@@ -234,7 +228,6 @@ class WarehouseRepository extends BaseRepository {
       UPDATE warehouses 
       SET ${updates.join(', ')}
       WHERE id = $${paramCount}
-      paramCount += 1;
       RETURNING *
     `;
 

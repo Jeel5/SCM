@@ -43,6 +43,8 @@ export const adjustInventorySchema = Joi.object({
     .required(),
   quantity: Joi.number().integer().min(1).required(),
   reason: Joi.string().min(5).max(500).required(),
+  supplier_id: Joi.string().uuid().optional().allow('', null),
+  expected_arrival: Joi.string().isoDate().optional().allow('', null),
   reference_id: Joi.string().uuid().optional().allow('', null),
   batch_number: Joi.string().max(100).optional().allow('', null)
 });

@@ -31,7 +31,7 @@ export function ReturnDetailsModal({
 }) {
   const [isActing, setIsActing] = useState(false);
   const [detail, setDetail] = useState<Return | null>(null);
-  const { addToast } = useToast();
+  const { success, error } = useToast();
 
   // Fetch full detail (with items) when modal opens
   useEffect(() => {
@@ -51,10 +51,12 @@ export function ReturnDetailsModal({
     setIsActing(true);
     try {
       await returnsApi.updateReturn(returnItem.id, { status } as any);
-      addToast(`Return ${status === 'approved' ? 'approved' : 'rejected'} successfully`, 'success');
+      success(`Return ${status === 'approved' ? 'approved' : 'rejected'} successfully`);
       onStatusChange?.();
     } catch (err: any) {
-      addToast(err?.message || `Failed to update return`, 'error');
+      if (!err?.response) {
+        error('Failed to update return', err?.message || 'Unexpected error');
+      }
     } finally {
       setIsActing(false);
     }

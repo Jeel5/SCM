@@ -181,12 +181,6 @@ export function WarehouseDetailsModal({
         <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Operational Details</h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
-            {warehouse.gstin && (
-              <div>
-                <p className="text-gray-500 dark:text-gray-400">GSTIN</p>
-                <p className="font-mono text-gray-900 dark:text-white">{warehouse.gstin}</p>
-              </div>
-            )}
             <div className="flex items-center gap-2">
               <Thermometer className={`h-4 w-4 ${warehouse.hasColdStorage ? 'text-blue-500' : 'text-gray-400'}`} />
               <div>
@@ -207,16 +201,6 @@ export function WarehouseDetailsModal({
                 <p className="text-gray-900 dark:text-white">{warehouse.customsBondedWarehouse ? 'Yes' : 'No'}</p>
               </div>
             </div>
-            {warehouse.certifications?.length > 0 && (
-              <div className="col-span-2">
-                <p className="text-gray-500 dark:text-gray-400 mb-1">Certifications</p>
-                <div className="flex flex-wrap gap-1">
-                  {warehouse.certifications.map((cert) => (
-                    <span key={cert} className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded-full">{cert}</span>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

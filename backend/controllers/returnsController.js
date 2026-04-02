@@ -1,5 +1,7 @@
 // Returns Controller - handles HTTP requests for product returns
 import returnRepo from '../repositories/ReturnRepository.js';
+import OrderRepository from '../repositories/OrderRepository.js';
+import ShipmentRepository from '../repositories/ShipmentRepository.js';
 import returnsService from '../services/returnsService.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
@@ -203,23 +205,68 @@ export const updateReturn = asyncHandler(async (req, res) => {
     throw new ValidationError('No fields to update');
   }
 
-  const updated = await returnRepo.updateStatus(id, status, organizationId, {
-    notes: inspection_notes,
-    refund_amount,
-    refund_method,
-  });
+  const txResult = await withTransaction(async (tx) => {
+    const updated = await returnRepo.updateStatus(id, status, organizationId, {
+      notes: inspection_notes,
+      refund_amount,
+      refund_method,
+    }, tx);
 
-  if (!updated) throw new NotFoundError('Return');
+    if (!updated) throw new NotFoundError('Return');
+
+    let returnShipment = null;
+    if (status === 'approved') {
+      const order = await OrderRepository.findById(updated.order_id, tx);
+      if (!order) {
+        throw new NotFoundError('Order');
+      }
+
+      const warehouse = await OrderRepository.findWarehouseByOrderId(updated.order_id, tx);
+
+      const originAddress = typeof order.shipping_address === 'string'
+        ? JSON.parse(order.shipping_address)
+        : (order.shipping_address || {});
+      const destinationAddress = typeof warehouse?.address === 'string'
+        ? JSON.parse(warehouse.address)
+        : (warehouse?.address || originAddress);
+
+      const trackingSuffix = String(Date.now()).slice(-8);
+      const trackingNumber = `RET-${trackingSuffix}-${updated.id.slice(0, 6).toUpperCase()}`;
+
+      returnShipment = await ShipmentRepository.createReverseShipment({
+        trackingNumber,
+        orderId: updated.order_id,
+        carrierId: null,
+        organizationId: organizationId || updated.organization_id || order.organization_id || null,
+        originAddress,
+        destinationAddress,
+        notes: `Return pickup shipment created automatically for return_id:${updated.id}`,
+      }, tx);
+    }
+
+    return { updated, returnShipment };
+  });
 
   logger.info('Return updated successfully', {
     returnId: id,
-    newStatus: updated.status,
+    newStatus: txResult.updated.status,
+    returnShipmentId: txResult.returnShipment?.id || null,
   });
 
-  emitToOrg(organizationId, 'return:updated', { id: updated.id, status: updated.status });
-  await invalidatePatterns(invalidationTargets(organizationId, 'returns:list', 'dash', 'analytics'));
+  emitToOrg(organizationId, 'return:updated', { id: txResult.updated.id, status: txResult.updated.status });
+  if (txResult.returnShipment) {
+    emitToOrg(organizationId, 'shipment:created', txResult.returnShipment);
+  }
+  await invalidatePatterns(invalidationTargets(organizationId, 'returns:list', 'ship:list', 'orders:list', 'dash', 'analytics'));
 
-  res.json({ success: true, message: `Return updated${status ? ` to '${status}'` : ''}`, data: updated });
+  res.json({
+    success: true,
+    message: `Return updated${status ? ` to '${status}'` : ''}`,
+    data: {
+      ...txResult.updated,
+      return_shipment: txResult.returnShipment,
+    },
+  });
 });
 
 export const getReturnStats = asyncHandler(async (req, res) => {

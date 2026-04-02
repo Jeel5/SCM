@@ -3,6 +3,7 @@
 import InventoryRepository from '../repositories/InventoryRepository.js';
 import ProductRepository from '../repositories/ProductRepository.js';
 import WarehouseRepository from '../repositories/WarehouseRepository.js';
+import SupplierRepository from '../repositories/SupplierRepository.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import { asyncHandler } from '../errors/errorHandler.js';
 import { NotFoundError, BusinessLogicError } from '../errors/index.js';
@@ -29,7 +30,9 @@ function formatInventoryItem(row) {
     productName: row.product_display_name || row.product_name || null,
     sku: row.sku || null,
     productCategory: row.product_category || null,
-    unitCost: row.unit_cost != null ? parseFloat(row.unit_cost) : null,
+    unitCost: row.unit_cost != null
+      ? parseFloat(row.unit_cost)
+      : (row.product_cost_price != null ? parseFloat(row.product_cost_price) : null),
     // Quantities (all integers)
     quantity: parseInt(row.quantity, 10) || 0,
     availableQuantity: parseInt(row.available_quantity, 10) || 0,
@@ -49,6 +52,36 @@ function formatInventoryItem(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+async function notifySupplierRestockRequest(supplier, restockOrder, item, quantity, reason) {
+  if (!supplier?.api_endpoint) return;
+
+  try {
+    await fetch(supplier.api_endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'restock.requested',
+        supplier_id: supplier.id,
+        supplier_name: supplier.name,
+        restock_order_id: restockOrder.id,
+        restock_number: restockOrder.restock_number,
+        destination_warehouse_id: restockOrder.destination_warehouse_id,
+        sku: item.sku,
+        product_name: item.product_name,
+        quantity,
+        reason,
+        tracking_number: restockOrder.tracking_number || null,
+      }),
+    });
+  } catch (error) {
+    logger.warn('Failed to notify supplier restock endpoint', {
+      supplierId: supplier.id,
+      endpoint: supplier.api_endpoint,
+      error: error.message,
+    });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,6 +228,9 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
 
   inventoryFields.sku = product.sku;
   inventoryFields.product_name = product.name;
+  if (inventoryFields.unit_cost === undefined || inventoryFields.unit_cost === null) {
+    inventoryFields.unit_cost = product.cost_price ?? product.selling_price ?? null;
+  }
 
   const data = {
     ...inventoryFields,
@@ -265,7 +301,7 @@ export const updateInventoryItem = asyncHandler(async (req, res) => {
  */
 export const adjustStock = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { adjustment_type, quantity, reason, reference_id, batch_number } = req.body;
+  const { adjustment_type, quantity, reason, reference_id, batch_number, supplier_id, expected_arrival } = req.body;
   const organizationId = req.orgContext?.organizationId;
   const userId = req.user?.userId;
 
@@ -280,9 +316,62 @@ export const adjustStock = asyncHandler(async (req, res) => {
 
     switch (adjustment_type) {
       case 'add':
-        updated = await InventoryRepository.addStock(item.sku, item.warehouse_id, quantity, tx);
+        if (!supplier_id) {
+          throw new BusinessLogicError('Supplier is required to create a restock request');
+        }
+
+        const supplier = await SupplierRepository.findByIdScoped(supplier_id, organizationId, tx);
+        if (!supplier) {
+          throw new NotFoundError('Supplier');
+        }
+
+        const totalAmount = Number(item.unit_cost || 0) * Number(quantity);
+        const restockOrderRes = await InventoryRepository.query(
+          `INSERT INTO restock_orders
+             (organization_id, supplier_id, destination_warehouse_id, status, is_auto_generated,
+              trigger_reason, total_items, total_amount, currency, requested_at, expected_arrival,
+              notes, created_by)
+           VALUES ($1, $2, $3, 'submitted', false, $4, $5, $6, 'INR', NOW(), $7, $8, $9)
+           RETURNING *`,
+          [
+            organizationId || item.organization_id,
+            supplier.id,
+            item.warehouse_id,
+            reason,
+            quantity,
+            totalAmount,
+            expected_arrival || null,
+            reason,
+            userId || null,
+          ],
+          tx
+        );
+
+        const restockOrder = restockOrderRes.rows[0];
+        await InventoryRepository.query(
+          `INSERT INTO restock_order_items
+             (restock_order_id, product_id, sku, product_name, quantity_ordered, unit_cost, total_cost)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            restockOrder.id,
+            item.product_id || null,
+            item.sku,
+            item.product_name,
+            quantity,
+            item.unit_cost || 0,
+            totalAmount,
+          ],
+          tx
+        );
+
+        updated = item;
         movementType = 'inbound';
-        break;
+        return {
+          message: 'Restock request created',
+          data: formatInventoryItem(updated),
+          restockOrder,
+          supplier,
+        };
 
       case 'remove':
         if (item.available_quantity < quantity) {
@@ -350,6 +439,9 @@ export const adjustStock = asyncHandler(async (req, res) => {
   });
 
   // Transaction committed — now safe to send the HTTP response
+  if (adjustment_type === 'add' && txResult.restockOrder && txResult.supplier) {
+    await notifySupplierRestockRequest(txResult.supplier, txResult.restockOrder, item, quantity, reason);
+  }
   emitToOrg(item.organization_id, 'inventory:updated', txResult.data);
   // Emit low_stock alert if updated item is at or below reorder point
   if (txResult.data?.quantity <= txResult.data?.reorderPoint) {

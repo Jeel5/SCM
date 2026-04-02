@@ -31,14 +31,12 @@ function mapWarehouseAddress(address) {
  */
 function mapWarehouseScmFields(warehouse) {
   return {
-    gstin: warehouse.gstin || null,
     hasColdStorage: warehouse.has_cold_storage || false,
     temperatureMinCelsius: warehouse.temperature_min_celsius !== null ? parseFloat(warehouse.temperature_min_celsius) : null,
     temperatureMaxCelsius: warehouse.temperature_max_celsius !== null ? parseFloat(warehouse.temperature_max_celsius) : null,
     dailyInboundCapacity: undefined,
     dailyOutboundCapacity: undefined,
     customsBondedWarehouse: warehouse.customs_bonded_warehouse || false,
-    certifications: warehouse.certifications || [],
   };
 }
 
@@ -334,7 +332,6 @@ function formatCarrier(c) {
     availabilityStatus: c.availability_status || 'available',
     reliabilityScore: c.reliability_score ? parseFloat(c.reliability_score) : null,
     avgDeliveryDays: c.avg_delivery_days ? parseFloat(c.avg_delivery_days) : null,
-    dailyCapacity: c.daily_capacity || null,
     activeShipments: parseInt(c.active_shipments, 10) || 0,
     totalShipments: parseInt(c.total_shipments, 10) || 0,
     onTimeRate: c.on_time_rate ? parseFloat(c.on_time_rate) : null,
@@ -548,7 +545,7 @@ export const createProduct = asyncHandler(async (req, res) => {
     is_fragile, requires_cold_storage, is_hazmat, is_perishable,
     package_type, handling_instructions, requires_insurance,
     attributes,
-    manufacturer_barcode, hsn_code, gst_rate, brand, country_of_origin,
+    brand, country_of_origin,
     warranty_period_days, shelf_life_days, tags, supplier_id } = req.body;
   const organizationId = req.orgContext?.organizationId;
 
@@ -594,7 +591,7 @@ export const createProduct = asyncHandler(async (req, res) => {
     is_fragile, requires_cold_storage, is_hazmat, is_perishable,
     package_type, handling_instructions,
     requires_insurance, attributes,
-    manufacturer_barcode, internal_barcode, hsn_code, gst_rate, brand, country_of_origin,
+    internal_barcode, brand, country_of_origin,
     warranty_period_days, shelf_life_days, tags, supplier_id,
   });
 

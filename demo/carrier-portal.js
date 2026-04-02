@@ -1,7 +1,7 @@
 const API_BASE = 'http://localhost:3000/api';
 let currentCarrier = null;
 let currentCarrierId = null;
-let currentWebhookSecret = null;
+let currentWebhookSecret = "5c1fdb3a73d0ea04f30eeea8dcb8b0e54b672c6f091fb892741ae168f158c5bc";
 let shipmentsById = {};
 let carrierNames = {};
 let assignmentRows = [];
@@ -74,16 +74,22 @@ async function sendAuthenticatedRequest(url, method, body) {
     const timestamp = Math.floor(Date.now() / 1000);
     const signature = await generateHmacSignature(body, currentWebhookSecret, timestamp);
 
-    const response = await fetch(url, {
+    const fetchOptions = {
         method,
         headers: {
             'Content-Type': 'application/json',
             'X-Carrier-ID': currentCarrierId,
             'X-Webhook-Signature': signature,
             'X-Webhook-Timestamp': timestamp.toString()
-        },
-        body: JSON.stringify(body)
-    });
+        }
+    };
+
+    // For GET requests, don't include body; for POST/PUT, stringify the body
+    if (method.toUpperCase() !== 'GET') {
+        fetchOptions.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -169,15 +175,19 @@ async function loadPendingRequests() {
 
         const params = new URLSearchParams({ carrierId });
         if (assignmentStatusFilter !== 'all') params.set('status', assignmentStatusFilter);
-        const response = await fetch(`${API_BASE}/carriers/assignments/pending?${params.toString()}`);
-        if (!response.ok) {
-            assignmentRows = [];
-            renderAssignments();
-            return;
-        }
-
-        const result = await response.json();
-        if (!result.success || !Array.isArray(result.data)) {
+        
+        // Use authenticated request with HMAC signature for GET
+        const url = `${API_BASE}/carriers/assignments/pending?${params.toString()}`;
+        let result;
+        try {
+            result = await sendAuthenticatedRequest(url, 'GET', '');
+            if (!result.success || !Array.isArray(result.data)) {
+                assignmentRows = [];
+                renderAssignments();
+                return;
+            }
+        } catch (authError) {
+            console.error('Authenticated request failed:', authError);
             assignmentRows = [];
             renderAssignments();
             return;
@@ -517,7 +527,10 @@ function renderShipments(errorMessage = '') {
                        <button class="btn-pickup" onclick="confirmPickup('${shipment.id}', '${shipment.trackingNumber}')">
                         ✅ Confirm Pickup — Start Transit
                        </button>`
-                    : `<p style="margin-bottom:0; color:#0c5460;">No pickup action needed. Current status: <strong>${shipment.status}</strong>.</p>`}
+                    : `<p style="margin-bottom:12px; color:#0c5460;">No pickup action needed. Current status: <strong>${shipment.status}</strong>.</p>
+                       ${shipment.status !== 'delivered' && shipment.status !== 'returned' && shipment.status !== 'cancelled'
+                        ? `<button class="btn btn-reject" style="max-width:260px;" onclick="reportShipmentException('${shipment.id}', '${shipment.trackingNumber}')">⚠️ Report Exception</button>`
+                        : ''}`}
             </div>
         </div>`).join('');
 }
@@ -554,6 +567,31 @@ async function confirmPickup(shipmentId, trackingNumber) {
     } catch (error) {
         console.error('Error confirming pickup:', error);
         console.error('❌ Error: ' + error.message);
+    }
+}
+
+async function reportShipmentException(shipmentId, trackingNumber) {
+    const reason = prompt('Enter exception reason (e.g. address issue, customer unavailable, damage):', 'address issue');
+    if (!reason) return;
+
+    try {
+        const result = await sendAuthenticatedRequest(
+            `${API_BASE}/shipments/${trackingNumber}/update-tracking`,
+            'POST',
+            {
+                eventType: 'exception',
+                location: { city: '', state: '' },
+                description: reason,
+            }
+        );
+
+        if (!result.success) {
+            throw new Error(result.message || 'Failed to report exception');
+        }
+
+        await loadMyShipments();
+    } catch (error) {
+        console.error('Failed to report exception:', error.message);
     }
 }
 

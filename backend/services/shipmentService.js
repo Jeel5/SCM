@@ -1,4 +1,6 @@
 import shipmentRepo from '../repositories/ShipmentRepository.js';
+import InventoryRepository from '../repositories/InventoryRepository.js';
+import WarehouseRepository from '../repositories/WarehouseRepository.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
 import { NotFoundError, AppError, ConflictError, AuthorizationError } from '../errors/index.js';
@@ -8,13 +10,17 @@ import { NotFoundError, AppError, ConflictError, AuthorizationError } from '../e
 // they do NOT redeclare it inline.
 // Terminal states have an empty array (no further transitions allowed).
 export const SHIPMENT_VALID_TRANSITIONS = {
-  pending:          ['in_transit', 'cancelled'],
-  in_transit:       ['out_for_delivery', 'exception', 'returned'],
-  out_for_delivery: ['delivered', 'exception', 'returned'],
+  pending:          ['manifested', 'picked_up', 'in_transit', 'lost'],
+  manifested:       ['picked_up', 'in_transit', 'lost'],
+  picked_up:        ['in_transit', 'at_hub', 'failed_delivery', 'returned', 'lost'],
+  in_transit:       ['at_hub', 'out_for_delivery', 'failed_delivery', 'returned', 'lost'],
+  at_hub:           ['in_transit', 'out_for_delivery', 'failed_delivery', 'returned', 'lost'],
+  out_for_delivery: ['delivered', 'failed_delivery', 'returned', 'lost'],
+  failed_delivery:  ['out_for_delivery', 'rto_initiated', 'returned', 'lost'],
+  rto_initiated:    ['returned', 'lost'],
   delivered:        [],  // terminal
-  cancelled:        [],  // terminal
-  exception:        ['in_transit', 'returned', 'cancelled'],
   returned:         [],  // terminal
+  lost:             [],  // terminal
 };
 
 class ShipmentService {
@@ -147,6 +153,32 @@ class ShipmentService {
 
       await shipmentRepo.markOrderShipped(shipment.order_id, tx);
 
+      // Customer orders should consume reserved inventory when the parcel leaves the warehouse.
+      if (shipment.order_type !== 'transfer') {
+        const orderItems = await shipmentRepo.findOrderItems(shipment.order_id, tx);
+        const affectedWarehouses = new Set();
+
+        for (const item of orderItems) {
+          if (!item.warehouse_id || !item.sku) continue;
+          const updated = await InventoryRepository.deductStock(item.sku, item.warehouse_id, item.quantity, tx);
+          if (!updated) {
+            throw new AppError(`Failed to consume inventory for SKU ${item.sku}`, 409);
+          }
+          affectedWarehouses.add(item.warehouse_id);
+        }
+
+        await Promise.all(
+          [...affectedWarehouses].map((warehouseId) =>
+            WarehouseRepository.refreshUtilization(warehouseId, tx).catch((error) => {
+              logger.warn('refreshUtilization failed after pickup confirmation', {
+                warehouseId,
+                error: error.message,
+              });
+            })
+          )
+        );
+      }
+
       logger.info('Carrier confirmed pickup', {
         shipmentId: id,
         trackingNumber: shipment.tracking_number,
@@ -162,6 +194,8 @@ class ShipmentService {
         trackingNumber: updatedShipment.tracking_number,
         status:        updatedShipment.status,
         pickupActual:  updatedShipment.pickup_actual,
+        orderId:       shipment.order_id,
+        organizationId: shipment.organization_id || null,
         orderNumber:   shipment.order_number,
         orderStatus:   'shipped',
       };

@@ -1027,8 +1027,6 @@ CREATE TABLE public.carriers (
 	webhook_url varchar(500) NULL,
 	reliability_score numeric(3, 2) DEFAULT 0.85 NULL,
 	avg_delivery_days numeric(4, 1) NULL,
-	daily_capacity int4 NULL,
-	current_load int4 DEFAULT 0 NULL,
 	is_active bool DEFAULT true NULL,
 	availability_status varchar(20) DEFAULT 'available'::character varying NULL,
 	last_status_change timestamptz DEFAULT now() NULL,
@@ -1632,9 +1630,6 @@ CREATE TABLE public.products (
 	package_type varchar(50) DEFAULT 'box'::character varying NULL, -- Recommended package type for this product
 	handling_instructions text NULL, -- Special handling instructions for carriers
 	requires_insurance bool DEFAULT false NULL, -- Whether this product requires shipping insurance
-	manufacturer_barcode varchar(100) NULL, -- UPC/EAN/ISBN from product manufacturer (optional, for retail products)
-	hsn_code varchar(20) NULL, -- HSN/SAC code for GST compliance (manual entry, government classification)
-	gst_rate numeric(5, 2) DEFAULT 18.00 NULL, -- GST rate percentage (0/5/12/18/28) - can be auto-filled from HSN but user must confirm
 	brand varchar(255) NULL, -- Brand or manufacturer name
 	country_of_origin varchar(100) DEFAULT 'India'::character varying NULL, -- Country of manufacture — required for customs declarations
 	warranty_period_days int4 DEFAULT 0 NULL, -- Warranty duration in days (0 = no warranty)
@@ -1656,8 +1651,6 @@ CREATE INDEX idx_products_active ON public.products USING btree (is_active) WHER
 CREATE INDEX idx_products_brand ON public.products USING btree (organization_id, brand) WHERE (brand IS NOT NULL);
 CREATE INDEX idx_products_category ON public.products USING btree (organization_id, category) WHERE (category IS NOT NULL);
 CREATE INDEX idx_products_fragile ON public.products USING btree (is_fragile) WHERE (is_fragile = true);
-CREATE INDEX idx_products_hsn ON public.products USING btree (hsn_code) WHERE (hsn_code IS NOT NULL);
-CREATE UNIQUE INDEX idx_products_manufacturer_barcode_org ON public.products USING btree (organization_id, manufacturer_barcode) WHERE (manufacturer_barcode IS NOT NULL);
 CREATE INDEX idx_products_org ON public.products USING btree (organization_id);
 CREATE INDEX idx_products_organization_id ON public.products USING btree (organization_id);
 CREATE INDEX idx_products_perishable ON public.products USING btree (is_perishable) WHERE (is_perishable = true);
@@ -1676,9 +1669,6 @@ COMMENT ON COLUMN public.products.volumetric_weight IS 'Dimensional weight (L×W
 COMMENT ON COLUMN public.products.package_type IS 'Recommended package type for this product';
 COMMENT ON COLUMN public.products.handling_instructions IS 'Special handling instructions for carriers';
 COMMENT ON COLUMN public.products.requires_insurance IS 'Whether this product requires shipping insurance';
-COMMENT ON COLUMN public.products.manufacturer_barcode IS 'UPC/EAN/ISBN from product manufacturer (optional, for retail products)';
-COMMENT ON COLUMN public.products.hsn_code IS 'HSN/SAC code for GST compliance (manual entry, government classification)';
-COMMENT ON COLUMN public.products.gst_rate IS 'GST rate percentage (0/5/12/18/28) - can be auto-filled from HSN but user must confirm';
 COMMENT ON COLUMN public.products.brand IS 'Brand or manufacturer name';
 COMMENT ON COLUMN public.products.country_of_origin IS 'Country of manufacture — required for customs declarations';
 COMMENT ON COLUMN public.products.warranty_period_days IS 'Warranty duration in days (0 = no warranty)';
@@ -2073,7 +2063,7 @@ COMMENT ON COLUMN public.shipments.handling_instructions IS 'Special handling in
 COMMENT ON COLUMN public.shipments.requires_insurance IS 'True if ANY item requires insurance';
 COMMENT ON COLUMN public.shipments.declared_value IS 'Total declared value for insurance (sum of all item declared values)';
 COMMENT ON COLUMN public.shipments.total_items IS 'Total number of items (quantity) in this shipment';
-COMMENT ON COLUMN public.shipments.sla_policy_id IS 'The SLA policy that was matched and applied when this shipment was created. NULL = system fallback (72h) was used.';
+COMMENT ON COLUMN public.shipments.sla_policy_id IS 'The SLA policy that was matched and applied when this shipment was created.';
 
 -- Table Triggers
 
@@ -2107,11 +2097,7 @@ CREATE TABLE public.sla_policies (
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
 	carrier_id uuid NULL,
-	origin_zone_type varchar(20) NULL,
-	destination_zone_type varchar(20) NULL,
 	warning_threshold_percent int4 DEFAULT 80 NULL,
-	CONSTRAINT sla_policies_destination_zone_type_check CHECK (((destination_zone_type IS NULL) OR ((destination_zone_type)::text = ANY ((ARRAY['local'::character varying, 'metro'::character varying, 'regional'::character varying, 'national'::character varying, 'remote'::character varying])::text[])))),
-	CONSTRAINT sla_policies_origin_zone_type_check CHECK (((origin_zone_type IS NULL) OR ((origin_zone_type)::text = ANY ((ARRAY['local'::character varying, 'metro'::character varying, 'regional'::character varying, 'national'::character varying, 'remote'::character varying])::text[])))),
 	CONSTRAINT sla_policies_pkey PRIMARY KEY (id),
 	CONSTRAINT sla_policies_warning_threshold_percent_check CHECK (((warning_threshold_percent >= 1) AND (warning_threshold_percent <= 100)))
 );
@@ -2443,13 +2429,10 @@ CREATE TABLE public.warehouses (
 	updated_at timestamptz DEFAULT now() NULL,
 	zones int4 DEFAULT 0 NULL, -- Number of storage zones in warehouse
 	operating_hours jsonb NULL, -- Operating hours: {open: "HH:MM", close: "HH:MM", timezone: "TZ"}
-	gstin varchar(15) NULL,
 	has_cold_storage bool DEFAULT false NOT NULL,
 	temperature_min_celsius numeric(5, 1) NULL,
 	temperature_max_celsius numeric(5, 1) NULL,
 	customs_bonded_warehouse bool DEFAULT false NOT NULL,
-	certifications _text DEFAULT '{}'::text[] NOT NULL,
-	CONSTRAINT warehouses_gstin_format CHECK (((gstin IS NULL) OR ((gstin)::text ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$'::text))),
 	CONSTRAINT warehouses_organization_id_code_key UNIQUE (organization_id, code),
 	CONSTRAINT warehouses_pkey PRIMARY KEY (id),
 	CONSTRAINT warehouses_temperature_range_check CHECK (((temperature_min_celsius IS NULL) OR (temperature_max_celsius IS NULL) OR (temperature_min_celsius <= temperature_max_celsius))),
@@ -2787,12 +2770,7 @@ AS SELECT c.id AS carrier_id,
     c.code AS carrier_code,
     c.reliability_score,
     c.availability_status,
-    c.daily_capacity,
-    c.current_load,
-        CASE
-            WHEN c.daily_capacity > 0 THEN round(c.current_load::numeric / c.daily_capacity::numeric * 100::numeric, 2)
-            ELSE 0::numeric
-        END AS utilization_percentage,
+		0::numeric AS utilization_percentage,
     count(DISTINCT s.id) AS total_shipments,
     count(DISTINCT s.id) FILTER (WHERE s.status::text = 'delivered'::text) AS delivered_count,
     count(DISTINCT s.id) FILTER (WHERE s.status::text = ANY (ARRAY['failed_delivery'::character varying, 'returned'::character varying, 'lost'::character varying]::text[])) AS failed_count,
@@ -2802,7 +2780,7 @@ AS SELECT c.id AS carrier_id,
      LEFT JOIN shipments s ON s.carrier_id = c.id AND s.created_at > (now() - '30 days'::interval)
      LEFT JOIN sla_violations sv ON sv.carrier_id = c.id AND sv.violated_at > (now() - '30 days'::interval)
   WHERE c.is_active = true
-  GROUP BY c.id, c.name, c.code, c.reliability_score, c.availability_status, c.daily_capacity, c.current_load;
+	GROUP BY c.id, c.name, c.code, c.reliability_score, c.availability_status;
 
 
 -- public.carrier_rejection_analysis source

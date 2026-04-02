@@ -53,7 +53,9 @@ function isIpWhitelisted(carrier, ipAddress) {
 }
 
 function verifyHmacSignature(signature, timestamp, req, webhookSecret) {
-  const payload = req.rawBody || JSON.stringify(req.body);
+  const payload = typeof req.rawBody === 'string'
+    ? req.rawBody
+    : (req.body !== undefined ? JSON.stringify(req.body) : '');
   const signedPayload = `${timestamp}.${payload}`;
   const expectedSignature = crypto
     .createHmac('sha256', webhookSecret)
@@ -278,7 +280,7 @@ async function authenticateWebhookRequest(req, res, next, { timestampToleranceSe
   const startTime = Date.now();
   const signature = req.headers['x-webhook-signature'] || req.headers['x-signature'];
   const timestamp = req.headers['x-webhook-timestamp'] || req.headers['x-timestamp'];
-  const carrierId = req.headers['x-carrier-id'] || req.body.carrierId;
+  const carrierId = req.headers['x-carrier-id'] || req.query?.carrierId || req.params?.carrierId || req.body?.carrierId;
 
   const context = {
     req,

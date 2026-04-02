@@ -15,7 +15,6 @@ export const createCarrierSchema = Joi.object({
   webhook_url: Joi.string().uri().max(500).optional(),
   reliability_score: Joi.number().min(0).max(1).optional(),
   avg_delivery_days: Joi.number().integer().min(0).optional(),
-  daily_capacity: Joi.number().integer().min(0).optional(),
   is_active: Joi.boolean().optional(),
   availability_status: Joi.string().valid('available', 'busy', 'offline', 'suspended').optional()
 });
@@ -30,7 +29,6 @@ export const updateCarrierSchema = Joi.object({
   webhook_url: Joi.string().uri().max(500).optional().allow(''),
   reliability_score: Joi.number().min(0).max(1).optional(),
   avg_delivery_days: Joi.number().integer().min(0).optional(),
-  daily_capacity: Joi.number().integer().min(0).optional(),
   is_active: Joi.boolean().optional(),
   availability_status: Joi.string().valid('available', 'busy', 'offline', 'suspended').optional()
 });
@@ -45,9 +43,6 @@ const dimensionsSchema = Joi.object({
 });
 
 const newProductFields = {
-  manufacturer_barcode: Joi.string().max(100).optional(),
-  hsn_code: Joi.string().max(20).optional(),
-  gst_rate: Joi.number().min(0).max(100).optional(),
   brand: Joi.string().max(255).optional(),
   country_of_origin: Joi.string().max(100).optional(),
   warranty_period_days: Joi.number().integer().min(0).optional(),

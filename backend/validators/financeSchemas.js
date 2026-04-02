@@ -55,6 +55,17 @@ export const updateInvoiceSchema = Joi.object({
   final_amount: Joi.number().min(0).optional(),
 }).min(1); // at least one field required
 
+export const approveInvoiceSchema = Joi.object({
+  notes: Joi.string().max(2000).optional().allow(''),
+});
+
+export const markInvoicePaidSchema = Joi.object({
+  payment_method: Joi.string().min(2).max(50).required(),
+  payment_date: Joi.string().isoDate().optional(),
+  reference_number: Joi.string().max(100).optional().allow(''),
+  notes: Joi.string().max(2000).optional().allow(''),
+});
+
 export const processRefundSchema = Joi.object({
   refund_amount:   Joi.number().min(0).optional(),
   restocking_fee:  Joi.number().min(0).optional().default(0),

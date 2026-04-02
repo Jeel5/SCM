@@ -10,6 +10,8 @@ import {
   financialSummaryQuerySchema,
   createInvoiceSchema,
   updateInvoiceSchema,
+  approveInvoiceSchema,
+  markInvoicePaidSchema,
   processRefundSchema,
   resolveDisputeSchema,
 } from '../validators/financeSchemas.js';
@@ -18,6 +20,8 @@ import {
   getInvoiceById,
   createInvoice,
   updateInvoice,
+  approveInvoice,
+  markInvoicePaid,
   getRefunds,
   processRefund,
   getDisputes,
@@ -32,6 +36,8 @@ router.get('/finance/invoices', authenticate, requirePermission('finance.view'),
 router.get('/finance/invoices/:id', authenticate, requirePermission('finance.view'), getInvoiceById);
 router.post('/finance/invoices', authenticate, requirePermission('settings.organization'), validateRequest(createInvoiceSchema), createInvoice);
 router.patch('/finance/invoices/:id', authenticate, requirePermission('settings.organization'), validateRequest(updateInvoiceSchema), updateInvoice);
+router.post('/finance/invoices/:id/approve', authenticate, requirePermission('settings.organization'), validateRequest(approveInvoiceSchema), approveInvoice);
+router.post('/finance/invoices/:id/pay', authenticate, requirePermission('settings.organization'), validateRequest(markInvoicePaidSchema), markInvoicePaid);
 
 // Refunds
 router.get('/finance/refunds', authenticate, requirePermission('finance.view'), validateQuery(listRefundsQuerySchema), getRefunds);

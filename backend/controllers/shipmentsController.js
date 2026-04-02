@@ -291,6 +291,19 @@ export const confirmPickup = asyncHandler(async (req, res) => {
 
   const data = await shipmentService.confirmPickup(id, req.body, requestedCarrierId);
 
+  // Keep shipment + order pages fresh immediately after pickup confirmation.
+  emitToShipment(id, 'shipment:updated', { id, status: data.status });
+  if (data.organizationId) {
+    emitToOrg(data.organizationId, 'shipment:updated', { id, status: data.status });
+    if (data.orderId) {
+      emitToOrg(data.organizationId, 'order:updated', { id: data.orderId, status: data.orderStatus });
+    }
+    emitToOrg(data.organizationId, 'inventory:updated', { shipmentId: id, orderId: data.orderId });
+  }
+  await invalidatePatterns(
+    invalidationTargets(data.organizationId || null, 'ship:list', 'orders:list', 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics')
+  );
+
   res.json({
     success: true,
     message: 'Pickup confirmed. Shipment is now in transit.',

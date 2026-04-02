@@ -45,6 +45,7 @@ const IMPORT_TYPES = {
   channels:    'import:channels',
   team:        'import:team',
   products:    'import:products',
+  finance:     'import:finance',
   inventory:   'import:inventory',
   orders:      'import:orders',
   shipments:   'import:shipments',

@@ -12,6 +12,7 @@ import {
   handleImportTeam,
   handleImportProducts,
 } from './importHandlers/masterDataImportHandlers.js';
+import { handleImportFinance } from './importHandlers/financeImportHandlers.js';
 import {
   handleSLAMonitoring,
   handleExceptionEscalation,
@@ -54,6 +55,7 @@ export const jobHandlers = {
   'import:channels':   handleImportChannels,
   'import:team':       handleImportTeam,
   'import:products':   handleImportProducts,
+  'import:finance':    handleImportFinance,
   'import:inventory':  handleImportInventory,
   'import:orders':     handleImportOrders,
   'import:shipments':  handleImportShipments,

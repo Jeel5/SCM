@@ -3,7 +3,8 @@ import express from 'express';
 import { 
   listSlaPolicies, createSlaPolicy, updateSlaPolicy, deactivateSlaPolicy,
   getEta, getSlaViolations, getSlaDashboard,
-  listExceptions, getException, createException, resolveException
+  listExceptions, getException, createException, resolveException,
+  runSlaMonitoringNow
 } from '../controllers/slaController.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/rbac.js';
@@ -28,6 +29,7 @@ router.delete('/sla/policies/:id',authenticate, authorize('sla.manage'), deactiv
 // SLA Violations & Dashboard
 router.get('/sla/violations', authenticate, authorize('sla.view'), validateQuery(slaViolationsQuerySchema), getSlaViolations);
 router.get('/sla/dashboard',  authenticate, authorize('sla.view'), getSlaDashboard);
+router.post('/sla/monitor/run', authenticate, authorize('sla.manage'), runSlaMonitoringNow);
 
 // ETA predictions
 router.get('/eta/:shipmentId', authenticate, authorize('shipments.view'), getEta);

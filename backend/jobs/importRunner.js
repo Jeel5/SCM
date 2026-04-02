@@ -51,6 +51,7 @@ async function invalidateImportCaches(importType, organizationId) {
     shipments: ['ship:list', 'dash', 'analytics'],
     carriers: ['dash', 'analytics'],
     channels: ['dash', 'analytics'],
+    finance: ['fin', 'dash', 'analytics'],
     suppliers: ['dash', 'analytics'],
     team: ['dash', 'analytics'],
   };

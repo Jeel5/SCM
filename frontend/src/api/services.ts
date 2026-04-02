@@ -278,8 +278,8 @@ export const inventoryApi = {
     return put(`/inventory/${id}`, data);
   },
 
-  async adjustStock(id: string, adjustmentType: string, quantity: number, reason: string): Promise<ApiResponse<InventoryItem>> {
-    return post(`/inventory/${id}/adjust`, { adjustment_type: adjustmentType, quantity, reason });
+  async adjustStock(id: string, adjustmentType: string, quantity: number, reason: string, extra?: { supplier_id?: string; expected_arrival?: string }): Promise<ApiResponse<InventoryItem>> {
+    return post(`/inventory/${id}/adjust`, { adjustment_type: adjustmentType, quantity, reason, ...extra });
   },
 
   async getStockMovements(id: string): Promise<ApiResponse<unknown[]>> {
@@ -397,10 +397,7 @@ function mapProduct(p: Record<string, unknown>): Product {
     packageType: (p.package_type as Product['packageType']) ?? null,
     handlingInstructions: (p.handling_instructions as string | null) ?? null,
     requiresInsurance: Boolean(p.requires_insurance),
-    hsnCode: (p.hsn_code as string | null) ?? null,
-    gstRate: p.gst_rate != null ? parseFloat(p.gst_rate as string) : null,
     countryOfOrigin: (p.country_of_origin as string | null) ?? null,
-    manufacturerBarcode: (p.manufacturer_barcode as string | null) ?? null,
     internalBarcode: p.internal_barcode as string,
     warrantyPeriodDays: p.warranty_period_days != null ? parseInt(p.warranty_period_days as string, 10) : 0,
     shelfLifeDays: p.shelf_life_days != null ? parseInt(p.shelf_life_days as string, 10) : null,
@@ -435,10 +432,7 @@ function toSnakeProduct(data: Partial<Product>): Record<string, unknown> {
   if (data.packageType !== undefined)            out.package_type = data.packageType;
   if (data.handlingInstructions !== undefined)   out.handling_instructions = data.handlingInstructions;
   if (data.requiresInsurance !== undefined)      out.requires_insurance = data.requiresInsurance;
-  if (data.hsnCode !== undefined)                out.hsn_code = data.hsnCode;
-  if (data.gstRate !== undefined)                out.gst_rate = data.gstRate;
   if (data.countryOfOrigin !== undefined)        out.country_of_origin = data.countryOfOrigin;
-  if (data.manufacturerBarcode !== undefined)    out.manufacturer_barcode = data.manufacturerBarcode;
   if (data.warrantyPeriodDays !== undefined)     out.warranty_period_days = data.warrantyPeriodDays;
   if (data.shelfLifeDays !== undefined)          out.shelf_life_days = data.shelfLifeDays;
   if (data.supplierId !== undefined)             out.supplier_id = data.supplierId;
@@ -458,10 +452,10 @@ export const carriersApi = {
       name: c.name,
       status: c.status,
       rating: c.reliabilityScore ?? c.rating ?? 0,
-      onTimeDeliveryRate: c.onTimeRate ?? c.onTimeDeliveryRate ?? 0,
-      damageRate: c.damageRate ?? 0,
-      lossRate: c.lossRate ?? 0,
-      averageDeliveryTime: c.avgDeliveryDays ?? c.averageDeliveryTime ?? 0,
+      onTimeDeliveryRate: c.onTimeRate ?? c.on_time_rate ?? c.onTimeDeliveryRate ?? 0,
+      exceptionRate: c.exceptionRate ?? c.exception_rate ?? 0,
+      lossRate: c.lossRate ?? c.loss_rate ?? 0,
+      averageDeliveryTime: c.avgDeliveryDays ?? c.avg_delivery_days ?? c.averageDeliveryTime ?? 0,
       activeShipments: c.activeShipments ?? 0,
       totalShipments: c.totalShipments ?? 0,
       services: c.serviceAreas ?? c.services ?? [],
@@ -473,6 +467,7 @@ export const carriersApi = {
       servicesOffered: c.serviceAreas ?? c.services ?? [],
       serviceType: c.serviceType,
       apiEndpoint: c.apiEndpoint,
+      webhookUrl: c.webhookUrl,
       createdAt: c.createdAt,
     }));
     return { data: normalized, success: true };
@@ -489,10 +484,10 @@ export const carriersApi = {
         name: c.name,
         status: c.status,
         rating: c.reliabilityScore ?? c.rating ?? 0,
-        onTimeDeliveryRate: c.onTimeRate ?? c.onTimeDeliveryRate ?? 0,
-        damageRate: c.damageRate ?? 0,
-        lossRate: c.lossRate ?? 0,
-        averageDeliveryTime: c.avgDeliveryDays ?? c.averageDeliveryTime ?? 0,
+        onTimeDeliveryRate: c.onTimeRate ?? c.on_time_rate ?? c.onTimeDeliveryRate ?? 0,
+        exceptionRate: c.exceptionRate ?? c.exception_rate ?? 0,
+        lossRate: c.lossRate ?? c.loss_rate ?? 0,
+        averageDeliveryTime: c.avgDeliveryDays ?? c.avg_delivery_days ?? c.averageDeliveryTime ?? 0,
         activeShipments: c.activeShipments ?? 0,
         totalShipments: c.totalShipments ?? 0,
         services: c.serviceAreas ?? c.services ?? [],
@@ -504,6 +499,7 @@ export const carriersApi = {
         servicesOffered: c.serviceAreas ?? c.services ?? [],
         serviceType: c.serviceType,
         apiEndpoint: c.apiEndpoint,
+        webhookUrl: c.webhookUrl,
         createdAt: c.createdAt,
       }
     };
@@ -523,6 +519,8 @@ export const carriersApi = {
     if (data.website) backendData.website = data.website;
     if (data.servicesOffered) backendData.service_areas = data.servicesOffered;
     if (data.serviceType) backendData.service_type = data.serviceType;
+    if (data.apiEndpoint) backendData.api_endpoint = data.apiEndpoint;
+    if (data.webhookUrl) backendData.webhook_url = data.webhookUrl;
     return post('/carriers', backendData);
   },
 
@@ -544,6 +542,8 @@ export const carriersApi = {
     }
     if (data.servicesOffered !== undefined) backendData.service_areas = data.servicesOffered;
     if (data.serviceType !== undefined) backendData.service_type = data.serviceType;
+    if (data.apiEndpoint !== undefined) backendData.api_endpoint = data.apiEndpoint;
+    if (data.webhookUrl !== undefined) backendData.webhook_url = data.webhookUrl;
     return put(`/carriers/${id}`, backendData);
   },
 
@@ -565,8 +565,6 @@ export const slaApi = {
       name:                    data.name,
       serviceType:             data.serviceType,
       carrierId:               (data as any).carrierId,
-      originZoneType:          data.originZoneType,
-      destinationZoneType:     data.destinationZoneType,
       deliveryHours:           data.targetDeliveryHours,
       pickupHours:             (data as any).pickupHours ?? 4,
       penaltyPerHour:          data.penaltyAmount,
@@ -763,6 +761,14 @@ export const financeApi = {
   }): Promise<ApiResponse<any>> {
     return post('/finance/invoices', data);
   },
+
+  async approveInvoice(id: string, notes?: string): Promise<ApiResponse<any>> {
+    return post(`/finance/invoices/${id}/approve`, { notes: notes || '' });
+  },
+
+  async markInvoicePaid(id: string, payload: { payment_method: string; payment_date?: string; reference_number?: string; notes?: string }): Promise<ApiResponse<any>> {
+    return post(`/finance/invoices/${id}/pay`, payload);
+  },
 };
 
 // ==================== EXCEPTIONS ====================
@@ -771,6 +777,7 @@ export const exceptionsApi = {
     stats: {
       totalExceptions: number;
       open: number;
+      investigating: number;
       inProgress: number;
       resolved: number;
       critical: number;
@@ -783,6 +790,7 @@ export const exceptionsApi = {
       stats?: {
         totalExceptions?: number;
         open?: number;
+        investigating?: number;
         inProgress?: number;
         resolved?: number;
         critical?: number;
@@ -800,6 +808,7 @@ export const exceptionsApi = {
       stats: {
         totalExceptions: response.stats?.totalExceptions ?? (response.pagination?.total || response.data.length),
         open: response.stats?.open ?? 0,
+        investigating: response.stats?.investigating ?? 0,
         inProgress: response.stats?.inProgress ?? 0,
         resolved: response.stats?.resolved ?? 0,
         critical: response.stats?.critical ?? 0,

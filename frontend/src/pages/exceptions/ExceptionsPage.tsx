@@ -42,7 +42,7 @@ export function ExceptionsPage() {
   const tabs = [
     { id: 'all', label: 'All Exceptions', count: stats.totalExceptions },
     { id: 'open', label: 'Open', count: stats.open },
-    { id: 'in_progress', label: 'In Progress', count: stats.inProgress },
+    { id: 'investigating', label: 'Investigating', count: stats.investigating },
     { id: 'resolved', label: 'Resolved', count: stats.resolved },
   ];
 

@@ -18,12 +18,12 @@ export function CreateReturnModal({
   const [refundAmount, setRefundAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { addToast } = useToast();
+  const { success, error } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orderId.trim()) {
-      addToast('Order ID is required', 'error');
+      error('Order ID is required');
       return;
     }
     setIsSubmitting(true);
@@ -35,7 +35,7 @@ export function CreateReturnModal({
         refund_amount: refundAmount ? parseFloat(refundAmount) : undefined,
         items: [{ product_name: 'Return item', quantity: 1 }],
       } as any);
-      addToast('Return request created successfully', 'success');
+      success('Return request created successfully');
       setOrderId('');
       setReturnType('refund');
       setReason('damaged');
@@ -43,7 +43,9 @@ export function CreateReturnModal({
       setNotes('');
       onSuccess?.();
     } catch (err: any) {
-      addToast(err?.message || 'Failed to create return', 'error');
+      if (!err?.response) {
+        error('Failed to create return', err?.message || 'Unexpected error');
+      }
     } finally {
       setIsSubmitting(false);
     }

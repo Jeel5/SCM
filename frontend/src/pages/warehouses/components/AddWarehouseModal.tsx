@@ -30,10 +30,8 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
     contact_phone: initialData?.contactPhone || '',
     is_active: initialData ? initialData.status === 'active' : true,
     // SCM operational fields
-    gstin: initialData?.gstin || '',
     temperature_min_celsius: initialData?.temperatureMinCelsius?.toString() || '',
     temperature_max_celsius: initialData?.temperatureMaxCelsius?.toString() || '',
-    certifications: initialData?.certifications?.join(', ') || '',
   });
 
   // Effect removed as updating initialData dynamically without warning is tricky, we can just use key to remount the modal or set state on open.
@@ -62,14 +60,10 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
         contact_phone: formData.contact_phone || null,
         is_active: formData.is_active,
         // SCM operational fields
-        gstin: formData.gstin || null,
         has_cold_storage: formData.warehouse_type === 'cold_storage',
         temperature_min_celsius: formData.temperature_min_celsius ? parseFloat(formData.temperature_min_celsius) : null,
         temperature_max_celsius: formData.temperature_max_celsius ? parseFloat(formData.temperature_max_celsius) : null,
         customs_bonded_warehouse: formData.warehouse_type === 'bonded_customs',
-        certifications: formData.certifications
-          ? formData.certifications.split(',').map(c => c.trim()).filter(Boolean)
-          : [],
       };
 
       if (initialData) {
@@ -96,10 +90,8 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
           contact_email: '',
           contact_phone: '',
           is_active: true,
-          gstin: '',
           temperature_min_celsius: '',
           temperature_max_celsius: '',
-          certifications: '',
         });
       }
 
@@ -213,45 +205,10 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
             value={formData.capacity}
             onChange={(e) => handleChange('capacity', e.target.value)}
           />
-          <Input
-            label="GSTIN"
-            placeholder="27AABCU9603R1ZX"
-            value={formData.gstin}
-            onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
-            maxLength={15}
-          />
         </div>
 
-        <div className="space-y-3">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Cold Storage &amp; Compliance</h4>
-          {formData.warehouse_type === 'cold_storage' && (
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Min Temperature (°C)"
-                type="number"
-                placeholder="-25"
-                value={formData.temperature_min_celsius}
-                onChange={(e) => handleChange('temperature_min_celsius', e.target.value)}
-              />
-              <Input
-                label="Max Temperature (°C)"
-                type="number"
-                placeholder="4"
-                value={formData.temperature_max_celsius}
-                onChange={(e) => handleChange('temperature_max_celsius', e.target.value)}
-              />
-            </div>
-          )}
-          <Input
-            label="Certifications (comma-separated)"
-            placeholder="ISO 9001, FSSAI, Customs Bonded"
-            value={formData.certifications}
-            onChange={(e) => handleChange('certifications', e.target.value)}
-          />
-        </div>
 
         <div className="space-y-3">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Contact Information</h4>
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Contact Email"

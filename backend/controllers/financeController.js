@@ -1,5 +1,6 @@
 // Finance Controller - handles invoices, refunds, disputes, and financial reporting
 import financeRepo from '../repositories/FinanceRepository.js';
+import invoiceService from '../services/invoiceService.js';
 import { INVOICE_VALID_TRANSITIONS } from '../services/invoiceService.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { ok, created, paginated } from '../utils/response.js';
@@ -118,6 +119,28 @@ export const updateInvoice = asyncHandler(async (req, res) => {
   });
 
   ok(res, updatedRow, 'Invoice updated');
+});
+
+// ── POST /api/finance/invoices/:id/approve ─────────────────────────────────
+export const approveInvoice = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const organizationId = req.orgContext?.organizationId;
+  const actorId = req.user?.userId || null;
+
+  const row = await invoiceService.approveInvoice(id, actorId, organizationId);
+  ok(res, row, 'Invoice approved successfully');
+});
+
+// ── POST /api/finance/invoices/:id/pay ─────────────────────────────────────
+export const markInvoicePaid = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { payment_method, payment_date } = req.body;
+  const organizationId = req.orgContext?.organizationId;
+
+  const paymentDate = payment_date || new Date().toISOString();
+  const row = await invoiceService.markInvoicePaid(id, payment_method, paymentDate, organizationId);
+
+  ok(res, row, 'Invoice marked as paid successfully');
 });
 
 // ── GET /api/finance/refunds ─────────────────────────────────────────────────

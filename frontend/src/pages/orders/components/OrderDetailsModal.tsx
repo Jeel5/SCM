@@ -1,6 +1,5 @@
-import { useState } from 'react';
-import { ShoppingCart, Package, MapPin, Calendar, User, Phone, Mail, Truck, RefreshCw } from 'lucide-react';
-import { Modal, StatusBadge, PriorityBadge, Badge, useToast, PermissionGate } from '@/components/ui';
+import { ShoppingCart, Package, MapPin, Calendar, User, Phone, Mail, Truck } from 'lucide-react';
+import { Modal, StatusBadge, PriorityBadge, Badge, useToast } from '@/components/ui';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/api/client';
 import type { Order } from '@/types';
@@ -14,24 +13,10 @@ interface OrderDetailsModalProps {
 
 export function OrderDetailsModal({ order, isOpen, onClose, onUpdate }: OrderDetailsModalProps) {
   const { success, error } = useToast();
-  const [isAssigning, setIsAssigning] = useState(false);
 
   if (!order) return null;
 
   const totalWeight = order.items.reduce((sum, item) => sum + (item.weight * item.quantity), 0);
-
-  const handleAssignCarrier = async () => {
-    setIsAssigning(true);
-    try {
-      await api.post(`/orders/${order.id}/request-carriers`);
-      success('Carrier assignment requested successfully');
-      onUpdate?.();
-    } catch (err: any) {
-      error(err.message || 'Failed to request carrier assignment');
-    } finally {
-      setIsAssigning(false);
-    }
-  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Order ${order.orderNumber}`} size="2xl">
@@ -187,21 +172,6 @@ export function OrderDetailsModal({ order, isOpen, onClose, onUpdate }: OrderDet
           </div>
         )}
 
-        {/* Actions */}
-        {(order.status === 'created' || order.status === 'pending_carrier_assignment' || order.status === 'on_hold') && (
-          <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-gray-800 mt-4">
-            <PermissionGate permission="shipments.update">
-              <button
-                onClick={handleAssignCarrier}
-                disabled={isAssigning}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
-              >
-                {isAssigning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
-                {isAssigning ? 'Requesting...' : 'Request Carrier Assignment'}
-              </button>
-            </PermissionGate>
-          </div>
-        )}
       </div>
     </Modal>
   );

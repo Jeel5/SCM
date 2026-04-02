@@ -40,6 +40,7 @@ import organizationsRoutes from './routes/organizations.js';
 import partnersRoutes from './routes/partners.js';
 import notificationRoutes from './routes/notifications.js';
 import importRoutes from './routes/import.js';
+import geoRoutes from './routes/geo.js';
 
 // Trust the first proxy hop (Nginx) so IP-based rate limiting sees the real client IP
 app.set('trust proxy', 1);
@@ -125,6 +126,7 @@ app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization man
 app.use(API_PREFIX, partnersRoutes); // Sales channels & suppliers
 app.use(API_PREFIX, notificationRoutes); // In-app notifications
 app.use(API_PREFIX, importRoutes); // Async CSV import endpoints
+app.use(API_PREFIX, geoRoutes); // Public geo lookup proxy for demo portals
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes
@@ -147,6 +149,23 @@ async function startBackgroundWorkers() {
 		const initialSchedules = await jobsService.getCronSchedules();
 		await cronScheduler.start(initialSchedules);
 		logger.info('✅ Cron Scheduler initialized');
+
+		// Ensure baseline operational schedules exist (idempotent by job_type check).
+		const activeSchedules = await jobsService.getCronSchedules();
+		const existingJobTypes = new Set(activeSchedules.map((s) => s.job_type));
+		const baselineSchedules = [
+			{ name: 'SLA Monitoring (Hourly)', jobType: 'sla_monitoring', cron: '0 * * * *' },
+			{ name: 'Exception Escalation (Hourly)', jobType: 'exception_escalation', cron: '15 * * * *' },
+			{ name: 'Carrier Assignment Retry (Every 10m)', jobType: 'carrier_assignment_retry', cron: '*/10 * * * *' },
+			{ name: 'Invoice Generation (Monthly)', jobType: 'invoice_generation', cron: '0 2 1 * *' },
+		];
+
+		for (const schedule of baselineSchedules) {
+			if (!existingJobTypes.has(schedule.jobType)) {
+				await jobsService.createCronSchedule(schedule.name, schedule.jobType, schedule.cron, {});
+				logger.info('✅ Baseline cron schedule created', { jobType: schedule.jobType, cron: schedule.cron });
+			}
+		}
 	} catch (error) {
 		logger.error('Failed to start Cron Scheduler:', error);
 	}

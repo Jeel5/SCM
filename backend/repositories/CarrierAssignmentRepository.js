@@ -493,15 +493,19 @@ class CarrierAssignmentRepository extends BaseRepository {
     }
 
     /**
-     * Mark winner assignment as assigned and close remaining windows.
+     * Close the bidding window after a winner is chosen.
+     *
+     * The accepted winning row keeps its existing `accepted` status because
+     * `assigned` is not a valid value in the current database constraint.
      */
     async markWinnerAndCloseOrderWindow(orderId, winnerAssignmentId, client = null) {
         await this.query(
             `UPDATE carrier_assignments
-             SET status = CASE WHEN id = $2 THEN 'assigned' ELSE 'cancelled' END,
+             SET status = 'cancelled',
                  updated_at = NOW()
              WHERE order_id = $1
-               AND status IN ('accepted', 'pending', 'busy', 'assigned')`,
+               AND id <> $2
+               AND status IN ('accepted', 'pending', 'busy')`,
             [orderId, winnerAssignmentId],
             client
         );

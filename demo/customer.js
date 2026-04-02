@@ -13,6 +13,7 @@ let deliveryPin    = null; // { lat, lon, city, state, postalCode, displayName }
 let selectedWarehouse = null;
 let mapView        = null;
 let mapMarker      = null;
+let lastPlacedOrderExternalId = null;
 
 function normalizeDimensions(rawDimensions) {
     if (!rawDimensions) return null;
@@ -239,8 +240,7 @@ function initMap() {
 
         try {
             const r   = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`,
-                { headers: { 'Accept-Language': 'en' } }
+                `${API_BASE}/geo/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`
             );
             const geo  = await r.json();
             const addr = geo.address || {};
@@ -250,7 +250,7 @@ function initMap() {
                 city:        addr.city || addr.town || addr.village || addr.county || '',
                 state:       addr.state || '',
                 postalCode:  addr.postcode || '',
-                displayName: geo.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+                displayName: geo.display_name || geo.name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
             };
         } catch (_) {
             deliveryPin = { lat, lon: lng, city: '', state: '', postalCode: '', displayName: `${lat.toFixed(4)}, ${lng.toFixed(4)}` };
@@ -467,6 +467,8 @@ async function placeOrder() {
         }
     };
 
+    lastPlacedOrderExternalId = webhookPayload.data.external_order_id;
+
     try {
         const orderResponse = await fetch(`${API_BASE}/webhooks/${selectedOrgToken}/orders`, {
             method: 'POST',
@@ -489,6 +491,8 @@ async function placeOrder() {
         document.getElementById('orderIdDisplay').textContent     = `Job #${jobId}`;
         document.getElementById('carrierRequestData').textContent = JSON.stringify(webhookPayload.data, null, 2);
         document.getElementById('orderResponseData').textContent  = JSON.stringify(orderResult, null, 2);
+        const returnOrderInput = document.getElementById('returnOrderIdInput');
+        if (returnOrderInput) returnOrderInput.value = lastPlacedOrderExternalId;
 
         document.getElementById('step3').style.display = 'block';
         document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
@@ -499,10 +503,63 @@ async function placeOrder() {
     }
 }
 
+async function submitReturnWebhook() {
+    const originalOrderId = (document.getElementById('returnOrderIdInput')?.value || '').trim();
+    const reason = (document.getElementById('returnReasonInput')?.value || 'customer_request').trim();
+    const resultBox = document.getElementById('returnResultBox');
+
+    if (!originalOrderId) {
+        console.error('Please provide the original order id for the return request.');
+        return;
+    }
+
+    const payload = {
+        event_type: 'return.requested',
+        source: 'customer-portal',
+        timestamp: new Date().toISOString(),
+        data: {
+            return_id: `RET-${Date.now()}`,
+            original_order_id: originalOrderId,
+            customer: {
+                name: 'Test Customer',
+                email: 'customer@example.com',
+                phone: '9876543210'
+            },
+            items: [
+                {
+                    sku: selectedProduct?.sku || 'UNKNOWN',
+                    quantity: Math.max(1, parseInt(document.getElementById('quantityInput').value || '1', 10)),
+                    reason,
+                }
+            ],
+            status: 'requested',
+            refund_amount: estimateData?.data?.estimatedCost || 0,
+        }
+    };
+
+    try {
+        const response = await fetch(`${API_BASE}/webhooks/${selectedOrgToken}/returns`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json?.message || `HTTP ${response.status}`);
+
+        resultBox.style.display = 'block';
+        resultBox.textContent = JSON.stringify({ request: payload, response: json }, null, 2);
+    } catch (error) {
+        resultBox.style.display = 'block';
+        resultBox.textContent = `Return request failed: ${error.message}`;
+        console.error(error.message);
+    }
+}
+
 // ──────────── Init ────────────
 // Load live catalog on page load — no hardcoded products.
 window.addEventListener('DOMContentLoaded', () => {
     bindOrgControls();
     loadCatalog();
     initMap();
+    document.getElementById('createReturnBtn')?.addEventListener('click', submitReturnWebhook);
 });

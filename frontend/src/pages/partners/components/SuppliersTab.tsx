@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { Plus, Package, Pencil, Trash2, Eye } from 'lucide-react';
-import { Button, Badge, DataTable, Modal, Input, Select, PermissionGate } from '@/components/ui';
+import { Button, Badge, DataTable, Modal, Input, PermissionGate } from '@/components/ui';
 import { importApi, suppliersApi } from '@/api/services';
 import { toast } from '@/stores/toastStore';
 
@@ -11,23 +11,22 @@ interface Supplier {
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
-  website: string | null;
   address: string | null;
   city: string | null;
   state: string | null;
   country: string;
   postal_code: string | null;
-  lead_time_days: number;
-  payment_terms: string | null;
-  reliability_score: number;
   is_active: boolean;
   created_at: string;
+  api_endpoint: string | null;
+  inbound_contact_name: string | null;
+  inbound_contact_email: string | null;
 }
 
 const emptyForm = {
   name: '', contact_name: '', contact_email: '', contact_phone: '',
-  website: '', address: '', city: '', state: '', country: 'India', postal_code: '',
-  lead_time_days: '7', payment_terms: '', reliability_score: '0.85',
+  address: '', city: '', state: '', country: 'India', postal_code: '',
+  api_endpoint: '', inbound_contact_name: '', inbound_contact_email: '',
 };
 
 export function SuppliersTab() {
@@ -70,15 +69,14 @@ export function SuppliersTab() {
       contact_name: s.contact_name || '',
       contact_email: s.contact_email || '',
       contact_phone: s.contact_phone || '',
-      website: s.website || '',
       address: s.address || '',
       city: s.city || '',
       state: s.state || '',
       country: s.country || 'India',
       postal_code: s.postal_code || '',
-      lead_time_days: String(s.lead_time_days),
-      payment_terms: s.payment_terms || '',
-      reliability_score: String(s.reliability_score),
+      api_endpoint: s.api_endpoint || '',
+      inbound_contact_name: s.inbound_contact_name || '',
+      inbound_contact_email: s.inbound_contact_email || '',
     });
     setIsModalOpen(true);
   };
@@ -87,11 +85,7 @@ export function SuppliersTab() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const payload: Record<string, unknown> = {
-        ...formData,
-        lead_time_days: parseInt(formData.lead_time_days, 10) || 7,
-        reliability_score: parseFloat(formData.reliability_score) || 0.85,
-      };
+      const payload = formData;
       if (editingSupplier) {
         await suppliersApi.updateSupplier(editingSupplier.id, payload);
         toast.success('Supplier updated');
@@ -164,40 +158,6 @@ export function SuppliersTab() {
           {[s.city, s.state].filter(Boolean).join(', ') || '—'}
         </span>
       ),
-    },
-    {
-      key: 'lead_time',
-      header: 'Lead Time',
-      sortable: true,
-      render: (s: Supplier) => (
-        <span className="text-sm font-medium dark:text-gray-200">{s.lead_time_days} days</span>
-      ),
-    },
-    {
-      key: 'payment',
-      header: 'Payment Terms',
-      render: (s: Supplier) => (
-        <span className="text-sm text-gray-600 dark:text-gray-300">{s.payment_terms || '—'}</span>
-      ),
-    },
-    {
-      key: 'reliability',
-      header: 'Reliability',
-      sortable: true,
-      render: (s: Supplier) => {
-        const pct = Math.round(parseFloat(String(s.reliability_score)) * 100);
-        return (
-          <div className="flex items-center gap-2">
-            <div className="w-16 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full ${pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{pct}%</span>
-          </div>
-        );
-      },
     },
     {
       key: 'status',
@@ -291,8 +251,9 @@ export function SuppliersTab() {
             <p><strong>Contact:</strong> {viewingSupplier.contact_name || '—'}</p>
             <p><strong>Email:</strong> {viewingSupplier.contact_email || '—'}</p>
             <p><strong>Phone:</strong> {viewingSupplier.contact_phone || '—'}</p>
-            <p><strong>Lead Time:</strong> {viewingSupplier.lead_time_days} days</p>
-            <p><strong>Reliability:</strong> {Math.round(Number(viewingSupplier.reliability_score) * 100)}%</p>
+            <p><strong>API Endpoint:</strong> {viewingSupplier.api_endpoint || '—'}</p>
+            <p><strong>Inbound Contact:</strong> {viewingSupplier.inbound_contact_name || '—'}</p>
+            <p><strong>Inbound Email:</strong> {viewingSupplier.inbound_contact_email || '—'}</p>
             <div className="flex justify-end pt-3">
               <Button variant="outline" onClick={() => setViewingSupplier(null)}>Close</Button>
             </div>
@@ -341,12 +302,27 @@ export function SuppliersTab() {
           </div>
 
           <Input
-            label="Website"
-            placeholder="https://www.supplier.com"
-            value={formData.website}
-            onChange={(e) => setFormData(p => ({ ...p, website: e.target.value }))}
+            label="API Endpoint (for webhook)"
+            placeholder="https://api.supplier.com/webhooks/shipment"
+            value={formData.api_endpoint}
+            onChange={(e) => setFormData(p => ({ ...p, api_endpoint: e.target.value }))}
           />
 
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Inbound Contact Name"
+              placeholder="Order Manager"
+              value={formData.inbound_contact_name}
+              onChange={(e) => setFormData(p => ({ ...p, inbound_contact_name: e.target.value }))}
+            />
+            <Input
+              label="Inbound Contact Email"
+              type="email"
+              placeholder="orders@supplier.com"
+              value={formData.inbound_contact_email}
+              onChange={(e) => setFormData(p => ({ ...p, inbound_contact_email: e.target.value }))}
+            />
+          </div>
           <Input
             label="Address"
             placeholder="Full street address"
@@ -380,39 +356,6 @@ export function SuppliersTab() {
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <Input
-              label="Lead Time (days)"
-              type="number"
-              min={0}
-              max={365}
-              value={formData.lead_time_days}
-              onChange={(e) => setFormData(p => ({ ...p, lead_time_days: e.target.value }))}
-            />
-            <Select
-              label="Payment Terms"
-              value={formData.payment_terms}
-              onChange={(e) => setFormData(p => ({ ...p, payment_terms: e.target.value }))}
-              options={[
-                { value: '', label: '— Select —' },
-                { value: 'Net30', label: 'Net 30' },
-                { value: 'Net60', label: 'Net 60' },
-                { value: 'Net90', label: 'Net 90' },
-                { value: 'COD', label: 'Cash on Delivery' },
-                { value: 'Advance', label: 'Advance Payment' },
-                { value: 'LC', label: 'Letter of Credit' },
-              ]}
-            />
-            <Input
-              label="Reliability Score (0-1)"
-              type="number"
-              min={0}
-              max={1}
-              step={0.01}
-              value={formData.reliability_score}
-              onChange={(e) => setFormData(p => ({ ...p, reliability_score: e.target.value }))}
-            />
-          </div>
 
           <div className="flex items-center gap-3 pt-4">
             <Button type="button" variant="outline" className="flex-1" onClick={() => setIsModalOpen(false)}>

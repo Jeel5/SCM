@@ -45,15 +45,12 @@ export const resolveExceptionSchema = Joi.object({
 
 // ── SLA Policy body schemas ───────────────────────────────────────────────────
 
-const ZONE_TYPES = ['local', 'metro', 'regional', 'national', 'remote'];
 const SERVICE_TYPES = ['same_day', 'express', 'standard', 'economy', 'bulk'];
 
 export const createSLAPolicySchema = Joi.object({
   name:                    Joi.string().min(2).max(100).required(),
   serviceType:             Joi.string().valid(...SERVICE_TYPES).required(),
   carrierId:               Joi.string().uuid().allow(null),
-  originZoneType:          Joi.string().valid(...ZONE_TYPES).allow(null),
-  destinationZoneType:     Joi.string().valid(...ZONE_TYPES).allow(null),
   deliveryHours:           Joi.number().integer().min(1).max(720).required(),
   pickupHours:             Joi.number().integer().min(1).max(72).default(4),
   penaltyPerHour:          Joi.number().min(0).max(10000).default(0),
@@ -68,8 +65,6 @@ export const updateSLAPolicySchema = Joi.object({
   name:                    Joi.string().min(2).max(100),
   serviceType:             Joi.string().valid(...SERVICE_TYPES),
   carrierId:               Joi.string().uuid().allow(null),
-  originZoneType:          Joi.string().valid(...ZONE_TYPES).allow(null),
-  destinationZoneType:     Joi.string().valid(...ZONE_TYPES).allow(null),
   deliveryHours:           Joi.number().integer().min(1).max(720),
   pickupHours:             Joi.number().integer().min(1).max(72),
   penaltyPerHour:          Joi.number().min(0).max(10000),

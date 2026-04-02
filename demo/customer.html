@@ -122,6 +122,19 @@
                 <div class="json-display" id="orderResponseData"></div>
             </div>
 
+            <div class="data-section" style="margin-top:20px;">
+                <h4>↩️ Create Return Request</h4>
+                <p style="font-size:0.9em; color:#6b7280; margin-bottom:10px;">
+                    Submit a demo return webhook for an order.
+                </p>
+                <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; margin-bottom:10px;">
+                    <input id="returnOrderIdInput" type="text" placeholder="Original Order ID (external_order_id)" style="padding:10px; border:2px solid #e2e8f0; border-radius:6px;" />
+                    <input id="returnReasonInput" type="text" placeholder="Reason (e.g. damaged)" value="damaged" style="padding:10px; border:2px solid #e2e8f0; border-radius:6px;" />
+                </div>
+                <button id="createReturnBtn" type="button" class="btn btn-primary">↩️ Submit Return Webhook</button>
+                <div id="returnResultBox" class="json-display" style="margin-top:10px; display:none;"></div>
+            </div>
+
             <div style="margin-top: 30px; text-align: center;">
                 <p style="font-size: 1.1em; margin-bottom: 15px;">🔗 Continue in other portals:</p>
                 <a href="carrier-portal.html" style="display: inline-block; margin: 10px; padding: 15px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">

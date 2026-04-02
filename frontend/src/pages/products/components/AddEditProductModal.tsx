@@ -3,7 +3,6 @@ import { Modal, Button, Input } from '@/components/ui';
 import { productsApi } from '@/api/services';
 import type { Product } from '@/types';
 
-const GST_RATES = [0, 5, 12, 18, 28];
 const PACKAGE_TYPES = ['box', 'envelope', 'tube', 'pallet', 'crate', 'bag', 'custom'];
 
 const CATEGORIES = [
@@ -26,8 +25,8 @@ interface FormState {
   selling_price: string; cost_price: string; currency: string;
   // Physical
   weight: string; dim_length: string; dim_width: string; dim_height: string; dim_unit: string;
-  // Compliance (India)
-  hsn_code: string; gst_rate: string; manufacturer_barcode: string; country_of_origin: string;
+  // Identification
+  country_of_origin: string;
   // Shipping
   package_type: string; handling_instructions: string;
   requires_insurance: boolean;
@@ -43,7 +42,7 @@ const EMPTY: FormState = {
   name: '', description: '', category: '', brand: '',
   selling_price: '', cost_price: '', currency: 'INR',
   weight: '', dim_length: '', dim_width: '', dim_height: '', dim_unit: 'cm',
-  hsn_code: '', gst_rate: '18', manufacturer_barcode: '', country_of_origin: 'India',
+  country_of_origin: 'India',
   package_type: 'box', handling_instructions: '', requires_insurance: false,
   is_fragile: false, requires_cold_storage: false, is_hazmat: false, is_perishable: false,
   warranty_period_days: '0',
@@ -93,9 +92,6 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
         dim_width: product.dimensions?.width != null ? String(product.dimensions.width) : '',
         dim_height: product.dimensions?.height != null ? String(product.dimensions.height) : '',
         dim_unit: product.dimensions?.unit || 'cm',
-        hsn_code: product.hsnCode || '',
-        gst_rate: product.gstRate != null ? String(product.gstRate) : '18',
-        manufacturer_barcode: product.manufacturerBarcode || '',
         country_of_origin: product.countryOfOrigin || 'India',
         package_type: product.packageType || 'box',
         handling_instructions: product.handlingInstructions || '',
@@ -148,9 +144,6 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
           height: form.dim_height ? parseFloat(form.dim_height) : undefined,
           unit: form.dim_unit,
         } : undefined,
-        hsnCode: form.hsn_code.trim() || undefined,
-        gstRate: form.gst_rate ? parseFloat(form.gst_rate) : undefined,
-        manufacturerBarcode: form.manufacturer_barcode.trim() || undefined,
         countryOfOrigin: form.country_of_origin || undefined,
         packageType: form.package_type as Product['packageType'] || undefined,
         handlingInstructions: form.handling_instructions.trim() || undefined,
@@ -214,8 +207,8 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
           </div>
         </Section>
 
-        {/* PRICING & TAX */}
-        <Section title="Pricing & Tax (India Compliance)">
+        {/* PRICING */}
+        <Section title="Pricing">
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className={lbl}>Selling Price</label>
@@ -235,27 +228,11 @@ export function AddEditProductModal({ isOpen, onClose, onSuccess, product }: Pro
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={lbl}>HSN / SAC Code <span className="text-xs font-normal text-gray-400">(GST mandatory)</span></label>
-              <Input value={form.hsn_code} onChange={set('hsn_code')} placeholder="e.g. 8517 12 10" maxLength={20} />
-            </div>
-            <div>
-              <label className={lbl}>GST Rate (%)</label>
-              <select value={form.gst_rate} onChange={set('gst_rate')} className={sels}>
-                {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
-              </select>
-            </div>
-          </div>
         </Section>
 
         {/* IDENTIFICATION */}
-        <Section title="Identification & Barcodes">
+        <Section title="Identification">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={lbl}>Manufacturer Barcode <span className="text-xs font-normal text-gray-400">(EAN/UPC, optional)</span></label>
-              <Input value={form.manufacturer_barcode} onChange={set('manufacturer_barcode')} placeholder="e.g. 8901234567890" maxLength={100} />
-            </div>
             <div>
               <label className={lbl}>Country of Origin</label>
               <Input value={form.country_of_origin} onChange={set('country_of_origin')} placeholder="India" />

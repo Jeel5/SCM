@@ -52,6 +52,14 @@ type FinanceData = {
     status: 'processed' | 'pending';
     processedAt: string;
   }>;
+  disputeRecords: Array<{
+    id: string;
+    invoiceNumber: string;
+    carrier: string;
+    amount: number;
+    status: 'disputed' | 'pending' | 'approved' | 'paid' | 'cancelled';
+    createdAt: string;
+  }>;
 };
 
 // Users Mock Data
@@ -335,7 +343,7 @@ const mockCarriers: Carrier[] = [
     status: 'active',
     rating: 4.5,
     onTimeDeliveryRate: 94.2,
-    damageRate: 0.8,
+    exceptionRate: 0.8,
     lossRate: 0.1,
     averageDeliveryTime: 2.3,
     activeShipments: 1250,
@@ -356,7 +364,7 @@ const mockCarriers: Carrier[] = [
     status: 'active',
     rating: 4.3,
     onTimeDeliveryRate: 92.8,
-    damageRate: 1.2,
+    exceptionRate: 1.2,
     lossRate: 0.2,
     averageDeliveryTime: 2.5,
     activeShipments: 980,
@@ -377,7 +385,7 @@ const mockCarriers: Carrier[] = [
     status: 'active',
     rating: 4.4,
     onTimeDeliveryRate: 93.5,
-    damageRate: 0.9,
+    exceptionRate: 0.9,
     lossRate: 0.15,
     averageDeliveryTime: 2.4,
     activeShipments: 1120,
@@ -397,7 +405,7 @@ const mockCarriers: Carrier[] = [
     status: 'active',
     rating: 4.1,
     onTimeDeliveryRate: 89.5,
-    damageRate: 1.5,
+    exceptionRate: 1.5,
     lossRate: 0.3,
     averageDeliveryTime: 3.2,
     activeShipments: 450,
@@ -417,7 +425,7 @@ const mockCarriers: Carrier[] = [
     status: 'active',
     rating: 4.0,
     onTimeDeliveryRate: 88.2,
-    damageRate: 1.8,
+    exceptionRate: 1.8,
     lossRate: 0.4,
     averageDeliveryTime: 3.5,
     activeShipments: 320,
@@ -1033,6 +1041,24 @@ export const mockApi = {
             amount: 45.25,
             status: 'processed',
             processedAt: '2026-01-16',
+          },
+        ],
+        disputeRecords: [
+          {
+            id: 'dis-1',
+            invoiceNumber: 'INV-2026-004',
+            carrier: 'DHL Express',
+            amount: 640.25,
+            status: 'disputed',
+            createdAt: '2026-01-20',
+          },
+          {
+            id: 'dis-2',
+            invoiceNumber: 'INV-2026-005',
+            carrier: 'FedEx',
+            amount: 215.50,
+            status: 'disputed',
+            createdAt: '2026-01-21',
           },
         ],
       },

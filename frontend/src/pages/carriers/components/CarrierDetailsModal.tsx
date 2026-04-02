@@ -57,8 +57,8 @@ export function CarrierDetailsModal({
           </div>
           <div className="p-3 sm:p-4 bg-red-50 dark:bg-red-900/20 rounded-xl text-center">
             <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-red-600 dark:text-red-400 mx-auto mb-2" />
-            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.damageRate}%</p>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Damage Rate</p>
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.exceptionRate}%</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Exception Rate</p>
           </div>
           <div className="p-3 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-center">
             <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600 dark:text-yellow-400 mx-auto mb-2" />
@@ -67,7 +67,7 @@ export function CarrierDetailsModal({
           </div>
           <div className="p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-center">
             <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 dark:text-blue-400 mx-auto mb-2" />
-            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.averageDeliveryTime}h</p>
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{carrier.averageDeliveryTime.toFixed(2)}d</p>
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Time</p>
           </div>
         </div>
@@ -104,7 +104,7 @@ export function CarrierDetailsModal({
         {/* Contact Information */}
         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
           <h4 className="font-medium text-gray-900 dark:text-white mb-4">Contact Information</h4>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
                 <Phone className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -130,6 +130,15 @@ export function CarrierDetailsModal({
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-gray-500 dark:text-gray-400">API Endpoint</p>
                 <p className="text-sm font-medium text-blue-600 dark:text-blue-400 truncate">{carrier.apiEndpoint || 'N/A'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
+                <Globe className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Webhook URL</p>
+                <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 truncate">{carrier.webhookUrl || 'N/A'}</p>
               </div>
             </div>
           </div>

@@ -183,12 +183,10 @@ export interface Warehouse {
     timezone: string;
   };
   // SCM operational fields
-  gstin: string | null;
   hasColdStorage: boolean;
   temperatureMinCelsius: number | null;
   temperatureMaxCelsius: number | null;
   customsBondedWarehouse: boolean;
-  certifications: string[];
   createdAt: string;
 }
 
@@ -253,12 +251,9 @@ export interface Product {
   handlingInstructions: string | null;
   // Insurance & compliance
   requiresInsurance: boolean;
-  // India GST / Customs
-  hsnCode: string | null;
-  gstRate: number | null;
+  // Customs
   countryOfOrigin: string | null;
-  // Barcodes (dual system)
-  manufacturerBarcode: string | null;
+  // Barcodes
   internalBarcode: string;
   // Warranty & shelf life
   warrantyPeriodDays: number;
@@ -285,7 +280,7 @@ export interface Carrier {
   status: 'active' | 'inactive' | 'suspended';
   rating: number;
   onTimeDeliveryRate: number;
-  damageRate: number;
+  exceptionRate: number;
   lossRate: number;
   averageDeliveryTime: number;
   activeShipments: number;
@@ -299,6 +294,7 @@ export interface Carrier {
   servicesOffered?: any;
   serviceType?: string;
   apiEndpoint?: string;
+  webhookUrl?: string;
   createdAt: string;
 }
 
@@ -326,8 +322,6 @@ export interface SLAPolicy {
   serviceType: string;
   carrierId?: string | null;
   carrierName?: string | null;
-  originZoneType?: string | null;
-  destinationZoneType?: string | null;
   targetDeliveryHours: number;
   warningThresholdPercent: number;
   warningThresholdHours: number;

@@ -104,6 +104,7 @@ class ShipmentTrackingService {
             break;
           case 'exception':
           case 'failed_delivery':
+            // DB allows failed_delivery as the shipment exception-equivalent status.
             newStatus = 'failed_delivery';
             break;
         }
@@ -133,7 +134,37 @@ class ShipmentTrackingService {
           await shipmentRepo.markOrderDeliveredByShipmentId(shipmentId, tx);
         }
 
-        return updatedShipment;
+        let createdException = null;
+        if (newStatus === 'failed_delivery') {
+          const exceptionInsert = await shipmentRepo.query(
+            `INSERT INTO exceptions (
+               organization_id, shipment_id, order_id, exception_type, severity, status, title, description, created_at, updated_at
+             )
+             SELECT $1, $2, $3, 'delivery_failed', 'high', 'open', $4, $5, NOW(), NOW()
+             WHERE NOT EXISTS (
+               SELECT 1
+               FROM exceptions e
+               WHERE e.shipment_id = $2
+                 AND e.exception_type = 'delivery_failed'
+                 AND e.status IN ('open', 'acknowledged', 'investigating', 'pending_resolution', 'escalated')
+             )
+             RETURNING *`,
+            [
+              shipment.organization_id || null,
+              shipmentId,
+              shipment.order_id || null,
+              'Delivery failed',
+              trackingEvent.description || 'Delivery attempt failed',
+            ],
+            tx
+          );
+          createdException = exceptionInsert.rows[0] || null;
+        }
+
+        return {
+          ...updatedShipment,
+          created_exception: createdException,
+        };
       });
 
       logger.info('Shipment tracking updated', { shipmentId, status: result.status });

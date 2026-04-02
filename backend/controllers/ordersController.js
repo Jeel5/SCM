@@ -100,11 +100,8 @@ export const getOrder = asyncHandler(async (req, res) => {
   });
 });
 
-// Create order (includes carrier assignment in same transaction)
+// Create order (automatically includes carrier assignment in same transaction)
 export const createOrder = asyncHandler(async (req, res) => {
-  // requestCarrierAssignment flag can be set to false if caller wants to handle it separately
-  const requestCarrierAssignment = req.body.requestCarrierAssignment !== false;
-  
   // Inject organization context so order is scoped to the right org
   // For demo/unauthenticated requests this will be null (org-less demo order)
   const orderData = {
@@ -112,7 +109,8 @@ export const createOrder = asyncHandler(async (req, res) => {
     organization_id: req.orgContext?.organizationId ?? null
   };
   
-  const order = await orderService.createOrder(orderData, requestCarrierAssignment);
+  // Carrier assignments are always created automatically
+  const order = await orderService.createOrder(orderData);
 
   emitToOrg(req.orgContext?.organizationId, 'order:created', order);
   await invalidatePatterns(invalidationTargets(req.orgContext?.organizationId, 'orders:list', 'dash', 'analytics'));

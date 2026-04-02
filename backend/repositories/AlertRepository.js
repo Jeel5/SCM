@@ -139,7 +139,6 @@ class AlertRepository extends BaseRepository {
        ${whereClause}
        ORDER BY triggered_at DESC
        LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
-       paramCount += 2;
       params,
       client
     );

@@ -41,22 +41,52 @@ class CarrierRepository extends BaseRepository {
         const params = [];
         let paramCount = 1;
 
-        // TASK-R6-008: Replace 3 correlated per-row subqueries with a single
-        // LEFT JOIN + GROUP BY to avoid N+1 scans on the shipments table.
         let query = `
       SELECT
         c.*,
         COUNT(*) OVER()                                                           AS total_count,
         COALESCE(cs.total_shipments, 0)::int                                     AS total_shipments,
-        COALESCE(cs.active_shipments, 0)::int                                    AS active_shipments
+                COALESCE(cs.active_shipments, 0)::int                                    AS active_shipments,
+                COALESCE(ROUND(100.0 * COALESCE(cs.on_time_deliveries, 0) / NULLIF(cs.delivered_shipments, 0), 1), 0)
+                                                                                                                                                                 AS on_time_rate,
+                ROUND(COALESCE(cs.avg_delivery_days, 0)::numeric, 2)                    AS avg_delivery_days,
+                COALESCE(ROUND(100.0 * COALESCE(cs.exception_shipments, 0) / NULLIF(cs.total_shipments, 0), 1), 0)
+                                                                                                                                                                 AS damage_rate,
+                COALESCE(ROUND(100.0 * COALESCE(cs.exception_shipments, 0) / NULLIF(cs.total_shipments, 0), 1), 0)
+                                                                                                                                                                 AS exception_rate,
+                COALESCE(ROUND(100.0 * COALESCE(cs.lost_shipments, 0) / NULLIF(cs.total_shipments, 0), 1), 0)
+                                                                                                                                                                 AS loss_rate
       FROM carriers c
       LEFT JOIN (
         SELECT
-          carrier_id,
-          COUNT(*)                                                                AS total_shipments,
-          COUNT(*) FILTER (WHERE status NOT IN ('delivered', 'returned', 'cancelled')) AS active_shipments
-        FROM shipments
-        GROUP BY carrier_id
+                    s.carrier_id,
+                    COUNT(DISTINCT s.id)                                                  AS total_shipments,
+                    COUNT(DISTINCT s.id) FILTER (
+                        WHERE s.status NOT IN ('delivered', 'returned', 'cancelled', 'lost')
+                    )                                                                     AS active_shipments,
+                    COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'delivered')            AS delivered_shipments,
+                    COUNT(DISTINCT s.id) FILTER (
+                        WHERE s.status = 'delivered'
+                            AND s.delivery_scheduled IS NOT NULL
+                            AND COALESCE(s.delivery_actual, o.actual_delivery) IS NOT NULL
+                            AND COALESCE(s.delivery_actual, o.actual_delivery) <= s.delivery_scheduled
+                    )                                                                     AS on_time_deliveries,
+                    COALESCE(
+                        AVG(
+                            EXTRACT(EPOCH FROM (COALESCE(s.delivery_actual, o.actual_delivery) - s.created_at)) / 86400
+                        ) FILTER (
+                            WHERE s.status = 'delivered'
+                                AND COALESCE(s.delivery_actual, o.actual_delivery) IS NOT NULL
+                        ),
+                        0
+                    )                                                                     AS avg_delivery_days,
+                    COUNT(DISTINCT e.shipment_id) FILTER (WHERE e.id IS NOT NULL) AS exception_shipments,
+                    COUNT(DISTINCT e.shipment_id) FILTER (WHERE e.exception_type = 'lost_shipment') AS lost_shipments
+                FROM shipments s
+                LEFT JOIN orders o ON o.id = s.order_id
+                LEFT JOIN exceptions e ON e.shipment_id = s.id
+                ${organizationId !== undefined ? 'WHERE s.organization_id = $1' : ''}
+                GROUP BY s.carrier_id
       ) cs ON cs.carrier_id = c.id
       WHERE 1=1
     `;
@@ -117,13 +147,49 @@ class CarrierRepository extends BaseRepository {
         let query = `
       SELECT
         c.*,
-        (SELECT COUNT(*) FROM shipments s WHERE s.carrier_id = c.id)::int         AS total_shipments,
-        (SELECT COUNT(*) FROM shipments s
-          WHERE s.carrier_id = c.id
-          AND s.status NOT IN ('delivered', 'returned', 'cancelled'))::int        AS active_shipments,
-        (SELECT ROUND(AVG(CASE WHEN s.status = 'delivered' THEN 1 ELSE 0 END)::numeric * 100, 1)
-          FROM shipments s WHERE s.carrier_id = c.id)                             AS on_time_rate
+                COALESCE(cs.total_shipments, 0)::int                                     AS total_shipments,
+                COALESCE(cs.active_shipments, 0)::int                                    AS active_shipments,
+                COALESCE(ROUND(100.0 * COALESCE(cs.on_time_deliveries, 0) / NULLIF(cs.delivered_shipments, 0), 1), 0)
+                                                                                                                                                                 AS on_time_rate,
+                ROUND(COALESCE(cs.avg_delivery_days, 0)::numeric, 2)                    AS avg_delivery_days,
+                COALESCE(ROUND(100.0 * COALESCE(cs.exception_shipments, 0) / NULLIF(cs.total_shipments, 0), 1), 0)
+                                                                                                                                                                 AS damage_rate,
+                COALESCE(ROUND(100.0 * COALESCE(cs.exception_shipments, 0) / NULLIF(cs.total_shipments, 0), 1), 0)
+                                                                                                                                                                 AS exception_rate,
+                COALESCE(ROUND(100.0 * COALESCE(cs.lost_shipments, 0) / NULLIF(cs.total_shipments, 0), 1), 0)
+                                                                                                                                                                 AS loss_rate
       FROM carriers c
+            LEFT JOIN (
+                SELECT
+                    s.carrier_id,
+                    COUNT(DISTINCT s.id)                                                  AS total_shipments,
+                    COUNT(DISTINCT s.id) FILTER (
+                        WHERE s.status NOT IN ('delivered', 'returned', 'cancelled', 'lost')
+                    )                                                                     AS active_shipments,
+                    COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'delivered')            AS delivered_shipments,
+                    COUNT(DISTINCT s.id) FILTER (
+                        WHERE s.status = 'delivered'
+                            AND s.delivery_scheduled IS NOT NULL
+                            AND COALESCE(s.delivery_actual, o.actual_delivery) IS NOT NULL
+                            AND COALESCE(s.delivery_actual, o.actual_delivery) <= s.delivery_scheduled
+                    )                                                                     AS on_time_deliveries,
+                    COALESCE(
+                        AVG(
+                            EXTRACT(EPOCH FROM (COALESCE(s.delivery_actual, o.actual_delivery) - s.created_at)) / 86400
+                        ) FILTER (
+                            WHERE s.status = 'delivered'
+                                AND COALESCE(s.delivery_actual, o.actual_delivery) IS NOT NULL
+                        ),
+                        0
+                    )                                                                     AS avg_delivery_days,
+                    COUNT(DISTINCT e.shipment_id) FILTER (WHERE e.id IS NOT NULL) AS exception_shipments,
+                    COUNT(DISTINCT e.shipment_id) FILTER (WHERE e.exception_type = 'lost_shipment') AS lost_shipments
+                FROM shipments s
+                LEFT JOIN orders o ON o.id = s.order_id
+                LEFT JOIN exceptions e ON e.shipment_id = s.id
+                ${organizationId !== undefined ? 'WHERE s.organization_id = $2' : ''}
+                GROUP BY s.carrier_id
+            ) cs ON cs.carrier_id = c.id
       WHERE c.id = $1
     `;
 
@@ -164,7 +230,7 @@ class CarrierRepository extends BaseRepository {
 
         let query = `
       SELECT id, code, name, contact_email, service_type, reliability_score,
-             daily_capacity, current_load, availability_status
+                         availability_status
       FROM carriers
       WHERE is_active = true AND availability_status = 'available'
     `;
@@ -206,15 +272,15 @@ class CarrierRepository extends BaseRepository {
         organization_id, code, name, service_type, service_areas,
         contact_email, contact_phone, website,
         api_endpoint, webhook_url, webhook_secret,
-        reliability_score, avg_delivery_days, daily_capacity,
+                reliability_score, avg_delivery_days,
         is_active, availability_status,
         created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8,
         $9, $10, $11,
-        $12, $13, $14,
-        $15, $16,
+                $12, $13,
+                $14, $15,
         NOW(), NOW()
       )
       RETURNING *
@@ -234,7 +300,6 @@ class CarrierRepository extends BaseRepository {
             webhookSecret,
             data.reliability_score ?? 0.85,
             data.avg_delivery_days || null,
-            data.daily_capacity || null,
             data.is_active !== false, // default true
             data.availability_status || 'available'
         ];
@@ -250,7 +315,7 @@ class CarrierRepository extends BaseRepository {
         const ALLOWED = [
             'name', 'service_type', 'contact_email', 'contact_phone', 'website',
             'api_endpoint', 'webhook_url', 'reliability_score', 'avg_delivery_days',
-            'daily_capacity', 'is_active', 'availability_status'
+            'is_active', 'availability_status'
         ];
 
         const setClauses = [];

@@ -19,23 +19,25 @@ export function ExceptionDetailsModal({
 }) {
   const [resolution, setResolution] = useState('');
   const [isResolving, setIsResolving] = useState(false);
-  const { addToast } = useToast();
+  const { success, error } = useToast();
 
   if (!exception) return null;
 
   const handleResolve = async () => {
     if (!resolution.trim()) {
-      addToast('Please provide a resolution description', 'error');
+      error('Please provide a resolution description');
       return;
     }
     setIsResolving(true);
     try {
       await exceptionsApi.resolveException(exception.id, resolution);
-      addToast('Exception resolved successfully', 'success');
+      success('Exception resolved successfully');
       setResolution('');
       onResolved?.();
     } catch (err: any) {
-      addToast(err?.message || 'Failed to resolve exception', 'error');
+      if (!err?.response) {
+        error('Failed to resolve exception', err?.message || 'Unexpected error');
+      }
     } finally {
       setIsResolving(false);
     }

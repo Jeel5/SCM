@@ -11,6 +11,7 @@ import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
 
+import customerInvoiceService from './customerInvoiceService.js';
 // ─── Order State Machine ────────────────────────────────────────────────────
 // Defines which status transitions are legal.  An order can only move forward
 // through the pipeline (or be cancelled/held from most states).
@@ -269,7 +270,7 @@ function buildOrderRecord(orderData, generatedOrderNumber) {
     customer_phone: orderData.customer_phone || null,
     status: 'created',
     priority: orderData.priority || 'standard',
-    order_type: orderData.order_type || 'regular',
+    order_type: orderData.order_type || 'outbound',
     organization_id: orderData.organization_id || null,
     is_cod: orderData.is_cod || false,
     subtotal: null,
@@ -451,12 +452,12 @@ class OrderService {
   }
 
   /**
-   * Create an order, reserve inventory, and optionally open carrier bidding.
+   * Create an order and automatically open carrier bidding.
+   * Carrier assignments are ALWAYS created as part of order creation.
    * @param {Object} orderData
-   * @param {boolean} requestCarrierAssignment
    * @returns {Promise<Object>}
    */
-  async createOrder(orderData, requestCarrierAssignment = true) {
+  async createOrder(orderData) {
     const startTime = Date.now();
     
     // Validate order has items
@@ -484,17 +485,14 @@ class OrderService {
 
         await reserveInventoryForItems(enrichedItems, tx);
 
-        let assignments = [];
-        let carriersToNotify = [];
-        if (requestCarrierAssignment) {
-          ({ assignments, carriersToNotify } = await this.maybePrepareCarrierAssignments(
-            order,
-            enrichedItems,
-            orderData,
-            orgId,
-            tx
-          ));
-        }
+        // Carrier assignments are ALWAYS created automatically
+        const { assignments, carriersToNotify } = await this.maybePrepareCarrierAssignments(
+          order,
+          enrichedItems,
+          orderData,
+          orgId,
+          tx
+        );
 
         return { order, assignments, carriersToNotify };
       });
@@ -597,6 +595,18 @@ class OrderService {
         newStatus: status,
       });
 
+      // Auto-generate customer invoice when order is delivered
+      if (status === 'delivered') {
+        try {
+          await customerInvoiceService.generateInvoiceForDeliveredOrder(id, organizationId, tx);
+        } catch (error) {
+          logger.warn('Failed to auto-generate customer invoice', {
+            orderId: id,
+            error: error.message,
+          });
+          // Don't fail the whole order status update if invoice generation fails
+        }
+      }
       return updatedOrder;
     });
   }

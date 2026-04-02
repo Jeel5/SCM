@@ -51,21 +51,18 @@ class SlaRepository extends BaseRepository {
       `INSERT INTO sla_policies
        (organization_id, name, service_type, carrier_id,
         origin_region, destination_region,
-        origin_zone_type, destination_zone_type,
         delivery_hours, pickup_hours,
         penalty_per_hour, max_penalty_amount, penalty_type,
         warning_threshold_percent, is_active, priority)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
         data.organizationId || null,
         data.name,
         data.serviceType,
         data.carrierId || null,
-        data.originZoneType || null,   // using zone as region label too
-        data.destinationZoneType || null,
-        data.originZoneType || null,
-        data.destinationZoneType || null,
+        data.originRegion || null,
+        data.destinationRegion || null,
         data.deliveryHours,
         data.pickupHours ?? 4,
         data.penaltyPerHour ?? 0,
@@ -91,8 +88,8 @@ class SlaRepository extends BaseRepository {
       name:                    'name',
       serviceType:             'service_type',
       carrierId:               'carrier_id',
-      originZoneType:          'origin_zone_type',
-      destinationZoneType:     'destination_zone_type',
+      originRegion:            'origin_region',
+      destinationRegion:       'destination_region',
       deliveryHours:           'delivery_hours',
       pickupHours:             'pickup_hours',
       penaltyPerHour:          'penalty_per_hour',
@@ -145,20 +142,8 @@ class SlaRepository extends BaseRepository {
 
   /**
    * Find the best matching active SLA policy for a shipment.
-   *
-   * All criteria are "OR NULL" — a policy with NULL in a field is a wildcard.
-   * Tie-breaking order: priority ASC, then specificity DESC.
-   *
-   * @param {object} opts
-   * @param {string|null} opts.organizationId
-   * @param {string|null} opts.carrierId
-   * @param {string|null} opts.originZone      - classified zone type
-   * @param {string|null} opts.destinationZone - classified zone type
-   * @param {string|null} opts.serviceType     - normalised service type
-   * @param {object}      [opts.client]        - optional tx client
-   * @returns {Promise<object|null>}
    */
-  async findMatchingPolicy({ organizationId, carrierId, originZone, destinationZone, serviceType, client }) {
+  async findMatchingPolicy({ organizationId, carrierId, serviceType, client }) {
     const params = [];
     let p = 1;
 
@@ -181,20 +166,6 @@ class SlaRepository extends BaseRepository {
       sql += ` AND sp.carrier_id IS NULL`;
     }
 
-    // Origin zone: match or wildcard
-    if (originZone) {
-      params.push(originZone);
-      sql += ` AND (sp.origin_zone_type IS NULL OR sp.origin_zone_type = $${p})`;
-      p += 1;
-    }
-
-    // Destination zone: match or wildcard
-    if (destinationZone) {
-      params.push(destinationZone);
-      sql += ` AND (sp.destination_zone_type IS NULL OR sp.destination_zone_type = $${p})`;
-      p += 1;
-    }
-
     // Service type: match or wildcard
     if (serviceType) {
       params.push(serviceType);
@@ -207,9 +178,7 @@ class SlaRepository extends BaseRepository {
       ORDER BY
         sp.priority ASC,
         (sp.carrier_id            IS NOT NULL)::int DESC,
-        (sp.service_type          IS NOT NULL)::int DESC,
-        (sp.origin_zone_type      IS NOT NULL)::int DESC,
-        (sp.destination_zone_type IS NOT NULL)::int DESC
+        (sp.service_type          IS NOT NULL)::int DESC
       LIMIT 1
     `;
 
@@ -251,10 +220,15 @@ class SlaRepository extends BaseRepository {
     if (status)         { params.push(status);         where.push(`sv.status = $${p}`); p += 1; }
 
     const baseQuery = `
-      SELECT sv.*, s.tracking_number, sp.name AS policy_name
+      SELECT
+        sv.*, s.tracking_number,
+        CASE
+          WHEN sv.sla_policy_id IS NULL THEN 'No SLA policy'
+          ELSE COALESCE(sp.name, 'No SLA policy')
+        END AS policy_name
       FROM sla_violations sv
       JOIN shipments s ON sv.shipment_id = s.id
-      JOIN sla_policies sp ON sv.sla_policy_id = sp.id
+      LEFT JOIN sla_policies sp ON sv.sla_policy_id = sp.id
       WHERE ${where.join(' AND ')}
     `;
 
@@ -287,10 +261,11 @@ class SlaRepository extends BaseRepository {
       this.query(`
         SELECT
           COUNT(*) AS total_shipments,
-          COUNT(CASE WHEN s.delivery_actual IS NOT NULL AND s.delivery_actual <= s.delivery_scheduled THEN 1 END) AS on_time
+          COUNT(CASE
+            WHEN COALESCE(s.delivery_actual, s.updated_at) <= s.delivery_scheduled THEN 1
+          END) AS on_time
         FROM shipments s
         WHERE s.status = 'delivered'
-          AND s.sla_policy_id IS NOT NULL
           AND s.delivery_scheduled IS NOT NULL
           AND s.created_at >= NOW() - INTERVAL '30 days'${organizationId ? ' AND s.organization_id = $1' : ''}
       `, orgArgs),
@@ -328,7 +303,7 @@ class SlaRepository extends BaseRepository {
     let p = 1;
     const where = ['1=1'];
 
-    if (organizationId) { params.push(organizationId); where.push(`e.organization_id = $${p}`); p += 1; }
+    if (organizationId) { params.push(organizationId); where.push(`(e.organization_id = $${p} OR e.organization_id IS NULL)`); p += 1; }
     if (severity)       { params.push(severity);       where.push(`e.severity = $${p}`); p += 1; }
     if (status)         { params.push(status);         where.push(`e.status = $${p}`); p += 1; }
 
@@ -367,7 +342,7 @@ class SlaRepository extends BaseRepository {
 
     if (organizationId) {
       params.push(organizationId);
-      where.push(`e.organization_id = $${p}`);
+      where.push(`(e.organization_id = $${p} OR e.organization_id IS NULL)`);
       p += 1;
     }
 
@@ -375,7 +350,8 @@ class SlaRepository extends BaseRepository {
       `SELECT
          COUNT(*)::int AS total_exceptions,
          COUNT(*) FILTER (WHERE e.status = 'open')::int AS open,
-         COUNT(*) FILTER (WHERE e.status = 'in_progress')::int AS in_progress,
+         COUNT(*) FILTER (WHERE e.status IN ('in_progress', 'investigating'))::int AS in_progress,
+         COUNT(*) FILTER (WHERE e.status = 'investigating')::int AS investigating,
          COUNT(*) FILTER (WHERE e.status = 'resolved')::int AS resolved,
          COUNT(*) FILTER (WHERE e.severity = 'critical')::int AS critical
        FROM exceptions e
@@ -387,6 +363,7 @@ class SlaRepository extends BaseRepository {
       total_exceptions: 0,
       open: 0,
       in_progress: 0,
+      investigating: 0,
       resolved: 0,
       critical: 0,
     };
@@ -490,7 +467,7 @@ class SlaRepository extends BaseRepository {
          FROM exceptions e
          LEFT JOIN shipments s ON e.shipment_id = s.id
          LEFT JOIN orders o ON e.order_id = o.id
-         WHERE e.id = $1 AND e.organization_id = $2`
+         WHERE e.id = $1 AND (e.organization_id = $2 OR e.organization_id IS NULL)`
       : `SELECT e.*, s.tracking_number, o.order_number
          FROM exceptions e
          LEFT JOIN shipments s ON e.shipment_id = s.id

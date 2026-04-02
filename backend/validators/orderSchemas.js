@@ -50,8 +50,8 @@ const addressSchema = Joi.object({
 });
 
 export const createOrderSchema = Joi.object({
-  // order_type must match DB check constraint: regular, replacement, cod, transfer
-  order_type: Joi.string().valid('regular', 'replacement', 'cod', 'transfer').optional().default('regular'),
+  // order_type must match DB check constraint: outbound (customer sale), transfer (warehouse-to-warehouse), inbound_restock (supplier PO)
+  order_type: Joi.string().valid('outbound', 'transfer', 'inbound_restock').optional().default('outbound'),
   order_number: Joi.string().min(3).max(50).optional(),
   customer_name: Joi.string().min(2).max(255).required(),
   customer_email: Joi.string().email().required(),

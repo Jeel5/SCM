@@ -350,8 +350,6 @@ COMMENT ON COLUMN public.carrier_assignments.idempotency_key IS 'Prevents duplic
 CREATE TABLE public.carrier_capacity_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     carrier_id uuid NOT NULL,
-    daily_capacity integer,
-    current_load integer,
     utilization_percentage numeric(5,2),
     availability_status character varying(20),
     logged_at timestamp with time zone DEFAULT now()
@@ -402,8 +400,6 @@ CREATE TABLE public.carriers (
     webhook_url character varying(500),
     reliability_score numeric(3,2) DEFAULT 0.85,
     avg_delivery_days numeric(4,1),
-    daily_capacity integer,
-    current_load integer DEFAULT 0,
     is_active boolean DEFAULT true,
     availability_status character varying(20) DEFAULT 'available'::character varying,
     last_status_change timestamp with time zone DEFAULT now(),
@@ -605,7 +601,7 @@ COMMENT ON COLUMN public.shipments.total_items IS 'Total number of items (quanti
 -- Name: COLUMN shipments.sla_policy_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.shipments.sla_policy_id IS 'The SLA policy that was matched and applied when this shipment was created. NULL = system fallback (72h) was used.';
+COMMENT ON COLUMN public.shipments.sla_policy_id IS 'The SLA policy that was matched and applied when this shipment was created.';
 
 
 --
@@ -651,12 +647,7 @@ CREATE VIEW public.carrier_performance_summary AS
     c.code AS carrier_code,
     c.reliability_score,
     c.availability_status,
-    c.daily_capacity,
-    c.current_load,
-        CASE
-            WHEN (c.daily_capacity > 0) THEN round((((c.current_load)::numeric / (c.daily_capacity)::numeric) * (100)::numeric), 2)
-            ELSE (0)::numeric
-        END AS utilization_percentage,
+    (0)::numeric AS utilization_percentage,
     count(DISTINCT s.id) AS total_shipments,
     count(DISTINCT s.id) FILTER (WHERE ((s.status)::text = 'delivered'::text)) AS delivered_count,
     count(DISTINCT s.id) FILTER (WHERE ((s.status)::text = ANY ((ARRAY['failed_delivery'::character varying, 'returned'::character varying, 'lost'::character varying])::text[]))) AS failed_count,
@@ -666,7 +657,7 @@ CREATE VIEW public.carrier_performance_summary AS
      LEFT JOIN public.shipments s ON (((s.carrier_id = c.id) AND (s.created_at > (now() - '30 days'::interval)))))
      LEFT JOIN public.sla_violations sv ON (((sv.carrier_id = c.id) AND (sv.violated_at > (now() - '30 days'::interval)))))
   WHERE (c.is_active = true)
-  GROUP BY c.id, c.name, c.code, c.reliability_score, c.availability_status, c.daily_capacity, c.current_load;
+  GROUP BY c.id, c.name, c.code, c.reliability_score, c.availability_status;
 
 
 --
@@ -1163,7 +1154,7 @@ CREATE TABLE public.orders (
     customer_phone character varying(20),
     status character varying(50) DEFAULT 'created'::character varying,
     priority character varying(20) DEFAULT 'standard'::character varying,
-    order_type character varying(50) DEFAULT 'regular'::character varying,
+    order_type character varying(50) DEFAULT 'outbound'::character varying,
     is_cod boolean DEFAULT false,
     subtotal numeric(10,2),
     tax_amount numeric(10,2) DEFAULT 0,
@@ -1190,7 +1181,7 @@ CREATE TABLE public.orders (
     customer_id character varying(100),
     payment_method character varying(50),
     shipping_locked boolean DEFAULT false NOT NULL,
-    CONSTRAINT orders_order_type_check CHECK (((order_type)::text = ANY ((ARRAY['regular'::character varying, 'replacement'::character varying, 'cod'::character varying, 'transfer'::character varying])::text[]))),
+    CONSTRAINT orders_order_type_check CHECK (((order_type)::text = ANY ((ARRAY['outbound'::character varying, 'transfer'::character varying, 'inbound_restock'::character varying])::text[]))),
     CONSTRAINT orders_priority_check CHECK (((priority)::text = ANY ((ARRAY['express'::character varying, 'standard'::character varying, 'bulk'::character varying, 'same_day'::character varying])::text[]))),
     CONSTRAINT orders_status_check CHECK (((status)::text = ANY ((ARRAY['created'::character varying, 'confirmed'::character varying, 'processing'::character varying, 'allocated'::character varying, 'ready_to_ship'::character varying, 'shipped'::character varying, 'in_transit'::character varying, 'out_for_delivery'::character varying, 'delivered'::character varying, 'returned'::character varying, 'cancelled'::character varying, 'on_hold'::character varying, 'pending_carrier_assignment'::character varying])::text[])))
 );
@@ -1221,7 +1212,7 @@ COMMENT ON COLUMN public.orders.status IS 'Order workflow: created -> pending_ca
 -- Name: COLUMN orders.order_type; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.orders.order_type IS 'Order type: regular, replacement, cod, transfer (warehouse-to-warehouse)';
+COMMENT ON COLUMN public.orders.order_type IS 'outbound = customer sale; transfer = warehouse-to-warehouse; inbound_restock = supplier PO';
 
 
 --
@@ -1438,9 +1429,6 @@ CREATE TABLE public.products (
     package_type character varying(50) DEFAULT 'box'::character varying,
     handling_instructions text,
     requires_insurance boolean DEFAULT false,
-    manufacturer_barcode character varying(100),
-    hsn_code character varying(20),
-    gst_rate numeric(5,2) DEFAULT 18.00,
     brand character varying(255),
     country_of_origin character varying(100) DEFAULT 'India'::character varying,
     warranty_period_days integer DEFAULT 0,
@@ -1524,27 +1512,6 @@ COMMENT ON COLUMN public.products.handling_instructions IS 'Special handling ins
 --
 
 COMMENT ON COLUMN public.products.requires_insurance IS 'Whether this product requires shipping insurance';
-
-
---
--- Name: COLUMN products.manufacturer_barcode; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.products.manufacturer_barcode IS 'UPC/EAN/ISBN from product manufacturer (optional, for retail products)';
-
-
---
--- Name: COLUMN products.hsn_code; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.products.hsn_code IS 'HSN/SAC code for GST compliance (manual entry, government classification)';
-
-
---
--- Name: COLUMN products.gst_rate; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.products.gst_rate IS 'GST rate percentage (0/5/12/18/28) - can be auto-filled from HSN but user must confirm';
 
 
 --
@@ -1797,11 +1764,7 @@ CREATE TABLE public.sla_policies (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     carrier_id uuid,
-    origin_zone_type character varying(20),
-    destination_zone_type character varying(20),
     warning_threshold_percent integer DEFAULT 80,
-    CONSTRAINT sla_policies_destination_zone_type_check CHECK (((destination_zone_type IS NULL) OR ((destination_zone_type)::text = ANY ((ARRAY['local'::character varying, 'metro'::character varying, 'regional'::character varying, 'national'::character varying, 'remote'::character varying])::text[])))),
-    CONSTRAINT sla_policies_origin_zone_type_check CHECK (((origin_zone_type IS NULL) OR ((origin_zone_type)::text = ANY ((ARRAY['local'::character varying, 'metro'::character varying, 'regional'::character varying, 'national'::character varying, 'remote'::character varying])::text[])))),
     CONSTRAINT sla_policies_warning_threshold_percent_check CHECK (((warning_threshold_percent >= 1) AND (warning_threshold_percent <= 100)))
 );
 
@@ -1903,13 +1866,10 @@ CREATE TABLE public.warehouses (
     updated_at timestamp with time zone DEFAULT now(),
     zones integer DEFAULT 0,
     operating_hours jsonb,
-    gstin character varying(15),
     has_cold_storage boolean DEFAULT false NOT NULL,
     temperature_min_celsius numeric(5,1),
     temperature_max_celsius numeric(5,1),
     customs_bonded_warehouse boolean DEFAULT false NOT NULL,
-    certifications text[] DEFAULT '{}'::text[] NOT NULL,
-    CONSTRAINT warehouses_gstin_format CHECK (((gstin IS NULL) OR ((gstin)::text ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$'::text))),
     CONSTRAINT warehouses_temperature_range_check CHECK (((temperature_min_celsius IS NULL) OR (temperature_max_celsius IS NULL) OR (temperature_min_celsius <= temperature_max_celsius)))
 );
 
@@ -3615,20 +3575,6 @@ CREATE INDEX idx_products_category ON public.products USING btree (organization_
 --
 
 CREATE INDEX idx_products_fragile ON public.products USING btree (is_fragile) WHERE (is_fragile = true);
-
-
---
--- Name: idx_products_hsn; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_products_hsn ON public.products USING btree (hsn_code) WHERE (hsn_code IS NOT NULL);
-
-
---
--- Name: idx_products_manufacturer_barcode_org; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_products_manufacturer_barcode_org ON public.products USING btree (organization_id, manufacturer_barcode) WHERE (manufacturer_barcode IS NOT NULL);
 
 
 --

@@ -101,36 +101,27 @@ export function ProductDetailsModal({ isOpen, onClose, onEdit, product }: Props)
           </div>
         )}
 
-        {/* ── Pricing & Tax ─────────────────────────────────────────── */}
+        {/* ── Pricing ───────────────────────────────────────────────── */}
         <div>
-          <SectionHeader>Pricing & Tax</SectionHeader>
+          <SectionHeader>Pricing</SectionHeader>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
             <Field label="Category" value={product.category} />
             <Field label="Currency" value={product.currency} />
             <Field label="Selling Price" value={product.sellingPrice != null ? formatCurrency(product.sellingPrice, product.currency) : null} />
             <Field label="Cost Price" value={product.costPrice != null ? formatCurrency(product.costPrice, product.currency) : null} />
             <Field label="MRP (Retail)" value={product.mrp != null ? formatCurrency(product.mrp, product.currency) : null} />
-            <Field label="GST Rate" value={product.gstRate != null ? `${product.gstRate}%` : null} />
-            <Field label="HSN / SAC Code" value={product.hsnCode} />
           </div>
         </div>
 
         {/* ── Identification ────────────────────────────────────────── */}
         <div>
-          <SectionHeader>Identification & Barcodes</SectionHeader>
+          <SectionHeader>Identification</SectionHeader>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
             <Field label="Internal Barcode" value={
               <span className="flex items-center gap-1.5 font-mono text-indigo-600 dark:text-indigo-400">
                 <Barcode className="h-3.5 w-3.5" /> {product.internalBarcode}
               </span>
             } />
-            {product.manufacturerBarcode && (
-              <Field label="Manufacturer Barcode" value={
-                <span className="flex items-center gap-1.5 font-mono">
-                  <Barcode className="h-3.5 w-3.5 text-gray-400" /> {product.manufacturerBarcode}
-                </span>
-              } />
-            )}
             <Field label="Country of Origin" value={
               product.countryOfOrigin
                 ? <span className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5 text-gray-400" />{product.countryOfOrigin}</span>

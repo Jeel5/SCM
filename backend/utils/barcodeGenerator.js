@@ -18,8 +18,7 @@ export function generateInternalBarcode() {
 }
 
 /**
- * Validate barcode format (for manufacturer_barcode field)
- * Supports: UPC-12, EAN-13, ISBN-13, or any 8-20 alphanumeric
+ * Validate generic barcode format (8-20 alphanumeric characters)
  */
 export function isValidBarcode(barcode) {
   if (!barcode) return true; // nullable field

@@ -29,14 +29,10 @@ export const createWarehouseSchema = Joi.object({
     'string.pattern.base': 'Invalid phone number format'
   }),
   // SCM operational fields
-  gstin: Joi.string().length(15).uppercase().optional().allow(null, '').messages({
-    'string.length': 'GSTIN must be exactly 15 characters'
-  }),
   has_cold_storage: Joi.boolean().default(false),
   temperature_min_celsius: Joi.number().min(-100).max(100).optional().allow(null),
   temperature_max_celsius: Joi.number().min(-100).max(100).optional().allow(null),
   customs_bonded_warehouse: Joi.boolean().default(false),
-  certifications: Joi.array().items(Joi.string().max(100)).optional().default([]),
   is_active: Joi.boolean().default(true)
   // organization_id is set from authenticated user, not from request
 });
@@ -65,12 +61,10 @@ export const updateWarehouseSchema = Joi.object({
   contact_phone: Joi.string().pattern(/^\+?[\d\s\-()]+$/).optional().allow(null, ''),
   is_active: Joi.boolean().optional(),
   // SCM operational fields
-  gstin: Joi.string().length(15).uppercase().optional().allow(null, ''),
   has_cold_storage: Joi.boolean().optional(),
   temperature_min_celsius: Joi.number().min(-100).max(100).optional().allow(null),
   temperature_max_celsius: Joi.number().min(-100).max(100).optional().allow(null),
-  customs_bonded_warehouse: Joi.boolean().optional(),
-  certifications: Joi.array().items(Joi.string().max(100)).optional()
+  customs_bonded_warehouse: Joi.boolean().optional()
 }).min(1);
 
 // List warehouses query schema

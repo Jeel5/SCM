@@ -754,6 +754,14 @@ class ShipmentRepository extends BaseRepository {
        SET status = $1,
            tracking_events = $2,
            current_location = $3,
+           pickup_actual = CASE
+             WHEN $1::text = 'picked_up' AND pickup_actual IS NULL THEN NOW()
+             ELSE pickup_actual
+           END,
+           delivery_actual = CASE
+             WHEN $1::text = 'delivered' AND delivery_actual IS NULL THEN NOW()
+             ELSE delivery_actual
+           END,
            updated_at = NOW()
        WHERE id = $4
        RETURNING *`,
@@ -947,7 +955,7 @@ class ShipmentRepository extends BaseRepository {
    */
   async findShipmentWithOrderAndCarrier(shipmentId, client = null) {
     const result = await this.query(
-      `SELECT s.*, o.id as order_id, o.order_number, ca.carrier_id
+      `SELECT s.*, o.id as order_id, o.order_number, o.order_type, ca.carrier_id
        FROM shipments s
        JOIN orders o ON s.order_id = o.id
        LEFT JOIN carrier_assignments ca ON s.carrier_assignment_id = ca.id

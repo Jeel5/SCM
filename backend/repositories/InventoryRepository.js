@@ -52,6 +52,7 @@ class InventoryRepository extends BaseRepository {
         p.name       AS product_display_name,
         p.category   AS product_category,
         p.weight     AS product_weight,
+        p.cost_price AS product_cost_price,
         i.unit_cost,
         COUNT(*) OVER() AS total_count
       FROM inventory i
@@ -124,7 +125,8 @@ class InventoryRepository extends BaseRepository {
         w.name       AS warehouse_name,
         w.code       AS warehouse_code,
         p.name       AS product_display_name,
-        p.category   AS product_category
+        p.category   AS product_category,
+        p.cost_price AS product_cost_price
       FROM inventory i
       JOIN warehouses w ON i.warehouse_id = w.id
       LEFT JOIN products p ON i.product_id = p.id
@@ -227,7 +229,7 @@ class InventoryRepository extends BaseRepository {
         COALESCE(SUM(i.damaged_quantity), 0)::int                 AS total_damaged,
         COUNT(*) FILTER (WHERE i.available_quantity <= COALESCE(i.reorder_point, 0) AND i.available_quantity > 0)::int AS low_stock_items,
         COUNT(*) FILTER (WHERE i.available_quantity = 0)::int     AS out_of_stock_items,
-        COALESCE(SUM(i.quantity * COALESCE(NULLIF(i.unit_cost, 0), p.selling_price, 0)), 0)::numeric AS total_inventory_value
+        COALESCE(SUM(i.quantity * COALESCE(NULLIF(i.unit_cost, 0), p.cost_price, p.selling_price, 0)), 0)::numeric AS total_inventory_value
       FROM inventory i
       LEFT JOIN products p ON i.product_id = p.id
       WHERE 1=1

@@ -17,11 +17,15 @@ export async function handleSLAMonitoring(payload) {
   const startTime = Date.now();
 
   try {
-    const violations = await slaService.monitorSLAViolations();
+    const [violations, autoDetectedExceptions] = await Promise.all([
+      slaService.monitorSLAViolations(),
+      exceptionService.autoDetectDelayExceptions(),
+    ]);
 
     return {
       success: true,
       violationsDetected: violations.length,
+      exceptionsAutoDetected: autoDetectedExceptions.length,
       duration: `${Date.now() - startTime}ms`,
     };
   } catch (error) {
