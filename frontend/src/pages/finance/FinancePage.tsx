@@ -27,7 +27,7 @@ export function FinancePage() {
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [carriers, setCarriers] = useState<Array<{ id: string; name: string }>>([]);
+  const [carriers, setCarriers] = useState<Array<{ id: string; name: string; code?: string }>>([]);
   const [form, setForm] = useState({
     invoice_number: '',
     carrier_id: '',
@@ -59,7 +59,7 @@ export function FinancePage() {
   const openAddRecord = async () => {
     try {
       const res = await carriersApi.getCarriers({ limit: 200 });
-      setCarriers((res.data || []).map((c: any) => ({ id: c.id, name: c.name })));
+      setCarriers((res.data || []).map((c: any) => ({ id: c.id, name: c.name, code: c.code })));
       setIsAddOpen(true);
     } catch {
       error('Could not load carriers', 'Please refresh and try again');
@@ -151,15 +151,49 @@ export function FinancePage() {
       return;
     }
 
+    let carrierLookup = new Map<string, string>();
+    try {
+      const res = await carriersApi.getCarriers({ limit: 200 });
+      carrierLookup = new Map(
+        (res.data || []).flatMap((carrier: any) => {
+          const entries: Array<[string, string]> = [[String(carrier.id).trim().toLowerCase(), carrier.id]];
+          if (carrier.name) entries.push([String(carrier.name).trim().toLowerCase(), carrier.id]);
+          if (carrier.code) entries.push([String(carrier.code).trim().toLowerCase(), carrier.id]);
+          return entries;
+        })
+      );
+    } catch {
+      error('Could not load carriers', 'Unable to validate carrier references for CSV import');
+      return;
+    }
+
+    const resolveCarrierId = (row: Record<string, string>) => {
+      const candidates = [row.carrier_id, row.carrier_name, row.carrier_code]
+        .map((value) => value?.trim().toLowerCase())
+        .filter((value): value is string => Boolean(value));
+
+      for (const candidate of candidates) {
+        const matchedCarrierId = carrierLookup.get(candidate);
+        if (matchedCarrierId) return matchedCarrierId;
+      }
+
+      return '';
+    };
+
     setIsSubmitting(true);
     let created = 0;
     let failed = 0;
 
     for (const row of rows) {
       try {
+        const carrierId = resolveCarrierId(row);
+        if (!carrierId) {
+          throw new Error('Carrier id, carrier name, or carrier code is required');
+        }
+
         await financeApi.createInvoice({
           invoice_number: row.invoice_number,
-          carrier_id: row.carrier_id,
+          carrier_id: carrierId,
           billing_period_start: new Date(row.billing_period_start).toISOString(),
           billing_period_end: new Date(row.billing_period_end).toISOString(),
           total_shipments: Number(row.total_shipments) || 0,
@@ -180,7 +214,7 @@ export function FinancePage() {
       success('CSV import completed', `${created} invoices imported${failed ? `, ${failed} failed` : ''}`);
       refetch();
     } else {
-      error('CSV import failed', 'No records were imported. Check required columns and values.');
+      error('CSV import failed', 'No records were imported. Include carrier_id, carrier_name, or carrier_code in the CSV.');
     }
   };
 
@@ -656,7 +690,7 @@ export function FinancePage() {
           </div>
 
           <div className="text-xs text-gray-500">
-            CSV columns supported: `invoice_number,carrier_id,billing_period_start,billing_period_end,total_shipments,base_amount,penalties,adjustments,final_amount,status`
+            CSV columns supported: `invoice_number,carrier_id,carrier_name,carrier_code,billing_period_start,billing_period_end,total_shipments,base_amount,penalties,adjustments,final_amount,status`
           </div>
 
           <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">

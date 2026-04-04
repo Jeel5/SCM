@@ -305,14 +305,14 @@ class CarrierAssignmentRepository extends BaseRepository {
         const result = await this.query(
             `SELECT ca.order_id,
                     COUNT(*) AS total_assignments,
-                    COUNT(*) FILTER (WHERE status IN ('rejected', 'busy', 'expired')) AS failed_count,
+                    COUNT(*) FILTER (WHERE ca.status IN ('rejected', 'busy', 'expired')) AS failed_count,
                     o.priority, o.customer_name
              FROM carrier_assignments ca
              JOIN orders o ON ca.order_id = o.id
              WHERE ca.created_at > NOW() - INTERVAL '48 hours'
                AND o.status NOT IN ('shipped', 'delivered', 'cancelled')
              GROUP BY ca.order_id, o.priority, o.customer_name
-             HAVING COUNT(*) = COUNT(*) FILTER (WHERE status IN ('rejected', 'busy', 'expired'))
+             HAVING COUNT(*) = COUNT(*) FILTER (WHERE ca.status IN ('rejected', 'busy', 'expired'))
                AND COUNT(*) % 3 = 0
                AND COUNT(*) < 9`,
             [], client

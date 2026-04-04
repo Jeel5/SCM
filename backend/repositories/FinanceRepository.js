@@ -38,8 +38,6 @@ class FinanceRepository extends BaseRepository {
     if (status)     { query += ` AND i.status = $${p}`;      params.push(status); p += 1; }
     if (carrier_id) { query += ` AND i.carrier_id = $${p}`;  params.push(carrier_id); p += 1; }
 
-    query += ` AND i.invoice_type IN ('customer', 'carrier')`;
-
     query += ` ORDER BY i.created_at DESC LIMIT $${p} OFFSET $${p + 1}`;
     p += 2;
     params.push(limit, offset);
