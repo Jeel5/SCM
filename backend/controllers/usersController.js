@@ -458,7 +458,7 @@ export const createOrgUser = asyncHandler(async (req, res) => {
       organizationName: org.name,
       role: user.role,
       temporaryPassword: tempPassword,
-      loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`,
+      loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`,
     });
   } catch (emailError) {
     logger.error('Failed to send welcome email to org user', {

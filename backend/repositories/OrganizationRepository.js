@@ -291,11 +291,15 @@ class OrganizationRepository extends BaseRepository {
       SET suspended_at = NULL,
           suspended_by = NULL,
           suspension_reason = NULL,
+          is_deleted = false,
+          deleted_at = NULL,
+          deleted_by = NULL,
           is_active = true,
           updated_at = NOW()
-      WHERE id = $1 AND is_deleted = false AND suspended_at IS NOT NULL
+      WHERE id = $1
+        AND (suspended_at IS NOT NULL OR is_active = false OR is_deleted = true)
       RETURNING *
-    `, [id, reactivatedBy], client);
+    `, [id], client);
     return result.rows[0] || null;
   }
 

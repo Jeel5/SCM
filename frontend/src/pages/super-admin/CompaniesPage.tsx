@@ -133,7 +133,7 @@ export function CompaniesPage() {
     try {
       setIsSubmittingAction(true);
       await superAdminApi.reactivateCompany(reactivateOrg.id);
-      toast.success('Organization Reactivated', `${reactivateOrg.name} is active again`);
+      toast.success('Organization Activated', `${reactivateOrg.name} is active again`);
       setReactivateOrg(null);
       refetch();
     } catch {
@@ -354,18 +354,43 @@ export function CompaniesPage() {
 
                     {/* Tier */}
                     <td className="py-4 px-6">
-                      <Badge variant={TIER_BADGE[org.subscriptionTier || 'standard'] || 'default'}>
+                      <Badge
+                        variant={TIER_BADGE[org.subscriptionTier || 'standard'] || 'default'}
+                        className={
+                          (org.subscriptionTier || 'standard') === 'enterprise'
+                            ? 'border-emerald-500/40 text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-500/10'
+                            : undefined
+                        }
+                      >
                         {org.subscriptionTier || 'standard'}
                       </Badge>
                     </td>
 
                     {/* Status */}
                     <td className="py-4 px-6">
-                      <div className="flex flex-col gap-1">
-                        <Badge variant={org.suspendedAt ? 'error' : org.isActive ? 'success' : 'warning'}>
+                      <div className="flex flex-col items-start gap-1.5">
+                        <Badge
+                          variant="outline"
+                          size="sm"
+                          className={`whitespace-nowrap border ${
+                            org.suspendedAt
+                              ? 'border-rose-400/40 text-rose-300 bg-rose-500/10'
+                              : org.isActive
+                              ? 'border-emerald-500/40 text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-500/10'
+                              : 'border-amber-400/40 text-amber-300 bg-amber-500/10'
+                          }`}
+                        >
                           {org.suspendedAt ? 'Suspended' : org.isActive ? 'Active' : 'Inactive'}
                         </Badge>
-                        {org.isDeleted && <Badge variant="error">Deleted</Badge>}
+                        {org.isDeleted && (
+                          <Badge
+                            variant="outline"
+                            size="sm"
+                            className="whitespace-nowrap border border-rose-400/40 text-rose-300 bg-rose-500/10"
+                          >
+                            Deleted
+                          </Badge>
+                        )}
                       </div>
                     </td>
 
@@ -394,11 +419,14 @@ export function CompaniesPage() {
                             label: 'Suspend',
                             value: 'suspend',
                             icon: <PauseCircle className="h-4 w-4" />,
+                            disabled: Boolean(org.suspendedAt) || org.isDeleted,
                           },
                           {
-                            label: 'Reactivate',
+                            label: org.isDeleted ? 'Restore & Activate' : org.suspendedAt ? 'Reactivate' : 'Activate',
                             value: 'reactivate',
                             icon: <PlayCircle className="h-4 w-4" />,
+                            // Allow activation from suspended, inactive, and soft-deleted states.
+                            disabled: !org.isDeleted && !org.suspendedAt && org.isActive,
                           },
                           {
                             label: 'View Audit Log',
@@ -420,15 +448,16 @@ export function CompaniesPage() {
                             value: 'delete',
                             icon: <Trash2 className="h-4 w-4" />,
                             danger: true,
+                            disabled: !org.isActive || org.isDeleted,
                           },
                         ]}
                         onSelect={(value) => {
                           if (value === 'edit') setEditingOrg(org);
                           if (value === 'audit') void openAuditViewer(org);
                           if (value === 'billing') void openBillingViewer(org);
-                          if (value === 'suspend' && !org.suspendedAt && !org.isDeleted) setSuspendOrg(org);
-                          if (value === 'reactivate' && Boolean(org.suspendedAt) && !org.isDeleted) setReactivateOrg(org);
-                          if (value === 'delete' && org.isActive) setDeletingOrg(org);
+                          if (value === 'suspend') setSuspendOrg(org);
+                          if (value === 'reactivate') setReactivateOrg(org);
+                          if (value === 'delete') setDeletingOrg(org);
                         }}
                       />
                     </td>
@@ -507,16 +536,16 @@ export function CompaniesPage() {
       <Modal
         isOpen={Boolean(reactivateOrg)}
         onClose={() => setReactivateOrg(null)}
-        title="Reactivate Organization"
+        title={reactivateOrg?.suspendedAt ? 'Reactivate Organization' : 'Activate Organization'}
         size="sm"
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            Reactivate <span className="font-semibold">{reactivateOrg?.name}</span> and restore tenant access.
+            {reactivateOrg?.suspendedAt ? 'Reactivate' : 'Activate'} <span className="font-semibold">{reactivateOrg?.name}</span> and restore tenant access.
           </p>
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => setReactivateOrg(null)} disabled={isSubmittingAction}>Cancel</Button>
-            <Button variant="primary" onClick={handleReactivate} isLoading={isSubmittingAction}>Reactivate</Button>
+            <Button variant="primary" onClick={handleReactivate} isLoading={isSubmittingAction}>{reactivateOrg?.suspendedAt ? 'Reactivate' : 'Activate'}</Button>
           </div>
         </div>
       </Modal>

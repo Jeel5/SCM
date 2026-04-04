@@ -52,6 +52,58 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function getLoginUrl(explicitUrl) {
+  return explicitUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
+}
+
+function renderEmailLayout({
+  preheader,
+  title,
+  greeting,
+  bodyHtml,
+  ctaLabel,
+  ctaUrl,
+  footerNote,
+}) {
+  const safePreheader = escapeHtml(preheader || 'Important update from TwinChain');
+  const safeTitle = escapeHtml(title || 'TwinChain Notification');
+  const safeGreeting = escapeHtml(greeting || 'Hi there,');
+  const safeFooter = escapeHtml(footerNote || 'This is an automated message from TwinChain SCM.');
+  const safeCtaLabel = escapeHtml(ctaLabel || 'Open TwinChain');
+  const safeCtaUrl = ctaUrl ? escapeHtml(ctaUrl) : null;
+
+  return `
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${safePreheader}</div>
+    <div style="background:#f4f7fb;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;color:#111827;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td style="background:#0f172a;color:#ffffff;padding:20px 24px;">
+            <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.9;">TwinChain SCM</div>
+            <div style="font-size:22px;font-weight:700;margin-top:6px;">${safeTitle}</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px;line-height:1.6;">
+            <p style="margin:0 0 14px 0;">${safeGreeting}</p>
+            ${bodyHtml}
+            ${safeCtaUrl ? `
+              <div style="margin:20px 0 8px 0;">
+                <a href="${safeCtaUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 16px;border-radius:8px;">${safeCtaLabel}</a>
+              </div>
+              <p style="font-size:12px;color:#6b7280;margin:8px 0 0 0;">If the button does not work, use this link: ${safeCtaUrl}</p>
+            ` : ''}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;font-size:12px;color:#6b7280;">
+            ${safeFooter}
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
 /**
  * Send onboarding credentials for newly created users.
  */
@@ -59,31 +111,84 @@ async function sendWelcomeCredentialsEmail({ to, name, organizationName, role, t
   const safeName = escapeHtml(name || 'there');
   const safeOrganizationName = escapeHtml(organizationName || 'TwinChain');
   const safeRole = escapeHtml(role || 'user');
-  const safeLoginUrl = escapeHtml(loginUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`);
+  const effectiveLoginUrl = getLoginUrl(loginUrl);
+  const safePassword = escapeHtml(temporaryPassword);
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px 0;">Welcome to <strong>${safeOrganizationName}</strong>. Your account has been created with the role <strong>${safeRole}</strong>.</p>
+    <p style="margin:0 0 8px 0;">Use the temporary password below to sign in:</p>
+    <div style="background:#f3f4f6;border:1px dashed #9ca3af;border-radius:8px;padding:12px;font-family:Consolas,Monaco,monospace;font-size:16px;font-weight:700;letter-spacing:0.04em;display:inline-block;">${safePassword}</div>
+    <p style="margin:14px 0 0 0;">For security, please change this password immediately after your first login.</p>
+  `;
 
   return send({
     to,
-    subject: `Welcome to ${organizationName || 'SCM'}`,
+    subject: `Welcome to ${organizationName || 'TwinChain'}`,
     text: [
       `Hi ${name || 'there'},`,
       '',
-      `Welcome to ${organizationName || 'SCM'} as ${role || 'user'}.`,
+      `Welcome to ${organizationName || 'TwinChain'} as ${role || 'user'}.`,
       `Your temporary password is: ${temporaryPassword}`,
       '',
-      `Log in here: ${loginUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`}`,
+      `Log in here: ${effectiveLoginUrl}`,
       'Please change your password after your first login.',
       '',
       'If you did not expect this email, please contact your administrator.',
     ].join('\n'),
-    html: `
-      <p>Hi ${safeName},</p>
-      <p>Welcome to <strong>${safeOrganizationName}</strong> as <strong>${safeRole}</strong>.</p>
-      <p>Your temporary password is:</p>
-      <p style="font-size:16px;font-weight:700;letter-spacing:0.04em;">${escapeHtml(temporaryPassword)}</p>
-      <p><a href="${safeLoginUrl}">${safeLoginUrl}</a></p>
-      <p>Please change your password after your first login.</p>
-      <p>If you did not expect this email, please contact your administrator.</p>
-    `,
+    html: renderEmailLayout({
+      preheader: `Welcome to ${organizationName || 'TwinChain'}`,
+      title: 'Welcome to TwinChain',
+      greeting: `Hi ${safeName},`,
+      bodyHtml,
+      ctaLabel: 'Sign In to TwinChain',
+      ctaUrl: effectiveLoginUrl,
+      footerNote: 'If you did not expect this account, contact your administrator.',
+    }),
+  });
+}
+
+/**
+ * Send customized onboarding email when superadmin registers a new organization
+ * and its first admin user.
+ */
+async function sendOrganizationAdminOnboardingEmail({ to, name, organizationName, temporaryPassword, loginUrl }) {
+  const safeName = escapeHtml(name || 'there');
+  const safeOrganizationName = escapeHtml(organizationName || 'your company');
+  const effectiveLoginUrl = getLoginUrl(loginUrl);
+  const safePassword = escapeHtml(temporaryPassword);
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px 0;">Great news. Your company <strong>${safeOrganizationName}</strong> has been successfully registered on TwinChain SCM.</p>
+    <p style="margin:0 0 12px 0;">Your admin account is now active. Use the credentials below to log in and complete setup.</p>
+    <p style="margin:0 0 8px 0;"><strong>Username:</strong> ${escapeHtml(to)}</p>
+    <p style="margin:0 0 8px 0;"><strong>Temporary password:</strong></p>
+    <div style="background:#f3f4f6;border:1px dashed #9ca3af;border-radius:8px;padding:12px;font-family:Consolas,Monaco,monospace;font-size:16px;font-weight:700;letter-spacing:0.04em;display:inline-block;">${safePassword}</div>
+    <p style="margin:14px 0 0 0;">Please change your password immediately after first login for security.</p>
+  `;
+
+  return send({
+    to,
+    subject: `${organizationName || 'Your company'} is now registered on TwinChain`,
+    text: [
+      `Hi ${name || 'there'},`,
+      '',
+      `Your company ${organizationName || ''} is successfully registered on TwinChain SCM.`,
+      'Your admin account is now active.',
+      `Username: ${to}`,
+      `Temporary password: ${temporaryPassword}`,
+      '',
+      `Login here: ${effectiveLoginUrl}`,
+      'Please change your password immediately after first login.',
+    ].join('\n'),
+    html: renderEmailLayout({
+      preheader: 'Your company has been registered',
+      title: 'Company Registration Complete',
+      greeting: `Hi ${safeName},`,
+      bodyHtml,
+      ctaLabel: 'Login to TwinChain',
+      ctaUrl: effectiveLoginUrl,
+      footerNote: 'If you did not expect this email, contact TwinChain support immediately.',
+    }),
   });
 }
 
@@ -92,17 +197,33 @@ async function sendWelcomeCredentialsEmail({ to, name, organizationName, role, t
    */
 async function sendEmailChangeVerification({ to, name, verifyUrl }) {
   const safeName = escapeHtml(name || 'there');
-  const safeUrl = escapeHtml(verifyUrl);
+  const effectiveVerifyUrl = verifyUrl;
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px 0;">We received a request to change the email address on your TwinChain account.</p>
+    <p style="margin:0;">Please confirm this change to continue.</p>
+  `;
+
   return send({
     to,
     subject: 'Confirm your new email address',
-    text: `Hi ${name || 'there'},\n\nPlease verify your new email address by opening this link:\n${verifyUrl}\n\nIf you did not request this change, ignore this email.`,
-    html: `
-      <p>Hi ${safeName},</p>
-      <p>Please confirm your new email address by clicking the link below:</p>
-      <p><a href="${safeUrl}">${safeUrl}</a></p>
-      <p>If you did not request this change, you can ignore this email.</p>
-    `,
+    text: [
+      `Hi ${name || 'there'},`,
+      '',
+      'We received a request to change your email address.',
+      `Verify here: ${effectiveVerifyUrl}`,
+      '',
+      'If you did not request this change, ignore this email.',
+    ].join('\n'),
+    html: renderEmailLayout({
+      preheader: 'Confirm your new email address',
+      title: 'Email Verification Required',
+      greeting: `Hi ${safeName},`,
+      bodyHtml,
+      ctaLabel: 'Verify Email Address',
+      ctaUrl: effectiveVerifyUrl,
+      footerNote: 'If this was not you, no further action is required.',
+    }),
   });
 }
 
@@ -110,18 +231,118 @@ async function sendEmailChangeVerification({ to, name, verifyUrl }) {
  * Send a simple single-message notification email.
  */
 async function sendSimpleNotification({ to, subject, message }) {
-  const safeMessage = escapeHtml(message);
+  const safeMessageHtml = String(message || '')
+    .split(/\r?\n/)
+    .map((line) => `<p style="margin:0 0 10px 0;">${escapeHtml(line)}</p>`)
+    .join('');
+
   return send({
     to,
     subject,
     text: message,
-    html: `<p>${safeMessage}</p>`,
+    html: renderEmailLayout({
+      preheader: subject || 'TwinChain notification',
+      title: subject || 'Notification',
+      greeting: 'Hello,',
+      bodyHtml: safeMessageHtml,
+      footerNote: 'You are receiving this because notifications are enabled for your account.',
+    }),
+  });
+}
+
+/**
+ * Send organization account-status email for suspend/reactivate/deactivate actions.
+ */
+async function sendOrganizationStatusUpdateEmail({
+  to,
+  name,
+  organizationName,
+  status,
+  reason,
+  loginUrl,
+}) {
+  const safeName = escapeHtml(name || 'there');
+  const safeOrgName = escapeHtml(organizationName || 'your organization');
+  const safeReason = reason ? escapeHtml(reason) : null;
+  const effectiveLoginUrl = getLoginUrl(loginUrl);
+
+  const statusConfig = {
+    suspended: {
+      subject: `Access suspended for ${organizationName || 'your organization'}`,
+      title: 'Organization Suspended',
+      preheader: 'Your organization access has been suspended',
+      textLines: [
+        `Your organization ${organizationName || ''} has been suspended.`,
+        reason ? `Reason: ${reason}` : null,
+        'Please contact your superadmin or support for assistance.',
+      ],
+      bodyHtml: `
+        <p style="margin:0 0 12px 0;">Your organization <strong>${safeOrgName}</strong> has been suspended.</p>
+        ${safeReason ? `<p style="margin:0 0 12px 0;"><strong>Reason:</strong> ${safeReason}</p>` : ''}
+        <p style="margin:0;">Please contact your superadmin or support for next steps.</p>
+      `,
+      ctaLabel: null,
+      ctaUrl: null,
+    },
+    reactivated: {
+      subject: `${organizationName || 'Your organization'} is active again`,
+      title: 'Organization Reactivated',
+      preheader: 'Your organization access has been restored',
+      textLines: [
+        `Your organization ${organizationName || ''} has been reactivated.`,
+        `Login here: ${effectiveLoginUrl}`,
+      ],
+      bodyHtml: `
+        <p style="margin:0 0 12px 0;">Good news. Your organization <strong>${safeOrgName}</strong> is active again.</p>
+        <p style="margin:0;">You can now sign in and continue using TwinChain SCM.</p>
+      `,
+      ctaLabel: 'Login to TwinChain',
+      ctaUrl: effectiveLoginUrl,
+    },
+    deactivated: {
+      subject: `${organizationName || 'Your organization'} has been deactivated`,
+      title: 'Organization Deactivated',
+      preheader: 'Your organization has been deactivated',
+      textLines: [
+        `Your organization ${organizationName || ''} has been deactivated by a superadmin.`,
+        'Access is currently disabled. Please contact support if this seems incorrect.',
+      ],
+      bodyHtml: `
+        <p style="margin:0 0 12px 0;">Your organization <strong>${safeOrgName}</strong> has been deactivated by a superadmin.</p>
+        <p style="margin:0;">Access is currently disabled. Please contact support if this seems incorrect.</p>
+      `,
+      ctaLabel: null,
+      ctaUrl: null,
+    },
+  };
+
+  const selected = statusConfig[status] || statusConfig.deactivated;
+
+  return send({
+    to,
+    subject: selected.subject,
+    text: [
+      `Hi ${name || 'there'},`,
+      '',
+      ...selected.textLines.filter(Boolean),
+    ].join('\n'),
+    html: renderEmailLayout({
+      preheader: selected.preheader,
+      title: selected.title,
+      greeting: `Hi ${safeName},`,
+      bodyHtml: selected.bodyHtml,
+      ctaLabel: selected.ctaLabel,
+      ctaUrl: selected.ctaUrl,
+      footerNote: 'This is an account status update from TwinChain SCM.',
+    }),
   });
 }
 
 export default {
   send,
   sendWelcomeCredentialsEmail,
+  sendOrganizationAdminOnboardingEmail,
   sendEmailChangeVerification,
   sendSimpleNotification,
+  sendOrganizationStatusUpdateEmail,
 };

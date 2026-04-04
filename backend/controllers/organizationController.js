@@ -25,6 +25,27 @@ const assertSuperadmin = (req) => {
   }
 };
 
+const collectStatusEmailRecipients = ({ users = [], organizationEmail = null }) => {
+  const recipientMap = new Map();
+
+  users
+    .filter((user) => user.is_active && user.email)
+    .forEach((user) => {
+      const email = String(user.email).trim().toLowerCase();
+      if (!email || recipientMap.has(email)) return;
+      recipientMap.set(email, { email: user.email, name: user.name || 'there' });
+    });
+
+  if (organizationEmail) {
+    const normalized = String(organizationEmail).trim().toLowerCase();
+    if (normalized && !recipientMap.has(normalized)) {
+      recipientMap.set(normalized, { email: organizationEmail, name: 'there' });
+    }
+  }
+
+  return Array.from(recipientMap.values());
+};
+
 // ========== ORGANIZATIONS (Superadmin only) ==========
 
 // Get organizations list with filters
@@ -119,24 +140,6 @@ export const getOrganization = asyncHandler(async (req, res) => {
     }
   };
 
-
-  try {
-    await emailService.sendWelcomeCredentialsEmail({
-      to: result.adminUser.email,
-      name: result.adminUser.name,
-      organizationName: result.organization.name,
-      role: 'admin',
-      temporaryPassword: result.temporaryPassword,
-      loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`,
-    });
-  } catch (emailError) {
-    logger.error('Failed to send welcome email to organization admin', {
-      organizationId: result.organization.id,
-      adminUserId: result.adminUser.id,
-      email: result.adminUser.email,
-      error: emailError,
-    });
-  }
   res.json({ success: true, data: transformed });
 });
 
@@ -264,6 +267,23 @@ export const createOrganization = asyncHandler(async (req, res) => {
     }
   };
 
+  try {
+    await emailService.sendOrganizationAdminOnboardingEmail({
+      to: result.adminUser.email,
+      name: result.adminUser.name,
+      organizationName: result.organization.name,
+      temporaryPassword: result.temporaryPassword,
+      loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`,
+    });
+  } catch (emailError) {
+    logger.error('Failed to send organization onboarding email', {
+      organizationId: result.organization.id,
+      adminUserId: result.adminUser.id,
+      email: result.adminUser.email,
+      error: emailError,
+    });
+  }
+
   res.status(201).json({ success: true, data: transformed });
 });
 
@@ -357,6 +377,16 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
     throw new NotFoundError('Organization not found');
   }
 
+  let orgUsers = [];
+  try {
+    orgUsers = await OrganizationRepository.getUsersByOrganization(id);
+  } catch (userFetchError) {
+    logger.error('Failed to fetch organization users for deactivation email', {
+      orgId: id,
+      error: userFetchError,
+    });
+  }
+
   const deleted = await OrganizationRepository.softDeleteOrganization(id, req.user.userId);
   if (!deleted) {
     throw new BusinessLogicError('Organization is already deleted');
@@ -381,6 +411,21 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
     timestamp: new Date().toISOString()
   });
 
+  try {
+    const recipients = orgUsers.filter((user) => user.is_active && user.email);
+    await Promise.all(recipients.map((user) => emailService.sendOrganizationStatusUpdateEmail({
+      to: user.email,
+      name: user.name,
+      organizationName: organization.name,
+      status: 'deactivated',
+    })));
+  } catch (emailError) {
+    logger.error('Failed to send organization deactivation emails', {
+      orgId: id,
+      error: emailError,
+    });
+  }
+
   res.json({ success: true, message: 'Organization deleted successfully' });
 });
 
@@ -388,7 +433,7 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
 export const suspendOrganization = asyncHandler(async (req, res) => {
   assertSuperadmin(req);
   const { id } = req.params;
-  const { reason } = req.body;
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
 
   if (!reason?.trim()) {
     throw new ValidationError('Suspension reason is required');
@@ -396,9 +441,13 @@ export const suspendOrganization = asyncHandler(async (req, res) => {
 
   const organization = await OrganizationRepository.findById(id);
   if (!organization) throw new NotFoundError('Organization not found');
+  if (organization.is_deleted) throw new BusinessLogicError('Organization is deleted');
   if (organization.suspended_at) throw new BusinessLogicError('Organization is already suspended');
 
   const suspended = await OrganizationRepository.suspendOrganization(id, req.user.userId, reason.trim());
+  if (!suspended) {
+    throw new BusinessLogicError('Unable to suspend organization in current state');
+  }
 
   await OrganizationRepository.logAuditAction({
     orgId: id,
@@ -413,14 +462,18 @@ export const suspendOrganization = asyncHandler(async (req, res) => {
   });
 
   try {
-    const recipients = (await OrganizationRepository.getUsersByOrganization(id))
-      .filter((user) => user.is_active && user.email)
-      .map((user) => user.email);
+    const users = await OrganizationRepository.getUsersByOrganization(id);
+    const recipients = collectStatusEmailRecipients({
+      users,
+      organizationEmail: organization.email,
+    });
 
-    await Promise.all(recipients.map((to) => emailService.sendSimpleNotification({
-      to,
-      subject: `Organization suspended: ${organization.name}`,
-      message: `Your organization ${organization.name} has been suspended for the following reason: ${reason.trim()}. Please contact your superadmin or support for next steps.`,
+    await Promise.all(recipients.map((user) => emailService.sendOrganizationStatusUpdateEmail({
+      to: user.email,
+      name: user.name,
+      organizationName: organization.name,
+      status: 'suspended',
+      reason: reason.trim(),
     })));
   } catch (emailError) {
     logger.error('Failed to send organization suspension emails', {
@@ -440,9 +493,14 @@ export const reactivateOrganization = asyncHandler(async (req, res) => {
 
   const organization = await OrganizationRepository.findById(id);
   if (!organization) throw new NotFoundError('Organization not found');
-  if (!organization.suspended_at) throw new BusinessLogicError('Organization is not suspended');
+  if (!organization.is_deleted && !organization.suspended_at && organization.is_active) {
+    throw new BusinessLogicError('Organization is already active');
+  }
 
   const reactivated = await OrganizationRepository.reactivateOrganization(id, req.user.userId);
+  if (!reactivated) {
+    throw new BusinessLogicError('Unable to activate organization in current state');
+  }
 
   await OrganizationRepository.logAuditAction({
     orgId: id,
@@ -451,19 +509,28 @@ export const reactivateOrganization = asyncHandler(async (req, res) => {
     performedByRole: req.user.role,
     ip: req.ip,
     userAgent: req.headers['user-agent'],
-    beforeState: { suspended_at: organization.suspended_at, suspension_reason: organization.suspension_reason },
-    afterState: { suspended_at: null, is_active: true },
+    beforeState: {
+      is_active: organization.is_active,
+      is_deleted: organization.is_deleted,
+      suspended_at: organization.suspended_at,
+      suspension_reason: organization.suspension_reason,
+    },
+    afterState: { suspended_at: null, is_active: true, is_deleted: false },
   });
 
   try {
-    const recipients = (await OrganizationRepository.getUsersByOrganization(id))
-      .filter((user) => user.is_active && user.email)
-      .map((user) => user.email);
+    const users = await OrganizationRepository.getUsersByOrganization(id);
+    const recipients = collectStatusEmailRecipients({
+      users,
+      organizationEmail: organization.email,
+    });
 
-    await Promise.all(recipients.map((to) => emailService.sendSimpleNotification({
-      to,
-      subject: `Organization reactivated: ${organization.name}`,
-      message: `Your organization ${organization.name} is active again. You can log back in and continue operations.`,
+    await Promise.all(recipients.map((user) => emailService.sendOrganizationStatusUpdateEmail({
+      to: user.email,
+      name: user.name,
+      organizationName: organization.name,
+      status: 'reactivated',
+      loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`,
     })));
   } catch (emailError) {
     logger.error('Failed to send organization reactivation emails', {

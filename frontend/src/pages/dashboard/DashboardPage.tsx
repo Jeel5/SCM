@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ShoppingCart,
@@ -11,7 +12,7 @@ import {
   RefreshCw,
   Calendar,
 } from 'lucide-react';
-import { Button, MetricCardSkeleton, PermissionGate } from '@/components/ui';
+import { MetricCardSkeleton, Modal, PermissionGate } from '@/components/ui';
 import { formatCurrency, formatNumber, formatPercentage, formatDate } from '@/lib/utils';
 import { useAuthStore } from '@/stores';
 import { MetricCard } from './components/MetricCard';
@@ -59,6 +60,8 @@ const ROLE_CARD_ORDER: Record<UserRole, DashboardCardKey[]> = {
 
 export function DashboardPage() {
   const { user } = useAuthStore();
+  const [showDeliveryRateInfo, setShowDeliveryRateInfo] = useState(false);
+  const [showAvgDeliveryInfo, setShowAvgDeliveryInfo] = useState(false);
 
   // If user is superadmin, show SuperAdmin dashboard instead
   if (user?.role === 'superadmin') {
@@ -117,6 +120,7 @@ export function DashboardPage() {
         change={metrics.deliveryRateChange}
         icon={<Package className="h-6 w-6 text-emerald-600" />}
         iconBg="bg-emerald-100"
+        onLearnMore={() => setShowDeliveryRateInfo(true)}
       />
     ),
     sla: (
@@ -166,6 +170,7 @@ export function DashboardPage() {
         change={metrics.avgDeliveryTimeChange}
         icon={<Clock className="h-6 w-6 text-cyan-600" />}
         iconBg="bg-cyan-100"
+        onLearnMore={() => setShowAvgDeliveryInfo(true)}
       />
     ),
     lowStock: (
@@ -269,6 +274,50 @@ export function DashboardPage() {
           )}
         </div>
       )}
+
+      <Modal
+        isOpen={showDeliveryRateInfo}
+        onClose={() => setShowDeliveryRateInfo(false)}
+        title="Delivery Rate"
+        size="lg"
+      >
+        <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+          <p>
+            Delivery Rate shows the percentage of shipments that reached customers successfully in the selected period.
+          </p>
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/40">
+            <p className="font-medium text-gray-900 dark:text-white mb-1">How it is calculated</p>
+            <p>Delivered Shipments / Total Shipments × 100</p>
+          </div>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Higher is better and indicates stable operations.</li>
+            <li>Sudden drops usually correlate with exceptions or failed deliveries.</li>
+            <li>Use this with SLA Compliance to detect service quality issues early.</li>
+          </ul>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showAvgDeliveryInfo}
+        onClose={() => setShowAvgDeliveryInfo(false)}
+        title="Average Delivery Time"
+        size="lg"
+      >
+        <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+          <p>
+            Average Delivery Time is the mean number of days taken for completed shipments to be delivered.
+          </p>
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/40">
+            <p className="font-medium text-gray-900 dark:text-white mb-1">How it is calculated</p>
+            <p>Sum of Delivery Durations / Number of Delivered Shipments</p>
+          </div>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Lower is better and reflects faster fulfillment.</li>
+            <li>Spikes may indicate routing issues, carrier delays, or warehouse bottlenecks.</li>
+            <li>Track this together with Delivery Rate for a complete delivery performance view.</li>
+          </ul>
+        </div>
+      </Modal>
     </div>
   );
 }

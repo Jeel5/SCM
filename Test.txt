@@ -2,3 +2,4 @@ Doubt: why is penalty is minusing in total revenue we have to give that penalty 
 
 Doubt: in Finance page: there is auto generate invoices after the carrier service, and then it is added in analityics finance page Financial summery to minus after status paid/Approve.
 
+Doubt: in superadmin why there is a revenue of perticuler company

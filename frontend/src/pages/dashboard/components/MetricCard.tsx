@@ -11,12 +11,31 @@ export interface MetricCardProps {
   icon: React.ReactNode;
   iconBg: string;
   link?: string;
+  onLearnMore?: () => void;
+  learnMoreLabel?: string;
 }
 
-export function MetricCard({ title, value, change, icon, iconBg, link }: MetricCardProps) {
+export function MetricCard({
+  title,
+  value,
+  change,
+  icon,
+  iconBg,
+  link,
+  onLearnMore,
+  learnMoreLabel = 'Learn More',
+}: MetricCardProps) {
   const isPositive = change >= 0;
+  const hasFooterAction = Boolean(link || onLearnMore);
+
+  const handleLearnMoreClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onLearnMore?.();
+  };
+
   const Content = (
-    <Card hover={Boolean(link)} className="relative overflow-hidden">
+    <Card hover={Boolean(link)} className="relative overflow-hidden h-full">
       {/* Decorative gradient */}
       <div className={cn('absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20', iconBg)} />
       
@@ -52,11 +71,21 @@ export function MetricCard({ title, value, change, icon, iconBg, link }: MetricC
         </div>
       </div>
       
-      {link && (
+      {hasFooterAction && (
         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-          <span className="text-sm text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
-            View Details <ArrowRight className="h-4 w-4" />
-          </span>
+          {link ? (
+            <span className="text-sm text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
+              View Details <ArrowRight className="h-4 w-4" />
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleLearnMoreClick}
+              className="text-sm text-blue-600 dark:text-blue-400 font-medium inline-flex items-center gap-1 hover:gap-2 transition-all"
+            >
+              {learnMoreLabel} <ArrowRight className="h-4 w-4" />
+            </button>
+          )}
         </div>
       )}
     </Card>
