@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import OrganizationRepository from '../repositories/OrganizationRepository.js';
 import userRepo from '../repositories/UserRepository.js';
+import emailService from '../services/emailService.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { asyncHandler } from '../errors/errorHandler.js';
@@ -118,6 +119,24 @@ export const getOrganization = asyncHandler(async (req, res) => {
     }
   };
 
+
+  try {
+    await emailService.sendWelcomeCredentialsEmail({
+      to: result.adminUser.email,
+      name: result.adminUser.name,
+      organizationName: result.organization.name,
+      role: 'admin',
+      temporaryPassword: result.temporaryPassword,
+      loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`,
+    });
+  } catch (emailError) {
+    logger.error('Failed to send welcome email to organization admin', {
+      organizationId: result.organization.id,
+      adminUserId: result.adminUser.id,
+      email: result.adminUser.email,
+      error: emailError,
+    });
+  }
   res.json({ success: true, data: transformed });
 });
 
@@ -393,6 +412,23 @@ export const suspendOrganization = asyncHandler(async (req, res) => {
     metadata: { reason },
   });
 
+  try {
+    const recipients = (await OrganizationRepository.getUsersByOrganization(id))
+      .filter((user) => user.is_active && user.email)
+      .map((user) => user.email);
+
+    await Promise.all(recipients.map((to) => emailService.sendSimpleNotification({
+      to,
+      subject: `Organization suspended: ${organization.name}`,
+      message: `Your organization ${organization.name} has been suspended for the following reason: ${reason.trim()}. Please contact your superadmin or support for next steps.`,
+    })));
+  } catch (emailError) {
+    logger.error('Failed to send organization suspension emails', {
+      orgId: id,
+      error: emailError,
+    });
+  }
+
   logger.info('Organization suspended', { orgId: id, reason, actorId: req.user.userId });
   res.json({ success: true, data: { id, suspendedAt: suspended.suspended_at, reason } });
 });
@@ -418,6 +454,23 @@ export const reactivateOrganization = asyncHandler(async (req, res) => {
     beforeState: { suspended_at: organization.suspended_at, suspension_reason: organization.suspension_reason },
     afterState: { suspended_at: null, is_active: true },
   });
+
+  try {
+    const recipients = (await OrganizationRepository.getUsersByOrganization(id))
+      .filter((user) => user.is_active && user.email)
+      .map((user) => user.email);
+
+    await Promise.all(recipients.map((to) => emailService.sendSimpleNotification({
+      to,
+      subject: `Organization reactivated: ${organization.name}`,
+      message: `Your organization ${organization.name} is active again. You can log back in and continue operations.`,
+    })));
+  } catch (emailError) {
+    logger.error('Failed to send organization reactivation emails', {
+      orgId: id,
+      error: emailError,
+    });
+  }
 
   logger.info('Organization reactivated', { orgId: id, actorId: req.user.userId });
   res.json({ success: true, data: { id, reactivatedAt: new Date().toISOString() } });

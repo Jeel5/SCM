@@ -451,6 +451,24 @@ export const createOrgUser = asyncHandler(async (req, res) => {
   const user = await userRepo.createUser({ name, email, password_hash, role, phone: phone || null, organization_id: organizationId });
   await userRepo.insertAuditLog(req.user.userId, 'create_user', 'user', user.id);
 
+  try {
+    await emailService.sendWelcomeCredentialsEmail({
+      to: user.email,
+      name: user.name,
+      organizationName: org.name,
+      role: user.role,
+      temporaryPassword: tempPassword,
+      loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`,
+    });
+  } catch (emailError) {
+    logger.error('Failed to send welcome email to org user', {
+      userId: user.id,
+      organizationId,
+      email: user.email,
+      error: emailError,
+    });
+  }
+
   // Return temporary password once so admin can share it securely.
   res.status(201).json({ success: true, data: { ...user, temporary_password: tempPassword } });
 });
@@ -494,6 +512,32 @@ export const updateOrgUser = asyncHandler(async (req, res) => {
   // Audit: record who changed the user and what fields were updated (TASK-R12-008)
   await userRepo.insertAuditLog(req.user.userId, 'update_user', 'user', id);
 
+  try {
+    const messages = [];
+    if (fields.role !== undefined && fields.role !== existing.role) {
+      messages.push(`Your role has been updated to ${fields.role}.`);
+    }
+    if (fields.is_active !== undefined && fields.is_active !== existing.is_active) {
+      messages.push(fields.is_active
+        ? 'Your account has been reactivated. You can log in again.'
+        : 'Your account has been deactivated. Please contact your administrator for access.');
+    }
+
+    if (messages.length > 0 && existing.email) {
+      await emailService.sendSimpleNotification({
+        to: existing.email,
+        subject: 'Your account has been updated',
+        message: messages.join(' '),
+      });
+    }
+  } catch (emailError) {
+    logger.error('Failed to send user update notification', {
+      userId: id,
+      organizationId,
+      error: emailError,
+    });
+  }
+
   res.json({ success: true, data: updated });
 });
 
@@ -519,6 +563,22 @@ export const deactivateOrgUser = asyncHandler(async (req, res) => {
 
   // Audit: record account deactivation (TASK-R12-008)
   await userRepo.insertAuditLog(req.user.userId, 'deactivate_user', 'user', id);
+
+  try {
+    if (deactivated.email) {
+      await emailService.sendSimpleNotification({
+        to: deactivated.email,
+        subject: 'Your account has been deactivated',
+        message: 'Your team account has been deactivated. You can no longer sign in until an administrator reactivates it.',
+      });
+    }
+  } catch (emailError) {
+    logger.error('Failed to send user deactivation notification', {
+      userId: id,
+      organizationId,
+      error: emailError,
+    });
+  }
 
   res.json({ success: true, data: deactivated });
 });
