@@ -24,18 +24,21 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Core Capabilities](#core-capabilities)
-- [Project Metrics](#project-metrics)
-- [Architecture Snapshot](#architecture-snapshot)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Docker Setup (Recommended)](#docker-setup-recommended)
-  - [Local Setup](#local-setup)
-- [Useful Commands](#useful-commands)
-- [Key Endpoints](#key-endpoints)
-- [Demo Portals](#demo-portals)
-- [Documentation](#documentation)
+- [TwinChain SCM](#twinchain-scm)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Core Capabilities](#core-capabilities)
+  - [Architecture Snapshot](#architecture-snapshot)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Docker Setup (Recommended)](#docker-setup-recommended)
+    - [Local Setup](#local-setup)
+  - [Useful Commands](#useful-commands)
+    - [Backend](#backend)
+    - [Frontend](#frontend)
+  - [Key Endpoints](#key-endpoints)
+  - [Demo Portals](#demo-portals)
+  - [Documentation](#documentation)
 
 ## Overview
 
@@ -49,25 +52,6 @@ TwinChain SCM is a full-stack, multi-tenant platform for managing order-to-deliv
 - 🔔 Live operational updates using Socket.IO
 - 🔐 Secure webhook and carrier integration flows (JWT + HMAC)
 - 🛠️ Superadmin organization lifecycle actions (activate, suspend, restore)
-
-## Project Metrics
-
-| Area | Count |
-| --- | ---: |
-| 🎛️ Backend controllers | 21 |
-| 🛣️ Backend routes | 18 |
-| 🧠 Backend services | 32 |
-| 🗃️ Backend repositories | 25 |
-| 🧱 Backend middlewares | 9 |
-| ⏱️ Job modules | 11 |
-| 📨 Queue modules | 1 |
-| 🗂️ SQL migrations | 18 |
-| ✅ Backend test files | 10 |
-| 📄 Frontend pages | 135 |
-| 🧩 Frontend components | 23 |
-| 🪝 Frontend hooks | 5 |
-| 🗄️ Frontend store files | 2 |
-| 🧪 Demo files | 6 |
 
 ## Architecture Snapshot
 
