@@ -6,6 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Card, Button, Badge, DataTable, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatNumber, cn } from '@/lib/utils';
 import { extractSafeErrorMessage } from '@/lib/apiErrors';
+import { useSocketEvent } from '@/hooks';
 import type { Warehouse } from '@/types';
 import { importApi, warehousesApi } from '@/api/services';
 import { WarehouseCard } from './components/WarehouseCard';
@@ -99,6 +100,7 @@ function fallbackCoordinates(warehouse: Warehouse): { lat: number; lng: number }
 // Main Warehouses Page
 export function WarehousesPage() {
   const { warehouses, isLoading, refetch } = useWarehouses();
+  const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -110,15 +112,76 @@ export function WarehousesPage() {
   const importRef = useRef<HTMLInputElement | null>(null);
   const { success, error } = useToast();
 
+  const getWarehouseImportErrorMessage = (raw?: string) => {
+    const message = String(raw || '').toLowerCase();
+    const crossOrgDuplicate = message.includes('already exists in another organization');
+    const duplicateConstraint = message.includes('uq_warehouses_code_idx')
+      || message.includes('warehouses_organization_id_code_key')
+      || message.includes('duplicate key value violates unique constraint');
+
+    if (crossOrgDuplicate) {
+      return 'Warehouse import blocked: this warehouse code already exists in another organization. Choose a different code.';
+    }
+
+    if (duplicateConstraint) {
+      return 'Warehouse import blocked: duplicate warehouse code found. A warehouse code must be globally unique across all organizations.';
+    }
+
+    return raw || 'Could not read CSV file';
+  };
+
   const handleImportCsv = async (file: File) => {
     try {
       const resp = await importApi.upload(file, 'warehouses');
+      setActiveImportJobId(resp.jobId);
       success('Warehouses import started', `Job queued (${resp.totalRows} rows). Updates will appear shortly.`);
       setTimeout(() => refetch(), 1500);
     } catch (e: any) {
-      error('Import failed', e?.message || 'Could not read CSV file');
+      error('Import failed', getWarehouseImportErrorMessage(e?.message));
     }
   };
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    done: number;
+    total: number;
+  }>('import:progress', (evt) => {
+    if (evt.importType !== 'warehouses') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+
+    if (evt.done === evt.total || evt.done % 100 === 0) {
+      refetch();
+    }
+  });
+
+  useSocketEvent<{
+    jobId: string;
+    importType: string;
+    total: number;
+    created: number;
+    failed: number;
+    errors?: Array<{ row: number; message: string }>;
+    errorMessage?: string;
+  }>('import:complete', (evt) => {
+    if (evt.importType !== 'warehouses') return;
+    if (activeImportJobId && evt.jobId !== activeImportJobId) return;
+
+    if (evt.created > 0) {
+      const errorPreview = evt.failed && evt.errors?.length
+        ? ` | Failed rows: ${evt.errors.slice(0, 3).map((e) => `${e.row}: ${e.message}`).join(' | ')}`
+        : '';
+      success(
+        'Warehouses import completed',
+        `${evt.created}/${evt.total} created${evt.failed ? `, ${evt.failed} failed` : ''}${errorPreview}`
+      );
+    } else {
+      error('Warehouses import failed', getWarehouseImportErrorMessage(evt.errorMessage));
+    }
+
+    setActiveImportJobId(null);
+    refetch();
+  });
 
   const handleDelete = async (id: string) => {
     setIsDeleting(true);

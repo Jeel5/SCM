@@ -63,13 +63,14 @@ const SocketContext = createContext<SocketContextValue>({
 
 export function SocketProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const userId = useAuthStore((s) => s.user?.id);
   const addNotification = useNotificationStore((s) => s.addNotification);
 
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !userId) return;
 
     let attemptedRefresh = false;
 
@@ -125,7 +126,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setSocket(null);
       setIsConnected(false);
     };
-  }, [isAuthenticated, addNotification]);
+  }, [isAuthenticated, userId, addNotification]);
 
   const subscribeToShipment = useCallback((shipmentId: string) => {
     socket?.emit('shipment:subscribe', { shipmentId });

@@ -48,17 +48,24 @@ export async function handleImportWarehouses(payload) {
         country: row.country || 'India',
       });
       if (ctx.dryRun) return;
-      await pool.query(
-        `INSERT INTO warehouses
-           (organization_id, name, code, warehouse_type, capacity, address, contact_email, contact_phone, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
-         ON CONFLICT (organization_id, code) DO UPDATE SET
-           name = EXCLUDED.name, warehouse_type = EXCLUDED.warehouse_type,
-           capacity = EXCLUDED.capacity, address = EXCLUDED.address,
-           contact_email = EXCLUDED.contact_email, updated_at = NOW()`,
-        [organizationId, row.name, row.code || null, wType, Number(row.capacity) || 0,
-          address, email, row.contact_phone || null, isActive]
-      );
+      try {
+        await pool.query(
+          `INSERT INTO warehouses
+             (organization_id, name, code, warehouse_type, capacity, address, contact_email, contact_phone, is_active)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
+           ON CONFLICT (organization_id, code) DO UPDATE SET
+             name = EXCLUDED.name, warehouse_type = EXCLUDED.warehouse_type,
+             capacity = EXCLUDED.capacity, address = EXCLUDED.address,
+             contact_email = EXCLUDED.contact_email, updated_at = NOW()`,
+          [organizationId, row.name, row.code || null, wType, Number(row.capacity) || 0,
+            address, email, row.contact_phone || null, isActive]
+        );
+      } catch (error) {
+        if (error?.code === '23505' && error?.constraint === 'uq_warehouses_code_idx') {
+          throw new Error(`warehouse code '${row.code}' already exists in another organization`);
+        }
+        throw error;
+      }
   });
 }
 

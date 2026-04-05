@@ -267,7 +267,7 @@ export const createOrganization = asyncHandler(async (req, res) => {
     }
   };
 
-  try {
+  emailService.dispatchInBackground('organization-onboarding-email', async () => {
     await emailService.sendOrganizationAdminOnboardingEmail({
       to: result.adminUser.email,
       name: result.adminUser.name,
@@ -275,14 +275,7 @@ export const createOrganization = asyncHandler(async (req, res) => {
       temporaryPassword: result.temporaryPassword,
       loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`,
     });
-  } catch (emailError) {
-    logger.error('Failed to send organization onboarding email', {
-      organizationId: result.organization.id,
-      adminUserId: result.adminUser.id,
-      email: result.adminUser.email,
-      error: emailError,
-    });
-  }
+  });
 
   res.status(201).json({ success: true, data: transformed });
 });
@@ -411,7 +404,7 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
     timestamp: new Date().toISOString()
   });
 
-  try {
+  emailService.dispatchInBackground('organization-deactivation-emails', async () => {
     const recipients = orgUsers.filter((user) => user.is_active && user.email);
     await Promise.all(recipients.map((user) => emailService.sendOrganizationStatusUpdateEmail({
       to: user.email,
@@ -419,12 +412,7 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
       organizationName: organization.name,
       status: 'deactivated',
     })));
-  } catch (emailError) {
-    logger.error('Failed to send organization deactivation emails', {
-      orgId: id,
-      error: emailError,
-    });
-  }
+  });
 
   res.json({ success: true, message: 'Organization deleted successfully' });
 });
@@ -461,7 +449,7 @@ export const suspendOrganization = asyncHandler(async (req, res) => {
     metadata: { reason },
   });
 
-  try {
+  emailService.dispatchInBackground('organization-suspension-emails', async () => {
     const users = await OrganizationRepository.getUsersByOrganization(id);
     const recipients = collectStatusEmailRecipients({
       users,
@@ -475,12 +463,7 @@ export const suspendOrganization = asyncHandler(async (req, res) => {
       status: 'suspended',
       reason: reason.trim(),
     })));
-  } catch (emailError) {
-    logger.error('Failed to send organization suspension emails', {
-      orgId: id,
-      error: emailError,
-    });
-  }
+  });
 
   logger.info('Organization suspended', { orgId: id, reason, actorId: req.user.userId });
   res.json({ success: true, data: { id, suspendedAt: suspended.suspended_at, reason } });
@@ -518,7 +501,7 @@ export const reactivateOrganization = asyncHandler(async (req, res) => {
     afterState: { suspended_at: null, is_active: true, is_deleted: false },
   });
 
-  try {
+  emailService.dispatchInBackground('organization-reactivation-emails', async () => {
     const users = await OrganizationRepository.getUsersByOrganization(id);
     const recipients = collectStatusEmailRecipients({
       users,
@@ -532,12 +515,7 @@ export const reactivateOrganization = asyncHandler(async (req, res) => {
       status: 'reactivated',
       loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`,
     })));
-  } catch (emailError) {
-    logger.error('Failed to send organization reactivation emails', {
-      orgId: id,
-      error: emailError,
-    });
-  }
+  });
 
   logger.info('Organization reactivated', { orgId: id, actorId: req.user.userId });
   res.json({ success: true, data: { id, reactivatedAt: new Date().toISOString() } });

@@ -22,7 +22,7 @@ import { notificationsApi, authApi, superAdminApi } from '@/api/services';
 export function Header() {
   const { toggleMobileSidebar, theme, setTheme } = useUIStore();
   const { user, logout, isAuthenticated, setUser } = useAuthStore();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, setNotifications } = useNotificationStore();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, setNotifications, setUnreadCount, clearAll } = useNotificationStore();
   const [showNotifications, setShowNotifications] = useState(false);
   const [activeBanner, setActiveBanner] = useState<{
     id: string;
@@ -37,17 +37,24 @@ export function Header() {
   // Load notifications from API on mount and periodically
   const fetchNotifications = useCallback(async () => {
     try {
-      const resp = await notificationsApi.getNotifications({ page: 1, limit: 20 });
+      const [resp, unread] = await Promise.all([
+        notificationsApi.getNotifications({ page: 1, limit: 20 }),
+        notificationsApi.getUnreadCount(),
+      ]);
       if (resp.success) setNotifications(resp.data);
+      if (unread.success) setUnreadCount(unread.data.unreadCount || 0);
     } catch {
       // Silently ignore — user may not be fully authenticated yet
     }
-  }, [setNotifications]);
+  }, [setNotifications, setUnreadCount]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    fetchNotifications();
-  }, [fetchNotifications, isAuthenticated]);
+    if (!isAuthenticated || !user?.id) {
+      clearAll();
+      return;
+    }
+    void fetchNotifications();
+  }, [fetchNotifications, isAuthenticated, user?.id, clearAll]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -75,6 +82,7 @@ export function Header() {
     try {
       await authApi.logout(); // clears httpOnly cookies on the server
     } catch { /* best-effort */ }
+    clearAll();
     logout();
     navigate('/login');
   };
@@ -176,7 +184,13 @@ export function Header() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setShowNotifications(!showNotifications)}
+            onClick={() => {
+              const next = !showNotifications;
+              setShowNotifications(next);
+              if (next) {
+                void fetchNotifications();
+              }
+            }}
             className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             <Bell className="h-5 w-5 text-gray-600 dark:text-gray-300" />
@@ -215,6 +229,7 @@ export function Header() {
                       <button
                         onClick={() => {
                           markAllAsRead();
+                          setUnreadCount(0);
                           notificationsApi.markAllNotificationsRead().catch(() => {});
                         }}
                         className="text-sm text-blue-600 hover:text-blue-700"

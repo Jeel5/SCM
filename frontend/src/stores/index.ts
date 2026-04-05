@@ -84,6 +84,7 @@ interface NotificationStore {
   removeNotification: (id: string) => void;
   clearAll: () => void;
   setNotifications: (notifications: Notification[]) => void;
+  setUnreadCount: (count: number) => void;
 }
 
 export const useNotificationStore = create<NotificationStore>((set) => ({
@@ -125,6 +126,7 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
       notifications,
       unreadCount: notifications.filter((n) => !n.isRead).length,
     }),
+  setUnreadCount: (count) => set({ unreadCount: Math.max(0, count) }),
 }));
 
 // Filter Store for data tables

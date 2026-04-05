@@ -19,6 +19,9 @@ function createTransport() {
     host,
     port,
     secure: port === 465,
+    pool: true,
+    maxConnections: parseInt(process.env.SMTP_MAX_CONNECTIONS || '5', 10),
+    maxMessages: parseInt(process.env.SMTP_MAX_MESSAGES || '100', 10),
     auth: { user, pass },
   });
 }
@@ -338,6 +341,22 @@ async function sendOrganizationStatusUpdateEmail({
   });
 }
 
+/**
+ * Run an email task without blocking the request lifecycle.
+ */
+function dispatchInBackground(taskName, task) {
+  setImmediate(async () => {
+    try {
+      await task();
+    } catch (error) {
+      logger.error('Background email task failed', {
+        taskName,
+        error,
+      });
+    }
+  });
+}
+
 export default {
   send,
   sendWelcomeCredentialsEmail,
@@ -345,4 +364,5 @@ export default {
   sendEmailChangeVerification,
   sendSimpleNotification,
   sendOrganizationStatusUpdateEmail,
+  dispatchInBackground,
 };
