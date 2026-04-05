@@ -76,3 +76,17 @@ export const transferInventorySchema = Joi.object({
   quantity: Joi.number().integer().min(1).required(),
   reason: Joi.string().min(5).max(500).required()
 });
+
+/**
+ * Schema: PATCH /inventory/restock-orders/:id
+ * Update supplier-side progress fields for an existing restock order.
+ */
+export const updateRestockOrderSchema = Joi.object({
+  status: Joi.string()
+    .valid('draft', 'submitted', 'confirmed', 'in_transit', 'received', 'cancelled')
+    .optional(),
+  tracking_number: Joi.string().max(100).optional().allow('', null),
+  supplier_po_number: Joi.string().max(100).optional().allow('', null),
+  expected_arrival: Joi.string().isoDate().optional().allow('', null),
+  notes: Joi.string().max(1000).optional().allow('', null),
+}).min(1);

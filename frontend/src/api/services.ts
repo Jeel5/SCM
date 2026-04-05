@@ -311,6 +311,19 @@ export const inventoryApi = {
     return { data: response.data, success: true };
   },
 
+  async updateRestockOrder(
+    id: string,
+    data: {
+      status?: string;
+      tracking_number?: string | null;
+      supplier_po_number?: string | null;
+      expected_arrival?: string | null;
+      notes?: string | null;
+    }
+  ): Promise<ApiResponse<RestockOrderSummary>> {
+    return patch(`/inventory/restock-orders/${id}`, data);
+  },
+
   async getInventoryStats(warehouseId?: string): Promise<ApiResponse<{
     total_items: number;
     total_quantity: number;

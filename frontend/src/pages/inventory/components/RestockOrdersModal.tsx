@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, RefreshCw, Truck } from 'lucide-react';
-import { Modal, DataTable, Badge, Button, Select } from '@/components/ui';
+import { Modal, DataTable, Badge, Button, Select, Input, useToast } from '@/components/ui';
 import { inventoryApi } from '@/api/services';
 import { notifyLoadError } from '@/lib/apiErrors';
 import { formatCurrency } from '@/lib/utils';
@@ -33,8 +33,15 @@ const statusBadgeVariant = (status: string): 'outline' | 'info' | 'success' | 'w
 export function RestockOrdersModal({ isOpen, onClose, warehouses }: RestockOrdersModalProps) {
   const [orders, setOrders] = useState<RestockOrderSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
+  const [selectedOrder, setSelectedOrder] = useState<RestockOrderSummary | null>(null);
+  const [editStatus, setEditStatus] = useState('');
+  const [editTrackingNumber, setEditTrackingNumber] = useState('');
+  const [editSupplierPo, setEditSupplierPo] = useState('');
+  const [editExpectedArrival, setEditExpectedArrival] = useState('');
+  const { success, error } = useToast();
 
   const warehouseOptions = useMemo(
     () => [
@@ -57,6 +64,45 @@ export function RestockOrdersModal({ isOpen, onClose, warehouses }: RestockOrder
       setOrders([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const openTrackingDetails = (order: RestockOrderSummary) => {
+    setSelectedOrder(order);
+    setEditStatus(order.status || 'draft');
+    setEditTrackingNumber(order.trackingNumber || '');
+    setEditSupplierPo(order.supplierPoNumber || '');
+    setEditExpectedArrival(order.expectedArrival ? String(order.expectedArrival).slice(0, 10) : '');
+  };
+
+  const saveTrackingStatus = async () => {
+    if (!selectedOrder) return;
+
+    setIsSaving(true);
+    try {
+      await inventoryApi.updateRestockOrder(selectedOrder.id, {
+        status: editStatus,
+        tracking_number: editTrackingNumber || null,
+        supplier_po_number: editSupplierPo || null,
+        expected_arrival: editExpectedArrival ? new Date(editExpectedArrival).toISOString() : null,
+      });
+
+      const nextOrder: RestockOrderSummary = {
+        ...selectedOrder,
+        status: editStatus,
+        trackingNumber: editTrackingNumber || null,
+        supplierPoNumber: editSupplierPo || null,
+        expectedArrival: editExpectedArrival ? new Date(editExpectedArrival).toISOString() : null,
+      };
+
+      setOrders((prev) => prev.map((order) => (order.id === selectedOrder.id ? nextOrder : order)));
+      setSelectedOrder(nextOrder);
+      success('Reorder updated', 'Status and tracking info were saved.');
+    } catch (err: any) {
+      notifyLoadError('reorder update', err);
+      error('Update failed', err?.message || 'Could not update reorder details');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -124,9 +170,14 @@ export function RestockOrdersModal({ isOpen, onClose, warehouses }: RestockOrder
               header: 'Status',
               sortable: true,
               render: (order: RestockOrderSummary) => (
-                <Badge variant={statusBadgeVariant(order.status)} className="capitalize">
-                  {order.status.replace(/_/g, ' ')}
-                </Badge>
+                <div>
+                  <Badge variant={statusBadgeVariant(order.status)} className="capitalize">
+                    {order.status.replace(/_/g, ' ')}
+                  </Badge>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Tracking: {order.trackingNumber || 'Pending'}
+                  </p>
+                </div>
               ),
             },
             {
@@ -164,8 +215,63 @@ export function RestockOrdersModal({ isOpen, onClose, warehouses }: RestockOrder
           isLoading={isLoading}
           searchPlaceholder="Search by reorder number, supplier, warehouse, or status"
           emptyMessage="No reorders found for the selected filters"
+          onRowClick={openTrackingDetails}
         />
       </div>
+
+      <Modal
+        isOpen={Boolean(selectedOrder)}
+        onClose={() => setSelectedOrder(null)}
+        size="lg"
+        title={selectedOrder ? `Reorder ${selectedOrder.restockNumber || selectedOrder.id.slice(0, 8)}` : 'Reorder Details'}
+        description="Tracking information lives with status updates for supplier-side progress."
+      >
+        {selectedOrder && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Select
+                label="Status"
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                options={STATUS_OPTIONS.slice(1)}
+              />
+              <Input
+                label="Tracking Number"
+                value={editTrackingNumber}
+                onChange={(e) => setEditTrackingNumber(e.target.value)}
+                placeholder="Supplier or carrier tracking number"
+              />
+              <Input
+                label="Supplier PO Number"
+                value={editSupplierPo}
+                onChange={(e) => setEditSupplierPo(e.target.value)}
+                placeholder="Supplier purchase order reference"
+              />
+              <Input
+                label="Expected Arrival"
+                type="date"
+                value={editExpectedArrival}
+                onChange={(e) => setEditExpectedArrival(e.target.value)}
+              />
+            </div>
+
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+              <p><strong>Supplier:</strong> {selectedOrder.supplierName}</p>
+              <p><strong>Warehouse:</strong> {selectedOrder.warehouseName}</p>
+              <p><strong>Requested:</strong> {new Date(selectedOrder.requestedAt).toLocaleString()}</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setSelectedOrder(null)}>
+                Close
+              </Button>
+              <Button variant="primary" onClick={saveTrackingStatus} isLoading={isSaving}>
+                Save Tracking Status
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </Modal>
   );
 }

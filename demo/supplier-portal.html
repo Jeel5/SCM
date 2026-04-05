@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supplier Reorder Portal — SCM Platform</title>
+    <link rel="stylesheet" href="supplier-portal.css" />
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Supplier Reorder Portal</h1>
+            <p>Track inbound restock requests and update status plus tracking in real time.</p>
+        </header>
+
+        <section class="card">
+            <h2>Connection</h2>
+            <div class="grid cols-3">
+                <div>
+                    <label for="apiBaseInput">API Base</label>
+                    <input id="apiBaseInput" type="text" value="http://localhost:3000/api" />
+                </div>
+                <div>
+                    <label for="tokenInput">Bearer Token</label>
+                    <input id="tokenInput" type="text" placeholder="Paste a token with inventory.view + inventory.update" />
+                </div>
+                <div class="align-end">
+                    <button id="connectBtn" class="btn primary">Connect</button>
+                </div>
+            </div>
+            <p id="connectionStatus" class="status muted">Not connected</p>
+        </section>
+
+        <section class="card">
+            <div class="row between center mb-12">
+                <h2>Reorders</h2>
+                <button id="refreshBtn" class="btn">Refresh</button>
+            </div>
+
+            <div class="grid cols-4 mb-12">
+                <div>
+                    <label for="statusFilter">Filter by Status</label>
+                    <select id="statusFilter">
+                        <option value="">All</option>
+                        <option value="draft">Draft</option>
+                        <option value="submitted">Submitted</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="in_transit">In Transit</option>
+                        <option value="received">Received</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="searchInput">Search</label>
+                    <input id="searchInput" type="text" placeholder="Reorder #, supplier, warehouse" />
+                </div>
+                <div>
+                    <label for="showClosed">Closed</label>
+                    <select id="showClosed">
+                        <option value="true">Include Closed</option>
+                        <option value="false">Open Only</option>
+                    </select>
+                </div>
+                <div class="align-end">
+                    <div id="countBadge" class="count-badge">0 reorders</div>
+                </div>
+            </div>
+
+            <div id="ordersContainer" class="orders"></div>
+        </section>
+    </div>
+
+    <template id="orderCardTemplate">
+        <article class="order-card">
+            <div class="row between start">
+                <div>
+                    <h3 class="order-title"></h3>
+                    <p class="order-subtitle"></p>
+                </div>
+                <span class="status-pill"></span>
+            </div>
+
+            <div class="meta-grid">
+                <div><span class="k">Requested</span><span class="v js-requested"></span></div>
+                <div><span class="k">Quantity</span><span class="v js-quantity"></span></div>
+                <div><span class="k">Amount</span><span class="v js-amount"></span></div>
+                <div><span class="k">Expected</span><span class="v js-expected"></span></div>
+            </div>
+
+            <div class="grid cols-4">
+                <div>
+                    <label>Status</label>
+                    <select class="js-status">
+                        <option value="draft">Draft</option>
+                        <option value="submitted">Submitted</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="in_transit">In Transit</option>
+                        <option value="received">Received</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Tracking Number</label>
+                    <input class="js-tracking" type="text" placeholder="e.g. TRK-9981" />
+                </div>
+                <div>
+                    <label>Supplier PO</label>
+                    <input class="js-po" type="text" placeholder="e.g. PO-2026-001" />
+                </div>
+                <div>
+                    <label>Expected Arrival</label>
+                    <input class="js-arrival" type="date" />
+                </div>
+            </div>
+
+            <div class="row end mt-12">
+                <button class="btn primary js-save">Save Changes</button>
+            </div>
+        </article>
+    </template>
+
+    <script src="supplier-portal.js"></script>
+</body>
+</html>

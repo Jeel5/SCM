@@ -6,6 +6,7 @@ import {
   getInventoryStats,
   getLowStockItems,
   getRestockOrders,
+  updateRestockOrder,
   createInventoryItem,
   updateInventoryItem,
   adjustStock,
@@ -19,6 +20,7 @@ import {
   createInventorySchema,
   updateInventorySchema,
   adjustInventorySchema,
+  updateRestockOrderSchema,
   transferInventorySchema,
   listInventoryQuerySchema
 } from '../validators/inventorySchemas.js';
@@ -54,6 +56,14 @@ router.get(
   '/inventory/restock-orders',
   authenticate, authorize('inventory.view'),
   getRestockOrders
+);
+
+router.patch(
+  '/inventory/restock-orders/:id',
+  authenticate, authorize('inventory.update'),
+  validateUUIDParams,
+  validateRequest(updateRestockOrderSchema),
+  updateRestockOrder
 );
 
 // Single inventory item (must come AFTER static routes like /stats, /low-stock)

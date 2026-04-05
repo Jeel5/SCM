@@ -254,7 +254,11 @@ export const getRestockOrders = asyncHandler(async (req, res) => {
        ro.total_amount,
        ro.currency,
        ro.requested_at,
+      ro.confirmed_at,
        ro.expected_arrival,
+      ro.received_at,
+      ro.supplier_po_number,
+      ro.tracking_number,
        s.name AS supplier_name,
        w.name AS warehouse_name,
        COUNT(roi.id)::int AS line_items,
@@ -283,10 +287,83 @@ export const getRestockOrders = asyncHandler(async (req, res) => {
     supplierName: row.supplier_name,
     warehouseName: row.warehouse_name,
     requestedAt: row.requested_at,
+    confirmedAt: row.confirmed_at,
     expectedArrival: row.expected_arrival,
+    receivedAt: row.received_at,
+    supplierPoNumber: row.supplier_po_number,
+    trackingNumber: row.tracking_number,
   }));
 
   res.json({ success: true, data, count: data.length });
+});
+
+/**
+ * PATCH /inventory/restock-orders/:id
+ * Update restock order status/tracking metadata.
+ */
+export const updateRestockOrder = asyncHandler(async (req, res) => {
+  const organizationId = req.orgContext?.organizationId;
+  const { id } = req.params;
+  const {
+    status,
+    tracking_number,
+    supplier_po_number,
+    expected_arrival,
+    notes,
+  } = req.body;
+
+  const updates = [];
+  const params = [];
+
+  if (status !== undefined) {
+    params.push(status);
+    updates.push(`status = $${params.length}`);
+  }
+  if (tracking_number !== undefined) {
+    params.push(tracking_number || null);
+    updates.push(`tracking_number = $${params.length}`);
+  }
+  if (supplier_po_number !== undefined) {
+    params.push(supplier_po_number || null);
+    updates.push(`supplier_po_number = $${params.length}`);
+  }
+  if (expected_arrival !== undefined) {
+    params.push(expected_arrival || null);
+    updates.push(`expected_arrival = $${params.length}`);
+  }
+  if (notes !== undefined) {
+    params.push(notes || null);
+    updates.push(`notes = $${params.length}`);
+  }
+
+  if (status === 'confirmed') {
+    updates.push('confirmed_at = COALESCE(confirmed_at, NOW())');
+  }
+  if (status === 'received') {
+    updates.push('received_at = COALESCE(received_at, NOW())');
+  }
+
+  if (!updates.length) {
+    throw new BusinessLogicError('No update fields provided');
+  }
+
+  params.push(id);
+  params.push(organizationId);
+
+  const result = await InventoryRepository.query(
+    `UPDATE restock_orders
+     SET ${updates.join(', ')}, updated_at = NOW()
+     WHERE id = $${params.length - 1}
+       AND organization_id = $${params.length}
+     RETURNING id, restock_number, status, tracking_number, supplier_po_number, expected_arrival, confirmed_at, received_at, updated_at`,
+    params
+  );
+
+  if (!result.rows.length) {
+    throw new NotFoundError('Restock order');
+  }
+
+  res.json({ success: true, data: result.rows[0] });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

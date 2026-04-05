@@ -229,7 +229,11 @@ export interface RestockOrderSummary {
   supplierName: string;
   warehouseName: string;
   requestedAt: string;
+  confirmedAt?: string | null;
   expectedArrival: string | null;
+  receivedAt?: string | null;
+  supplierPoNumber?: string | null;
+  trackingNumber?: string | null;
 }
 
 // Product Catalog Types
