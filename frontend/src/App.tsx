@@ -20,6 +20,7 @@ const SuperAdminDashboard = lazy(() => import('@/pages/super-admin').then(m => (
 const CompaniesPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.CompaniesPage })));
 const SystemUsersPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.SystemUsersPage })));
 const SystemHealthPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.SystemHealthPage })));
+const SuperAdminAuditPage = lazy(() => import('@/pages/super-admin').then(m => ({ default: m.SuperAdminAuditPage })));
 const OrdersPage = lazy(() => import('@/pages/orders').then(m => ({ default: m.OrdersPage })));
 const ShipmentsPage = lazy(() => import('@/pages/shipments').then(m => ({ default: m.ShipmentsPage })));
 const InventoryPage = lazy(() => import('@/pages/inventory').then(m => ({ default: m.InventoryPage })));
@@ -131,6 +132,7 @@ function RouteTitleManager() {
       '/super-admin/companies': 'Companies | TwinChain',
       '/super-admin/users': 'System Users | TwinChain',
       '/super-admin/health': 'System Health | TwinChain',
+      '/super-admin/audit': 'Audit Center | TwinChain',
     };
 
     document.title = titles[pathname] || 'TwinChain';
@@ -311,6 +313,16 @@ function App() {
                         <PageLoader>
                           <PermissionRoute permission="companies.manage">
                             <SystemHealthPage />
+                          </PermissionRoute>
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="super-admin/audit"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="companies.manage">
+                            <SuperAdminAuditPage />
                           </PermissionRoute>
                         </PageLoader>
                       }

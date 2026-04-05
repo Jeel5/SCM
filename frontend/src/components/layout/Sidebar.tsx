@@ -18,6 +18,7 @@ import {
   Users,
   Activity,
   Handshake,
+  History,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore, useAuthStore } from '@/stores';
@@ -65,6 +66,13 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     label: 'System Health',
     icon: <Activity className="h-5 w-5" />,
     path: '/super-admin/health',
+    permission: 'companies.manage',
+  },
+  {
+    id: 'audit-center',
+    label: 'Audit Center',
+    icon: <History className="h-5 w-5" />,
+    path: '/super-admin/audit',
     permission: 'companies.manage',
   },
   // Org-level items

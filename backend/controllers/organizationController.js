@@ -642,6 +642,30 @@ export const getOrganizationAuditLogs = asyncHandler(async (req, res) => {
   res.json({ success: true, data: logs });
 });
 
+// Global audit timeline across all organizations (superadmin)
+export const getGlobalAuditLogs = asyncHandler(async (req, res) => {
+  assertSuperadmin(req);
+  const { page = 1, limit = 100, action = '', search = '' } = req.validatedQuery ?? req.query;
+
+  const result = await OrganizationRepository.getGlobalAuditLogs({
+    page: Number(page),
+    limit: Number(limit),
+    action: String(action || ''),
+    search: String(search || ''),
+  });
+
+  res.json({
+    success: true,
+    data: result.logs,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total: result.totalCount,
+      pages: Math.ceil(result.totalCount / Number(limit)),
+    },
+  });
+});
+
 // Billing summary per organization (superadmin)
 export const getOrganizationBillingSummary = asyncHandler(async (req, res) => {
   assertSuperadmin(req);

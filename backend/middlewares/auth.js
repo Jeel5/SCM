@@ -91,7 +91,10 @@ export function authorize(...roles) {
  *  - Valid token → authenticate() sets req.user and calls next().
  */
 export function optionalAuth(req, res, next) {
-  if (req.headers.authorization) {
+  const hasBearer = Boolean(req.headers.authorization);
+  const hasCookieToken = Boolean(req.cookies?.accessToken);
+
+  if (hasBearer || hasCookieToken) {
     // Full validation including revoke-list check; returns 401 on bad tokens.
     return authenticate(req, res, next);
   }

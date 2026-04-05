@@ -10,6 +10,7 @@ class ExceptionService {
    */
   async createException(exceptionData) {
     const {
+      organizationId,
       shipmentId,
       orderId,
       exceptionType,
@@ -25,6 +26,7 @@ class ExceptionService {
     const estimatedResolution = this.calculateEstimatedResolution(severity, exceptionType);
 
     const exception = await exceptionRepo.create({
+      organizationId,
       shipmentId,
       orderId,
       exceptionType,
@@ -254,6 +256,7 @@ class ExceptionService {
         else if (delayHours > 24) severity = 'medium';
 
         return this.createException({
+          organizationId: shipment.organization_id || null,
           shipmentId: shipment.id,
           orderId: shipment.order_id,
           exceptionType: 'delay',

@@ -303,7 +303,7 @@ class SlaRepository extends BaseRepository {
     let p = 1;
     const where = ['1=1'];
 
-    if (organizationId) { params.push(organizationId); where.push(`(e.organization_id = $${p} OR e.organization_id IS NULL)`); p += 1; }
+    if (organizationId) { params.push(organizationId); where.push(`e.organization_id = $${p}`); p += 1; }
     if (severity)       { params.push(severity);       where.push(`e.severity = $${p}`); p += 1; }
     if (status)         { params.push(status);         where.push(`e.status = $${p}`); p += 1; }
 
@@ -342,7 +342,7 @@ class SlaRepository extends BaseRepository {
 
     if (organizationId) {
       params.push(organizationId);
-      where.push(`(e.organization_id = $${p} OR e.organization_id IS NULL)`);
+      where.push(`e.organization_id = $${p}`);
       p += 1;
     }
 
@@ -467,7 +467,7 @@ class SlaRepository extends BaseRepository {
          FROM exceptions e
          LEFT JOIN shipments s ON e.shipment_id = s.id
          LEFT JOIN orders o ON e.order_id = o.id
-         WHERE e.id = $1 AND (e.organization_id = $2 OR e.organization_id IS NULL)`
+        WHERE e.id = $1 AND e.organization_id = $2`
       : `SELECT e.*, s.tracking_number, o.order_number
          FROM exceptions e
          LEFT JOIN shipments s ON e.shipment_id = s.id

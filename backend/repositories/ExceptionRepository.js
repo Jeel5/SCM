@@ -9,16 +9,16 @@ class ExceptionRepository extends BaseRepository {
    * Insert a new exception record.
    */
   async create(
-    { shipmentId, orderId, exceptionType, description, severity, priority, assignedTo, estimatedResolutionTime },
+    { organizationId = null, shipmentId, orderId, exceptionType, description, severity, priority, assignedTo, estimatedResolutionTime },
     client = null
   ) {
     const res = await this.query(
       `INSERT INTO exceptions
-        (shipment_id, order_id, exception_type, description, severity,
+        (organization_id, shipment_id, order_id, exception_type, description, severity,
          status, priority, assigned_to, estimated_resolution_time)
-       VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, 'open', $7, $8, $9)
        RETURNING *`,
-      [shipmentId, orderId, exceptionType, description, severity, priority, assignedTo, estimatedResolutionTime],
+      [organizationId, shipmentId, orderId, exceptionType, description, severity, priority, assignedTo, estimatedResolutionTime],
       client
     );
     return res.rows[0];

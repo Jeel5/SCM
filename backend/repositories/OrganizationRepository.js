@@ -443,6 +443,69 @@ class OrganizationRepository extends BaseRepository {
   }
 
   /**
+   * Fetch paginated global audit logs across organizations (superadmin).
+   */
+  async getGlobalAuditLogs({ page = 1, limit = 100, action = '', search = '' } = {}, client = null) {
+    const offset = (page - 1) * limit;
+    const params = [];
+    let idx = 1;
+
+    let where = 'WHERE 1=1';
+    if (action) {
+      where += ` AND l.action = $${idx}`;
+      params.push(action);
+      idx += 1;
+    }
+
+    if (search) {
+      where += ` AND (
+        o.name ILIKE $${idx}
+        OR o.code ILIKE $${idx}
+        OR u.name ILIKE $${idx}
+        OR u.email ILIKE $${idx}
+        OR l.action ILIKE $${idx}
+      )`;
+      params.push(`%${search}%`);
+      idx += 1;
+    }
+
+    params.push(limit, offset);
+
+    const result = await this.query(
+      `SELECT
+         l.id,
+         l.organization_id,
+         o.name AS organization_name,
+         o.code AS organization_code,
+         l.action,
+         l.performed_by,
+         l.performed_by_role,
+         l.ip_address,
+         l.user_agent,
+         l.before_state,
+         l.after_state,
+         l.metadata,
+         l.created_at,
+         u.name AS performed_by_name,
+         u.email AS performed_by_email,
+         COUNT(*) OVER() AS total_count
+       FROM organization_audit_logs l
+       LEFT JOIN organizations o ON o.id = l.organization_id
+       LEFT JOIN users u ON u.id = l.performed_by
+       ${where}
+       ORDER BY l.created_at DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      params,
+      client
+    );
+
+    return {
+      logs: result.rows,
+      totalCount: this.parseTotalCount(result.rows),
+    };
+  }
+
+  /**
    * Summarize billing metrics for the selected date range.
    */
   async getOrganizationBillingSummary(orgId, rangeDays = 90, client = null) {

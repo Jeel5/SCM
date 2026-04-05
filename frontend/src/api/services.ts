@@ -1254,6 +1254,24 @@ export const superAdminApi = {
     return get(`/organizations/${id}/audit`, { limit });
   },
 
+  async getGlobalAudit(params?: { page?: number; limit?: number; action?: string; search?: string }): Promise<ApiResponse<Array<{
+    id: string;
+    organization_id: string;
+    organization_name?: string | null;
+    organization_code?: string | null;
+    action: string;
+    performed_by?: string | null;
+    performed_by_role?: string | null;
+    performed_by_name?: string | null;
+    performed_by_email?: string | null;
+    ip_address?: string | null;
+    user_agent?: string | null;
+    metadata?: Record<string, unknown> | null;
+    created_at: string;
+  }>>> {
+    return get('/organizations/audit/global', params);
+  },
+
   async getOrganizationBilling(id: string, range_days = 90): Promise<ApiResponse<{
     rangeDays: number;
     invoiceCount: number;

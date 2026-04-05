@@ -9,6 +9,7 @@ import {
   listOrganizationsQuerySchema,
   listGlobalUsersQuerySchema,
   orgAuditQuerySchema,
+  globalAuditQuerySchema,
   orgBillingQuerySchema,
   impersonationStartSchema,
   createIncidentBannerSchema,
@@ -25,6 +26,7 @@ import {
   getOrganizationUsers,
   getGlobalStats,
   getGlobalUsers,
+  getGlobalAuditLogs,
   getOrganizationAuditLogs,
   getOrganizationBillingSummary,
   startImpersonation,
@@ -45,6 +47,9 @@ router.get('/stats/global', authenticate, authorize('superadmin'), getGlobalStat
 
 // Global users list for superadmin
 router.get('/users/global', authenticate, authorize('superadmin'), validateQuery(listGlobalUsersQuerySchema), getGlobalUsers);
+
+// Global audit timeline for superadmin
+router.get('/audit/global', authenticate, authorize('superadmin'), validateQuery(globalAuditQuerySchema), getGlobalAuditLogs);
 
 // Impersonation controls
 router.post('/impersonation/start', authenticate, authorize('superadmin'), validateRequest(impersonationStartSchema), startImpersonation);

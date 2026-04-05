@@ -83,6 +83,13 @@ export const orgAuditQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(500).default(100),
 });
 
+export const globalAuditQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(200).default(50),
+  action: Joi.string().max(100).optional().allow(''),
+  search: Joi.string().max(120).optional().allow(''),
+});
+
 export const orgBillingQuerySchema = Joi.object({
   range_days: Joi.number().integer().min(7).max(365).default(90),
 });

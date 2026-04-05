@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, RefreshCw, ShieldAlert, Siren, Plus } from 'lucide-react';
+import { Activity, CheckCircle, PauseCircle, RefreshCw, Siren, Plus, Trash2, UserCheck } from 'lucide-react';
 import { Card, Badge, Button, Skeleton, Modal, Input, Select } from '@/components/ui';
 import { superAdminApi } from '@/api/services';
-import { formatCurrency, formatDate, formatNumber } from '@/lib/utils';
+import { formatDate, formatNumber } from '@/lib/utils';
 import { toast } from '@/stores/toastStore';
+import { Link } from 'react-router-dom';
 
 interface GlobalStats {
   tenants: { total: number; active: number; suspended: number; deleted: number };
@@ -86,6 +87,24 @@ export function SystemHealthPage() {
     if (stats.alerts.active > 5) return 'At Risk';
     if (stats.alerts.active > 0) return 'Warning';
     return 'Healthy';
+  }, [stats]);
+
+  const lifecycle = useMemo(() => {
+    if (!stats) return null;
+    const liveTenants = Math.max(stats.tenants.total, 0);
+    const suspended = Math.max(stats.tenants.suspended, 0);
+    const inactive = Math.max(liveTenants - stats.tenants.active - suspended, 0);
+    const actionRequired = inactive + suspended;
+
+    return {
+      liveTenants,
+      active: stats.tenants.active,
+      inactive,
+      suspended,
+      deleted: stats.tenants.deleted,
+      actionRequired,
+      suspensionRate: liveTenants > 0 ? ((suspended / liveTenants) * 100).toFixed(1) : '0.0',
+    };
   }, [stats]);
 
   const handleCreateIncidentBanner = async () => {
@@ -173,13 +192,33 @@ export function SystemHealthPage() {
     });
   };
 
+  const handleRefreshAll = async () => {
+    await Promise.all([loadStats(), loadIncidents()]);
+  };
+
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">System Health</h1>
-        <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
-          Tenant risk, platform throughput, and incident pressure.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">System Health</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
+            Platform reliability and tenant lifecycle health.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} isLoading={isLoading || isIncidentsLoading} onClick={() => void handleRefreshAll()}>
+            Refresh
+          </Button>
+          <Link to="/super-admin/dashboard">
+            <Button variant="outline">Dashboard</Button>
+          </Link>
+          <Link to="/super-admin/companies">
+            <Button variant="outline">Companies</Button>
+          </Link>
+          <Link to="/super-admin/users">
+            <Button variant="primary">System Users</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -199,21 +238,27 @@ export function SystemHealthPage() {
             </Card>
 
             <Card className="p-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Tenant State</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Active Tenants</p>
               <p className="text-2xl font-bold mt-2 text-gray-900 dark:text-white">{formatNumber(stats.tenants.active)}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">active of {formatNumber(stats.tenants.total)}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">of {formatNumber(stats.tenants.total)} total</p>
             </Card>
 
             <Card className="p-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Ops Throughput (30d)</p>
-              <p className="text-2xl font-bold mt-2 text-gray-900 dark:text-white">{formatNumber(stats.orders.last30d)}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">orders, {formatNumber(stats.shipments.last30d)} shipments</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Suspended Tenants</p>
+              <div className="mt-2 flex items-center gap-2">
+                <PauseCircle className="h-4 w-4 text-orange-600" />
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatNumber(stats.tenants.suspended)}</p>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{lifecycle?.suspensionRate || '0.0'}% of tenant base</p>
             </Card>
 
             <Card className="p-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Revenue (30d)</p>
-              <p className="text-2xl font-bold mt-2 text-gray-900 dark:text-white">{formatCurrency(stats.revenue.last30d)}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{formatNumber(stats.users.totalActive)} active users</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Active Users</p>
+              <div className="mt-2 flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-purple-600" />
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatNumber(stats.users.totalActive)}</p>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">users currently enabled</p>
             </Card>
           </>
         )}
@@ -323,8 +368,8 @@ export function SystemHealthPage() {
       <Card>
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-rose-600" />
-            <h2 className="font-semibold text-gray-900 dark:text-white">Tenant Risk Watchlist</h2>
+            <CheckCircle className="h-4 w-4 text-emerald-600" />
+            <h2 className="font-semibold text-gray-900 dark:text-white">Tenant Lifecycle Summary</h2>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -336,33 +381,47 @@ export function SystemHealthPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">Tenant</th>
-                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">SLA Violations</th>
-                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">Open Exceptions</th>
-                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">Users</th>
-                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">Last Login</th>
+                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">Metric</th>
+                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">Value</th>
+                  <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-gray-500">Operational Meaning</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {(stats?.atRiskTenants || []).map((t) => (
-                  <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-gray-900 dark:text-white">{t.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{t.code}</p>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{formatNumber(t.slaViolations30d)}</td>
-                    <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{formatNumber(t.openExceptions)}</td>
-                    <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{formatNumber(t.activeUsers)}</td>
-                    <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
-                      {t.lastUserLogin ? formatDate(new Date(t.lastUserLogin), 'MMM dd, yyyy HH:mm') : 'No recent login'}
-                    </td>
-                  </tr>
-                ))}
-                {(stats?.atRiskTenants?.length || 0) === 0 && (
+                {lifecycle && (
+                  <>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                      <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-white">Total Tenants</td>
+                      <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{formatNumber(lifecycle.liveTenants)}</td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">All organizations currently tracked</td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                      <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-white">Inactive Tenants</td>
+                      <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{formatNumber(lifecycle.inactive)}</td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">Candidates for reactivation follow-up</td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                      <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-white">Suspended Tenants</td>
+                      <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{formatNumber(lifecycle.suspended)}</td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">{lifecycle.suspensionRate}% suspension rate</td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                      <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-white">Deleted Tenants</td>
+                      <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">
+                        <span className="inline-flex items-center gap-1"><Trash2 className="h-3.5 w-3.5 text-rose-600" />{formatNumber(lifecycle.deleted)}</span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">Soft-deleted organizations</td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                      <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-white">Action Required</td>
+                      <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{formatNumber(lifecycle.actionRequired)}</td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">Inactive + suspended tenants pending admin action</td>
+                    </tr>
+                  </>
+                )}
+                {!lifecycle && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                      <AlertTriangle className="h-4 w-4 inline mr-2" />
-                      No high-risk tenants detected.
+                    <td colSpan={3} className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                      No tenant lifecycle data available.
                     </td>
                   </tr>
                 )}

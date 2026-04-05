@@ -20,6 +20,12 @@ export const listShipments = asyncHandler(async (req, res) => {
   const { status, carrier_id, search, page, limit } = queryParams;
   const organizationId = req.orgContext?.organizationId;
 
+  // Prevent cross-tenant leakage for anonymous requests.
+  // Anonymous access is only intended for carrier-specific views.
+  if (!organizationId && !req.orgContext?.isSuperadmin && !carrier_id) {
+    throw new ValidationError('carrier_id is required for unauthenticated shipment listing');
+  }
+
   const pageNum  = parseInt(page, 10)  || 1;
   const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
 
