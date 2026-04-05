@@ -82,7 +82,6 @@ export const ROLE_PERMISSIONS = {
     'shipments.view',
     'inventory.view', 'inventory.update',
     'warehouses.view',
-    'suppliers.view',
     'returns.view', 'returns.create', 'returns.update',
     'exceptions.view', 'exceptions.update',
     'settings.personal',
@@ -103,8 +102,7 @@ export const ROLE_PERMISSIONS = {
     'analytics.view',
     'orders.view',
     'returns.view',
-    'channels.view',
-    'suppliers.view',
+    'exceptions.view',
     'settings.personal',
   ],
 

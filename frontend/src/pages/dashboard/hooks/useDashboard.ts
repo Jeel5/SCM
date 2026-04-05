@@ -32,6 +32,7 @@ export function useDashboard() {
   const isSoftRefresh = useRef(false);
 
   const currentUser = useAuthStore((s) => s.user);
+  const canViewCarriers = checkPermission(currentUser?.role, 'carriers.view');
   const canViewWarehouses = checkPermission(currentUser?.role, 'warehouses.view');
 
   const fetchData = useCallback(async () => {
@@ -48,7 +49,7 @@ export function useDashboard() {
 
         const [shipmentsRes, carrierRes, warehouseRes] = await Promise.all([
           shipmentsApi.getShipments(1, 10),
-          dashboardApi.getCarrierPerformance(),
+          canViewCarriers ? dashboardApi.getCarrierPerformance() : Promise.resolve({ data: [] }),
           canViewWarehouses ? dashboardApi.getWarehouseUtilization() : Promise.resolve({ data: [] }),
         ]);
         
@@ -65,8 +66,8 @@ export function useDashboard() {
           mockApi.getDashboardMetrics(),
           mockApi.getOrdersChart(30),
           mockApi.getShipments(1, 10),
-          mockApi.getCarrierPerformance(),
-          mockApi.getWarehouseUtilization(),
+          canViewCarriers ? mockApi.getCarrierPerformance() : Promise.resolve({ data: [] }),
+          canViewWarehouses ? mockApi.getWarehouseUtilization() : Promise.resolve({ data: [] }),
         ]);
         
         setMetrics(metricsRes.data);
@@ -89,7 +90,7 @@ export function useDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [useRealApi, period, canViewWarehouses]);
+  }, [useRealApi, period, canViewCarriers, canViewWarehouses]);
 
   const refetch = useCallback((soft = false) => {
     if (soft) isSoftRefresh.current = true;

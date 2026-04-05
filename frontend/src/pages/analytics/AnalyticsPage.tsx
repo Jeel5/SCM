@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Package, Truck, DollarSign, Clock, Download, BarChart3,
@@ -12,6 +12,7 @@ import type { TooltipProps } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent, Button, Select, Tabs } from '@/components/ui';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
 import { downloadApiFile, notifyError } from '@/lib/apiErrors';
+import { useAuthStore } from '@/stores';
 import { KPICard } from './components/KPICard';
 import { useAnalytics } from './hooks/useAnalytics';
 
@@ -54,6 +55,7 @@ export function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [timeRange, setTimeRange] = useState('30d');
   const [isExporting, setIsExporting] = useState(false);
+  const user = useAuthStore((s) => s.user);
   const {
     orderTrendData, carrierData, warehouseData, deliveryPerformance,
     topProducts, slaViolations, exceptionsByType, returnsAnalysis,
@@ -83,7 +85,8 @@ export function AnalyticsPage() {
     }
   };
 
-  const tabs = [
+  // Build role-based tab list — finance only sees overview, financial, sla
+  const allTabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'orders', label: 'Orders' },
     { id: 'shipments', label: 'Shipments' },
@@ -93,6 +96,24 @@ export function AnalyticsPage() {
     { id: 'financial', label: 'Financial' },
     { id: 'sla', label: 'SLA & Exceptions' },
   ];
+
+  const tabs = allTabs.filter(tab => {
+    const role = user?.role;
+    if (role === 'superadmin' || role === 'admin') return true; // admins see all
+    if (tab.id === 'overview') return true; // everyone sees overview
+    if (role === 'finance') return ['financial', 'sla', 'orders', 'overview'].includes(tab.id);
+    if (role === 'warehouse_manager') return ['warehouses', 'products', 'overview', 'shipments'].includes(tab.id);
+    if (role === 'carrier_partner') return ['shipments', 'overview'].includes(tab.id);
+    if (role === 'customer_support') return ['orders', 'shipments', 'overview'].includes(tab.id);
+    if (role === 'operations_manager') return true; // ops sees all
+    return false;
+  });
+
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(tabs[0]?.id ?? 'overview');
+    }
+  }, [activeTab, tabs]);
 
   // ── Derived values ────────────────────────────────────────
   const totalShipments = carrierData.reduce((s, c) => s + c.totalShipments, 0);
