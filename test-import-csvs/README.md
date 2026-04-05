@@ -43,6 +43,16 @@ If import still fails, ensure:
 
 ---
 
+## Product + Supplier matching behavior
+
+- During product import (`06_products.csv`), `brand` is now treated as supplier name.
+- If that supplier does not exist yet, it is auto-created and linked to `products.supplier_id`.
+- When supplier import (`03_suppliers.csv`) runs later, rows are matched by supplier `name` (case-insensitive) and existing supplier records are enriched with contact/address/API fields instead of creating duplicates.
+
+For best results, keep supplier `name` values aligned with brand names used in `06_products.csv`.
+
+---
+
 ## Notes
 
 - All data uses Indian context: cities, states, postal codes, +91 phone numbers, INR currency.

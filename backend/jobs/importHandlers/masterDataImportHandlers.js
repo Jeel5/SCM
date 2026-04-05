@@ -21,6 +21,76 @@ function runMasterImport(payload, importType, processRow) {
   });
 }
 
+function normalizeSupplierName(value) {
+  return String(value || '').trim();
+}
+
+function normalizeSupplierKey(value) {
+  return normalizeSupplierName(value).toLowerCase();
+}
+
+function buildSupplierCodeBase(name) {
+  const raw = normalizeSupplierName(name)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return (raw || 'SUPPLIER').slice(0, 44);
+}
+
+async function generateUniqueSupplierCode(organizationId, supplierName) {
+  const base = buildSupplierCodeBase(supplierName);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const suffix = attempt === 0 ? '' : `-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const candidate = `${base.slice(0, 44 - suffix.length)}${suffix}`;
+
+    const checkRes = await pool.query(
+      `SELECT 1 FROM suppliers WHERE organization_id = $1 AND code = $2 LIMIT 1`,
+      [organizationId, candidate]
+    );
+    if (!checkRes.rows.length) return candidate;
+  }
+
+  return `${base.slice(0, 38)}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+}
+
+async function resolveSupplierByNameOrCreate({ organizationId, supplierName, ctx, cache }) {
+  const normalizedName = normalizeSupplierName(supplierName);
+  if (!normalizedName) return null;
+
+  const key = normalizeSupplierKey(normalizedName);
+  if (cache?.has(key)) return cache.get(key);
+
+  const existingByNameRes = await pool.query(
+    `SELECT id
+     FROM suppliers
+     WHERE organization_id = $1 AND lower(name) = lower($2)
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [organizationId, normalizedName]
+  );
+
+  if (existingByNameRes.rows[0]?.id) {
+    const existingId = existingByNameRes.rows[0].id;
+    cache?.set(key, existingId);
+    return existingId;
+  }
+
+  if (ctx?.dryRun) return null;
+
+  const newCode = await generateUniqueSupplierCode(organizationId, normalizedName);
+  const createdRes = await pool.query(
+    `INSERT INTO suppliers (organization_id, name, code, contact_name, is_active)
+     VALUES ($1, $2, $3, $4, true)
+     RETURNING id`,
+    [organizationId, normalizedName, newCode, normalizedName]
+  );
+
+  const createdId = createdRes.rows[0]?.id || null;
+  if (createdId) cache?.set(key, createdId);
+  return createdId;
+}
+
 /**
  * Import warehouses from CSV rows into tenant-scoped warehouse records.
  */
@@ -111,23 +181,97 @@ export async function handleImportCarriers(payload) {
 export async function handleImportSuppliers(payload) {
   const { organizationId } = payload;
   return runMasterImport(payload, 'suppliers', async (row, ctx) => {
-      if (!row.name) throw new Error('name is required');
+      const supplierName = normalizeSupplierName(row.name);
+      if (!supplierName) throw new Error('name is required');
       if (ctx.dryRun) return;
+
+      const existingByNameRes = await pool.query(
+        `SELECT id, code
+         FROM suppliers
+         WHERE organization_id = $1 AND lower(name) = lower($2)
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [organizationId, supplierName]
+      );
+
+      if (existingByNameRes.rows[0]?.id) {
+        await pool.query(
+          `UPDATE suppliers
+           SET
+             name = $1,
+             contact_name = COALESCE($2, contact_name),
+             contact_email = COALESCE($3, contact_email),
+             contact_phone = COALESCE($4, contact_phone),
+             api_endpoint = COALESCE($5, api_endpoint),
+             address = COALESCE($6, address),
+             city = COALESCE($7, city),
+             state = COALESCE($8, state),
+             country = COALESCE($9, country),
+             postal_code = COALESCE($10, postal_code),
+             inbound_contact_name = COALESCE($11, inbound_contact_name),
+             inbound_contact_email = COALESCE($12, inbound_contact_email),
+             is_active = COALESCE($13, is_active),
+             updated_at = NOW()
+           WHERE id = $14`,
+          [
+            supplierName,
+            row.contact_name || null,
+            row.contact_email || null,
+            row.contact_phone || null,
+            row.api_endpoint || null,
+            row.address || null,
+            row.city || null,
+            row.state || null,
+            row.country || null,
+            row.postal_code || null,
+            row.inbound_contact_name || null,
+            row.inbound_contact_email || null,
+            row.is_active !== undefined ? String(row.is_active).toLowerCase() !== 'false' : null,
+            existingByNameRes.rows[0].id,
+          ]
+        );
+        return;
+      }
+
+      const supplierCode = String(row.code || '').trim() || await generateUniqueSupplierCode(organizationId, supplierName);
       await pool.query(
         `INSERT INTO suppliers
-           (organization_id, name, contact_name, contact_email, contact_phone,
-            website, address, city, state, country, postal_code,
-            lead_time_days, reliability_score, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-         ON CONFLICT (organization_id, name) DO UPDATE SET
-           contact_email = EXCLUDED.contact_email, updated_at = NOW()`,
-        [organizationId, row.name, row.contact_name || null,
-          row.contact_email || null, row.contact_phone || null, row.website || null,
-          row.address || null, row.city || null, row.state || null,
-          row.country || 'India', row.postal_code || null,
-          row.lead_time_days ? parseInt(row.lead_time_days, 10) : 7,
-          row.reliability_score ? parseFloat(row.reliability_score) : 0.85,
-          String(row.is_active || 'true').toLowerCase() !== 'false']
+           (organization_id, name, code, contact_name, contact_email, contact_phone,
+            api_endpoint, address, city, state, country, postal_code,
+            inbound_contact_name, inbound_contact_email, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         ON CONFLICT (organization_id, code) DO UPDATE SET
+           name = EXCLUDED.name,
+           contact_name = COALESCE(EXCLUDED.contact_name, suppliers.contact_name),
+           contact_email = COALESCE(EXCLUDED.contact_email, suppliers.contact_email),
+           contact_phone = COALESCE(EXCLUDED.contact_phone, suppliers.contact_phone),
+           api_endpoint = COALESCE(EXCLUDED.api_endpoint, suppliers.api_endpoint),
+           address = COALESCE(EXCLUDED.address, suppliers.address),
+           city = COALESCE(EXCLUDED.city, suppliers.city),
+           state = COALESCE(EXCLUDED.state, suppliers.state),
+           country = COALESCE(EXCLUDED.country, suppliers.country),
+           postal_code = COALESCE(EXCLUDED.postal_code, suppliers.postal_code),
+           inbound_contact_name = COALESCE(EXCLUDED.inbound_contact_name, suppliers.inbound_contact_name),
+           inbound_contact_email = COALESCE(EXCLUDED.inbound_contact_email, suppliers.inbound_contact_email),
+           is_active = EXCLUDED.is_active,
+           updated_at = NOW()`,
+        [
+          organizationId,
+          supplierName,
+          supplierCode,
+          row.contact_name || null,
+          row.contact_email || null,
+          row.contact_phone || null,
+          row.api_endpoint || null,
+          row.address || null,
+          row.city || null,
+          row.state || null,
+          row.country || 'India',
+          row.postal_code || null,
+          row.inbound_contact_name || null,
+          row.inbound_contact_email || null,
+          String(row.is_active || 'true').toLowerCase() !== 'false',
+        ]
       );
   });
 }
@@ -187,21 +331,37 @@ export async function handleImportTeam(payload) {
  */
 export async function handleImportProducts(payload) {
   const { organizationId } = payload;
+  const supplierNameToId = new Map();
+
   return runMasterImport(payload, 'products', async (row, ctx) => {
       if (!row.name && !row.sku) throw new Error('name or sku is required');
       const { v4: uuidv4 } = await import('uuid');
       const sku = row.sku || `SKU-${uuidv4().substring(0, 8).toUpperCase()}`;
       let internalBarcode = String(row.internal_barcode || '').trim() || generateInternalBarcode();
+      const supplierIdFromBrand = await resolveSupplierByNameOrCreate({
+        organizationId,
+        supplierName: row.brand,
+        ctx,
+        cache: supplierNameToId,
+      });
 
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
           await pool.query(
             `INSERT INTO products
                (organization_id, name, sku, category, description, weight,
-                selling_price, cost_price, currency, is_active, brand, internal_barcode)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                selling_price, cost_price, currency, is_active, brand, internal_barcode, supplier_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
              ON CONFLICT (organization_id, sku) DO UPDATE SET
-               name = EXCLUDED.name, updated_at = NOW()`,
+               name = EXCLUDED.name,
+               category = COALESCE(EXCLUDED.category, products.category),
+               description = COALESCE(EXCLUDED.description, products.description),
+               weight = COALESCE(EXCLUDED.weight, products.weight),
+               selling_price = COALESCE(EXCLUDED.selling_price, products.selling_price),
+               cost_price = COALESCE(EXCLUDED.cost_price, products.cost_price),
+               brand = COALESCE(EXCLUDED.brand, products.brand),
+               supplier_id = COALESCE(EXCLUDED.supplier_id, products.supplier_id),
+               updated_at = NOW()`,
             [organizationId, row.name, sku, row.category || null,
               row.description || null,
               row.weight ? parseFloat(row.weight) : null,
@@ -210,7 +370,8 @@ export async function handleImportProducts(payload) {
               row.currency || 'INR',
               String(row.is_active || 'true').toLowerCase() !== 'false',
               row.brand || null,
-              internalBarcode]
+              internalBarcode,
+              supplierIdFromBrand]
           );
           return;
         } catch (error) {

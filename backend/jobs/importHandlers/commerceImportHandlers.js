@@ -79,7 +79,7 @@ export async function handleImportInventory(payload) {
   const whById = new Map(whRes.rows.map((w) => [w.id, w]));
 
   const prRes = await pool.query(
-    `SELECT id, sku, name, supplier_id, cost_price FROM products WHERE organization_id = $1`, [organizationId]
+    `SELECT id, sku, name, brand, supplier_id, cost_price FROM products WHERE organization_id = $1`, [organizationId]
   );
   const byPrId = new Map(prRes.rows.map((p) => [p.id, p]));
   const byPrSku = new Map(prRes.rows.map((p) => [p.sku?.toLowerCase(), p]));
@@ -91,6 +91,72 @@ export async function handleImportInventory(payload) {
   );
   let fallbackSupplierId = supplierRes.rows[0]?.id || null;
   let notifiedFallbackSupplierCreation = false;
+  const supplierByBrandKey = new Map();
+
+  const resolveSupplierFromBrand = async (brand, productId = null) => {
+    const normalizedBrand = String(brand || '').trim();
+    if (!normalizedBrand) return null;
+
+    const key = normalizedBrand.toLowerCase();
+    if (supplierByBrandKey.has(key)) return supplierByBrandKey.get(key);
+
+    const existingRes = await pool.query(
+      `SELECT id
+       FROM suppliers
+       WHERE organization_id = $1 AND lower(name) = lower($2)
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [organizationId, normalizedBrand]
+    );
+
+    let supplierId = existingRes.rows[0]?.id || null;
+    if (!supplierId) {
+      const codeBase = normalizedBrand
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 44) || 'SUPPLIER';
+
+      for (let attempt = 0; attempt < 8 && !supplierId; attempt += 1) {
+        const suffix = attempt === 0 ? '' : `-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+        const code = `${codeBase.slice(0, 44 - suffix.length)}${suffix}`;
+
+        const createdRes = await pool.query(
+          `INSERT INTO suppliers (organization_id, name, code, contact_name, is_active)
+           VALUES ($1, $2, $3, $4, true)
+           ON CONFLICT (organization_id, code) DO NOTHING
+           RETURNING id`,
+          [organizationId, normalizedBrand, code, normalizedBrand]
+        );
+
+        supplierId = createdRes.rows[0]?.id || null;
+      }
+
+      if (!supplierId) {
+        const retryExistingRes = await pool.query(
+          `SELECT id
+           FROM suppliers
+           WHERE organization_id = $1 AND lower(name) = lower($2)
+           ORDER BY created_at ASC
+           LIMIT 1`,
+          [organizationId, normalizedBrand]
+        );
+        supplierId = retryExistingRes.rows[0]?.id || null;
+      }
+    }
+
+    if (supplierId && productId) {
+      await pool.query(
+        `UPDATE products
+         SET supplier_id = COALESCE(supplier_id, $1), updated_at = NOW()
+         WHERE id = $2 AND organization_id = $3`,
+        [supplierId, productId, organizationId]
+      );
+    }
+
+    if (supplierId) supplierByBrandKey.set(key, supplierId);
+    return supplierId;
+  };
 
   const ensureFallbackSupplier = async () => {
     if (fallbackSupplierId) return fallbackSupplierId;
@@ -301,7 +367,9 @@ export async function handleImportInventory(payload) {
 
       const autoRestockOrder = await maybeCreateAutoRestockOrder({
         productId,
-        supplierId: productRecord?.supplier_id || null,
+        supplierId: productRecord?.supplier_id
+          || await resolveSupplierFromBrand(productRecord?.brand, productId)
+          || null,
         warehouseId,
         sku: row.sku,
         productName: row.product_name || row.sku,

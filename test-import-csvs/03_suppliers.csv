@@ -1,26 +1,26 @@
 name,contact_name,contact_email,contact_phone,api_endpoint,address,city,state,country,postal_code,inbound_contact_name,inbound_contact_email,is_active
-TechSource Electronics,Ramesh Gupta,ramesh@techsource.in,+919812345001,https://techsource.in,B-44 Electronics City Phase 1,Bangalore,Karnataka,India,560100,Ramesh Gupta,ramesh@techsource.in,true
-FabriXcel Textiles,Priya Mehta,priya@fabrixcel.com,+919812345002,https://fabrixcel.com,"Plot 12 Jeans Hub Complex, Khatraj Rd",Ahmedabad,Gujarat,India,382435,Priya Mehta,priya@fabrixcel.com,true
-Amrut Food Industries,Suresh Patel,suresh@amrutfoods.com,+919812345003,https://amrutfoods.com,"GIDC Food Park, Phase 3",Anand,Gujarat,India,388001,Suresh Patel,suresh@amrutfoods.com,true
-Woodcraft Furniture Co,Aarav Singh,aarav@woodcraft.in,+919812345004,https://woodcraft.in,"Furniture Park, Jodhpur Road",Jodhpur,Rajasthan,India,342001,Aarav Singh,aarav@woodcraft.in,true
-HealthPlus Pharma Pvt,Dr. Kavya Reddy,kavya@healthplus.in,+919812345005,https://healthplus.in,"Pharma City, Turkapally",Hyderabad,Telangana,India,500078,Dr. Kavya Reddy,kavya@healthplus.in,true
-IndusSteel Manufacturing,Vikram Joshi,vikram@indussteel.com,+919812345006,https://indussteel.com,"Industrial Area Phase 2, Peenya",Bangalore,Karnataka,India,560058,Vikram Joshi,vikram@indussteel.com,true
-OfficePro Supplies,Neha Sharma,neha@officepro.in,+919812345007,https://officepro.in,Laxmi Nagar Commercial Complex,Delhi,Delhi,India,110092,Neha Sharma,neha@officepro.in,true
-SportZone Gear Pvt,Arjun Kapoor,arjun@sportzone.in,+919812345008,https://sportzone.in,"Sector 7 Industrial Area, Noida",Noida,Uttar Pradesh,India,201301,Arjun Kapoor,arjun@sportzone.in,true
-ToyMagic Enterprises,Meera Iyer,meera@toymagic.in,+919812345009,https://toymagic.in,"Toy Park, MIDC Bhiwandi",Bhiwandi,Maharashtra,India,421302,Meera Iyer,meera@toymagic.in,true
-AutoParts World,Rajan Verma,rajan@autopartsworld.in,+919812345010,https://autopartsworld.in,"Auto Nagar, Vivekananda Road",Hyderabad,Telangana,India,500037,Rajan Verma,rajan@autopartsworld.in,true
-PageTurner Books Pvt,Anita Bose,anita@pageturner.in,+919812345011,https://pageturner.in,"Book Market Lane, Gol Market",Kolkata,West Bengal,India,700013,Anita Bose,anita@pageturner.in,true
-BrightSpark Electronics,Kiran Nair,kiran@brightspark.in,+919812345012,https://brightspark.in,"SEZ Phase 2, Kakkanad",Kochi,Kerala,India,682030,Kiran Nair,kiran@brightspark.in,true
-SilkWeave Exports,Fatima Khan,fatima@silkweave.com,+919812345013,https://silkweave.com,"Export Hub, Surat Textile Market",Surat,Gujarat,India,395002,Fatima Khan,fatima@silkweave.com,true
-Pure Harvest Organics,Mohan Rao,mohan@pureharvest.in,+919812345014,https://pureharvest.in,"Organic Farm District, Tumkur Road",Bangalore,Karnataka,India,572101,Mohan Rao,mohan@pureharvest.in,true
-MegaLift Industrial,Deepak Malhotra,deepak@megalift.in,+919812345015,https://megalift.in,"Heavy Industry Zone, Baddi",Baddi,Himachal Pradesh,India,173205,Deepak Malhotra,deepak@megalift.in,true
-HomeCraft Decor,Sonal Trivedi,sonal@homecraft.in,+919812345016,https://homecraft.in,"Design District, FC Road",Pune,Maharashtra,India,411004,Sonal Trivedi,sonal@homecraft.in,true
-SwiftPack Packaging,Harsh Pandey,harsh@swiftpack.in,+919812345017,https://swiftpack.in,"Packaging Zone, Industrial Estate Sitapura",Jaipur,Rajasthan,India,302022,Harsh Pandey,harsh@swiftpack.in,true
-BioMed Supplies,Dr. Nandita Rao,nandita@biomed.in,+919812345018,https://biomed.in,"Biotech Park, Turkapally",Hyderabad,Telangana,India,500078,Dr. Nandita Rao,nandita@biomed.in,true
-EcoGreen Plastics,Tarun Singh,tarun@ecogreen.in,+919812345019,https://ecogreen.in,"Green Industrial Hub, Vapi",Vapi,Gujarat,India,396195,Tarun Singh,tarun@ecogreen.in,true
-CoolTech Refrigeration,Ganesh Kumar,ganesh@cooltech.in,+919812345020,https://cooltech.in,"Cold Chain Park, Hosur Road",Bangalore,Karnataka,India,560099,Ganesh Kumar,ganesh@cooltech.in,true
-PrintMaster Solutions,Alok Bajaj,alok@printmaster.in,+919812345021,https://printmaster.in,"Print Colony, Okhla Phase 1",Delhi,Delhi,India,110020,Alok Bajaj,alok@printmaster.in,true
-ChemSafe Industries,Pooja Desai,pooja@chemsafe.in,+919812345022,https://chemsafe.in,"Chemical Zone, MIDC Tarapur",Boisar,Maharashtra,India,401501,Pooja Desai,pooja@chemsafe.in,true
-GoldenHarvest Grains,Baldev Singh,baldev@goldenharvest.in,+919812345023,https://goldenharvest.in,"Grain Mandi, Khanna",Khanna,Punjab,India,141401,Baldev Singh,baldev@goldenharvest.in,true
-TerraFirm Construction,Rajiv Negi,rajiv@terrafirm.in,+919812345024,https://terrafirm.in,"Construction Materials Hub, IMT Manesar",Gurugram,Haryana,India,122051,Rajiv Negi,rajiv@terrafirm.in,true
-FineTune Audio,Siddharth Rao,siddharth@finetune.in,+919812345025,https://finetune.in,"Electronics Park, T T Nagar",Bhopal,Madhya Pradesh,India,462003,Siddharth Rao,siddharth@finetune.in,true
+Samsung,Ramesh Gupta,ramesh@samsung.in,+919812345001,https://samsung.in,B-44 Electronics City Phase 1,Bangalore,Karnataka,India,560100,Ramesh Gupta,ramesh@samsung.in,true
+LG,Priya Mehta,priya@lg.in,+919812345002,https://lg.in,"Plot 12 Jeans Hub Complex, Khatraj Rd",Ahmedabad,Gujarat,India,382435,Priya Mehta,priya@lg.in,true
+Sony,Suresh Patel,suresh@sony.in,+919812345003,https://sony.in,"GIDC Food Park, Phase 3",Anand,Gujarat,India,388001,Suresh Patel,suresh@sony.in,true
+Apple,Aarav Singh,aarav@apple.in,+919812345004,https://apple.in,"Furniture Park, Jodhpur Road",Jodhpur,Rajasthan,India,342001,Aarav Singh,aarav@apple.in,true
+Bosch,Dr. Kavya Reddy,kavya@bosch.in,+919812345005,https://bosch.in,"Pharma City, Turkapally",Hyderabad,Telangana,India,500078,Dr. Kavya Reddy,kavya@bosch.in,true
+HP,Vikram Joshi,vikram@hp.in,+919812345006,https://hp.in,"Industrial Area Phase 2, Peenya",Bangalore,Karnataka,India,560058,Vikram Joshi,vikram@hp.in,true
+Whirlpool,Neha Sharma,neha@whirlpool.in,+919812345007,https://whirlpool.in,Laxmi Nagar Commercial Complex,Delhi,Delhi,India,110092,Neha Sharma,neha@whirlpool.in,true
+Philips,Arjun Kapoor,arjun@philips.in,+919812345008,https://philips.in,"Sector 7 Industrial Area, Noida",Noida,Uttar Pradesh,India,201301,Arjun Kapoor,arjun@philips.in,true
+Dell,Meera Iyer,meera@dell.in,+919812345009,https://dell.in,"Toy Park, MIDC Bhiwandi",Bhiwandi,Maharashtra,India,421302,Meera Iyer,meera@dell.in,true
+JBL,Rajan Verma,rajan@jbl.in,+919812345010,https://jbl.in,"Auto Nagar, Vivekananda Road",Hyderabad,Telangana,India,500037,Rajan Verma,rajan@jbl.in,true
+Panasonic,Anita Bose,anita@panasonic.in,+919812345011,https://panasonic.in,"Book Market Lane, Gol Market",Kolkata,West Bengal,India,700013,Anita Bose,anita@panasonic.in,true
+Canon,Kiran Nair,kiran@canon.in,+919812345012,https://canon.in,"SEZ Phase 2, Kakkanad",Kochi,Kerala,India,682030,Kiran Nair,kiran@canon.in,true
+Xiaomi,Fatima Khan,fatima@xiaomi.in,+919812345013,https://xiaomi.in,"Export Hub, Surat Textile Market",Surat,Gujarat,India,395002,Fatima Khan,fatima@xiaomi.in,true
+Haier,Mohan Rao,mohan@haier.in,+919812345014,https://haier.in,"Organic Farm District, Tumkur Road",Bangalore,Karnataka,India,572101,Mohan Rao,mohan@haier.in,true
+Toshiba,Deepak Malhotra,deepak@toshiba.in,+919812345015,https://toshiba.in,"Heavy Industry Zone, Baddi",Baddi,Himachal Pradesh,India,173205,Deepak Malhotra,deepak@toshiba.in,true
+Google,Sonal Trivedi,sonal@google.in,+919812345016,https://google.in,"Design District, FC Road",Pune,Maharashtra,India,411004,Sonal Trivedi,sonal@google.in,true
+Realme,Harsh Pandey,harsh@realme.in,+919812345017,https://realme.in,"Packaging Zone, Industrial Estate Sitapura",Jaipur,Rajasthan,India,302022,Harsh Pandey,harsh@realme.in,true
+iRobot,Dr. Nandita Rao,nandita@irobot.in,+919812345018,https://irobot.in,"Biotech Park, Turkapally",Hyderabad,Telangana,India,500078,Dr. Nandita Rao,nandita@irobot.in,true
+Levis,Tarun Singh,tarun@levis.in,+919812345019,https://levis.in,"Green Industrial Hub, Vapi",Vapi,Gujarat,India,396195,Tarun Singh,tarun@levis.in,true
+H&M,Ganesh Kumar,ganesh@hm.in,+919812345020,https://hm.in,"Cold Chain Park, Hosur Road",Bangalore,Karnataka,India,560099,Ganesh Kumar,ganesh@hm.in,true
+Van Heusen,Alok Bajaj,alok@vanheusen.in,+919812345021,https://vanheusen.in,"Print Colony, Okhla Phase 1",Delhi,Delhi,India,110020,Alok Bajaj,alok@vanheusen.in,true
+Adidas,Pooja Desai,pooja@adidas.in,+919812345022,https://adidas.in,"Chemical Zone, MIDC Tarapur",Boisar,Maharashtra,India,401501,Pooja Desai,pooja@adidas.in,true
+FabIndia,Baldev Singh,baldev@fabindia.in,+919812345023,https://fabindia.in,"Grain Mandi, Khanna",Khanna,Punjab,India,141401,Baldev Singh,baldev@fabindia.in,true
+Puma,Rajiv Negi,rajiv@puma.in,+919812345024,https://puma.in,"Construction Materials Hub, IMT Manesar",Gurugram,Haryana,India,122051,Rajiv Negi,rajiv@puma.in,true
+Amul,Siddharth Rao,siddharth@amul.in,+919812345025,https://amul.in,"Electronics Park, T T Nagar",Bhopal,Madhya Pradesh,India,462003,Siddharth Rao,siddharth@amul.in,true
