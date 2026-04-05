@@ -14,6 +14,29 @@ let shipmentSearchText = '';
 // credentials immediately on click without waiting for a pending assignment.
 let carrierDetails = {};
 
+function getCarrierKey(carrier) {
+    const codeKey = String(carrier?.code || '').trim().toLowerCase();
+    if (codeKey) return `code:${codeKey}`;
+    const idKey = String(carrier?.id || '').trim().toLowerCase();
+    if (idKey) return `id:${idKey}`;
+    const nameKey = String(carrier?.name || '').trim().toLowerCase();
+    return `name:${nameKey}`;
+}
+
+function dedupeCarriers(carriers) {
+    const seen = new Set();
+    const unique = [];
+
+    carriers.forEach((carrier) => {
+        const key = getCarrierKey(carrier);
+        if (seen.has(key)) return;
+        seen.add(key);
+        unique.push(carrier);
+    });
+
+    return unique;
+}
+
 // ──────────── Load carriers from real API ────────────
 
 async function loadCarriers() {
@@ -27,7 +50,10 @@ async function loadCarriers() {
             return;
         }
 
-        const carriers = result.data;
+        carrierNames = {};
+        carrierDetails = {};
+
+        const carriers = dedupeCarriers(Array.isArray(result.data) ? result.data : []);
         div.innerHTML = '';
         carriers.forEach((c, i) => {
             carrierNames[c.code] = c.name;
