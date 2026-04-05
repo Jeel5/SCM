@@ -78,9 +78,10 @@ export function RestockOrdersModal({ isOpen, onClose, warehouses }: RestockOrder
   const saveTrackingStatus = async () => {
     if (!selectedOrder) return;
 
+    const previousStatus = selectedOrder.status;
     setIsSaving(true);
     try {
-      await inventoryApi.updateRestockOrder(selectedOrder.id, {
+      const response = await inventoryApi.updateRestockOrder(selectedOrder.id, {
         status: editStatus,
         tracking_number: editTrackingNumber || null,
         supplier_po_number: editSupplierPo || null,
@@ -97,7 +98,13 @@ export function RestockOrdersModal({ isOpen, onClose, warehouses }: RestockOrder
 
       setOrders((prev) => prev.map((order) => (order.id === selectedOrder.id ? nextOrder : order)));
       setSelectedOrder(nextOrder);
-      success('Reorder updated', 'Status and tracking info were saved.');
+
+      if (editStatus === 'received' && previousStatus !== 'received') {
+        const applied = response.inventoryAppliedCount ?? 0;
+        success('Reorder received', `Inventory updated for ${applied} item${applied === 1 ? '' : 's'}.`);
+      } else {
+        success('Reorder updated', 'Status and tracking info were saved.');
+      }
     } catch (err: any) {
       notifyLoadError('reorder update', err);
       error('Update failed', err?.message || 'Could not update reorder details');

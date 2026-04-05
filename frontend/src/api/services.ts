@@ -320,7 +320,7 @@ export const inventoryApi = {
       expected_arrival?: string | null;
       notes?: string | null;
     }
-  ): Promise<ApiResponse<RestockOrderSummary>> {
+  ): Promise<ApiResponse<RestockOrderSummary> & { inventoryAppliedCount?: number }> {
     return patch(`/inventory/restock-orders/${id}`, data);
   },
 

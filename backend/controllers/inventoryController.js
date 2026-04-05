@@ -303,6 +303,7 @@ export const getRestockOrders = asyncHandler(async (req, res) => {
  */
 export const updateRestockOrder = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
+  const userId = req.user?.userId || null;
   const { id } = req.params;
   const {
     status,
@@ -312,58 +313,167 @@ export const updateRestockOrder = asyncHandler(async (req, res) => {
     notes,
   } = req.body;
 
-  const updates = [];
-  const params = [];
+  const txResult = await withTransaction(async (client) => {
+    const lockRes = await InventoryRepository.query(
+      `SELECT id, status, destination_warehouse_id
+       FROM restock_orders
+       WHERE id = $1 AND organization_id = $2
+       FOR UPDATE`,
+      [id, organizationId],
+      client
+    );
 
-  if (status !== undefined) {
-    params.push(status);
-    updates.push(`status = $${params.length}`);
-  }
-  if (tracking_number !== undefined) {
-    params.push(tracking_number || null);
-    updates.push(`tracking_number = $${params.length}`);
-  }
-  if (supplier_po_number !== undefined) {
-    params.push(supplier_po_number || null);
-    updates.push(`supplier_po_number = $${params.length}`);
-  }
-  if (expected_arrival !== undefined) {
-    params.push(expected_arrival || null);
-    updates.push(`expected_arrival = $${params.length}`);
-  }
-  if (notes !== undefined) {
-    params.push(notes || null);
-    updates.push(`notes = $${params.length}`);
+    const restockOrder = lockRes.rows[0];
+    if (!restockOrder) {
+      throw new NotFoundError('Restock order');
+    }
+
+    const previousStatus = restockOrder.status;
+    const updates = [];
+    const params = [];
+
+    if (status !== undefined) {
+      params.push(status);
+      updates.push(`status = $${params.length}`);
+    }
+    if (tracking_number !== undefined) {
+      params.push(tracking_number || null);
+      updates.push(`tracking_number = $${params.length}`);
+    }
+    if (supplier_po_number !== undefined) {
+      params.push(supplier_po_number || null);
+      updates.push(`supplier_po_number = $${params.length}`);
+    }
+    if (expected_arrival !== undefined) {
+      params.push(expected_arrival || null);
+      updates.push(`expected_arrival = $${params.length}`);
+    }
+    if (notes !== undefined) {
+      params.push(notes || null);
+      updates.push(`notes = $${params.length}`);
+    }
+
+    if (status === 'confirmed') {
+      updates.push('confirmed_at = COALESCE(confirmed_at, NOW())');
+    }
+    if (status === 'received') {
+      updates.push('received_at = COALESCE(received_at, NOW())');
+    }
+
+    if (!updates.length) {
+      throw new BusinessLogicError('No update fields provided');
+    }
+
+    let inventoryAppliedCount = 0;
+
+    // Only apply inbound stock once on first transition to received.
+    if (status === 'received' && previousStatus !== 'received') {
+      const itemsRes = await InventoryRepository.query(
+        `SELECT
+           roi.product_id,
+           COALESCE(NULLIF(roi.sku, ''), p.sku) AS sku,
+           COALESCE(NULLIF(roi.product_name, ''), p.name, 'Imported Product') AS product_name,
+           COALESCE(roi.quantity_ordered, 0)::int AS quantity_ordered,
+           COALESCE(roi.unit_cost, p.cost_price, 0)::numeric AS unit_cost
+         FROM restock_order_items roi
+         LEFT JOIN products p ON p.id = roi.product_id
+         WHERE roi.restock_order_id = $1`,
+        [id],
+        client
+      );
+
+      for (const item of itemsRes.rows) {
+        const qty = parseInt(item.quantity_ordered, 10) || 0;
+        if (qty <= 0) continue;
+
+        const invRes = await InventoryRepository.query(
+          `INSERT INTO inventory
+             (organization_id, warehouse_id, product_id, sku, product_name,
+              quantity, available_quantity, reserved_quantity, unit_cost)
+           VALUES ($1,$2,$3,$4,$5,$6,$6,0,$7)
+           ON CONFLICT (warehouse_id, sku) WHERE sku IS NOT NULL DO UPDATE SET
+             quantity = inventory.quantity + EXCLUDED.quantity,
+             available_quantity = inventory.available_quantity + EXCLUDED.available_quantity,
+             unit_cost = COALESCE(EXCLUDED.unit_cost, inventory.unit_cost),
+             updated_at = NOW()
+           RETURNING id, warehouse_id, product_id, sku, quantity, available_quantity`,
+          [
+            organizationId,
+            restockOrder.destination_warehouse_id,
+            item.product_id,
+            item.sku,
+            item.product_name,
+            qty,
+            item.unit_cost ? parseFloat(item.unit_cost) : null,
+          ],
+          client
+        );
+
+        const updatedInv = invRes.rows[0];
+        if (!updatedInv) continue;
+
+        inventoryAppliedCount += 1;
+
+        await InventoryRepository.query(
+          `INSERT INTO stock_movements
+             (warehouse_id, product_id, inventory_id, movement_type, quantity,
+              reference_type, reference_id, notes, created_by, performed_by, created_at)
+           VALUES ($1,$2,$3,'inbound',$4,'restock_order',$5,$6,$7,$8,NOW())`,
+          [
+            updatedInv.warehouse_id,
+            updatedInv.product_id,
+            updatedInv.id,
+            qty,
+            id,
+            `Restock order ${id} received`,
+            userId,
+            userId ? String(userId) : 'system',
+          ],
+          client
+        );
+      }
+    }
+
+    params.push(id);
+    params.push(organizationId);
+
+    const updatedRes = await InventoryRepository.query(
+      `UPDATE restock_orders
+       SET ${updates.join(', ')}, updated_at = NOW()
+       WHERE id = $${params.length - 1}
+         AND organization_id = $${params.length}
+       RETURNING id, restock_number, status, tracking_number, supplier_po_number, expected_arrival, confirmed_at, received_at, updated_at, destination_warehouse_id`,
+      params,
+      client
+    );
+
+    if (!updatedRes.rows.length) {
+      throw new NotFoundError('Restock order');
+    }
+
+    return {
+      order: updatedRes.rows[0],
+      inventoryAppliedCount,
+    };
+  });
+
+  if (txResult.order?.destination_warehouse_id) {
+    await refreshWarehouseUtilization(txResult.order.destination_warehouse_id);
   }
 
-  if (status === 'confirmed') {
-    updates.push('confirmed_at = COALESCE(confirmed_at, NOW())');
-  }
-  if (status === 'received') {
-    updates.push('received_at = COALESCE(received_at, NOW())');
-  }
+  await invalidatePatterns(invalidationTargets(organizationId, 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'));
+  emitToOrg(organizationId, 'inventory:updated', {
+    source: 'restock_order',
+    restockOrderId: id,
+    status: txResult.order.status,
+    inventoryAppliedCount: txResult.inventoryAppliedCount,
+  });
 
-  if (!updates.length) {
-    throw new BusinessLogicError('No update fields provided');
-  }
-
-  params.push(id);
-  params.push(organizationId);
-
-  const result = await InventoryRepository.query(
-    `UPDATE restock_orders
-     SET ${updates.join(', ')}, updated_at = NOW()
-     WHERE id = $${params.length - 1}
-       AND organization_id = $${params.length}
-     RETURNING id, restock_number, status, tracking_number, supplier_po_number, expected_arrival, confirmed_at, received_at, updated_at`,
-    params
-  );
-
-  if (!result.rows.length) {
-    throw new NotFoundError('Restock order');
-  }
-
-  res.json({ success: true, data: result.rows[0] });
+  res.json({
+    success: true,
+    data: txResult.order,
+    inventoryAppliedCount: txResult.inventoryAppliedCount,
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
