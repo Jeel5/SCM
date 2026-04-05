@@ -5,6 +5,7 @@ import type {
   Shipment,
   Warehouse,
   InventoryItem,
+  RestockOrderSummary,
   Product,
   Carrier,
   SLAPolicy,
@@ -290,6 +291,22 @@ export const inventoryApi = {
     const response = await get<{ success: boolean; data: InventoryItem[] }>(
       '/inventory/low-stock',
       warehouseId ? { warehouse_id: warehouseId } : undefined
+    );
+    return { data: response.data, success: true };
+  },
+
+  async getRestockOrders(
+    limit = 20,
+    includeClosed = false,
+    filters?: { status?: string; warehouseId?: string }
+  ): Promise<ApiResponse<RestockOrderSummary[]>> {
+    const query: Record<string, unknown> = { limit, include_closed: includeClosed };
+    if (filters?.status) query.status = filters.status;
+    if (filters?.warehouseId) query.warehouse_id = filters.warehouseId;
+
+    const response = await get<{ success: boolean; data: RestockOrderSummary[] }>(
+      '/inventory/restock-orders',
+      query
     );
     return { data: response.data, success: true };
   },

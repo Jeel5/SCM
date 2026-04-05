@@ -1,6 +1,7 @@
 import pool from '../../config/db.js';
 import carrierRepo from '../../repositories/CarrierRepository.js';
 import { emitToOrg } from '../../sockets/emitter.js';
+import operationalNotificationService from '../../services/operationalNotificationService.js';
 import {
   UUID_RE,
   parseJsonObject,
@@ -75,12 +76,135 @@ export async function handleImportInventory(payload) {
   );
   const byWhCode = new Map(whRes.rows.map((w) => [w.code?.toLowerCase(), w.id]));
   const byWhName = new Map(whRes.rows.map((w) => [w.name?.toLowerCase(), w.id]));
+  const whById = new Map(whRes.rows.map((w) => [w.id, w]));
 
   const prRes = await pool.query(
-    `SELECT id, sku, name FROM products WHERE organization_id = $1`, [organizationId]
+    `SELECT id, sku, name, supplier_id, cost_price FROM products WHERE organization_id = $1`, [organizationId]
   );
-  const byPrSku = new Map(prRes.rows.map((p) => [p.sku?.toLowerCase(), p.id]));
-  const byPrName = new Map(prRes.rows.map((p) => [p.name?.toLowerCase(), p.id]));
+  const byPrId = new Map(prRes.rows.map((p) => [p.id, p]));
+  const byPrSku = new Map(prRes.rows.map((p) => [p.sku?.toLowerCase(), p]));
+  const byPrName = new Map(prRes.rows.map((p) => [p.name?.toLowerCase(), p]));
+
+  const supplierRes = await pool.query(
+    `SELECT id FROM suppliers WHERE organization_id = $1 ORDER BY is_active DESC, created_at ASC LIMIT 1`,
+    [organizationId]
+  );
+  let fallbackSupplierId = supplierRes.rows[0]?.id || null;
+  let notifiedFallbackSupplierCreation = false;
+
+  const ensureFallbackSupplier = async () => {
+    if (fallbackSupplierId) return fallbackSupplierId;
+
+    const createdRes = await pool.query(
+      `INSERT INTO suppliers (organization_id, name, code, contact_name, is_active)
+       VALUES ($1, $2, $3, $4, true)
+       ON CONFLICT (organization_id, code) DO UPDATE SET
+         name = EXCLUDED.name,
+         is_active = true,
+         updated_at = NOW()
+       RETURNING id`,
+      [organizationId, 'Auto Restock Supplier', 'AUTO-RESTOCK', 'System Auto Replenishment']
+    );
+
+    fallbackSupplierId = createdRes.rows[0]?.id || null;
+
+    if (fallbackSupplierId && !notifiedFallbackSupplierCreation) {
+      notifiedFallbackSupplierCreation = true;
+      operationalNotificationService.queueOrganizationNotification({
+        organizationId,
+        type: 'system',
+        title: 'Fallback Supplier Created',
+        message: 'Auto Restock Supplier was created to enable automatic low-stock reorders from imports.',
+        link: '/partners',
+        metadata: {
+          event: 'auto_restock_supplier_created',
+          supplierId: fallbackSupplierId,
+        },
+      });
+    }
+
+    return fallbackSupplierId;
+  };
+
+  const maybeCreateAutoRestockOrder = async ({
+    productId,
+    supplierId,
+    warehouseId,
+    sku,
+    productName,
+    available,
+    reorderPoint,
+    maxStockLevel,
+    unitCost,
+  }) => {
+    if (reorderPoint == null || available > reorderPoint) return { status: 'not_applicable' };
+
+    const resolvedSupplierId = supplierId || await ensureFallbackSupplier();
+    if (!resolvedSupplierId) return { status: 'skipped_no_supplier' };
+
+    const existingOpenRes = await pool.query(
+      `SELECT ro.id
+       FROM restock_orders ro
+       JOIN restock_order_items roi ON roi.restock_order_id = ro.id
+       WHERE ro.organization_id = $1
+         AND ro.destination_warehouse_id = $2
+         AND ro.supplier_id = $3
+         AND roi.product_id = $4
+         AND ro.status IN ('draft', 'submitted', 'confirmed', 'in_transit')
+       LIMIT 1`,
+      [organizationId, warehouseId, resolvedSupplierId, productId]
+    );
+
+    if (existingOpenRes.rows[0]) {
+      return {
+        status: 'skipped_existing_open',
+        existingOrderId: existingOpenRes.rows[0].id,
+      };
+    }
+
+    const targetLevel = Math.max(maxStockLevel || 0, reorderPoint);
+    const suggestedQty = Math.max((targetLevel > 0 ? targetLevel : reorderPoint) - available, 1);
+    const cost = Number(unitCost || 0);
+    const totalAmount = cost * suggestedQty;
+
+    const restockOrderRes = await pool.query(
+      `INSERT INTO restock_orders
+         (organization_id, supplier_id, destination_warehouse_id, status, is_auto_generated,
+          trigger_reason, total_items, total_amount, currency, requested_at, notes, created_by)
+       VALUES ($1, $2, $3, 'submitted', true, 'low_stock_threshold', $4, $5, 'INR', NOW(), $6, NULL)
+       RETURNING id, restock_number`,
+      [
+        organizationId,
+        resolvedSupplierId,
+        warehouseId,
+        suggestedQty,
+        totalAmount,
+        `Auto-generated from inventory import for SKU ${sku}. Available ${available}, reorder point ${reorderPoint}.`,
+      ]
+    );
+
+    await pool.query(
+      `INSERT INTO restock_order_items
+         (restock_order_id, product_id, sku, product_name, quantity_ordered, unit_cost, total_cost)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        restockOrderRes.rows[0].id,
+        productId,
+        sku,
+        productName || sku,
+        suggestedQty,
+        cost,
+        totalAmount,
+      ]
+    );
+
+    return {
+      status: 'created',
+      id: restockOrderRes.rows[0].id,
+      restockNumber: restockOrderRes.rows[0].restock_number,
+      suggestedQty,
+    };
+  };
 
   return runCommerceImport(payload, 'inventory', async (row, ctx) => {
       let warehouseId = UUID_RE.test(row.warehouse_id) ? row.warehouse_id : null;
@@ -95,29 +219,130 @@ export async function handleImportInventory(payload) {
       if (!warehouseId) throw new Error(`Cannot resolve warehouse for SKU '${row.sku}'`);
 
       let productId = UUID_RE.test(row.product_id) ? row.product_id : null;
+      let productRecord = null;
       if (!productId) {
-        productId = byPrSku.get(String(row.sku || '').toLowerCase())
+        productRecord = byPrSku.get(String(row.sku || '').toLowerCase())
           || byPrName.get(String(row.product_name || '').toLowerCase())
           || null;
+        productId = productRecord?.id || null;
       }
       if (!productId) throw new Error(`Cannot resolve product for SKU '${row.sku}'`);
+      if (!productRecord) {
+        productRecord = byPrId.get(productId) || null;
+      }
 
       const qty = parseInt(row.quantity, 10) || 0;
+      const reserved = row.reserved_quantity !== undefined && row.reserved_quantity !== ''
+        ? Math.max(parseInt(row.reserved_quantity, 10) || 0, 0)
+        : 0;
+      const availableFromCsv = row.available_quantity !== undefined && row.available_quantity !== ''
+        ? Math.max(parseInt(row.available_quantity, 10) || 0, 0)
+        : null;
+      const available = availableFromCsv !== null
+        ? Math.min(availableFromCsv, qty)
+        : Math.max(qty - reserved, 0);
+      const reorderPoint = row.reorder_point !== undefined && row.reorder_point !== ''
+        ? Math.max(parseInt(row.reorder_point, 10) || 0, 0)
+        : null;
+      const maxStockLevel = row.max_stock_level !== undefined && row.max_stock_level !== ''
+        ? Math.max(parseInt(row.max_stock_level, 10) || 0, 0)
+        : qty + Math.max(reorderPoint || 0, 10);
+
       if (ctx.dryRun) return;
       await pool.query(
         `INSERT INTO inventory
            (organization_id, warehouse_id, product_id, sku, product_name,
-            quantity, available_quantity, reserved_quantity, reorder_point, unit_cost)
-         VALUES ($1,$2,$3,$4,$5,$6,$6,0,$7,$8)
+            quantity, available_quantity, reserved_quantity, reorder_point, max_stock_level, unit_cost)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (warehouse_id, sku) WHERE sku IS NOT NULL DO UPDATE SET
            quantity           = EXCLUDED.quantity,
-           available_quantity = EXCLUDED.quantity,
+           available_quantity = EXCLUDED.available_quantity,
+           reserved_quantity  = EXCLUDED.reserved_quantity,
+           reorder_point      = COALESCE(EXCLUDED.reorder_point, inventory.reorder_point),
+           max_stock_level    = COALESCE(EXCLUDED.max_stock_level, inventory.max_stock_level),
+           unit_cost          = COALESCE(EXCLUDED.unit_cost, inventory.unit_cost),
            updated_at         = NOW()`,
         [organizationId, warehouseId, productId,
           row.sku, row.product_name || row.sku, qty,
-          row.reorder_point ? parseInt(row.reorder_point, 10) : null,
+          available,
+          reserved,
+          reorderPoint,
+          maxStockLevel,
           row.unit_cost ? parseFloat(row.unit_cost) : null]
       );
+
+      const lowStock = reorderPoint != null && available > 0 && available <= reorderPoint;
+      if (lowStock) {
+        const warehouse = whById.get(warehouseId);
+        emitToOrg(organizationId, 'inventory:low_stock', {
+          sku: row.sku,
+          productName: row.product_name || row.sku,
+          warehouseId,
+          warehouseName: warehouse?.name || null,
+          availableQuantity: available,
+          reorderPoint,
+        });
+
+        operationalNotificationService.queueOrganizationNotification({
+          organizationId,
+          type: 'system',
+          title: 'Low Stock Alert',
+          message: `${row.product_name || row.sku} is low in stock (${available} left, reorder point ${reorderPoint}).`,
+          link: '/inventory',
+          metadata: {
+            event: 'inventory_low_stock',
+            sku: row.sku,
+            available,
+            reorderPoint,
+            warehouseId,
+          },
+        });
+      }
+
+      const autoRestockOrder = await maybeCreateAutoRestockOrder({
+        productId,
+        supplierId: productRecord?.supplier_id || null,
+        warehouseId,
+        sku: row.sku,
+        productName: row.product_name || row.sku,
+        available,
+        reorderPoint,
+        maxStockLevel,
+        unitCost: row.unit_cost ? parseFloat(row.unit_cost) : (productRecord?.cost_price || 0),
+      });
+
+      if (autoRestockOrder?.status === 'created') {
+        operationalNotificationService.queueOrganizationNotification({
+          organizationId,
+          type: 'system',
+          title: 'Reorder Created',
+          message: `Auto-reorder ${autoRestockOrder.restockNumber || autoRestockOrder.id} created for ${row.product_name || row.sku} (${autoRestockOrder.suggestedQty} units).`,
+          link: '/inventory',
+          metadata: {
+            event: 'inventory_reorder_created',
+            sku: row.sku,
+            restockOrderId: autoRestockOrder.id,
+            restockNumber: autoRestockOrder.restockNumber,
+            quantity: autoRestockOrder.suggestedQty,
+          },
+        });
+      }
+
+      if (autoRestockOrder?.status === 'skipped_no_supplier') {
+        operationalNotificationService.queueOrganizationNotification({
+          organizationId,
+          type: 'system',
+          title: 'Reorder Skipped',
+          message: `Low-stock item ${row.product_name || row.sku} could not be auto-reordered because no supplier is configured.`,
+          link: '/products',
+          metadata: {
+            event: 'inventory_reorder_skipped_no_supplier',
+            sku: row.sku,
+            productId,
+            warehouseId,
+          },
+        });
+      }
   });
 }
 

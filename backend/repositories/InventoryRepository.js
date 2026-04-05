@@ -88,7 +88,7 @@ class InventoryRepository extends BaseRepository {
     }
 
     if (stock_state === 'low_stock' || low_stock) {
-      query += ` AND i.available_quantity <= COALESCE(i.reorder_point, 0) AND i.available_quantity > 0`;
+      query += ` AND i.reorder_point IS NOT NULL AND i.available_quantity > 0 AND i.available_quantity <= i.reorder_point`;
     }
 
     if (stock_state === 'out_of_stock') {
@@ -96,7 +96,7 @@ class InventoryRepository extends BaseRepository {
     }
 
     if (stock_state === 'overstocked') {
-      query += ` AND i.max_stock_level IS NOT NULL AND i.quantity > (i.max_stock_level * 0.9)`;
+      query += ` AND i.max_stock_level IS NOT NULL AND i.quantity > i.max_stock_level`;
     }
 
     query += ` ORDER BY i.updated_at DESC`;
@@ -227,8 +227,9 @@ class InventoryRepository extends BaseRepository {
         COALESCE(SUM(i.available_quantity), 0)::int               AS total_available,
         COALESCE(SUM(i.reserved_quantity), 0)::int                AS total_reserved,
         COALESCE(SUM(i.damaged_quantity), 0)::int                 AS total_damaged,
-        COUNT(*) FILTER (WHERE i.available_quantity <= COALESCE(i.reorder_point, 0) AND i.available_quantity > 0)::int AS low_stock_items,
+        COUNT(*) FILTER (WHERE i.reorder_point IS NOT NULL AND i.available_quantity > 0 AND i.available_quantity <= i.reorder_point)::int AS low_stock_items,
         COUNT(*) FILTER (WHERE i.available_quantity = 0)::int     AS out_of_stock_items,
+        COUNT(*) FILTER (WHERE i.max_stock_level IS NOT NULL AND i.quantity > i.max_stock_level)::int AS overstocked_items,
         COALESCE(SUM(i.quantity * COALESCE(NULLIF(i.unit_cost, 0), p.cost_price, p.selling_price, 0)), 0)::numeric AS total_inventory_value
       FROM inventory i
       LEFT JOIN products p ON i.product_id = p.id

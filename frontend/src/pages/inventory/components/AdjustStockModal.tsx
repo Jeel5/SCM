@@ -70,7 +70,7 @@ export function AdjustStockModal({ item, isOpen, onClose, onSuccess }: AdjustSto
                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-lg text-sm flex items-start gap-2">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <p>
-                        Current available stock is <strong>{item.quantity}</strong>. Add stock now creates a supplier restock request; other actions still update inventory directly.
+                        Current available stock is <strong>{item.availableQuantity}</strong>. Add stock now creates a supplier restock request; other actions still update inventory directly.
                     </p>
                 </div>
 

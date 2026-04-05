@@ -110,42 +110,45 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={initialData ? "Edit Warehouse" : "Add New Warehouse"} size="4xl">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Warehouse Name"
-          placeholder="Enter warehouse name"
-          value={formData.name}
-          onChange={(e) => handleChange('name', e.target.value)}
-          required
-        />
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Warehouse Profile</p>
+          <Input
+            label="Warehouse Name"
+            placeholder="Enter warehouse name"
+            value={formData.name}
+            onChange={(e) => handleChange('name', e.target.value)}
+            required
+          />
 
-        <div className="grid grid-cols-2 gap-4">
-          <Select
-            label="Warehouse Type"
-            value={formData.warehouse_type}
-            onChange={(e) => handleChange('warehouse_type', e.target.value)}
-            options={[
-              { value: 'standard', label: 'Standard' },
-              { value: 'cold_storage', label: 'Cold Storage' },
-              { value: 'hazmat', label: 'Hazmat' },
-              { value: 'distribution', label: 'Distribution' },
-              { value: 'fulfillment', label: 'Fulfillment Center' },
-              { value: 'bonded_customs', label: 'Bonded Customs' },
-              { value: 'returns_center', label: 'Returns Center' },
-            ]}
-          />
-          <Select
-            label="Status"
-            value={formData.is_active ? 'active' : 'inactive'}
-            onChange={(e) => handleChange('is_active', e.target.value === 'active')}
-            options={[
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Select
+              label="Warehouse Type"
+              value={formData.warehouse_type}
+              onChange={(e) => handleChange('warehouse_type', e.target.value)}
+              options={[
+                { value: 'standard', label: 'Standard' },
+                { value: 'cold_storage', label: 'Cold Storage' },
+                { value: 'hazmat', label: 'Hazmat' },
+                { value: 'distribution', label: 'Distribution' },
+                { value: 'fulfillment', label: 'Fulfillment Center' },
+                { value: 'bonded_customs', label: 'Bonded Customs' },
+                { value: 'returns_center', label: 'Returns Center' },
+              ]}
+            />
+            <Select
+              label="Status"
+              value={formData.is_active ? 'active' : 'inactive'}
+              onChange={(e) => handleChange('is_active', e.target.value === 'active')}
+              options={[
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+              ]}
+            />
+          </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-3">
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Address</h4>
           <Input
             label="Street Address"
@@ -154,7 +157,7 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
             onChange={(e) => handleChange('street', e.target.value)}
             required
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="City"
               placeholder="Mumbai"
@@ -170,7 +173,7 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
               required
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Postal Code"
               placeholder="400001"
@@ -189,27 +192,30 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
           </div>
         </div>
 
-        <LocationPicker
-          latitude={formData.lat || undefined}
-          longitude={formData.lng || undefined}
-          onLocationChange={(lat, lng) => {
-            setFormData(prev => ({ ...prev, lat, lng }));
-          }}
-        />
-
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Capacity (units)"
-            type="number"
-            placeholder="10000"
-            value={formData.capacity}
-            onChange={(e) => handleChange('capacity', e.target.value)}
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Location & Capacity</p>
+          <LocationPicker
+            latitude={formData.lat || undefined}
+            longitude={formData.lng || undefined}
+            onLocationChange={(lat, lng) => {
+              setFormData(prev => ({ ...prev, lat, lng }));
+            }}
           />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Capacity (units)"
+              type="number"
+              placeholder="10000"
+              value={formData.capacity}
+              onChange={(e) => handleChange('capacity', e.target.value)}
+            />
+            <div />
+          </div>
         </div>
 
-
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Contact</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Contact Email"
               type="email"
@@ -247,6 +253,7 @@ export function AddWarehouseModal({ isOpen, onClose, onSuccess, initialData }: A
             {isSubmitting ? 'Saving...' : initialData ? 'Save Changes' : 'Add Warehouse'}
           </Button>
         </div>
+
       </form>
     </Modal>
   );

@@ -193,6 +193,7 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
         )}
 
         {/* Warehouse Selection */}
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -234,8 +235,10 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
             </select>
           </div>
         </div>
+        </div>
 
         {/* Priority and Expected Delivery */}
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -264,9 +267,10 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
             />
           </div>
         </div>
+        </div>
 
         {/* Items Section */}
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
           <div className="flex items-center justify-between mb-3">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Items to Transfer *
@@ -338,7 +342,7 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
         </div>
 
         {/* Reason and Notes */}
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-3">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Reason for Transfer *
           </label>
@@ -354,9 +358,7 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Minimum 5 characters. Explain why this transfer is needed.
           </p>
-        </div>
 
-        <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Additional Notes
           </label>
@@ -367,9 +369,7 @@ export function TransferOrderModal({ isOpen, onClose, onSuccess, sourceWarehouse
             rows={2}
             placeholder="Any special handling instructions..."
           />
-        </div>
 
-        <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Requested By
           </label>

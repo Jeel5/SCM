@@ -57,8 +57,8 @@ export function LowStockAlerts({ onViewAll, warehouseId }: LowStockAlertsProps) 
     return null;
   }
 
-  const criticalItems = lowStockItems.filter(item => item.quantity === 0);
-  const warningItems = lowStockItems.filter(item => item.quantity > 0);
+  const criticalItems = lowStockItems.filter(item => (item.availableQuantity ?? item.quantity) <= 0);
+  const warningItems = lowStockItems.filter(item => (item.availableQuantity ?? item.quantity) > 0);
 
   return (
     <AnimatePresence>
@@ -131,7 +131,7 @@ export function LowStockAlerts({ onViewAll, warehouseId }: LowStockAlertsProps) 
                           ? 'text-red-600 dark:text-red-400' 
                           : 'text-yellow-600 dark:text-yellow-400'
                       }`}>
-                        {item.quantity === 0 ? 'Out of Stock' : `${formatNumber(item.quantity)} left`}
+                        {(item.availableQuantity ?? item.quantity) <= 0 ? 'Out of Stock' : `${formatNumber(item.availableQuantity ?? item.quantity)} left`}
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         Reorder: {formatNumber(item.reorderPoint)}

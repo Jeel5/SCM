@@ -93,7 +93,7 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
     <Modal isOpen={isOpen} onClose={onClose} title="Create Organization" size="lg">
       <div className="space-y-6">
         {/* Organization Details */}
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
           <div className="flex items-center gap-2 mb-3">
             <Building2 className="h-4 w-4 text-blue-600" />
             <h3 className="font-semibold text-gray-900 dark:text-white">Organization Details</h3>
@@ -167,7 +167,7 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
         </div>
 
         {/* Admin User */}
-        <div className="border-t border-gray-200 dark:border-gray-700 pt-5">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
           <div className="flex items-center gap-2 mb-3">
             <User className="h-4 w-4 text-green-600" />
             <h3 className="font-semibold text-gray-900 dark:text-white">Admin User (auto-created)</h3>
@@ -199,7 +199,7 @@ export function CreateOrgModal({ isOpen, onClose, onSuccess }: CreateOrgModalPro
         </div>
 
         {/* Actions */}
-        <div className="flex justify-end gap-3 pt-2">
+        <div className="flex justify-end gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
           <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>

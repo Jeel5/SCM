@@ -5,6 +5,7 @@ import {
   getInventoryItem,
   getInventoryStats,
   getLowStockItems,
+  getRestockOrders,
   createInventoryItem,
   updateInventoryItem,
   adjustStock,
@@ -47,6 +48,12 @@ router.get(
   '/inventory/low-stock',
   authenticate, authorize('inventory.view'),
   getLowStockItems
+);
+
+router.get(
+  '/inventory/restock-orders',
+  authenticate, authorize('inventory.view'),
+  getRestockOrders
 );
 
 // Single inventory item (must come AFTER static routes like /stats, /low-stock)

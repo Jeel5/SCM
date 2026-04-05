@@ -77,8 +77,9 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Add Team Member" size="md">
-      <div className="space-y-4">
-        <div>
+      <div className="space-y-5">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Role & Access</p>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Role <span className="text-red-500">*</span>
           </label>
@@ -94,7 +95,8 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
           )}
         </div>
 
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Member Profile</p>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Full Name <span className="text-red-500">*</span>
           </label>
@@ -105,9 +107,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
             leftIcon={<UserPlus className="h-4 w-4 text-gray-400" />}
             autoComplete="name"
           />
-        </div>
 
-        <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Email <span className="text-red-500">*</span>
           </label>
@@ -119,9 +119,7 @@ export function InviteUserModal({ isOpen, onClose, onSuccess }: InviteUserModalP
             leftIcon={<Mail className="h-4 w-4 text-gray-400" />}
             autoComplete="off"
           />
-        </div>
 
-        <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Phone Number
           </label>

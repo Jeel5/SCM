@@ -111,7 +111,7 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
       <form onSubmit={handleSubmit} className="space-y-5">
 
         {/* Step 1: Product selection */}
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
               1. Select Product
@@ -206,7 +206,7 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
         {/* Step 2: Inventory placement (only shown after product selected) */}
         {selectedProduct && (
           <>
-            <div>
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
                 2. Storage Location
               </p>
@@ -223,7 +223,7 @@ export function AddItemModal({ isOpen, onClose, warehouses, onSuccess }: AddItem
               </div>
             </div>
 
-            <div>
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
                 3. Stock Levels
               </p>

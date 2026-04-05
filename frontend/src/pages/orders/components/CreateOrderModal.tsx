@@ -236,7 +236,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
     <Modal isOpen={isOpen} onClose={onClose} title="Create New Order" size="lg">
       <form onSubmit={handleSubmit} className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
         {/* Customer Section */}
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Customer Information</h4>
           <div className="grid grid-cols-2 gap-4">
             <Input 
@@ -275,7 +275,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
         </div>
 
         {/* Shipping Address */}
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Shipping Address</h4>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -320,7 +320,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
         </div>
 
         {/* Product Items */}
-        <div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3">Order Items</h4>
 
           {/* Product Search */}

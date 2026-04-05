@@ -1,39 +1,34 @@
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { InventoryItem } from '@/types';
+import { getInventoryStockStatus } from '../utils/stockStatus';
 
 interface StockLevelIndicatorProps {
   item: InventoryItem;
 }
 
 export function StockLevelIndicator({ item }: StockLevelIndicatorProps) {
-  const max = item.maxStockLevel ?? 0;
-  const percentage = max > 0 ? Math.min((item.quantity / max) * 100, 100) : 0;
-  let color = 'bg-green-500';
-  let status = 'Healthy';
-
-  if (item.reorderPoint != null && item.quantity <= item.reorderPoint) {
-    color = 'bg-red-500';
-    status = 'Critical';
-  } else if (percentage <= 30) {
-    color = 'bg-yellow-500';
-    status = 'Low';
-  } else if (percentage >= 90) {
-    color = 'bg-blue-500';
-    status = 'Overstocked';
-  }
+  const stockStatus = getInventoryStockStatus(item);
+  const { percentage, label } = stockStatus;
+  const color = stockStatus.state === 'out_of_stock'
+    ? 'bg-red-500'
+    : stockStatus.state === 'low_stock'
+      ? 'bg-yellow-500'
+      : stockStatus.state === 'overstocked'
+        ? 'bg-blue-500'
+        : 'bg-green-500';
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
         <span className={cn(
           'font-medium',
-          status === 'Critical' && 'text-red-600 dark:text-red-400',
-          status === 'Low' && 'text-yellow-600 dark:text-yellow-400',
-          status === 'Healthy' && 'text-green-600 dark:text-green-400',
-          status === 'Overstocked' && 'text-blue-600 dark:text-blue-400'
+          stockStatus.state === 'out_of_stock' && 'text-red-600 dark:text-red-400',
+          stockStatus.state === 'low_stock' && 'text-yellow-600 dark:text-yellow-400',
+          stockStatus.state === 'healthy' && 'text-green-600 dark:text-green-400',
+          stockStatus.state === 'overstocked' && 'text-blue-600 dark:text-blue-400'
         )}>
-          {status}
+          {label}
         </span>
         <span className="text-gray-500 dark:text-gray-400">{percentage.toFixed(0)}%</span>
       </div>

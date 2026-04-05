@@ -4,7 +4,7 @@ import { mockApi } from '@/api/mockData';
 import { useApiMode } from '@/hooks';
 import { useSocketEvent } from '@/hooks/useSocket';
 import { notifyLoadError } from '@/lib/apiErrors';
-import type { InventoryItem, Warehouse } from '@/types';
+import type { InventoryItem, Warehouse, RestockOrderSummary } from '@/types';
 
 const isAbortError = (error: unknown): boolean => {
   if (error instanceof DOMException && error.name === 'AbortError') return true;
@@ -20,6 +20,7 @@ export function useInventory(page: number, pageSize: number, filters?: Record<st
   const [totalItems, setTotalItems] = useState(0);
   const [stats, setStats] = useState<any>(null);
   const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
+  const [restockOrders, setRestockOrders] = useState<RestockOrderSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const { useMockApi } = useApiMode();
@@ -54,16 +55,18 @@ export function useInventory(page: number, pageSize: number, filters?: Record<st
           setWarehouses(warehouseRes.data);
           setStats({ total_items: 0, total_inventory_value: 0, low_stock_items: 0 });
           setLowStockItems([]);
+          setRestockOrders([]);
         } else {
           // Use allSettled so a failing stats/low-stock call doesn't wipe the main list
-          const [inventoryRes, warehouseRes, statsRes, lowStockRes] = await Promise.allSettled([
+          const [inventoryRes, warehouseRes, statsRes, lowStockRes, restockOrdersRes] = await Promise.allSettled([
             inventoryApi.getInventory(page, pageSize, filters),
             warehousesApi.getWarehouses(undefined),
             inventoryApi.getInventoryStats(undefined),
             inventoryApi.getLowStockItems(undefined),
+            inventoryApi.getRestockOrders(10, false),
           ]);
 
-          const wasAborted = [inventoryRes, warehouseRes, statsRes, lowStockRes].some(
+          const wasAborted = [inventoryRes, warehouseRes, statsRes, lowStockRes, restockOrdersRes].some(
             (result) => result.status === 'rejected' && isAbortError(result.reason)
           );
           if (wasAborted) return;
@@ -91,6 +94,11 @@ export function useInventory(page: number, pageSize: number, filters?: Record<st
           } else if (!isSoft) {
             notifyLoadError('low stock alerts', lowStockRes.reason);
           }
+          if (restockOrdersRes.status === 'fulfilled') {
+            setRestockOrders(restockOrdersRes.value.data);
+          } else if (!isSoft) {
+            notifyLoadError('restock orders', restockOrdersRes.reason);
+          }
         }
       } catch (error) {
         if (isAbortError(error)) return;
@@ -100,6 +108,7 @@ export function useInventory(page: number, pageSize: number, filters?: Record<st
         setWarehouses([]);
         setStats(null);
         setLowStockItems([]);
+        setRestockOrders([]);
       } finally {
         if (abortControllerRef.current === controller) {
           setIsLoading(false);
@@ -117,5 +126,5 @@ export function useInventory(page: number, pageSize: number, filters?: Record<st
     };
   }, [page, pageSize, useMockApi, refreshKey, JSON.stringify(filters || {})]);
 
-  return { inventory, warehouses, totalItems, stats, lowStockList: lowStockItems, isLoading, refetch };
+  return { inventory, warehouses, totalItems, stats, lowStockList: lowStockItems, restockOrders, isLoading, refetch };
 }

@@ -98,55 +98,60 @@ export function CreateSLAPolicyModal({
       <form onSubmit={handleSubmit} className="space-y-5">
 
         {/* Policy Name */}
-        <Input
-          label="Policy Name"
-          placeholder='e.g. "Delhivery Express Metro"'
-          value={form.name}
-          onChange={set('name')}
-          required
-        />
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Policy Basics</p>
+          <Input
+            label="Policy Name"
+            placeholder='e.g. "Delhivery Express Metro"'
+            value={form.name}
+            onChange={set('name')}
+            required
+          />
 
-        {/* Service Type */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Service Type <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={form.serviceType}
-            onChange={set('serviceType')}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {SERVICE_TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <p className="text-xs text-gray-500 mt-1">
-            Matches orders with this priority/service type.
-          </p>
+          {/* Service Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Service Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={form.serviceType}
+              onChange={set('serviceType')}
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {SERVICE_TYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Matches orders with this priority/service type.
+            </p>
+          </div>
         </div>
 
         {/* Transit times */}
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Max Transit Time (hours) *"
-            type="number"
-            min="1"
-            max="720"
-            placeholder="72"
-            value={form.deliveryHours}
-            onChange={set('deliveryHours')}
-            required
-          />
-          <Input
-            label="Pickup Window (hours)"
-            type="number"
-            min="1"
-            max="72"
-            placeholder="4"
-            value={form.pickupHours}
-            onChange={set('pickupHours')}
-          />
-        </div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Transit & Alerting</p>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Max Transit Time (hours) *"
+              type="number"
+              min="1"
+              max="720"
+              placeholder="72"
+              value={form.deliveryHours}
+              onChange={set('deliveryHours')}
+              required
+            />
+            <Input
+              label="Pickup Window (hours)"
+              type="number"
+              min="1"
+              max="72"
+              placeholder="4"
+              value={form.pickupHours}
+              onChange={set('pickupHours')}
+            />
+          </div>
 
         {/* Warning threshold */}
         <div>
@@ -170,9 +175,10 @@ export function CreateSLAPolicyModal({
             <span>95% (late warning)</span>
           </div>
         </div>
+        </div>
 
         {/* Penalty */}
-        <div className="p-4 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-3">
           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Penalty Configuration</p>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -208,17 +214,19 @@ export function CreateSLAPolicyModal({
         </div>
 
         {/* Priority */}
-        <Input
-          label="Priority (1 = highest, matched first when multiple policies apply)"
-          type="number"
-          min="1"
-          max="100"
-          value={form.priority}
-          onChange={set('priority')}
-        />
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4">
+          <Input
+            label="Priority (1 = highest, matched first when multiple policies apply)"
+            type="number"
+            min="1"
+            max="100"
+            value={form.priority}
+            onChange={set('priority')}
+          />
+        </div>
 
         {/* Actions */}
-        <div className="flex justify-end gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+        <div className="flex justify-end gap-3 pt-3 border-t border-gray-200 dark:border-gray-700">
           <Button variant="outline" type="button" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>

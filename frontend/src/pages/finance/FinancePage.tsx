@@ -599,94 +599,100 @@ export function FinancePage() {
       />
 
       <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Add Finance Record" size="lg">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Invoice Number"
-              value={form.invoice_number}
-              onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))}
-              placeholder="INV-2026-001"
-            />
-            <Select
-              label="Carrier"
-              value={form.carrier_id}
-              onChange={(e) => setForm((p) => ({ ...p, carrier_id: e.target.value }))}
-              options={[
-                { value: '', label: 'Select carrier' },
-                ...carriers.map((c) => ({ value: c.id, label: c.name })),
-              ]}
-            />
+        <div className="space-y-5">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Invoice Basics</p>
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Invoice Number"
+                value={form.invoice_number}
+                onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))}
+                placeholder="INV-2026-001"
+              />
+              <Select
+                label="Carrier"
+                value={form.carrier_id}
+                onChange={(e) => setForm((p) => ({ ...p, carrier_id: e.target.value }))}
+                options={[
+                  { value: '', label: 'Select carrier' },
+                  ...carriers.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Billing Start"
+                type="date"
+                value={form.billing_period_start}
+                onChange={(e) => setForm((p) => ({ ...p, billing_period_start: e.target.value }))}
+              />
+              <Input
+                label="Billing End"
+                type="date"
+                value={form.billing_period_end}
+                onChange={(e) => setForm((p) => ({ ...p, billing_period_end: e.target.value }))}
+              />
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Billing Start"
-              type="date"
-              value={form.billing_period_start}
-              onChange={(e) => setForm((p) => ({ ...p, billing_period_start: e.target.value }))}
-            />
-            <Input
-              label="Billing End"
-              type="date"
-              value={form.billing_period_end}
-              onChange={(e) => setForm((p) => ({ ...p, billing_period_end: e.target.value }))}
-            />
-          </div>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Amounts & Status</p>
+            <div className="grid grid-cols-3 gap-4">
+              <Input
+                label="Total Shipments"
+                type="number"
+                min="0"
+                value={form.total_shipments}
+                onChange={(e) => setForm((p) => ({ ...p, total_shipments: e.target.value }))}
+              />
+              <Input
+                label="Base Amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.base_amount}
+                onChange={(e) => setForm((p) => ({ ...p, base_amount: e.target.value }))}
+              />
+              <Input
+                label="Final Amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.final_amount}
+                onChange={(e) => setForm((p) => ({ ...p, final_amount: e.target.value }))}
+              />
+            </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <Input
-              label="Total Shipments"
-              type="number"
-              min="0"
-              value={form.total_shipments}
-              onChange={(e) => setForm((p) => ({ ...p, total_shipments: e.target.value }))}
-            />
-            <Input
-              label="Base Amount"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.base_amount}
-              onChange={(e) => setForm((p) => ({ ...p, base_amount: e.target.value }))}
-            />
-            <Input
-              label="Final Amount"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.final_amount}
-              onChange={(e) => setForm((p) => ({ ...p, final_amount: e.target.value }))}
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <Input
-              label="Penalties"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.penalties}
-              onChange={(e) => setForm((p) => ({ ...p, penalties: e.target.value }))}
-            />
-            <Input
-              label="Adjustments"
-              type="number"
-              step="0.01"
-              value={form.adjustments}
-              onChange={(e) => setForm((p) => ({ ...p, adjustments: e.target.value }))}
-            />
-            <Select
-              label="Status"
-              value={form.status}
-              onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
-              options={[
-                { value: 'pending', label: 'Pending' },
-                { value: 'approved', label: 'Approved' },
-                { value: 'disputed', label: 'Disputed' },
-                { value: 'paid', label: 'Paid' },
-                { value: 'cancelled', label: 'Cancelled' },
-              ]}
-            />
+            <div className="grid grid-cols-3 gap-4">
+              <Input
+                label="Penalties"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.penalties}
+                onChange={(e) => setForm((p) => ({ ...p, penalties: e.target.value }))}
+              />
+              <Input
+                label="Adjustments"
+                type="number"
+                step="0.01"
+                value={form.adjustments}
+                onChange={(e) => setForm((p) => ({ ...p, adjustments: e.target.value }))}
+              />
+              <Select
+                label="Status"
+                value={form.status}
+                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+                options={[
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'approved', label: 'Approved' },
+                  { value: 'disputed', label: 'Disputed' },
+                  { value: 'paid', label: 'Paid' },
+                  { value: 'cancelled', label: 'Cancelled' },
+                ]}
+              />
+            </div>
           </div>
 
           <div className="text-xs text-gray-500">

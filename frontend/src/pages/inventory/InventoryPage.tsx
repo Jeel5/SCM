@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Package, Download, Upload, Plus, Eye } from 'lucide-react';
+import { Package, Download, Upload, Plus, Eye, Truck, CalendarClock, List } from 'lucide-react';
 import { Card, Button, DataTable, Badge, Tabs, PermissionGate, useToast } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { importApi, inventoryApi } from '@/api/services';
@@ -14,6 +14,7 @@ import {
   InventoryStats,
   LowStockAlerts,
   AdjustStockModal,
+  RestockOrdersModal,
 } from './components';
 import { useInventory } from './hooks';
 
@@ -24,6 +25,7 @@ export function InventoryPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isReordersOpen, setIsReordersOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
@@ -31,7 +33,7 @@ export function InventoryPage() {
 
   const pageSize = 10;
   const inventoryFilters = activeTab === 'all' ? undefined : { stock_state: activeTab };
-  const { inventory, warehouses, totalItems, stats, isLoading, refetch } = useInventory(page, pageSize, inventoryFilters);
+  const { inventory, warehouses, totalItems, stats, restockOrders, isLoading, refetch } = useInventory(page, pageSize, inventoryFilters);
 
   const handleImportCsv = async (file: File) => {
     try {
@@ -112,8 +114,8 @@ export function InventoryPage() {
   // Tab badge counts and stats from backend
   const lowStockItems = stats?.lowStockItems || 0;
   const outOfStockItems = stats?.outOfStockItems || 0;
+  const overstockedItems = stats?.overstockedItems || 0;
   const totalValue = stats?.totalValue || stats?.totalInventoryValue || 0; // Depends on exact response
-  const overstockedItems = 0; // Not returned directly by API stats without custom query
 
   const tabs = [
     { id: 'all', label: 'All Items', count: totalItems },
@@ -152,7 +154,7 @@ export function InventoryPage() {
       key: 'quantity',
       header: 'Quantity',
       sortable: true,
-      render: (item: InventoryItem) => (
+          render: (item: InventoryItem) => (
         <div>
           <p className="font-medium text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400">{item.availableQuantity} available</p>
@@ -242,6 +244,67 @@ export function InventoryPage() {
           onViewAll={() => setActiveTab('low_stock')}
         />
       )}
+
+      {/* Recent Reorders */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Truck className="h-5 w-5 text-indigo-500" />
+              Recent Reorders
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Latest open restock orders generated from low stock triggers.</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<List className="h-4 w-4" />}
+            onClick={() => setIsReordersOpen(true)}
+          >
+            View All
+          </Button>
+        </div>
+
+        {restockOrders.length > 0 ? (
+          <div className="space-y-3">
+            {restockOrders.slice(0, 5).map((order) => (
+              <div
+                key={order.id}
+                className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {order.restockNumber || order.id.slice(0, 8)}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {order.supplierName}{' -> '}{order.warehouseName}
+                    </p>
+                  </div>
+                  <Badge variant={order.status === 'submitted' ? 'info' : order.status === 'confirmed' ? 'success' : 'outline'} className="capitalize">
+                    {order.status.replace(/_/g, ' ')}
+                  </Badge>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-gray-600 dark:text-gray-300">
+                  <span>{order.totalQuantity} units</span>
+                  <span>{order.lineItems} items</span>
+                  <span>{formatCurrency(order.totalAmount)}</span>
+                  <span className="inline-flex items-center gap-1">
+                    <CalendarClock className="h-3.5 w-3.5" />
+                    {new Date(order.requestedAt).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-4 py-8 text-center">
+            <p className="text-sm text-gray-600 dark:text-gray-300">No open reorders right now.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Use View All to browse historical and closed requests.</p>
+          </div>
+        )}
+      </Card>
 
       {/* Data Table */}
       <Card padding="none">
@@ -342,6 +405,13 @@ export function InventoryPage() {
           e.currentTarget.value = '';
         }}
       />
+
+      <RestockOrdersModal
+        isOpen={isReordersOpen}
+        onClose={() => setIsReordersOpen(false)}
+        warehouses={warehouses}
+      />
+
     </div>
   );
 }

@@ -70,64 +70,72 @@ export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolea
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add New Carrier" size="lg">
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <Input 
-          label="Carrier Name" 
-          placeholder="Enter carrier name" 
-          required 
-          value={formData.name}
-          onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-        />
-        <div className="grid grid-cols-2 gap-4">
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Carrier Profile</p>
           <Input 
-            label="Contact Phone" 
-            placeholder="+1 (555) 000-0000" 
+            label="Carrier Name" 
+            placeholder="Enter carrier name" 
             required 
-            value={formData.contactPhone}
-            onChange={(e) => setFormData(prev => ({ ...prev, contactPhone: e.target.value }))}
+            value={formData.name}
+            onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
           />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input 
+              label="Contact Phone" 
+              placeholder="+1 (555) 000-0000" 
+              required 
+              value={formData.contactPhone}
+              onChange={(e) => setFormData(prev => ({ ...prev, contactPhone: e.target.value }))}
+            />
+            <Input 
+              label="Contact Email" 
+              type="email" 
+              placeholder="contact@carrier.com" 
+              required 
+              value={formData.contactEmail}
+              onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
+            />
+          </div>
           <Input 
-            label="Contact Email" 
-            type="email" 
-            placeholder="contact@carrier.com" 
-            required 
-            value={formData.contactEmail}
-            onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
+            label="Website" 
+            placeholder="https://www.carrier.com" 
+            value={formData.website}
+            onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
           />
         </div>
-        <Input 
-          label="Website" 
-          placeholder="https://www.carrier.com" 
-          value={formData.website}
-          onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
-        />
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="API Endpoint"
-            placeholder="https://api.carrier.com/v1"
-            value={formData.apiEndpoint}
-            onChange={(e) => setFormData(prev => ({ ...prev, apiEndpoint: e.target.value }))}
-          />
-          <Input
-            label="Webhook URL"
-            placeholder="https://carrier.com/webhooks/scm"
-            value={formData.webhookUrl}
-            onChange={(e) => setFormData(prev => ({ ...prev, webhookUrl: e.target.value }))}
+
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Integration & Operations</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="API Endpoint"
+              placeholder="https://api.carrier.com/v1"
+              value={formData.apiEndpoint}
+              onChange={(e) => setFormData(prev => ({ ...prev, apiEndpoint: e.target.value }))}
+            />
+            <Input
+              label="Webhook URL"
+              placeholder="https://carrier.com/webhooks/scm"
+              value={formData.webhookUrl}
+              onChange={(e) => setFormData(prev => ({ ...prev, webhookUrl: e.target.value }))}
+            />
+          </div>
+          <Select
+            label="Status"
+            value={formData.status}
+            onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+            options={[
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+              { value: 'suspended', label: 'Suspended' },
+            ]}
           />
         </div>
-        <Select
-          label="Status"
-          value={formData.status}
-          onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-          options={[
-            { value: 'active', label: 'Active' },
-            { value: 'inactive', label: 'Inactive' },
-            { value: 'suspended', label: 'Suspended' },
-          ]}
-        />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Services Offered</label>
-          <div className="grid grid-cols-3 gap-2">
+
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 p-4 space-y-3">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Services Offered</label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {['express', 'standard', 'economy', 'freight', 'cold_chain', 'hazmat'].map((service) => (
               <label
                 key={service}
@@ -144,7 +152,8 @@ export function AddCarrierModal({ isOpen, onClose, onSuccess }: { isOpen: boolea
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-3 pt-4">
+
+        <div className="flex items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
           <Button type="button" variant="outline" className="flex-1" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>

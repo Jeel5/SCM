@@ -2,6 +2,7 @@ import { Boxes, AlertTriangle, Edit, ArrowUpDown } from 'lucide-react';
 import { Modal, Button, Progress } from '@/components/ui';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import type { InventoryItem } from '@/types';
+import { getInventoryStockStatus } from '../utils/stockStatus';
 
 interface InventoryDetailsModalProps {
   item: InventoryItem | null;
@@ -15,7 +16,8 @@ export function InventoryDetailsModal({ item, isOpen, onClose, onAdjustStock, on
   if (!item) return null;
 
   const max = item.maxStockLevel ?? 0;
-  const stockPercentage = max > 0 ? Math.min((item.quantity / max) * 100, 100) : 0;
+  const stockStatus = getInventoryStockStatus(item);
+  const stockPercentage = stockStatus.percentage;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Inventory Details" size="lg">
@@ -39,8 +41,18 @@ export function InventoryDetailsModal({ item, isOpen, onClose, onAdjustStock, on
           <div className="text-right">
             <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatNumber(item.quantity)}</p>
             <p className="text-sm text-gray-500 dark:text-gray-400">in stock</p>
-            {item.isLowStock && (
-              <p className="text-xs text-red-500 font-medium mt-1">Low stock</p>
+            {stockStatus.state !== 'healthy' && (
+              <p
+                className={`text-xs font-medium mt-1 ${
+                  stockStatus.state === 'out_of_stock'
+                    ? 'text-red-500'
+                    : stockStatus.state === 'low_stock'
+                      ? 'text-yellow-500'
+                      : 'text-blue-500'
+                }`}
+              >
+                {stockStatus.label}
+              </p>
             )}
           </div>
         </div>
@@ -62,7 +74,7 @@ export function InventoryDetailsModal({ item, isOpen, onClose, onAdjustStock, on
                 Reorder: {formatNumber(item.reorderPoint)}
               </span>
             )}
-            <span>Max: {max > 0 ? formatNumber(max) : '—'}</span>
+            <span>Max: {max > 0 ? formatNumber(max) : 'Not set'}</span>
           </div>
         </div>
 
