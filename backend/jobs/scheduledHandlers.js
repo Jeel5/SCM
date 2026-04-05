@@ -95,10 +95,12 @@ export async function handleReturnPickupReminder(payload) {
     for (const returnItem of returns) {
       try {
         if (returnItem.email) {
-          await emailService.sendSimpleNotification({
-            to: returnItem.email,
-            subject: `Pickup reminder for return ${returnItem.rma_number || returnItem.id}`,
-            message: `Your return ${returnItem.rma_number || returnItem.id} is scheduled for pickup soon. Please keep the package ready.`,
+          emailService.dispatchInBackground('return-pickup-reminder-email', async () => {
+            await emailService.sendReturnPickupReminderEmail({
+              to: returnItem.email,
+              name: returnItem.customer_name,
+              rmaNumber: returnItem.rma_number || returnItem.id,
+            });
           });
         }
 
@@ -175,10 +177,12 @@ export async function handleNotificationDispatch(payload) {
     for (const recipient of recipients) {
       try {
         if (notificationType === 'email') {
-          await emailService.sendSimpleNotification({
-            to: recipient,
-            subject: data?.subject || 'TwinChain notification',
-            message,
+          emailService.dispatchInBackground('scheduled-notification-email', async () => {
+            await emailService.sendSimpleNotification({
+              to: recipient,
+              subject: data?.subject || 'TwinChain notification',
+              message,
+            });
           });
         } else {
           // Non-email channels are accepted and logged until SMS/push provider is configured.

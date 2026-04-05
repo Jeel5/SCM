@@ -57,7 +57,7 @@ export function ToastContainer() {
   };
 
   return (
-    <div className="pointer-events-none fixed top-4 right-4 z-9999 flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-3 sm:w-full">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-9999 flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-3 sm:w-full">
       <AnimatePresence mode="popLayout" initial={false}>
         {toasts.map((toast) => (
           <motion.div

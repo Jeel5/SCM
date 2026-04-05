@@ -1,5 +1,6 @@
 import shipmentRepo from '../repositories/ShipmentRepository.js';
 import shipmentTrackingService from '../services/shipmentTrackingService.js';
+import operationalNotificationService from '../services/operationalNotificationService.js';
 import { asyncHandler, NotFoundError, AppError, AuthorizationError } from '../errors/index.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import { invalidatePatterns, invalidationTargets } from '../utils/cache.js';
@@ -64,6 +65,15 @@ export const updateShipmentTracking = asyncHandler(async (req, res) => {
     shipmentId,
     status: updatedShipment.status,
     trackingNumber,
+  });
+
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'shipment',
+    title: 'Tracking Updated',
+    message: `Shipment ${trackingNumber} updated to '${updatedShipment.status}'.`,
+    link: '/shipments',
+    metadata: { event: 'tracking_updated', shipmentId, trackingNumber, status: updatedShipment.status },
   });
 
   if (updatedShipment.created_exception) {

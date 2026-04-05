@@ -13,6 +13,9 @@ import {
   ShieldAlert,
   UserX,
   Settings,
+  Check,
+  CheckCheck,
+  Trash2,
 } from 'lucide-react';
 import { cn, formatRelativeTime, getRoleDisplayName } from '@/lib/utils';
 import { useUIStore, useAuthStore, useNotificationStore } from '@/stores';
@@ -22,7 +25,7 @@ import { notificationsApi, authApi, superAdminApi } from '@/api/services';
 export function Header() {
   const { toggleMobileSidebar, theme, setTheme } = useUIStore();
   const { user, logout, isAuthenticated, setUser } = useAuthStore();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, setNotifications, setUnreadCount, clearAll } = useNotificationStore();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification, setNotifications, setUnreadCount, clearAll } = useNotificationStore();
   const [showNotifications, setShowNotifications] = useState(false);
   const [activeBanner, setActiveBanner] = useState<{
     id: string;
@@ -33,6 +36,22 @@ export function Header() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [stoppingImpersonation, setStoppingImpersonation] = useState(false);
   const navigate = useNavigate();
+
+  const resolveNotificationActionUrl = (url?: string) => {
+    if (!url) return undefined;
+    const normalized = url.startsWith('/') ? url : `/${url}`;
+
+    if (normalized === '/jobs') return '/notifications';
+
+    const knownRoots = new Set([
+      '/dashboard', '/orders', '/shipments', '/inventory', '/products', '/warehouses',
+      '/carriers', '/exceptions', '/returns', '/analytics', '/sla', '/finance', '/help',
+      '/settings', '/team', '/partners', '/notifications', '/super-admin',
+    ]);
+
+    const firstSegment = `/${normalized.split('/').filter(Boolean)[0] || ''}`;
+    return knownRoots.has(firstSegment) ? normalized : '/notifications';
+  };
 
   // Load notifications from API on mount and periodically
   const fetchNotifications = useCallback(async () => {
@@ -232,8 +251,9 @@ export function Header() {
                           setUnreadCount(0);
                           notificationsApi.markAllNotificationsRead().catch(() => {});
                         }}
-                        className="text-sm text-blue-600 hover:text-blue-700"
+                        className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700"
                       >
+                        <CheckCheck className="h-4 w-4" />
                         Mark all read
                       </button>
                     )}
@@ -251,10 +271,15 @@ export function Header() {
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
                           onClick={() => {
-                            markAsRead(notification.id);
-                            notificationsApi.markNotificationRead(notification.id).catch(() => {});
-                            if (notification.actionUrl) navigate(notification.actionUrl);
-                            setShowNotifications(false);
+                            if (!notification.isRead) {
+                              markAsRead(notification.id);
+                              notificationsApi.markNotificationRead(notification.id).catch(() => {});
+                            }
+                            const target = resolveNotificationActionUrl(notification.actionUrl);
+                            if (target) {
+                              navigate(target);
+                              setShowNotifications(false);
+                            }
                           }}
                           className={cn(
                             'p-4 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors',
@@ -278,6 +303,34 @@ export function Header() {
                               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                                 {formatRelativeTime(notification.createdAt)}
                               </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!notification.isRead && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    markAsRead(notification.id);
+                                    notificationsApi.markNotificationRead(notification.id).catch(() => {});
+                                  }}
+                                  className="p-1.5 rounded-lg hover:bg-blue-100/70 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-300"
+                                  title="Mark as read"
+                                  aria-label="Mark as read"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeNotification(notification.id);
+                                  notificationsApi.deleteNotification(notification.id).catch(() => {});
+                                }}
+                                className="p-1.5 rounded-lg hover:bg-red-100/70 dark:hover:bg-red-900/30 text-red-600 dark:text-red-300"
+                                title="Delete"
+                                aria-label="Delete notification"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
                           </div>
                         </motion.div>

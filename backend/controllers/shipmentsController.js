@@ -6,6 +6,7 @@ import orderService from '../services/orderService.js';
 import { sendShipmentCallback } from '../services/channelCallbackService.js';
 import { emitToOrg, emitToShipment } from '../sockets/emitter.js';
 import { matchSlaPolicyForShipment } from '../services/slaPolicyMatchingService.js';
+import operationalNotificationService from '../services/operationalNotificationService.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { asyncHandler, NotFoundError, ValidationError } from '../errors/index.js';
 import logger from '../utils/logger.js';
@@ -232,6 +233,15 @@ export const createShipment = asyncHandler(async (req, res) => {
   emitToOrg(organizationId, 'shipment:created', shipment);
   emitToShipment(shipment.id, 'shipment:updated', shipment);
 
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'shipment',
+    title: 'Shipment Created',
+    message: `Shipment ${shipment.tracking_number || shipment.id} was created and scheduled.`,
+    link: '/shipments',
+    metadata: { event: 'shipment_created', shipmentId: shipment.id, orderId: order_id },
+  });
+
   // Best-effort outbound callback to the source sales channel (if configured).
   const callbackOrder = await orderRepo.findById(order_id);
   await sendShipmentCallback({
@@ -267,6 +277,15 @@ export const updateShipmentStatus = asyncHandler(async (req, res) => {
 
   await shipmentService.updateStatus(id, status, location, notes, organizationId);
 
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'shipment',
+    title: 'Shipment Status Updated',
+    message: `Shipment ${id} status changed to '${status}'.`,
+    link: '/shipments',
+    metadata: { event: 'shipment_status_updated', shipmentId: id, status },
+  });
+
   emitToOrg(organizationId, 'shipment:updated', { id, status, location });
   emitToShipment(id, 'shipment:updated', { id, status, location });
 
@@ -296,6 +315,15 @@ export const confirmPickup = asyncHandler(async (req, res) => {
   const requestedCarrierId = req.authenticatedCarrier?.id || req.user?.carrier_id || req.body.carrierId;
 
   const data = await shipmentService.confirmPickup(id, req.body, requestedCarrierId);
+
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId: data.organizationId || null,
+    type: 'shipment',
+    title: 'Shipment Picked Up',
+    message: `Shipment ${id} is now in transit after pickup confirmation.`,
+    link: '/shipments',
+    metadata: { event: 'shipment_pickup_confirmed', shipmentId: id, orderId: data.orderId || null },
+  });
 
   // Keep shipment + order pages fresh immediately after pickup confirmation.
   emitToShipment(id, 'shipment:updated', { id, status: data.status });

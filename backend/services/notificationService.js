@@ -5,13 +5,38 @@ import logger from '../utils/logger.js';
 import { NotFoundError } from '../errors/AppError.js';
 import { emitToUser } from '../sockets/emitter.js';
 
+const VALID_NOTIFICATION_ROOTS = new Set([
+  '/orders',
+  '/shipments',
+  '/returns',
+  '/notifications',
+  '/tracking',
+  '/inventory',
+  '/dashboard',
+  '/warehouses',
+  '/carriers',
+  '/exceptions',
+  '/settings',
+  '/admin',
+]);
+
+const normalizeNotificationLink = (link) => {
+  if (!link) return '/notifications';
+  const normalized = String(link).trim();
+  if (!normalized.startsWith('/')) return '/notifications';
+  if (normalized === '/jobs') return '/notifications';
+  const firstSegment = `/${normalized.split('/').filter(Boolean)[0] || ''}`;
+  return VALID_NOTIFICATION_ROOTS.has(firstSegment) ? normalized : '/notifications';
+};
+
 export const notificationService = {
   /**
    * Create a new notification
    */
   async createNotification(userId, type, title, message, link = null, metadata = null) {
     try {
-      const notification = await notificationRepository.create(userId, type, title, message, link, metadata);
+      const safeLink = normalizeNotificationLink(link);
+      const notification = await notificationRepository.create(userId, type, title, message, safeLink, metadata);
 
       // Push the new notification to the recipient in realtime.
       emitToUser(userId, 'notification:new', {
@@ -41,11 +66,11 @@ export const notificationService = {
    */
   async createBulkNotifications(userIds, type, title, message, link = null, metadata = null) {
     return withTransaction(async (tx) => {
-      
+      const safeLink = normalizeNotificationLink(link);
       const notifications = [];
 
       for (const userId of userIds) {
-        const notification = await notificationRepository.create(userId, type, title, message, link, metadata, tx);
+        const notification = await notificationRepository.create(userId, type, title, message, safeLink, metadata, tx);
         notifications.push(notification);
       }
 

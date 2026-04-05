@@ -4,8 +4,21 @@ import { asyncHandler, AuthorizationError, NotFoundError, AuthenticationError, V
 import OrderRepository from '../repositories/OrderRepository.js';
 import CarrierAssignmentRepository from '../repositories/CarrierAssignmentRepository.js';
 import CarrierRepository from '../repositories/CarrierRepository.js';
+import OrganizationRepository from '../repositories/OrganizationRepository.js';
+import notificationService from '../services/notificationService.js';
+import operationalNotificationService from '../services/operationalNotificationService.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import { invalidatePatterns, invalidationTargets } from '../utils/cache.js';
+
+const notifyUsers = async (userIds, title, message, link = '/notifications', metadata = null) => {
+  if (!Array.isArray(userIds) || userIds.length === 0) return;
+  const safeLink = operationalNotificationService.normalizeNotificationLink(link);
+  await Promise.allSettled(
+    userIds.map((userId) =>
+      notificationService.createNotification(userId, 'shipment', title, message, safeLink, metadata)
+    )
+  );
+};
 
 // ========== CARRIER ASSIGNMENTS ==========
 
@@ -47,6 +60,16 @@ export const requestCarrierAssignment = asyncHandler(async (req, res) => {
   const result = await carrierAssignmentService.requestCarrierAssignment(
     orderId,
     { items: order.items || [] }
+  );
+
+  const orgUsers = await OrganizationRepository.getUsersByOrganization(order.organization_id);
+  const recipientIds = orgUsers.filter((u) => u.is_active).map((u) => u.id);
+  await notifyUsers(
+    recipientIds,
+    'Carrier Assignment Requested',
+    `Carrier assignment request started for order ${order.order_number || order.id}.`,
+    '/shipments',
+    { event: 'carrier_assignment_requested', orderId }
   );
 
   await invalidatePatterns(invalidationTargets(order.organization_id, 'orders:list', 'dash', 'analytics'));
@@ -142,6 +165,17 @@ export const acceptAssignment = asyncHandler(async (req, res) => {
   if (orderId) {
     const updatedOrder = await OrderRepository.findById(orderId);
     if (updatedOrder) {
+      const carrier = await CarrierRepository.findByIdWithDetails(result.assignment.carrier_id, updatedOrder.organization_id);
+      const orgUsers = await OrganizationRepository.getUsersByOrganization(updatedOrder.organization_id);
+      const recipientIds = orgUsers.filter((u) => u.is_active).map((u) => u.id);
+      await notifyUsers(
+        recipientIds,
+        'Carrier Accepted Assignment',
+        `${carrier?.name || 'Carrier'} accepted assignment for order ${updatedOrder.order_number || updatedOrder.id}.`,
+        '/shipments',
+        { event: 'carrier_assignment_accepted', orderId: updatedOrder.id, assignmentId }
+      );
+
       await invalidatePatterns(invalidationTargets(updatedOrder.organization_id, 'orders:list', 'dash', 'analytics'));
       emitToOrg(updatedOrder.organization_id, 'order:updated', {
         id: updatedOrder.id,
@@ -175,6 +209,17 @@ export const rejectAssignment = asyncHandler(async (req, res) => {
   if (orderId) {
     const updatedOrder = await OrderRepository.findById(orderId);
     if (updatedOrder) {
+      const carrier = await CarrierRepository.findByIdWithDetails(result.assignment.carrier_id, updatedOrder.organization_id);
+      const orgUsers = await OrganizationRepository.getUsersByOrganization(updatedOrder.organization_id);
+      const recipientIds = orgUsers.filter((u) => u.is_active).map((u) => u.id);
+      await notifyUsers(
+        recipientIds,
+        'Carrier Rejected Assignment',
+        `${carrier?.name || 'Carrier'} rejected assignment for order ${updatedOrder.order_number || updatedOrder.id}.`,
+        '/shipments',
+        { event: 'carrier_assignment_rejected', orderId: updatedOrder.id, assignmentId, reason }
+      );
+
       await invalidatePatterns(invalidationTargets(updatedOrder.organization_id, 'orders:list', 'dash', 'analytics'));
       emitToOrg(updatedOrder.organization_id, 'order:updated', {
         id: updatedOrder.id,
@@ -229,6 +274,20 @@ export const markAsBusy = asyncHandler(async (req, res) => {
   if (!assignment) throw new NotFoundError('Assignment');
 
   logger.info(`Assignment ${assignmentId} marked as busy by carrier ${carrierId}`);
+
+  const assignmentDetails = await CarrierAssignmentRepository.findDetailsById(assignmentId);
+  if (assignmentDetails?.organization_id) {
+    const orgUsers = await OrganizationRepository.getUsersByOrganization(assignmentDetails.organization_id);
+    const recipientIds = orgUsers.filter((u) => u.is_active).map((u) => u.id);
+    const carrierName = assignmentDetails.name || 'Carrier';
+    await notifyUsers(
+      recipientIds,
+      'Carrier Marked Busy',
+      `${carrierName} marked assignment busy for order ${assignmentDetails.order_number || assignmentDetails.order_id}.`,
+      '/shipments',
+      { event: 'carrier_assignment_busy', assignmentId, reason }
+    );
+  }
 
   res.json({
     success: true,

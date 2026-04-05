@@ -10,15 +10,32 @@ class NotificationRepository extends BaseRepository {
    * Insert a new notification row.
    */
   async create(userId, type, title, message, link = null, metadata = null, client = null) {
-    const result = await this.query(
-      `INSERT INTO notifications
-       (user_id, type, title, message, link, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [userId, type, title, message, link, JSON.stringify(metadata)],
-      client
-    );
-    return result.rows[0];
+    try {
+      const result = await this.query(
+        `INSERT INTO notifications
+         (user_id, type, title, message, link, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [userId, type, title, message, link, JSON.stringify(metadata)],
+        client
+      );
+      return result.rows[0];
+    } catch (error) {
+      // Backward compatibility: some databases use an older notifications schema
+      // without the metadata column.
+      if (error?.code === '42703' && /metadata/i.test(error?.message || '')) {
+        const fallback = await this.query(
+          `INSERT INTO notifications
+           (user_id, type, title, message, link)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *`,
+          [userId, type, title, message, link],
+          client
+        );
+        return fallback.rows[0];
+      }
+      throw error;
+    }
   }
 
   /**

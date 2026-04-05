@@ -23,6 +23,7 @@ import {
 } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useAuthStore, useNotificationStore } from '@/stores';
+import { toast } from '@/stores/toastStore';
 import type { Notification } from '@/types';
 
 // Strip /api (or /api/) suffix so socket connects to the server root
@@ -30,6 +31,60 @@ const SOCKET_URL = (() => {
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
   return apiUrl.replace(/\/api\/?$/, '');
 })();
+
+function shouldToastForNotification(data: { type?: string; title?: string; message?: string }) {
+  const text = `${data.title || ''} ${data.message || ''}`.toLowerCase();
+
+  const failureSignals = [
+    'failed',
+    'failure',
+    'error',
+    'rejected',
+    'declined',
+    'timeout',
+    'timed out',
+  ];
+
+  const blockerSignals = [
+    'blocked',
+    'on hold',
+    'stuck',
+    'unable to',
+    'exhausted',
+    'requires manual',
+    'action required',
+  ];
+
+  // Keep this list intentionally strict so routine workflow updates remain dropdown-only.
+  const criticalStatusSignals = [
+    'critical',
+    'breach',
+    'overdue',
+    'failed delivery',
+    'lost',
+    'cancelled',
+    'canceled',
+    'escalated',
+    'severity: high',
+  ];
+
+  const hasImportantKeywords = [...failureSignals, ...blockerSignals, ...criticalStatusSignals]
+    .some((keyword) => text.includes(keyword));
+
+  return hasImportantKeywords;
+}
+
+function toastForNotification(data: { title?: string; message?: string }) {
+  const text = `${data.title || ''} ${data.message || ''}`.toLowerCase();
+  const isFailure = ['failed', 'failure', 'error', 'rejected', 'blocked', 'stuck'].some((k) => text.includes(k));
+
+  if (isFailure) {
+    toast.error(data.title || 'Operational issue', data.message || 'A workflow event needs attention.');
+    return;
+  }
+
+  toast.warning(data.title || 'Important update', data.message || 'A critical workflow update just arrived.');
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +172,11 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         createdAt: data.created_at || new Date().toISOString(),
       };
       addNotification(notification);
+
+      // Dropdown receives all events; toast is reserved for urgent/critical workflow signals.
+      if (shouldToastForNotification(data)) {
+        toastForNotification(data);
+      }
     });
 
     setSocket(sock);

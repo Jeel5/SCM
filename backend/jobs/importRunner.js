@@ -2,6 +2,7 @@ import fs from 'fs';
 import { emitToOrg } from '../sockets/emitter.js';
 import { invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 import { iterCsvRows, DEFAULT_MAX_IMPORT_ROWS } from './importUtils.js';
+import operationalNotificationService from '../services/operationalNotificationService.js';
 import logger from '../utils/logger.js';
 
 const IMPORT_CHUNK_SIZE = 100;
@@ -78,6 +79,16 @@ async function completeImport({ organizationId, jobId, importType, result, creat
       dryRun,
       errorSummary,
     });
+
+    operationalNotificationService.queueOrganizationNotification({
+      organizationId,
+      type: 'system',
+      title: `Import Failed: ${importType}`,
+      message: errorSummary,
+      link: '/notifications',
+      metadata: { event: 'import_failed', importType, jobId, failed, total: result.total },
+    });
+
     throw new Error(errorSummary);
   }
 
@@ -93,6 +104,15 @@ async function completeImport({ organizationId, jobId, importType, result, creat
     created,
     failed,
     dryRun,
+  });
+
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'system',
+    title: `Import Completed: ${importType}`,
+    message: `${created}/${result.total} created${failed ? `, ${failed} failed` : ''}.`,
+    link: '/notifications',
+    metadata: { event: 'import_completed', importType, jobId, created, failed, total: result.total },
   });
 }
 

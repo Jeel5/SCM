@@ -2,6 +2,7 @@ import orderService from '../services/orderService.js';
 import { asyncHandler, AppError, ValidationError } from '../errors/index.js';
 import { emitToOrg } from '../sockets/emitter.js';
 import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
+import operationalNotificationService from '../services/operationalNotificationService.js';
 import logger from '../utils/logger.js';
 
 // Orders Controller - handles HTTP requests and delegates to service layer
@@ -112,6 +113,15 @@ export const createOrder = asyncHandler(async (req, res) => {
   // Carrier assignments are always created automatically
   const order = await orderService.createOrder(orderData);
 
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId: req.orgContext?.organizationId,
+    type: 'order',
+    title: 'New Order Created',
+    message: `Order ${order.order_number || order.orderNumber || order.id} was created successfully.`,
+    link: '/orders',
+    metadata: { event: 'order_created', orderId: order.id },
+  });
+
   emitToOrg(req.orgContext?.organizationId, 'order:created', order);
   await invalidatePatterns(invalidationTargets(req.orgContext?.organizationId, 'orders:list', 'dash', 'analytics'));
 
@@ -169,6 +179,15 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
 
   const order = await orderService.updateOrderStatus(id, status, organizationId);
 
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'order',
+    title: 'Order Status Updated',
+    message: `Order ${order.order_number || order.orderNumber || order.id} moved to '${order.status}'.`,
+    link: '/orders',
+    metadata: { event: 'order_status_updated', orderId: order.id, status: order.status },
+  });
+
   emitToOrg(organizationId, 'order:updated', { id: order.id, status: order.status, orderNumber: order.order_number });
   await invalidatePatterns(invalidationTargets(organizationId, 'orders:list', 'dash', 'analytics'));
 
@@ -184,6 +203,15 @@ export const cancelOrder = asyncHandler(async (req, res) => {
   const organizationId = req.orgContext?.organizationId;
 
   const order = await orderService.cancelOrder(id, organizationId);
+
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'order',
+    title: 'Order Cancelled',
+    message: `Order ${order.order_number || order.orderNumber || order.id} has been cancelled.`,
+    link: '/orders',
+    metadata: { event: 'order_cancelled', orderId: order.id },
+  });
 
   emitToOrg(organizationId, 'order:updated', {
     id: order.id,
@@ -209,6 +237,15 @@ export const initiateOrderReturn = asyncHandler(async (req, res) => {
   }
 
   const createdReturn = await orderService.initiateReturnForDeliveredOrder(id, req.body, organizationId);
+
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'return',
+    title: 'Return Request Created',
+    message: `Return ${createdReturn.rma_number || createdReturn.rmaNumber || createdReturn.id} was created from delivered order.`,
+    link: '/returns',
+    metadata: { event: 'return_created_from_order', returnId: createdReturn.id, orderId: id },
+  });
 
   emitToOrg(organizationId, 'return:created', createdReturn);
   await invalidatePatterns(invalidationTargets(organizationId, 'returns:list', 'orders:list', 'dash', 'analytics'));

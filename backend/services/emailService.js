@@ -342,6 +342,106 @@ async function sendOrganizationStatusUpdateEmail({
 }
 
 /**
+ * Send account update email for org users (role/status changes).
+ */
+async function sendUserAccountUpdateEmail({
+  to,
+  name,
+  organizationName,
+  roleChangedTo = null,
+  accountStatus = null,
+  loginUrl,
+}) {
+  const safeName = escapeHtml(name || 'there');
+  const safeOrgName = escapeHtml(organizationName || 'your organization');
+  const safeRole = roleChangedTo ? escapeHtml(roleChangedTo) : null;
+  const effectiveLoginUrl = getLoginUrl(loginUrl);
+
+  const updates = [];
+  const textLines = [];
+
+  if (safeRole) {
+    updates.push(`<p style="margin:0 0 10px 0;">Your role has been updated to <strong>${safeRole}</strong>.</p>`);
+    textLines.push(`Your role has been updated to ${roleChangedTo}.`);
+  }
+
+  if (accountStatus === 'reactivated') {
+    updates.push('<p style="margin:0 0 10px 0;">Your account has been reactivated and you can sign in again.</p>');
+    textLines.push('Your account has been reactivated. You can sign in again.');
+  } else if (accountStatus === 'deactivated') {
+    updates.push('<p style="margin:0 0 10px 0;">Your account has been deactivated. Please contact your administrator for access.</p>');
+    textLines.push('Your account has been deactivated. Please contact your administrator for access.');
+  }
+
+  if (updates.length === 0) {
+    updates.push('<p style="margin:0;">Your account settings were updated by an administrator.</p>');
+    textLines.push('Your account settings were updated by an administrator.');
+  }
+
+  const canLogin = accountStatus !== 'deactivated';
+
+  return send({
+    to,
+    subject: 'Your account has been updated',
+    text: [
+      `Hi ${name || 'there'},`,
+      '',
+      `Your account in ${organizationName || 'your organization'} has been updated.`,
+      ...textLines,
+      ...(canLogin ? ['', `Login here: ${effectiveLoginUrl}`] : []),
+    ].join('\n'),
+    html: renderEmailLayout({
+      preheader: 'Your account settings were updated',
+      title: 'Account Update',
+      greeting: `Hi ${safeName},`,
+      bodyHtml: `
+        <p style="margin:0 0 12px 0;">Your account in <strong>${safeOrgName}</strong> has been updated.</p>
+        ${updates.join('')}
+      `,
+      ctaLabel: canLogin ? 'Login to TwinChain' : null,
+      ctaUrl: canLogin ? effectiveLoginUrl : null,
+      footerNote: 'If you did not expect this change, contact your administrator.',
+    }),
+  });
+}
+
+/**
+ * Send pickup reminder email for pending returns.
+ */
+async function sendReturnPickupReminderEmail({ to, name, rmaNumber, pickupWindow = null, returnsUrl = null }) {
+  const safeName = escapeHtml(name || 'there');
+  const safeRma = escapeHtml(rmaNumber || 'your return');
+  const effectiveReturnsUrl = returnsUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/returns`;
+
+  return send({
+    to,
+    subject: `Pickup reminder for return ${rmaNumber || ''}`.trim(),
+    text: [
+      `Hi ${name || 'there'},`,
+      '',
+      `This is a reminder that return ${rmaNumber || ''} is scheduled for pickup soon.`,
+      pickupWindow ? `Pickup window: ${pickupWindow}` : null,
+      'Please keep the package ready and handed over to the pickup agent.',
+      '',
+      `Track returns here: ${effectiveReturnsUrl}`,
+    ].filter(Boolean).join('\n'),
+    html: renderEmailLayout({
+      preheader: 'Your return pickup is scheduled soon',
+      title: 'Return Pickup Reminder',
+      greeting: `Hi ${safeName},`,
+      bodyHtml: `
+        <p style="margin:0 0 12px 0;">This is a reminder that return <strong>${safeRma}</strong> is scheduled for pickup soon.</p>
+        ${pickupWindow ? `<p style="margin:0 0 12px 0;"><strong>Pickup window:</strong> ${escapeHtml(pickupWindow)}</p>` : ''}
+        <p style="margin:0;">Please keep the package ready for handover.</p>
+      `,
+      ctaLabel: 'Open Returns',
+      ctaUrl: effectiveReturnsUrl,
+      footerNote: 'You are receiving this reminder because return notifications are enabled.',
+    }),
+  });
+}
+
+/**
  * Run an email task without blocking the request lifecycle.
  */
 function dispatchInBackground(taskName, task) {
@@ -364,5 +464,7 @@ export default {
   sendEmailChangeVerification,
   sendSimpleNotification,
   sendOrganizationStatusUpdateEmail,
+  sendUserAccountUpdateEmail,
+  sendReturnPickupReminderEmail,
   dispatchInBackground,
 };

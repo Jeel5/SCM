@@ -251,20 +251,13 @@ export const updateProfile = asyncHandler(async (req, res) => {
   // If an email change was staged, the service attaches _emailChangeToken and _pendingEmail.
   if (updatedUser._emailChangeToken) {
     const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${updatedUser._emailChangeToken}`;
-    try {
+    emailService.dispatchInBackground('email-change-verification', async () => {
       await emailService.sendEmailChangeVerification({
         to: updatedUser._pendingEmail,
         name: updatedUser.name,
         verifyUrl,
       });
-    } catch (emailError) {
-      // Email transport failures should not block profile updates.
-      logger.error('Failed to send email verification link', {
-        userId,
-        pendingEmail: updatedUser._pendingEmail,
-        error: emailError,
-      });
-    }
+    });
 
     logger.info('[EMAIL-VERIFY] Email verification flow initiated', {
       pendingEmail: updatedUser._pendingEmail,
@@ -451,7 +444,7 @@ export const createOrgUser = asyncHandler(async (req, res) => {
   const user = await userRepo.createUser({ name, email, password_hash, role, phone: phone || null, organization_id: organizationId });
   await userRepo.insertAuditLog(req.user.userId, 'create_user', 'user', user.id);
 
-  try {
+  emailService.dispatchInBackground('org-user-welcome-email', async () => {
     await emailService.sendWelcomeCredentialsEmail({
       to: user.email,
       name: user.name,
@@ -460,14 +453,7 @@ export const createOrgUser = asyncHandler(async (req, res) => {
       temporaryPassword: tempPassword,
       loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`,
     });
-  } catch (emailError) {
-    logger.error('Failed to send welcome email to org user', {
-      userId: user.id,
-      organizationId,
-      email: user.email,
-      error: emailError,
-    });
-  }
+  });
 
   // Return temporary password once so admin can share it securely.
   res.status(201).json({ success: true, data: { ...user, temporary_password: tempPassword } });
@@ -512,30 +498,32 @@ export const updateOrgUser = asyncHandler(async (req, res) => {
   // Audit: record who changed the user and what fields were updated (TASK-R12-008)
   await userRepo.insertAuditLog(req.user.userId, 'update_user', 'user', id);
 
-  try {
-    const messages = [];
-    if (fields.role !== undefined && fields.role !== existing.role) {
-      messages.push(`Your role has been updated to ${fields.role}.`);
-    }
-    if (fields.is_active !== undefined && fields.is_active !== existing.is_active) {
-      messages.push(fields.is_active
-        ? 'Your account has been reactivated. You can log in again.'
-        : 'Your account has been deactivated. Please contact your administrator for access.');
-    }
+  const messages = [];
+  const accountStatus = fields.is_active === undefined
+    ? null
+    : (fields.is_active ? 'reactivated' : 'deactivated');
+  if (fields.role !== undefined && fields.role !== existing.role) {
+    messages.push(`Your role has been updated to ${fields.role}.`);
+  }
+  if (fields.is_active !== undefined && fields.is_active !== existing.is_active) {
+    messages.push(fields.is_active
+      ? 'Your account has been reactivated. You can log in again.'
+      : 'Your account has been deactivated. Please contact your administrator for access.');
+  }
 
-    if (messages.length > 0 && existing.email) {
-      await emailService.sendSimpleNotification({
+  if (messages.length > 0 && existing.email) {
+    const org = await orgRepo.findById(organizationId);
+    emailService.dispatchInBackground('org-user-update-email', async () => {
+      await emailService.sendUserAccountUpdateEmail({
         to: existing.email,
-        subject: 'Your account has been updated',
-        message: messages.join(' '),
+        name: existing.name,
+        organizationName: org?.name,
+        roleChangedTo: fields.role !== undefined && fields.role !== existing.role ? fields.role : null,
+        accountStatus,
+        loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`,
       });
-    }
-  } catch (emailError) {
-    logger.error('Failed to send user update notification', {
-      userId: id,
-      organizationId,
-      error: emailError,
     });
+
   }
 
   res.json({ success: true, data: updated });
@@ -564,20 +552,17 @@ export const deactivateOrgUser = asyncHandler(async (req, res) => {
   // Audit: record account deactivation (TASK-R12-008)
   await userRepo.insertAuditLog(req.user.userId, 'deactivate_user', 'user', id);
 
-  try {
-    if (deactivated.email) {
-      await emailService.sendSimpleNotification({
+  if (deactivated.email) {
+    const org = await orgRepo.findById(organizationId);
+    emailService.dispatchInBackground('org-user-deactivation-email', async () => {
+      await emailService.sendUserAccountUpdateEmail({
         to: deactivated.email,
-        subject: 'Your account has been deactivated',
-        message: 'Your team account has been deactivated. You can no longer sign in until an administrator reactivates it.',
+        name: deactivated.name,
+        organizationName: org?.name,
+        accountStatus: 'deactivated',
       });
-    }
-  } catch (emailError) {
-    logger.error('Failed to send user deactivation notification', {
-      userId: id,
-      organizationId,
-      error: emailError,
     });
+
   }
 
   res.json({ success: true, data: deactivated });

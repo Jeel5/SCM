@@ -6,6 +6,7 @@ import returnsService from '../services/returnsService.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
 import { emitToOrg } from '../sockets/emitter.js';
+import operationalNotificationService from '../services/operationalNotificationService.js';
 import { asyncHandler, NotFoundError, AppError, ValidationError } from '../errors/index.js';
 import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
 
@@ -174,6 +175,14 @@ export const createReturn = asyncHandler(async (req, res) => {
   });
 
   emitToOrg(organizationId, 'return:created', returnRecord);
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'return',
+    title: 'Return Created',
+    message: `Return ${returnRecord.rma_number || returnRecord.id} has been created.`,
+    link: '/returns',
+    metadata: { event: 'return_created', returnId: returnRecord.id, orderId: order_id },
+  });
   await invalidatePatterns(invalidationTargets(organizationId, 'returns:list', 'dash', 'analytics'));
 
   res.status(201).json({ success: true, message: 'Return created successfully', data: returnRecord });
@@ -254,6 +263,14 @@ export const updateReturn = asyncHandler(async (req, res) => {
   });
 
   emitToOrg(organizationId, 'return:updated', { id: txResult.updated.id, status: txResult.updated.status });
+  operationalNotificationService.queueOrganizationNotification({
+    organizationId,
+    type: 'return',
+    title: 'Return Updated',
+    message: `Return ${txResult.updated.rma_number || txResult.updated.id} updated to '${txResult.updated.status}'.`,
+    link: '/returns',
+    metadata: { event: 'return_updated', returnId: txResult.updated.id, status: txResult.updated.status },
+  });
   if (txResult.returnShipment) {
     emitToOrg(organizationId, 'shipment:created', txResult.returnShipment);
   }
