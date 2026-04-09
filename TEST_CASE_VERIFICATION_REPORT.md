@@ -278,17 +278,6 @@
 
 ---
 
-### TC-25: Rebalancing suggestion
-**Status:** ⚠️ PARTIAL
-**Implementation Details:**
-- `inventoryRebalancing` job mentioned in jobs but implementation sparse
-- Service doesn't show clear rebalancing algorithm
-- Concept exists but not fully implemented
-**Notes:** Background job mentioned but actual rebalancing logic incomplete.
-**Flow:** Regional imbalance detected → Job runs → Suggestion generated (incomplete implementation)
-
----
-
 ## 4.4 Shipment Management (9 test cases)
 
 ### TC-26: Shipment creation
@@ -385,35 +374,6 @@
 - `carriersController.listCarriers` filters by availability_status !== 'busy'
 - Queries only AVAILABLE carriers
 **Flow:** GET /carriers → Query availability_status = available → Exclude busy/offline → Return list
-
----
-
-### TC-36: Mark busy at full load
-**Status:** ⚠️ PARTIAL
-**Implementation Details:**
-- Carrier status update logic exists but explicit 100% utilization check not clearly visible
-- Manual status updates exist but automated busy-marking unclear
-**Notes:** Status can be set to BUSY but automatic trigger on 100% load not obvious.
-**Flow:** Carrier 100% loaded → Status set to BUSY (manual or automatic, unclear)
-
----
-
-### TC-37: Return to active after delivery
-**Status:** ⚠️ PARTIAL
-**Implementation Details:**
-- carriersController references status reset but implementation incomplete
-- Upon delivery, carrier status reset logic not clearly defined
-**Notes:** Reset mechanism exists but trigger not fully implemented.
-**Flow:** Busy carrier delivery complete → Status reset to ACTIVE (mechanism unclear)
-
----
-
-### TC-38: Carrier profile update
-**Status:** ✅ PASS
-**Implementation Details:**
-- `updateCarrier` endpoint in carriersController validates and updates carrier fields
-- Service area, capacity, permits saved
-**Flow:** PUT /carriers/:id → Fields validated → Updated → 200 response
 
 ---
 
@@ -723,16 +683,6 @@
 - All notifications stored in notifications table
 - Query `/notifications` returns delivery history
 **Flow:** Send notification → Stored → Query history → Return delivery records
-
----
-
-### TC-70: Custom threshold alerting
-**Status:** ⚠️ PARTIAL
-**Implementation Details:**
-- Alert thresholds can be configured but custom trigger logic incomplete
-- Default thresholds exist but user customization not clearly implemented
-**Notes:** Custom thresholds concept exists but implementation incomplete.
-**Flow:** Set custom threshold → Trigger logic (incomplete implementation)
 
 ---
 
