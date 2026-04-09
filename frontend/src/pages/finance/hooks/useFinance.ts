@@ -79,7 +79,7 @@ export function useFinance() {
           const summary = summaryRes.data;
 
           setData({
-            outstandingInvoices: summary?.invoices?.pending_amount || summary?.invoices?.outstanding_amount || 0,
+            outstandingInvoices: summary?.invoices?.outstanding_amount || summary?.invoices?.pending_amount || 0,
             refundsProcessed: summary?.refunds?.total_refund_amount || summary?.refunds?.total_amount || 0,
             disputes: summary?.disputes?.total_disputes || summary?.disputes?.open || 0,
             payoutStatus: (summary?.disputes?.total_disputes || summary?.disputes?.open)

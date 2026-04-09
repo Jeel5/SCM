@@ -127,7 +127,7 @@ export function AnalyticsPage() {
   const returnRate = financialMetrics.totalOrders > 0
     ? Math.round(returnsAnalysis.totalReturns / financialMetrics.totalOrders * 1000) / 10
     : 0;
-  const netRevenue = financialMetrics.totalRevenue - financialMetrics.totalShippingCost - financialMetrics.totalPenalties - financialMetrics.totalRefunds;
+  const netRevenue = financialMetrics.totalRevenue - financialMetrics.totalShippingCost + financialMetrics.totalPenalties - financialMetrics.totalRefunds;
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -872,7 +872,7 @@ export function AnalyticsPage() {
                   {[
                     { label: 'Gross Revenue', value: formatCurrency(financialMetrics.totalRevenue), color: 'bg-green-500', pct: 100 },
                     { label: 'Shipping Costs', value: `-${formatCurrency(financialMetrics.totalShippingCost)}`, color: 'bg-orange-500', pct: financialMetrics.totalRevenue > 0 ? (financialMetrics.totalShippingCost / financialMetrics.totalRevenue) * 100 : 0 },
-                    { label: 'Penalties', value: `-${formatCurrency(financialMetrics.totalPenalties)}`, color: 'bg-red-500', pct: financialMetrics.totalRevenue > 0 ? (financialMetrics.totalPenalties / financialMetrics.totalRevenue) * 100 : 0 },
+                    { label: 'Penalty Recoveries', value: `+${formatCurrency(financialMetrics.totalPenalties)}`, color: 'bg-teal-500', pct: financialMetrics.totalRevenue > 0 ? (financialMetrics.totalPenalties / financialMetrics.totalRevenue) * 100 : 0 },
                     { label: 'Refunds', value: `-${formatCurrency(financialMetrics.totalRefunds)}`, color: 'bg-purple-500', pct: financialMetrics.totalRevenue > 0 ? (financialMetrics.totalRefunds / financialMetrics.totalRevenue) * 100 : 0 },
                   ].map((item) => (
                     <div key={item.label}>

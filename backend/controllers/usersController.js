@@ -250,7 +250,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
   // If an email change was staged, the service attaches _emailChangeToken and _pendingEmail.
   if (updatedUser._emailChangeToken) {
-    const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${updatedUser._emailChangeToken}`;
+    const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email?token=${updatedUser._emailChangeToken}`;
     emailService.dispatchInBackground('email-change-verification', async () => {
       await emailService.sendEmailChangeVerification({
         to: updatedUser._pendingEmail,

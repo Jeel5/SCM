@@ -166,6 +166,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 // Main App Component
 function App() {
   const { theme } = useUIStore();
+  const googleClientId = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
   // Apply theme class to document root on mount and when theme changes
   useEffect(() => {
@@ -186,18 +187,14 @@ function App() {
     }
   }, [theme]);
 
-  return (
-    <ErrorBoundary>
-      <GoogleOAuthProvider
-        clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ""}
-      >
-        <QueryClientProvider client={queryClient}>
-          <ToastProvider>
-            <ToastContainer />
-            <SocketProvider>
-              <BrowserRouter>
-                <RouteTitleManager />
-                <Routes>
+  const appContent = (
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>
+        <ToastContainer />
+        <SocketProvider>
+          <BrowserRouter>
+            <RouteTitleManager />
+            <Routes>
                   <Route
                     path="*"
                     element={
@@ -487,12 +484,18 @@ function App() {
 
                   {/* Catch-all redirect */}
                   <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </BrowserRouter>
-            </SocketProvider>
-          </ToastProvider>
-        </QueryClientProvider>
-      </GoogleOAuthProvider>
+            </Routes>
+          </BrowserRouter>
+        </SocketProvider>
+      </ToastProvider>
+    </QueryClientProvider>
+  );
+
+  return (
+    <ErrorBoundary>
+      {googleClientId
+        ? <GoogleOAuthProvider clientId={googleClientId}>{appContent}</GoogleOAuthProvider>
+        : appContent}
     </ErrorBoundary>
   );
 }

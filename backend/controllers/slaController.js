@@ -215,7 +215,13 @@ export const createException = asyncHandler(async (req, res) => {
   const { shipmentId, type: exceptionType, severity, description } = req.body;
   const organizationId = req.orgContext?.organizationId;
 
-  const row = await slaRepo.createException({ organizationId, shipmentId, exceptionType, severity, description });
+  const row = await exceptionService.createException({
+    organizationId,
+    shipmentId,
+    exceptionType,
+    severity,
+    description,
+  });
 
   emitToOrg(organizationId, 'exception:created', row);
 
@@ -257,10 +263,18 @@ export const getException = asyncHandler(async (req, res) => {
 export const resolveException = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { resolution } = req.body;
-  // Use injectOrgContext result — consistent with all other handlers (T3-06)
   const organizationId = req.orgContext?.organizationId;
 
-  const row = await slaRepo.resolveException(id, resolution, organizationId);
+  const existing = await slaRepo.findExceptionById(id, organizationId);
+  if (!existing) throw new NotFoundError('Exception');
+
+  const row = await exceptionService.resolveException(
+    id,
+    resolution,
+    null,
+    null,
+    req.user?.userId || null
+  );
 
   if (!row) throw new NotFoundError('Exception');
 

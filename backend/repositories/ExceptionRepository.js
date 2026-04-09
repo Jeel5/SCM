@@ -32,7 +32,8 @@ class ExceptionRepository extends BaseRepository {
       `UPDATE exceptions
        SET escalation_level = $1,
            escalated_at     = NOW(),
-           escalated_to     = $2,
+           assigned_to      = COALESCE($2, assigned_to),
+           status           = CASE WHEN status IN ('resolved', 'closed') THEN status ELSE 'escalated' END,
            priority         = GREATEST(1, priority - 2)
        WHERE id = $3
        RETURNING *`,

@@ -187,6 +187,9 @@ class FinanceRepository extends BaseRepository {
            COUNT(*) AS total_invoices,
            COALESCE(SUM(final_amount), 0) AS total_amount,
            COALESCE(SUM(CASE WHEN status = 'pending'  THEN final_amount ELSE 0 END), 0) AS pending_amount,
+           COALESCE(SUM(CASE WHEN status = 'approved' THEN final_amount ELSE 0 END), 0) AS approved_amount,
+           COALESCE(SUM(CASE WHEN status = 'disputed' THEN final_amount ELSE 0 END), 0) AS disputed_amount,
+           COALESCE(SUM(CASE WHEN status IN ('pending', 'approved', 'disputed') THEN final_amount ELSE 0 END), 0) AS outstanding_amount,
            COALESCE(SUM(CASE WHEN status = 'paid'     THEN final_amount ELSE 0 END), 0) AS paid_amount,
            COALESCE(SUM(penalties), 0) AS total_penalties
          FROM invoices

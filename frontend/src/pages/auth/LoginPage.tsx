@@ -20,6 +20,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const { theme } = useUIStore();
+  const googleClientId = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+  const hasGoogleOAuth = googleClientId.length > 0;
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -272,18 +274,24 @@ export function LoginPage() {
 
               {/* Google Login Button */}
               <div className="mb-5">
-                <div className="flex justify-center">
-                  <GoogleLogin
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    useOneTap
-                    theme={isDark ? 'filled_black' : 'outline'}
-                    size="large"
-                    width="100%"
-                    text="signin_with"
-                    shape="rectangular"
-                  />
-                </div>
+                {hasGoogleOAuth ? (
+                  <div className="flex justify-center">
+                    <GoogleLogin
+                      onSuccess={handleGoogleSuccess}
+                      onError={handleGoogleError}
+                      useOneTap
+                      theme={isDark ? 'filled_black' : 'outline'}
+                      size="large"
+                      width="100%"
+                      text="signin_with"
+                      shape="rectangular"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-200">
+                    Google sign-in is not configured. Set VITE_GOOGLE_CLIENT_ID in frontend/.env and restart the frontend server.
+                  </div>
+                )}
               </div>
 
               {/* Divider */}
