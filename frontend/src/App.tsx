@@ -37,7 +37,7 @@ const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default:
 const TeamPage = lazy(() => import('@/pages/team').then(m => ({ default: m.TeamPage })));
 const PartnersPage = lazy(() => import('@/pages/partners').then(m => ({ default: m.PartnersPage })));
 const NotificationsPage = lazy(() => import('@/pages/notifications').then(m => ({ default: m.NotificationsPage })));
-const LogsPage = lazy(() => import('@/pages/logs').then(m => ({ default: m.LogsPage })));
+const LogsPage = lazy(() => import('@/pages/logspage').then(m => ({ default: m.LogsPage })));
 const LandingPage = lazy(() => import('@/pages/public').then(m => ({ default: m.LandingPage })));
 const AboutPage = lazy(() => import('@/pages/public').then(m => ({ default: m.AboutPage })));
 const GetDemoPage = lazy(() => import('@/pages/public').then(m => ({ default: m.GetDemoPage })));

@@ -1,0 +1,4 @@
+in superadmin company status filter is button select deselect instead a select list would be better and change names of status to All Active Suspended Deactivated
+wait whats difference between inactive and suspended many questions when click on view audit log button audit center page should open not a modal same for view billing make another page not a modal and when view billing button is clicked that page shows and both of those page should hav appropriate cards filters and list view and in
+
+in system health page the cards are not related to system health at all and only 1 card and its same as dashboard and in tenant lifecycle summary deleted tenants have a delete icon uncessarily 
