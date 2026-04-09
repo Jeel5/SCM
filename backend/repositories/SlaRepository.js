@@ -190,7 +190,7 @@ class SlaRepository extends BaseRepository {
    * Fetch the most recent ETA prediction for a shipment.
    * Returns null if not found.
    */
-  async findLatestEta(shipmentId, organizationId) {
+  async findLatestEta(shipmentId, organizationId, client = null) {
     const sql = organizationId
       ? `SELECT ep.*, s.tracking_number
          FROM eta_predictions ep
@@ -203,7 +203,32 @@ class SlaRepository extends BaseRepository {
          WHERE ep.shipment_id = $1
          ORDER BY ep.created_at DESC LIMIT 1`;
     const params = organizationId ? [shipmentId, organizationId] : [shipmentId];
-    const result = await this.query(sql, params);
+    const result = await this.query(sql, params, client);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Persist an ETA prediction snapshot for a shipment.
+   */
+  async createEtaPrediction(data, client = null) {
+    const result = await this.query(
+      `INSERT INTO eta_predictions
+         (shipment_id, predicted_delivery, confidence_score, delay_risk_score,
+          factors, actual_delivery, prediction_accuracy_hours, model_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        data.shipmentId,
+        data.predictedDelivery,
+        data.confidenceScore ?? null,
+        data.delayRiskScore ?? null,
+        data.factors ? JSON.stringify(data.factors) : null,
+        data.actualDelivery ?? null,
+        data.predictionAccuracyHours ?? null,
+        data.modelVersion || 'rule-based-v1',
+      ],
+      client
+    );
     return result.rows[0] || null;
   }
 

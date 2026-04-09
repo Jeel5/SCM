@@ -28,6 +28,7 @@ export const ALL_PERMISSIONS = [
   'sla.manage',
   'finance.view',
   'analytics.view',
+  'logs.view',
   'jobs.view',
   'jobs.create',
   'jobs.update',
@@ -68,6 +69,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'returns.view', 'returns.create', 'returns.update',
     'sla.view', 'sla.manage',
     'analytics.view',
+    'logs.view',
     'jobs.view', 'jobs.create', 'jobs.update', 'jobs.delete',
     'settings.personal',
   ],
@@ -79,6 +81,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'warehouses.view',
     'returns.view', 'returns.create', 'returns.update',
     'exceptions.view', 'exceptions.update',
+    'logs.view',
     'settings.personal',
   ],
 
@@ -87,6 +90,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'shipments.view', 'shipments.update',
     'exceptions.view', 'exceptions.update',
     'returns.view',
+    'logs.view',
     'settings.personal',
   ],
 
@@ -98,6 +102,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'orders.view',
     'returns.view',
     'exceptions.view',
+    'logs.view',
     'settings.personal',
   ],
 
@@ -107,6 +112,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'shipments.view',
     'exceptions.view', 'exceptions.update',
     'returns.view',
+    'logs.view',
     'settings.personal',
   ],
 };

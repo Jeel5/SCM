@@ -35,6 +35,24 @@ export const notificationService = {
    */
   async createNotification(userId, type, title, message, link = null, metadata = null) {
     try {
+      const duplicateWindow = Number(metadata?.dedupeWindowMinutes ?? 10);
+      const existing = await notificationRepository.findRecentDuplicate(
+        userId,
+        type,
+        title,
+        message,
+        Number.isFinite(duplicateWindow) ? Math.max(1, duplicateWindow) : 10
+      );
+
+      if (existing) {
+        logger.info('Duplicate notification suppressed', {
+          userId,
+          type,
+          existingId: existing.id,
+        });
+        return existing;
+      }
+
       const safeLink = normalizeNotificationLink(link);
       const notification = await notificationRepository.create(userId, type, title, message, safeLink, metadata);
 

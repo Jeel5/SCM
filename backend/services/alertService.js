@@ -132,27 +132,27 @@ export const alertService = {
    * Evaluate a single alert rule
    */
   async evaluateRule(rule) {
-    const { rule_type, threshold, conditions } = rule;
-    
+    const { rule_type, threshold, conditions, organization_id: organizationId } = rule;
+
     switch (rule_type) {
       case 'sla_breach':
-        return await this.checkSLABreach(threshold, conditions);
-      
+        return await this.checkSLABreach(threshold, conditions, organizationId);
+
       case 'exception_critical':
-        return await this.checkCriticalExceptions(threshold, conditions);
-      
+        return await this.checkCriticalExceptions(threshold, conditions, organizationId);
+
       case 'inventory_low_stock':
-        return await this.checkLowStock(threshold, conditions);
-      
+        return await this.checkLowStock(threshold, conditions, organizationId);
+
       case 'order_delayed':
-        return await this.checkDelayedOrders(threshold, conditions);
-      
+        return await this.checkDelayedOrders(threshold, conditions, organizationId);
+
       case 'shipment_stuck':
-        return await this.checkStuckShipments(threshold, conditions);
-      
+        return await this.checkStuckShipments(threshold, conditions, organizationId);
+
       case 'carrier_performance':
-        return await this.checkCarrierPerformance(threshold, conditions);
-      
+        return await this.checkCarrierPerformance(threshold, conditions, organizationId);
+
       default:
         logger.warn(`Unknown rule type: ${rule_type}`);
         return false;
@@ -208,60 +208,60 @@ export const alertService = {
       return rule.assigned_users;
     }
 
-    // If specific roles are assigned
+    // If specific roles are assigned, scope roles to the same organization.
     if (rule.assigned_roles && rule.assigned_roles.length > 0) {
-      return await alertRepo.getUsersByRoles(rule.assigned_roles);
+      return await alertRepo.getUsersByRoles(rule.assigned_roles, rule.organization_id || null);
     }
 
-    // Default to admins scoped to the same organization
+    // Default to admins scoped to the same organization.
     return await alertRepo.getAdminUsers(rule.organization_id || null);
   },
 
   /**
    * Check for SLA breaches
    */
-  async checkSLABreach(threshold, conditions) {
-    const count = await alertRepo.countPendingSlaViolations();
+  async checkSLABreach(threshold, conditions, organizationId = null) {
+    const count = await alertRepo.countPendingSlaViolations(organizationId);
     return count >= (threshold || 5);
   },
 
   /**
    * Check for critical exceptions
    */
-  async checkCriticalExceptions(threshold, conditions) {
-    const count = await alertRepo.countCriticalExceptions();
+  async checkCriticalExceptions(threshold, conditions, organizationId = null) {
+    const count = await alertRepo.countCriticalExceptions(organizationId);
     return count >= (threshold || 3);
   },
 
   /**
    * Check for low stock items
    */
-  async checkLowStock(threshold, conditions) {
-    const count = await alertRepo.countLowStockItems();
+  async checkLowStock(threshold, conditions, organizationId = null) {
+    const count = await alertRepo.countLowStockItems(organizationId);
     return count >= (threshold || 10);
   },
 
   /**
    * Check for delayed orders
    */
-  async checkDelayedOrders(threshold, conditions) {
-    const count = await alertRepo.countDelayedOrders();
+  async checkDelayedOrders(threshold, conditions, organizationId = null) {
+    const count = await alertRepo.countDelayedOrders(organizationId);
     return count >= (threshold || 20);
   },
 
   /**
    * Check for stuck shipments
    */
-  async checkStuckShipments(threshold, conditions) {
-    const count = await alertRepo.countStuckShipments();
+  async checkStuckShipments(threshold, conditions, organizationId = null) {
+    const count = await alertRepo.countStuckShipments(organizationId);
     return count >= (threshold || 10);
   },
 
   /**
    * Check carrier performance
    */
-  async checkCarrierPerformance(threshold, conditions) {
-    const rows = await alertRepo.getUnderperformingCarriers(threshold || 85);
+  async checkCarrierPerformance(threshold, conditions, organizationId = null) {
+    const rows = await alertRepo.getUnderperformingCarriers(threshold || 85, organizationId);
     return rows.length > 0;
   },
 

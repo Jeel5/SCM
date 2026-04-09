@@ -6,7 +6,9 @@ import { useState, useEffect } from 'react';
  * Centralizes the localStorage check that was duplicated across all hooks
  */
 export function useApiMode() {
-  const allowMockApi = import.meta.env.DEV;
+  const allowMockApi =
+    import.meta.env.DEV ||
+    String(import.meta.env.VITE_ENABLE_MOCK_DEMO || '').toLowerCase() === 'true';
   const [useMockApi, setUseMockApi] = useState(() => {
     if (!allowMockApi) return false;
     return localStorage.getItem('useMockApi') === 'true';

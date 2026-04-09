@@ -37,6 +37,7 @@ const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default:
 const TeamPage = lazy(() => import('@/pages/team').then(m => ({ default: m.TeamPage })));
 const PartnersPage = lazy(() => import('@/pages/partners').then(m => ({ default: m.PartnersPage })));
 const NotificationsPage = lazy(() => import('@/pages/notifications').then(m => ({ default: m.NotificationsPage })));
+const LogsPage = lazy(() => import('@/pages/logs').then(m => ({ default: m.LogsPage })));
 const LandingPage = lazy(() => import('@/pages/public').then(m => ({ default: m.LandingPage })));
 const AboutPage = lazy(() => import('@/pages/public').then(m => ({ default: m.AboutPage })));
 const GetDemoPage = lazy(() => import('@/pages/public').then(m => ({ default: m.GetDemoPage })));
@@ -128,6 +129,7 @@ function RouteTitleManager() {
       '/team': 'Team | TwinChain',
       '/partners': 'Partners | TwinChain',
       '/notifications': 'Notifications | TwinChain',
+      '/logs': 'Activity Logs | TwinChain',
       '/super-admin/dashboard': 'Super Admin Dashboard | TwinChain',
       '/super-admin/companies': 'Companies | TwinChain',
       '/super-admin/users': 'System Users | TwinChain',
@@ -477,6 +479,16 @@ function App() {
                       element={
                         <PageLoader>
                           <NotificationsPage />
+                        </PageLoader>
+                      }
+                    />
+                    <Route
+                      path="logs"
+                      element={
+                        <PageLoader>
+                          <PermissionRoute permission="logs.view">
+                            <LogsPage />
+                          </PermissionRoute>
                         </PageLoader>
                       }
                     />

@@ -187,12 +187,17 @@ class AlertRepository extends BaseRepository {
 
   /**
    * Fetch user IDs that belong to any of the given roles and are active.
+   * Optionally scope to a single organization.
    */
-  async getUsersByRoles(roles, client = null) {
+  async getUsersByRoles(roles, organizationId = null, client = null) {
+    const params = [roles];
+    const orgClause = organizationId
+      ? ` AND organization_id = $${params.push(organizationId)}`
+      : '';
     const result = await this.query(
       `SELECT id FROM users
-       WHERE role = ANY($1) AND is_active = true`,
-      [roles],
+       WHERE role = ANY($1) AND is_active = true${orgClause}`,
+      params,
       client
     );
     return result.rows.map(r => r.id);
@@ -220,13 +225,17 @@ class AlertRepository extends BaseRepository {
   /**
    * Count pending SLA violations created in the last hour.
    */
-  async countPendingSlaViolations(client = null) {
+  async countPendingSlaViolations(organizationId = null, client = null) {
+    const params = [];
+    const orgClause = organizationId
+      ? ` AND organization_id = $${params.push(organizationId)}`
+      : '';
     const result = await this.query(
       `SELECT COUNT(*)
        FROM sla_violations
        WHERE status = 'pending'
-         AND created_at > NOW() - INTERVAL '1 hour'`,
-      [],
+         AND created_at > NOW() - INTERVAL '1 hour'${orgClause}`,
+      params,
       client
     );
     return parseInt(result.rows[0].count, 10);
@@ -235,14 +244,18 @@ class AlertRepository extends BaseRepository {
   /**
    * Count open/in-progress critical exceptions created in the last hour.
    */
-  async countCriticalExceptions(client = null) {
+  async countCriticalExceptions(organizationId = null, client = null) {
+    const params = [];
+    const orgClause = organizationId
+      ? ` AND organization_id = $${params.push(organizationId)}`
+      : '';
     const result = await this.query(
       `SELECT COUNT(*)
        FROM exceptions
        WHERE severity = 'critical'
          AND status IN ('open', 'in_progress')
-         AND created_at > NOW() - INTERVAL '1 hour'`,
-      [],
+         AND created_at > NOW() - INTERVAL '1 hour'${orgClause}`,
+      params,
       client
     );
     return parseInt(result.rows[0].count, 10);
@@ -251,28 +264,36 @@ class AlertRepository extends BaseRepository {
   /**
    * Count inventory items at or below their reorder point (but still in stock).
    */
-  async countLowStockItems(client = null) {
+  async countLowStockItems(organizationId = null, client = null) {
+    const params = [];
+    const orgClause = organizationId
+      ? ` AND organization_id = $${params.push(organizationId)}`
+      : '';
     const result = await this.query(
       `SELECT COUNT(*)
        FROM inventory
-       WHERE quantity_available <= reorder_point
-         AND quantity_available > 0`,
-      [],
+       WHERE available_quantity <= COALESCE(reorder_point, 0)
+         AND available_quantity > 0${orgClause}`,
+      params,
       client
     );
     return parseInt(result.rows[0].count, 10);
   }
 
   /**
-   * Count orders that are past their expected delivery date and not yet done.
+   * Count orders that are past their target delivery timestamp and not yet done.
    */
-  async countDelayedOrders(client = null) {
+  async countDelayedOrders(organizationId = null, client = null) {
+    const params = [];
+    const orgClause = organizationId
+      ? ` AND organization_id = $${params.push(organizationId)}`
+      : '';
     const result = await this.query(
       `SELECT COUNT(*)
        FROM orders
        WHERE status NOT IN ('delivered', 'cancelled')
-         AND expected_delivery_date < CURRENT_DATE`,
-      [],
+         AND COALESCE(promised_delivery, estimated_delivery) < NOW()${orgClause}`,
+      params,
       client
     );
     return parseInt(result.rows[0].count, 10);
@@ -283,7 +304,11 @@ class AlertRepository extends BaseRepository {
    * (and were created more than 24 h ago).
    * Uses a subquery to avoid duplicate rows from multiple tracking events.
    */
-  async countStuckShipments(client = null) {
+  async countStuckShipments(organizationId = null, client = null) {
+    const params = [];
+    const orgClause = organizationId
+      ? ` AND s.organization_id = $${params.push(organizationId)}`
+      : '';
     const result = await this.query(
       `SELECT COUNT(*)
        FROM shipments s
@@ -294,8 +319,8 @@ class AlertRepository extends BaseRepository {
        ) se ON s.id = se.shipment_id
        WHERE s.status NOT IN ('delivered', 'returned', 'cancelled')
          AND s.created_at < NOW() - INTERVAL '24 hours'
-         AND (se.shipment_id IS NULL OR se.last_event_time < NOW() - INTERVAL '48 hours')`,
-      [],
+         AND (se.shipment_id IS NULL OR se.last_event_time < NOW() - INTERVAL '48 hours')${orgClause}`,
+      params,
       client
     );
     return parseInt(result.rows[0].count, 10);
@@ -305,21 +330,26 @@ class AlertRepository extends BaseRepository {
    * Return carriers whose on-time delivery rate (last 7 days) is below the
    * given threshold percentage.
    */
-  async getUnderperformingCarriers(threshold, client = null) {
+  async getUnderperformingCarriers(threshold, organizationId = null, client = null) {
+    const params = [threshold];
+    const orgClause = organizationId
+      ? ` AND s.organization_id = $${params.push(organizationId)}`
+      : '';
     const result = await this.query(
       `SELECT c.id, c.name,
               COUNT(s.id) AS total_shipments,
-              COUNT(CASE WHEN s.actual_delivery_date > s.expected_delivery_date THEN 1 END) AS delayed,
-              CAST(COUNT(CASE WHEN s.actual_delivery_date <= s.expected_delivery_date THEN 1 END) AS FLOAT) /
+              COUNT(CASE WHEN s.delivery_actual > s.delivery_scheduled THEN 1 END) AS delayed,
+              CAST(COUNT(CASE WHEN s.delivery_actual <= s.delivery_scheduled THEN 1 END) AS FLOAT) /
               NULLIF(COUNT(s.id), 0) * 100 AS on_time_rate
        FROM carriers c
        JOIN shipments s ON c.id = s.carrier_id
        WHERE s.status = 'delivered'
-         AND s.actual_delivery_date > NOW() - INTERVAL '7 days'
+         AND s.delivery_actual > NOW() - INTERVAL '7 days'
+         AND s.delivery_scheduled IS NOT NULL${orgClause}
        GROUP BY c.id, c.name
-       HAVING CAST(COUNT(CASE WHEN s.actual_delivery_date <= s.expected_delivery_date THEN 1 END) AS FLOAT) /
+       HAVING CAST(COUNT(CASE WHEN s.delivery_actual <= s.delivery_scheduled THEN 1 END) AS FLOAT) /
               NULLIF(COUNT(s.id), 0) * 100 < $1`,
-      [threshold],
+      params,
       client
     );
     return result.rows;

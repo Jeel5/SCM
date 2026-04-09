@@ -206,7 +206,7 @@ export function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModa
           street: formData.street,
           city: formData.city,
           state: formData.state,
-          postal_code: formData.postalCode,
+          postalCode: formData.postalCode,
           country: formData.country,
         },
         items: items.map(item => ({

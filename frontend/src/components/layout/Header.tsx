@@ -21,8 +21,11 @@ import { cn, formatRelativeTime, getRoleDisplayName } from '@/lib/utils';
 import { useUIStore, useAuthStore, useNotificationStore } from '@/stores';
 import { Avatar, Button, Dropdown } from '@/components/ui';
 import { notificationsApi, authApi, superAdminApi } from '@/api/services';
+import { mockApi } from '@/api/mockData';
+import { useApiMode } from '@/hooks/useApiMode';
 
 export function Header() {
+  const { useMockApi } = useApiMode();
   const { toggleMobileSidebar, theme, setTheme } = useUIStore();
   const { user, logout, isAuthenticated, setUser } = useAuthStore();
   const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification, setNotifications, setUnreadCount, clearAll } = useNotificationStore();
@@ -56,6 +59,15 @@ export function Header() {
   // Load notifications from API on mount and periodically
   const fetchNotifications = useCallback(async () => {
     try {
+      if (useMockApi) {
+        const resp = await mockApi.getNotifications();
+        if (resp.success) {
+          setNotifications(resp.data);
+          setUnreadCount(resp.data.filter((n) => !n.isRead).length);
+        }
+        return;
+      }
+
       const [resp, unread] = await Promise.all([
         notificationsApi.getNotifications({ page: 1, limit: 20 }),
         notificationsApi.getUnreadCount(),
@@ -65,7 +77,7 @@ export function Header() {
     } catch {
       // Silently ignore — user may not be fully authenticated yet
     }
-  }, [setNotifications, setUnreadCount]);
+  }, [setNotifications, setUnreadCount, useMockApi]);
 
   useEffect(() => {
     if (!isAuthenticated || !user?.id) {
@@ -76,7 +88,7 @@ export function Header() {
   }, [fetchNotifications, isAuthenticated, user?.id, clearAll]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || useMockApi) return;
     let mounted = true;
     (async () => {
       try {
@@ -92,15 +104,17 @@ export function Header() {
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, useMockApi]);
 
   // Refresh notification list whenever a new one arrives via socket
   useSocketEvent('notification:new', fetchNotifications);
 
   const handleLogout = async () => {
-    try {
-      await authApi.logout(); // clears httpOnly cookies on the server
-    } catch { /* best-effort */ }
+    if (!useMockApi) {
+      try {
+        await authApi.logout(); // clears httpOnly cookies on the server
+      } catch { /* best-effort */ }
+    }
     clearAll();
     logout();
     navigate('/login');

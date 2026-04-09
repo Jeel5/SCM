@@ -129,6 +129,30 @@ function runSerial(items, worker) {
   );
 }
 
+function validateAddressPayload(address, label) {
+  if (!address || typeof address !== 'object') {
+    throw new BusinessLogicError(`${label} is required`);
+  }
+
+  const normalizedAddress = {
+    ...address,
+    postalCode: address.postalCode ?? address.postal_code,
+  };
+
+  const requiredFields = ['street', 'city', 'state', 'postalCode', 'country'];
+  for (const field of requiredFields) {
+    const raw = normalizedAddress[field];
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+      throw new BusinessLogicError(`${label}.${field} is required`);
+    }
+  }
+
+  const postalCode = String(normalizedAddress.postalCode).trim();
+  if (!/^[A-Za-z0-9\-\s]{4,12}$/.test(postalCode)) {
+    throw new BusinessLogicError(`${label}.postalCode format is invalid`);
+  }
+}
+
 /**
  * Resolve order items against product catalog and assign warehouses with stock.
  * @param {Array} items
@@ -463,6 +487,11 @@ class OrderService {
     // Validate order has items
     if (!orderData.items || orderData.items.length === 0) {
       throw new BusinessLogicError('Order must have at least one item');
+    }
+
+    validateAddressPayload(orderData.shipping_address, 'shipping_address');
+    if (orderData.billing_address) {
+      validateAddressPayload(orderData.billing_address, 'billing_address');
     }
 
     try {

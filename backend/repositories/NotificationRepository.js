@@ -39,6 +39,26 @@ class NotificationRepository extends BaseRepository {
   }
 
   /**
+   * Find a matching recent notification to support duplicate suppression.
+   */
+  async findRecentDuplicate(userId, type, title, message, windowMinutes = 10, client = null) {
+    const result = await this.query(
+      `SELECT *
+       FROM notifications
+       WHERE user_id = $1
+         AND type = $2
+         AND title = $3
+         AND message = $4
+         AND created_at >= NOW() - ($5::text || ' minutes')::interval
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, type, title, message, String(windowMinutes)],
+      client
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
    * Fetch a paginated list of notifications for a user, with optional filters.
    * @param {string} userId
    * @param {{ isRead?: boolean, type?: string }} filters

@@ -3,6 +3,7 @@ import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { NotFoundError } from '../errors/AppError.js';
 import shipmentRepo from '../repositories/ShipmentRepository.js';
+import slaRepository from '../repositories/SlaRepository.js';
 
 const OSRM_URL = process.env.OSRM_API_URL || 'http://router.project-osrm.org';
 
@@ -167,6 +168,8 @@ class ShipmentTrackingService {
         };
       });
 
+      await this.persistEtaPrediction(result, trackingEvent);
+
       logger.info('Shipment tracking updated', { shipmentId, status: result.status });
 
       return result;
@@ -176,6 +179,108 @@ class ShipmentTrackingService {
         error: error.message
       });
       throw error;
+    }
+  }
+
+  /**
+   * Build a simple, rule-based ETA prediction from shipment status and schedule.
+   */
+  buildEtaPrediction(shipment, trackingEvent, latestPrediction = null) {
+    const now = new Date();
+    const scheduledDelivery = shipment.delivery_scheduled ? new Date(shipment.delivery_scheduled) : null;
+    let predictedDelivery = scheduledDelivery ? new Date(scheduledDelivery) : new Date(now.getTime() + (24 * 60 * 60 * 1000));
+    let confidenceScore = 0.65;
+    let delayRiskScore = 'medium';
+
+    const normalizedStatus = trackingEvent?.eventType || shipment.status;
+
+    if (trackingEvent?.estimatedArrival) {
+      const estimated = new Date(trackingEvent.estimatedArrival);
+      if (!Number.isNaN(estimated.getTime())) {
+        predictedDelivery = estimated;
+        confidenceScore = Math.max(confidenceScore, 0.75);
+      }
+    }
+
+    switch (normalizedStatus) {
+      case 'picked_up':
+        confidenceScore = Math.max(confidenceScore, 0.68);
+        delayRiskScore = 'medium';
+        break;
+      case 'in_transit':
+        confidenceScore = Math.max(confidenceScore, 0.74);
+        delayRiskScore = 'medium';
+        break;
+      case 'out_for_delivery':
+        predictedDelivery = new Date(Math.min(
+          (scheduledDelivery ? scheduledDelivery.getTime() : now.getTime() + (6 * 60 * 60 * 1000)),
+          now.getTime() + (8 * 60 * 60 * 1000)
+        ));
+        confidenceScore = Math.max(confidenceScore, 0.88);
+        delayRiskScore = 'low';
+        break;
+      case 'failed_delivery':
+        predictedDelivery = new Date(now.getTime() + (24 * 60 * 60 * 1000));
+        confidenceScore = 0.45;
+        delayRiskScore = 'high';
+        break;
+      case 'delivered':
+        predictedDelivery = shipment.delivery_actual ? new Date(shipment.delivery_actual) : now;
+        confidenceScore = 1;
+        delayRiskScore = 'low';
+        break;
+      default:
+        break;
+    }
+
+    if (scheduledDelivery && predictedDelivery > scheduledDelivery) {
+      delayRiskScore = 'high';
+    }
+
+    let predictionAccuracyHours = null;
+    const actualDelivery = shipment.delivery_actual ? new Date(shipment.delivery_actual) : null;
+    if (actualDelivery && latestPrediction?.predicted_delivery) {
+      const previousEta = new Date(latestPrediction.predicted_delivery);
+      const diffMs = Math.abs(actualDelivery.getTime() - previousEta.getTime());
+      predictionAccuracyHours = Number((diffMs / (60 * 60 * 1000)).toFixed(2));
+    }
+
+    return {
+      predictedDelivery,
+      confidenceScore,
+      delayRiskScore,
+      factors: {
+        status: normalizedStatus,
+        eventType: trackingEvent?.eventType || null,
+        hasSchedule: Boolean(scheduledDelivery),
+        scheduledDelivery,
+      },
+      actualDelivery,
+      predictionAccuracyHours,
+      modelVersion: 'rule-based-v1',
+    };
+  }
+
+  /**
+   * Persist an ETA prediction snapshot; non-blocking for tracking updates.
+   */
+  async persistEtaPrediction(shipment, trackingEvent) {
+    try {
+      const latestPrediction = await slaRepository.findLatestEta(
+        shipment.id,
+        shipment.organization_id || null
+      );
+
+      const prediction = this.buildEtaPrediction(shipment, trackingEvent, latestPrediction);
+      await slaRepository.createEtaPrediction({
+        shipmentId: shipment.id,
+        ...prediction,
+      });
+    } catch (etaError) {
+      logger.warn('Failed to persist ETA prediction for tracking update', {
+        shipmentId: shipment.id,
+        error: etaError.message,
+      });
     }
   }
 

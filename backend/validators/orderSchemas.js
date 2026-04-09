@@ -43,11 +43,14 @@ const addressSchema = Joi.object({
   street: Joi.string().required(),
   city: Joi.string().required(),
   state: Joi.string().optional().allow(''),
-  postal_code: Joi.string().required(),
+  postalCode: Joi.string().optional(),
   country: Joi.string().required(),
   lat: Joi.number().optional(),
   lon: Joi.number().optional()
-});
+})
+  // Backward compatibility: accept legacy snake_case payloads and normalize to postalCode.
+  .rename('postal_code', 'postalCode', { ignoreUndefined: true, override: false })
+  .or('postalCode');
 
 export const createOrderSchema = Joi.object({
   // order_type must match DB check constraint: outbound (customer sale), transfer (warehouse-to-warehouse), inbound_restock (supplier PO)

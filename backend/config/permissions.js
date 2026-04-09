@@ -35,6 +35,7 @@ export const ALL_PERMISSIONS = [
   'sla.manage',    // create + update + deactivate SLA policies
   'finance.view',
   'analytics.view',
+  'logs.view',
   'jobs.view',          // view background jobs and cron schedules
   'jobs.create',        // create / trigger jobs
   'jobs.update',        // cancel / retry jobs
@@ -73,6 +74,7 @@ export const ROLE_PERMISSIONS = {
     'returns.view', 'returns.create', 'returns.update',
     'sla.view', 'sla.manage',
     'analytics.view',
+    'logs.view',
     'jobs.view', 'jobs.create', 'jobs.update', 'jobs.delete',
     'settings.personal',
   ],
@@ -84,6 +86,7 @@ export const ROLE_PERMISSIONS = {
     'warehouses.view',
     'returns.view', 'returns.create', 'returns.update',
     'exceptions.view', 'exceptions.update',
+    'logs.view',
     'settings.personal',
   ],
 
@@ -92,6 +95,7 @@ export const ROLE_PERMISSIONS = {
     'shipments.view', 'shipments.update',
     'exceptions.view', 'exceptions.create', 'exceptions.update',
     'returns.view',
+    'logs.view',
     'settings.personal',
   ],
 
@@ -103,6 +107,7 @@ export const ROLE_PERMISSIONS = {
     'orders.view',
     'returns.view',
     'exceptions.view',
+    'logs.view',
     'settings.personal',
   ],
 
@@ -112,6 +117,7 @@ export const ROLE_PERMISSIONS = {
     'shipments.view',
     'exceptions.view', 'exceptions.update',
     'returns.view',
+    'logs.view',
     'settings.personal',
   ],
 };

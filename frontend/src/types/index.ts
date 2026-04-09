@@ -32,6 +32,22 @@ export interface AuthState {
   isLoading: boolean;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  userId: string | null;
+  userName: string;
+  userEmail: string | null;
+  organizationId: string | null;
+  organizationName: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  changes: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
 // Order Types
 export type OrderStatus =
   | 'created'

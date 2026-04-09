@@ -39,6 +39,7 @@ import carriersRoutes from './routes/carriers.js';
 import organizationsRoutes from './routes/organizations.js';
 import partnersRoutes from './routes/partners.js';
 import notificationRoutes from './routes/notifications.js';
+import logsRoutes from './routes/logs.js';
 import importRoutes from './routes/import.js';
 import geoRoutes from './routes/geo.js';
 
@@ -125,6 +126,7 @@ app.use(API_PREFIX, carriersRoutes); // Carrier webhook endpoints
 app.use(`${API_PREFIX}/organizations`, organizationsRoutes); // Organization management (superadmin)
 app.use(API_PREFIX, partnersRoutes); // Sales channels & suppliers
 app.use(API_PREFIX, notificationRoutes); // In-app notifications
+app.use(API_PREFIX, logsRoutes); // Audit and activity logs
 app.use(API_PREFIX, importRoutes); // Async CSV import endpoints
 app.use(API_PREFIX, geoRoutes); // Public geo lookup proxy for demo portals
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints

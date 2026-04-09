@@ -61,59 +61,55 @@ Simple test list for all modules.
 | Test ID | Test Case | Input | Expected Output |
 |---|---|---|---|
 | TC-35 | Carrier listing filter | Request eligible carriers for assignment | Busy/offline carriers are not listed |
-| TC-36 | Mark busy at full load | Carrier reaches full utilization | Carrier status becomes busy |
-| TC-37 | Return to active after delivery | Busy carrier completes assigned load | Carrier status returns to active |
-| TC-38 | Carrier profile update | Update carrier service area and capacity | New values are saved |
-| TC-39 | Webhook signature valid | Send webhook with correct HMAC | Webhook is accepted |
-| TC-40 | Webhook signature invalid | Send webhook with wrong HMAC | Webhook is rejected |
-| TC-41 | Webhook retry queue | Force webhook processing failure | Retry job is queued with backoff |
+| TC-36 | Webhook signature valid | Send webhook with correct HMAC | Webhook is accepted |
+| TC-37 | Webhook signature invalid | Send webhook with wrong HMAC | Webhook is rejected |
+| TC-38 | Webhook retry queue | Force webhook processing failure | Retry job is queued with backoff |
 
 ## 4.6 SLA & ETA
 
 | Test ID | Test Case | Input | Expected Output |
 |---|---|---|---|
-| TC-42 | SLA policy creation | Create valid SLA policy | Policy is saved |
-| TC-43 | SLA tier assignment | Create new order/shipment | Correct SLA tier and deadline set |
-| TC-44 | ETA calculation | Distance and route data | ETA is calculated and stored |
-| TC-45 | Potential breach detection | ETA later than SLA deadline | Breach flag is created |
-| TC-46 | SLA monitor run | Trigger SLA monitor endpoint/job | Violations are detected |
-| TC-47 | Delay exception generation | Shipment crosses delay threshold | Delay exception is created |
-| TC-48 | SLA dashboard metrics | Request SLA dashboard summary | Compliance and violation numbers are returned |
+| TC-39 | SLA policy creation | Create valid SLA policy | Policy is saved |
+| TC-40 | SLA tier assignment | Create new order/shipment | Correct SLA tier and deadline set |
+| TC-41 | ETA calculation | Distance and route data | ETA is calculated and stored |
+| TC-42 | Potential breach detection | ETA later than SLA deadline | Breach flag is created |
+| TC-43 | SLA monitor run | Trigger SLA monitor endpoint/job | Violations are detected |
+| TC-44 | Delay exception generation | Shipment crosses delay threshold | Delay exception is created |
+| TC-45 | SLA dashboard metrics | Request SLA dashboard summary | Compliance and violation numbers are returned |
 
 ## 4.7 Finance Management
 
 | Test ID | Test Case | Input | Expected Output |
 |---|---|---|---|
-| TC-49 | Create invoice totals | Invoice with charges and line items | Final amount is correct |
-| TC-50 | Prevent duplicate invoice number | Reuse existing invoice number in same org | Request is rejected |
-| TC-51 | Approve invoice | Approve pending invoice | Invoice status changes to approved |
-| TC-52 | Mark invoice paid | Pay approved invoice | Invoice status changes to paid |
-| TC-53 | Process refund | Valid refund request | Refund is posted correctly |
-| TC-54 | Auto invoice on delivery | Shipment marked delivered | Invoice/receipt flow starts |
-| TC-55 | Finance summary report | Request finance summary | Totals for invoices/refunds are returned |
-| TC-56 | Block unauthorized finance access | Non-finance user calls finance API | Access is denied |
+| TC-46 | Create invoice totals | Invoice with charges and line items | Final amount is correct |
+| TC-47 | Prevent duplicate invoice number | Reuse existing invoice number in same org | Request is rejected |
+| TC-48 | Approve invoice | Approve pending invoice | Invoice status changes to approved |
+| TC-49 | Mark invoice paid | Pay approved invoice | Invoice status changes to paid |
+| TC-50 | Process refund | Valid refund request | Refund is posted correctly |
+| TC-51 | Auto invoice on delivery | Shipment marked delivered | Invoice/receipt flow starts |
+| TC-52 | Finance summary report | Request finance summary | Totals for invoices/refunds are returned |
+| TC-53 | Block unauthorized finance access | Non-finance user calls finance API | Access is denied |
 
 ## 4.8 Analytics & Dashboard
 
 | Test ID | Test Case | Input | Expected Output |
 |---|---|---|---|
-| TC-57 | KPI calculation | Known fulfillment dataset | KPI values are correct |
-| TC-58 | Dashboard loads core cards | Open dashboard with valid role | Cards for orders/shipments/exceptions load |
-| TC-59 | Role-based dashboard tabs | Login as warehouse role | Finance tab is hidden |
-| TC-60 | Real-time dashboard update | Change order/shipment status | Dashboard updates quickly |
-| TC-61 | Chart drill-down | Click chart point | Related list is filtered |
-| TC-62 | Date-range analytics filter | Change dashboard date range | Metrics and charts refresh |
-| TC-63 | Empty-state handling | Select time range with no data | Dashboard shows clean empty state |
+| TC-54 | KPI calculation | Known fulfillment dataset | KPI values are correct |
+| TC-55 | Dashboard loads core cards | Open dashboard with valid role | Cards for orders/shipments/exceptions load |
+| TC-56 | Role-based dashboard tabs | Login as warehouse role | Finance tab is hidden |
+| TC-57 | Real-time dashboard update | Change order/shipment status | Dashboard updates quickly |
+| TC-58 | Chart drill-down | Click chart point | Related list is filtered |
+| TC-59 | Date-range analytics filter | Change dashboard date range | Metrics and charts refresh |
+| TC-60 | Empty-state handling | Select time range with no data | Dashboard shows clean empty state |
 
 ## 4.9 Alerts & Notifications
 
 | Test ID | Test Case | Input | Expected Output |
 |---|---|---|---|
-| TC-64 | Create alert on event | Trigger critical business event | Alert is created |
-| TC-65 | Severity tagging | Trigger warning and critical events | Correct severity is assigned |
-| TC-66 | Route alert to right users | Send critical vs normal alert | Correct users receive it |
-| TC-67 | In-app notification delivery | Create operational alert | In-app notification appears |
-| TC-68 | Escalate unacknowledged alert | Leave alert pending past timeout | Alert is escalated |
-| TC-69 | Notification history log | Send notification then query history | Delivery history is saved |
-| TC-70 | Custom threshold alerting | Set custom threshold and cross it | Notification triggers on custom condition |
-| TC-71 | Duplicate alert control | Trigger same event repeatedly quickly | System avoids noisy duplicate alerts |
+| TC-61 | Create alert on event | Trigger critical business event | Alert is created |
+| TC-62 | Severity tagging | Trigger warning and critical events | Correct severity is assigned |
+| TC-63 | Route alert to right users | Send critical vs normal alert | Correct users receive it |
+| TC-64 | In-app notification delivery | Create operational alert | In-app notification appears |
+| TC-65 | Escalate unacknowledged alert | Leave alert pending past timeout | Alert is escalated |
+| TC-66 | Notification history log | Send notification then query history | Delivery history is saved |
+| TC-67 | Duplicate alert control | Trigger same event repeatedly quickly | System avoids noisy duplicate alerts |

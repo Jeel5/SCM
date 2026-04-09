@@ -338,7 +338,6 @@ class InventoryRepository extends BaseRepository {
       UPDATE inventory
       SET ${setClauses.join(', ')}
       WHERE id = $${paramCount}
-      paramCount += 1;
       RETURNING *
     `;
     const result = await this.query(query, params, client);

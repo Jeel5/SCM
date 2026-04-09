@@ -6,6 +6,7 @@ import { emitToUser } from '../../sockets/emitter.js';
 vi.mock('../../repositories/NotificationRepository.js', () => ({
   default: {
     create: vi.fn(),
+    findRecentDuplicate: vi.fn(),
     findByUser: vi.fn(),
     countByUser: vi.fn(),
     countUnread: vi.fn(),
@@ -24,6 +25,7 @@ describe('notificationService realtime behavior', () => {
   });
 
   it('createNotification persists and emits notification:new', async () => {
+    notificationRepository.findRecentDuplicate.mockResolvedValue(null);
     notificationRepository.create.mockResolvedValue({
       id: 'notif-1',
       type: 'order_update',

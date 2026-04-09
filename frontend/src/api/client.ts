@@ -32,6 +32,8 @@ function processQueue(error: unknown) {
 }
 
 function forceLogout() {
+  const mockMode = localStorage.getItem('useMockApi') === 'true';
+  if (mockMode) return;
   useAuthStore.getState().logout();
   toast.error('Session Expired', 'Please log in again');
   window.location.href = '/login';
@@ -53,6 +55,12 @@ api.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError<ApiError>) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    const mockMode = localStorage.getItem('useMockApi') === 'true';
+    if (mockMode) {
+      // In demo mode we intentionally operate without real auth cookies.
+      return Promise.reject(error);
+    }
 
     // ---- 401: attempt a silent refresh before logging out --------
     if (error.response?.status === 401 && !originalRequest._retry && !shouldSkipRefresh(originalRequest.url)) {

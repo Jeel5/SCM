@@ -19,6 +19,7 @@ import {
   Activity,
   Handshake,
   History,
+  ScrollText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore, useAuthStore } from '@/stores';
@@ -167,6 +168,13 @@ const getNavigation = (exceptionCount: number): NavItem[] => [
     icon: <Users className="h-5 w-5" />,
     path: '/team',
     permission: 'team.manage',
+  },
+  {
+    id: 'logs',
+    label: 'Logs',
+    icon: <ScrollText className="h-5 w-5" />,
+    path: '/logs',
+    permission: 'logs.view',
   },
 ];
 

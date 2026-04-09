@@ -751,19 +751,19 @@ class ShipmentRepository extends BaseRepository {
   async updateTracking(shipmentId, newStatus, trackingEventsJson, currentLocation, client = null) {
     const result = await this.query(
       `UPDATE shipments
-       SET status = $1,
+       SET status = $1::varchar(50),
            tracking_events = $2,
            current_location = $3,
            pickup_actual = CASE
-             WHEN $1::text = 'picked_up' AND pickup_actual IS NULL THEN NOW()
+             WHEN $1::varchar(50) = 'picked_up'::varchar(50) AND pickup_actual IS NULL THEN NOW()
              ELSE pickup_actual
            END,
            delivery_actual = CASE
-             WHEN $1::text = 'delivered' AND delivery_actual IS NULL THEN NOW()
+             WHEN $1::varchar(50) = 'delivered'::varchar(50) AND delivery_actual IS NULL THEN NOW()
              ELSE delivery_actual
            END,
            updated_at = NOW()
-       WHERE id = $4
+       WHERE id = $4::uuid
        RETURNING *`,
       [newStatus, trackingEventsJson, currentLocation, shipmentId], client
     );

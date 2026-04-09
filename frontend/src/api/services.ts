@@ -1,6 +1,7 @@
 import { api, get, post, patch, put, del } from './client';
 import type {
   User,
+  AuditLogEntry,
   Order,
   Shipment,
   Warehouse,
@@ -698,15 +699,19 @@ export const returnsApi = {
 
 // ==================== SETTINGS ====================
 export const settingsApi = {
+  async updateProfile(data: { name?: string; email?: string; phone?: string; company?: string; avatar?: string }): Promise<ApiResponse<User>> {
+    return patch('/settings/profile', data);
+  },
+
   async changePassword(data: { current_password: string; new_password: string }): Promise<ApiResponse<null>> {
     return post('/settings/password', data);
   },
 
-  async getNotificationPreferences(): Promise<ApiResponse<Record<string, boolean>>> {
+  async getNotificationPreferences(): Promise<ApiResponse<Record<string, unknown>>> {
     return get('/settings/notifications');
   },
 
-  async updateNotificationPreferences(prefs: Record<string, boolean>): Promise<ApiResponse<null>> {
+  async updateNotificationPreferences(prefs: Record<string, unknown>): Promise<ApiResponse<null>> {
     return patch('/settings/notifications', prefs);
   },
 
@@ -1005,6 +1010,34 @@ export const notificationsApi = {
 
   async deleteAllNotifications(): Promise<ApiResponse<null>> {
     return del('/notifications');
+  },
+};
+
+// ==================== LOGS ====================
+export const logsApi = {
+  async getLogs(params?: {
+    page?: number;
+    limit?: number;
+    action?: string;
+    entity_type?: string;
+    user_id?: string;
+    organization_id?: string;
+    from?: string;
+    to?: string;
+  }): Promise<PaginatedResponse<AuditLogEntry>> {
+    const response = await get<{
+      success: boolean;
+      data: AuditLogEntry[];
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    }>('/logs', params as Record<string, unknown>);
+
+    return {
+      data: response.data,
+      total: response.pagination.total,
+      page: response.pagination.page,
+      pageSize: response.pagination.limit,
+      totalPages: response.pagination.totalPages,
+    };
   },
 };
 
