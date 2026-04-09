@@ -7,6 +7,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { PublicHeader } from './components/Header';
 import { PublicFooter } from './components/Footer';
+import { publicApi } from '@/api/services';
 
 const INQUIRY_TYPES = [
   'Product capabilities',
@@ -86,6 +87,8 @@ export function ContactPage() {
   });
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -98,11 +101,27 @@ export function ContactPage() {
     return e;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const e2 = validate();
     if (Object.keys(e2).length) { setErrors(e2); return; }
-    setSubmitted(true);
+
+    setIsSubmitting(true);
+    setSubmitError('');
+
+    try {
+      await publicApi.sendContactMessage({
+        ...form,
+        source: 'Contact Us',
+        pageUrl: window.location.href,
+      });
+      setSubmitted(true);
+    } catch (error) {
+      console.error('Contact message failed:', error);
+      setSubmitError('We could not send your message right now. Please try again in a moment.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -244,13 +263,18 @@ export function ContactPage() {
                       {errors.message && <p className="text-xs text-red-400 mt-1.5">{errors.message}</p>}
                     </div>
 
+                    {submitError && (
+                      <p className="text-sm text-red-500 dark:text-red-400">{submitError}</p>
+                    )}
+
                     <motion.button
                       type="submit"
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      className="w-full h-12 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all text-sm"
+                      disabled={isSubmitting}
+                      className="w-full h-12 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all text-sm"
                     >
-                      Send message
+                      {isSubmitting ? 'Sending...' : 'Send message'}
                     </motion.button>
 
                     <p className="text-xs text-gray-400 dark:text-gray-500 text-center">

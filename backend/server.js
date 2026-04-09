@@ -42,6 +42,7 @@ import notificationRoutes from './routes/notifications.js';
 import logsRoutes from './routes/logs.js';
 import importRoutes from './routes/import.js';
 import geoRoutes from './routes/geo.js';
+import publicRoutes from './routes/public.js';
 
 // Trust the first proxy hop (Nginx) so IP-based rate limiting sees the real client IP
 app.set('trust proxy', 1);
@@ -129,6 +130,7 @@ app.use(API_PREFIX, notificationRoutes); // In-app notifications
 app.use(API_PREFIX, logsRoutes); // Audit and activity logs
 app.use(API_PREFIX, importRoutes); // Async CSV import endpoints
 app.use(API_PREFIX, geoRoutes); // Public geo lookup proxy for demo portals
+app.use(API_PREFIX, publicRoutes); // Public lead capture endpoints
 app.use('/api/webhooks', webhooksRoutes); // Public webhook endpoints
 
 // 404 handler - must be after all routes
