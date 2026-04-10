@@ -31,9 +31,9 @@ const transport = createTransport();
 /**
  * Send a raw email payload and log metadata.
  */
-async function send({ to, subject, html, text }) {
+async function send({ to, subject, html, text, replyTo = null }) {
   const from = process.env.SMTP_FROM;
-  const info = await transport.sendMail({ from, to, subject, text, html });
+  const info = await transport.sendMail({ from, to, subject, text, html, replyTo: replyTo || undefined });
   logger.info('Email sent', {
     to,
     subject,
@@ -254,6 +254,87 @@ async function sendSimpleNotification({ to, subject, message }) {
 }
 
 /**
+ * Send a customized lead notification to superadmins when someone requests a demo
+ * or submits a contact message from the public site.
+ */
+async function sendPublicInquiryEmail({
+  to,
+  requestType,
+  firstName,
+  lastName,
+  workEmail,
+  company,
+  inquiry = null,
+  message,
+  pageUrl = null,
+}) {
+  const safeFirstName = escapeHtml(firstName || 'there');
+  const safeLastName = escapeHtml(lastName || '');
+  const safeCompany = escapeHtml(company || 'Unknown company');
+  const safeInquiry = inquiry ? escapeHtml(inquiry) : null;
+  const safeMessage = escapeHtml(message || '');
+  const safePageUrl = pageUrl ? escapeHtml(pageUrl) : null;
+  const leadLabel = requestType === 'demo' ? 'Demo Request' : 'Contact Message';
+  const leadSubject = requestType === 'demo'
+    ? `New demo request from ${company || workEmail || 'website visitor'}`
+    : `New contact message from ${company || workEmail || 'website visitor'}`;
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px 0;">A new <strong>${leadLabel}</strong> was submitted from the public website.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin:12px 0 16px 0;">
+      <tr>
+        <td style="padding:10px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;width:180px;"><strong>Name</strong></td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">${safeFirstName} ${safeLastName}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;"><strong>Email</strong></td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">${escapeHtml(workEmail || 'Not provided')}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;"><strong>Company</strong></td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">${safeCompany}</td>
+      </tr>
+      ${safeInquiry ? `
+      <tr>
+        <td style="padding:10px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;"><strong>Inquiry Type</strong></td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">${safeInquiry}</td>
+      </tr>` : ''}
+      <tr>
+        <td style="padding:10px 12px;background:#f9fafb;vertical-align:top;"><strong>Message</strong></td>
+        <td style="padding:10px 12px;white-space:pre-wrap;">${safeMessage || 'No message provided'}</td>
+      </tr>
+    </table>
+    ${safePageUrl ? `<p style="margin:0 0 10px 0;"><strong>Source page:</strong> ${safePageUrl}</p>` : ''}
+    <p style="margin:0;">Reply to this email to contact the requester directly.</p>
+  `;
+
+  return send({
+    to,
+    subject: leadSubject,
+    replyTo: workEmail || undefined,
+    text: [
+      `New ${leadLabel} received from the public website.`,
+      '',
+      `Name: ${firstName || ''} ${lastName || ''}`.trim(),
+      `Email: ${workEmail || 'Not provided'}`,
+      `Company: ${company || 'Unknown company'}`,
+      inquiry ? `Inquiry Type: ${inquiry}` : null,
+      '',
+      'Message:',
+      message || 'No message provided',
+      pageUrl ? `\nSource page: ${pageUrl}` : null,
+    ].filter(Boolean).join('\n'),
+    html: renderEmailLayout({
+      preheader: `${leadLabel} received from the public website`,
+      title: leadLabel,
+      greeting: 'Hi superadmin,',
+      bodyHtml,
+      footerNote: 'This lead was captured from the TwinChain public website.',
+    }),
+  });
+}
+
+/**
  * Send organization account-status email for suspend/reactivate/deactivate actions.
  */
 async function sendOrganizationStatusUpdateEmail({
@@ -463,6 +544,7 @@ export default {
   sendOrganizationAdminOnboardingEmail,
   sendEmailChangeVerification,
   sendSimpleNotification,
+  sendPublicInquiryEmail,
   sendOrganizationStatusUpdateEmail,
   sendUserAccountUpdateEmail,
   sendReturnPickupReminderEmail,

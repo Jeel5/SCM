@@ -47,6 +47,34 @@ export const authApi = {
   },
 };
 
+// ==================== PUBLIC LEADS ====================
+export const publicApi = {
+  async requestDemo(data: {
+    firstName: string;
+    lastName: string;
+    workEmail: string;
+    company: string;
+    message: string;
+    pageUrl?: string;
+    source?: string;
+  }): Promise<ApiResponse<{ message: string }>> {
+    return post('/public/request-demo', data);
+  },
+
+  async sendContactMessage(data: {
+    firstName: string;
+    lastName: string;
+    workEmail: string;
+    company: string;
+    inquiry?: string;
+    message: string;
+    pageUrl?: string;
+    source?: string;
+  }): Promise<ApiResponse<{ message: string }>> {
+    return post('/public/contact-message', data);
+  },
+};
+
 // ==================== ASYNC IMPORT ====================
 export const importApi = {
   async upload(file: File, type: string): Promise<{ success: boolean; jobId: string; totalRows: number; message: string }> {
