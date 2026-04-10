@@ -176,7 +176,7 @@ export function LoginPage() {
 
         {/* Footer */}
         <p className="relative z-10 text-xs text-blue-300/70">
-          © 2026 TwinChain. Enterprise Logistics Control Tower.
+          © 2026 TwinChain. Enterprise Supply Chain Control Tower.
         </p>
       </motion.div>
 

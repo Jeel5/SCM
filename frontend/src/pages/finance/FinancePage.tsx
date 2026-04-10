@@ -695,10 +695,6 @@ export function FinancePage() {
             </div>
           </div>
 
-          <div className="text-xs text-gray-500">
-            CSV columns supported: `invoice_number,carrier_id,carrier_name,carrier_code,billing_period_start,billing_period_end,total_shipments,base_amount,penalties,adjustments,final_amount,status`
-          </div>
-
           <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
             <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting}>Cancel</Button>
             <Button variant="primary" onClick={handleCreateInvoice} disabled={isSubmitting}>

@@ -1366,7 +1366,8 @@ CREATE TABLE public.notifications (
 	priority varchar(20) DEFAULT 'normal'::character varying NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	expires_at timestamptz NULL,
-	CONSTRAINT notifications_pkey PRIMARY KEY (id)
+	CONSTRAINT notifications_pkey PRIMARY KEY (id),
+	CONSTRAINT notifications_priority_check CHECK (((priority)::text = ANY ((ARRAY['low'::character varying, 'normal'::character varying, 'high'::character varying, 'critical'::character varying])::text[])))
 );
 CREATE INDEX idx_notifications_created ON public.notifications USING btree (created_at);
 CREATE INDEX idx_notifications_unread ON public.notifications USING btree (user_id, is_read) WHERE (is_read = false);

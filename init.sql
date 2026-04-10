@@ -1061,6 +1061,9 @@ CREATE TABLE public.notifications (
     expires_at timestamp with time zone
 );
 
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_priority_check CHECK (((priority)::text = ANY ((ARRAY['low'::character varying, 'normal'::character varying, 'high'::character varying, 'critical'::character varying])::text[])));
+
 
 --
 -- Name: order_items; Type: TABLE; Schema: public; Owner: -
