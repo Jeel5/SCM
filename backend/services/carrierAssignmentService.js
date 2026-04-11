@@ -34,7 +34,16 @@ class CarrierAssignmentService {
     }
 
     const serviceType = order.priority || 'standard';
-    const carriers = await carrierAssignmentRepo.findAvailableCarriers(serviceType, tx);
+    let carriers = await carrierAssignmentRepo.findAvailableCarriers(serviceType, order.organization_id || undefined, tx);
+    if (carriers.length === 0 && serviceType !== 'standard') {
+      carriers = await carrierAssignmentRepo.findAvailableCarriers('standard', order.organization_id || undefined, tx);
+      if (carriers.length > 0) {
+        logger.warn(`No exact ${serviceType} carriers found for order ${orderId}; falling back to standard carriers`, {
+          orderId,
+          organizationId: order.organization_id || null,
+        });
+      }
+    }
     if (carriers.length === 0) {
       logger.warn(`No available carriers for order ${orderId}. Will retry when carriers become available.`, { serviceType, triedCount });
       return { assignments: [], carriersToNotify: [], orderId };
@@ -317,6 +326,13 @@ class CarrierAssignmentService {
         if (!updatedAssignment) {
           throw new AppError('Assignment is no longer available (already accepted or cancelled)', 409);
         }
+
+        // Once one carrier accepts, cancel remaining open offers for this order.
+        await carrierAssignmentRepo.cancelRemainingAssignments(
+          assignment.order_id,
+          updatedAssignment.id,
+          tx
+        );
 
         return {
           updatedAssignment,
@@ -667,14 +683,31 @@ class CarrierAssignmentService {
     const shipmentWeight = requestPayload?.shipment?.chargeableWeight ||
       Math.max(aggregatedData.totalWeight, aggregatedData.totalVolumetricWeight);
 
-    const slaMatch = await matchSlaPolicyForShipment({
-      organizationId: assignment.organization_id,
-      carrierId: assignment.carrier_id,
-      originAddress: assignment.pickup_address,
-      destinationAddress: assignment.delivery_address,
-      serviceType: assignment.service_type || null,
-      client: tx,
-    });
+    let slaMatch;
+    try {
+      slaMatch = await matchSlaPolicyForShipment({
+        organizationId: assignment.organization_id,
+        carrierId: assignment.carrier_id,
+        originAddress: assignment.pickup_address,
+        destinationAddress: assignment.delivery_address,
+        serviceType: assignment.service_type || null,
+        client: tx,
+      });
+    } catch (error) {
+      const now = Date.now();
+      // Keep acceptance/finalization operational even if SLA master data is missing.
+      slaMatch = {
+        policyId: null,
+        pickupDeadline: new Date(now + (60 * 60 * 1000)),
+        deliveryScheduled: new Date(now + (48 * 60 * 60 * 1000)),
+      };
+      logger.warn('No SLA policy matched for shipment. Using fallback schedule.', {
+        orderId: assignment.order_id,
+        carrierId: assignment.carrier_id,
+        serviceType: assignment.service_type || null,
+        reason: error.message,
+      });
+    }
 
     const promisedTs = acceptancePayload?.delivery?.estimatedDeliveryTime || acceptancePayload?.delivery?.estimatedDeliveryDate;
     const carrierPromised = promisedTs ? new Date(promisedTs) : null;

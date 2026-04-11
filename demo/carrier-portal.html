@@ -9,17 +9,40 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🚚 Carrier Partner Portal</h1>
-            <p>Review assignments, accept/reject, confirm pickups, and update shipment status</p>
+            <h1>Carrier Partner Portal</h1>
+            <p>Review assignments for the selected organization and carrier, then accept/reject or update shipment status</p>
         </div>
 
         <div class="carrier-selector" id="carrierSelectorDiv">
-            <div style="color:#6c757d; font-size:0.9em; padding:10px;">Loading carriers…</div>
+            <div class="selection-block">
+                <label for="organizationSelect">Organization</label>
+                <select id="organizationSelect">
+                    <option value="">Loading organizations…</option>
+                </select>
+                <small id="orgLoadError" class="portal-help-text" style="display:none;"></small>
+            </div>
+
+            <div class="selection-block">
+                <label for="carrierSelect">Carrier</label>
+                <select id="carrierSelect" disabled>
+                    <option value="">Select an organization first</option>
+                </select>
+                <small id="carrierLoadError" class="portal-help-text" style="display:none;"></small>
+            </div>
+
+            <div class="selection-block secret-block">
+                <label for="webhookSecretValue">Webhook Secret</label>
+                <div class="secret-row">
+                    <input type="password" id="webhookSecretValue" readonly placeholder="Loaded automatically from the selected carrier" />
+                    <button type="button" id="toggleWebhookSecretBtn">Show</button>
+                    <button type="button" id="copyWebhookSecretBtn">Copy</button>
+                </div>
+            </div>
         </div>
 
         <div class="content">
             <div class="section-title">
-                📬 Pending Assignments for <span id="currentCarrierName">—</span>
+                Pending Assignments for <span id="currentCarrierName">—</span>
             </div>
             <div class="toolbar">
                 <div class="toolbar-group">
@@ -44,16 +67,13 @@
 
             <div id="requestsContainer">
                 <div class="empty-state">
-                    <h3>📭 No Pending Requests</h3>
+                    <h3>No Pending Requests</h3>
                     <p>Waiting for customers to place orders…</p>
-                    <p style="margin-top: 15px; font-size: 0.9em;">
-                        <strong>Tip:</strong> Go to the Customer Portal and place an order to see requests here.
-                    </p>
                 </div>
             </div>
 
             <div class="section-title" style="margin-top: 40px;">
-                📦 My Shipments
+                My Shipments
             </div>
             <div class="toolbar">
                 <div class="toolbar-group">
@@ -76,13 +96,13 @@
 
             <div id="shipmentsContainer">
                 <div class="empty-state">
-                    <h3>📦 No Shipments Waiting</h3>
+                    <h3>No Shipments Waiting</h3>
                     <p>Accept an assignment to see shipments here.</p>
                 </div>
             </div>
 
             <div class="section-title" style="margin-top: 40px;">
-                📡 Update Shipment Status
+                Update Shipment Status
             </div>
 
             <div style="background:white; padding:25px; border-radius:12px; margin-bottom:20px; border:2px solid #e9ecef;">
@@ -115,7 +135,7 @@
                     </div>
                 </div>
                 <button class="btn btn-accept" style="max-width:280px; margin-top:10px;" onclick="updateShipmentStatus()">
-                    📡 Update Status
+                    Update Status
                 </button>
                 <div id="statusUpdateResult" style="display:none; margin-top:15px; padding:15px; border-radius:8px;"></div>
             </div>

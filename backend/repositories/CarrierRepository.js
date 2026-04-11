@@ -557,16 +557,24 @@ class CarrierRepository extends BaseRepository {
      * @param {object|null} client
      * @returns {Promise<Array>}
      */
-    async findEligibleCarriers(serviceType, limit = 3, client = null) {
+    async findEligibleCarriers(serviceType, limit = 3, organizationId = undefined, client = null) {
+        let query = `
+            SELECT id, code, name, contact_email, service_type, is_active, availability_status
+            FROM carriers
+            WHERE is_active = true
+              AND availability_status = 'available'
+              AND (service_type = $1 OR service_type = 'all')
+        `;
+        const params = [serviceType, limit];
+        if (organizationId) {
+            query += ` AND organization_id = $3`;
+            params.push(organizationId);
+        }
+        query += ` ORDER BY reliability_score DESC LIMIT $2`;
+
         const result = await this.query(
-            `SELECT id, code, name, contact_email, service_type, is_active, availability_status
-             FROM carriers
-             WHERE is_active = true
-               AND availability_status = 'available'
-               AND (service_type = $1 OR service_type = 'all')
-             ORDER BY reliability_score DESC
-             LIMIT $2`,
-            [serviceType, limit],
+            query,
+            params,
             client
         );
         return result.rows;

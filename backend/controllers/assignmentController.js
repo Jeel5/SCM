@@ -99,8 +99,9 @@ export const getPendingAssignments = asyncHandler(async (req, res) => {
   }
 
   const result = await carrierAssignmentService.getPendingAssignments(actualCarrierId, {
-    status: req.query.status,
-    serviceType: req.query.serviceType
+    status: query.status,
+    serviceType: query.serviceType,
+    organizationId: query.orgId
   });
 
   res.json({ success: true, data: result });

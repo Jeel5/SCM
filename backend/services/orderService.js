@@ -129,6 +129,18 @@ function runSerial(items, worker) {
   );
 }
 
+/**
+ * Normalize order priority into a carrier-service type value.
+ * @param {string|null|undefined} priority
+ * @returns {string}
+ */
+function normalizeServiceType(priority) {
+  const normalized = String(priority || 'standard').trim().toLowerCase().replace(/-/g, '_');
+  if (normalized === 'urgent') return 'express';
+  if (normalized === 'normal') return 'standard';
+  return normalized || 'standard';
+}
+
 function validateAddressPayload(address, label) {
   if (!address || typeof address !== 'object') {
     throw new BusinessLogicError(`${label} is required`);
@@ -293,7 +305,7 @@ function buildOrderRecord(orderData, generatedOrderNumber) {
     customer_email: orderData.customer_email,
     customer_phone: orderData.customer_phone || null,
     status: 'created',
-    priority: orderData.priority || 'standard',
+    priority: normalizeServiceType(orderData.priority),
     order_type: orderData.order_type || 'outbound',
     organization_id: orderData.organization_id || null,
     is_cod: orderData.is_cod || false,
@@ -433,7 +445,7 @@ class OrderService {
    * Returns empty arrays when no eligible carrier is available.
    */
   async maybePrepareCarrierAssignments(order, enrichedItems, orderData, orgId, tx) {
-    const serviceType = order.priority || 'standard';
+    const serviceType = normalizeServiceType(order.priority);
     const primaryWarehouseId = enrichedItems.find((i) => i.warehouse_id)?.warehouse_id || null;
     const pickupWarehouse = primaryWarehouseId
       ? await WarehouseRepository.findByIdWithDetails(primaryWarehouseId, orgId, tx)
@@ -449,7 +461,23 @@ class OrderService {
       deliveryAddress
     );
 
-    const eligibleCarriers = await CarrierRepository.findEligibleCarriers(serviceType, 3, tx);
+    let eligibleCarriers = await CarrierRepository.findEligibleCarriers(serviceType, 3, orgId || undefined, tx);
+
+    if (eligibleCarriers.length === 0 && serviceType !== 'standard') {
+      // Demo-friendly fallback: if no express/same_day/bulk carriers exist, fan out to standard carriers.
+      eligibleCarriers = await CarrierRepository.findEligibleCarriers('standard', 3, orgId || undefined, tx);
+      if (eligibleCarriers.length > 0) {
+        logger.warn('No exact service-type carriers found, falling back to standard carriers.', {
+          orderId: order.id,
+          requestedServiceType: serviceType,
+          organizationId: orgId || null,
+        });
+      }
+    }
+
+    // The order has entered the carrier-assignment phase even if no carriers are currently eligible.
+    await OrderRepository.updateStatus(order.id, 'pending_carrier_assignment', tx);
+
     if (eligibleCarriers.length === 0) {
       logger.warn('No available carriers for new order. Order will remain in pending_carrier_assignment.', {
         orderId: order.id,
@@ -471,7 +499,6 @@ class OrderService {
       tx
     );
 
-    await OrderRepository.updateStatus(order.id, 'pending_carrier_assignment', tx);
     return assignmentResult;
   }
 
@@ -905,7 +932,7 @@ class OrderService {
   async createTransferCarrierAssignment(order, shipment, transferData, warehouseContext, resolvedItems, organizationId, pickupDate, deliveryDate, priority, tx) {
     let targetCarrier = await CarrierRepository.findByCode('INTERNAL', organizationId, tx);
     if (!targetCarrier) {
-      const fallbackCarriers = await CarrierRepository.findEligibleCarriers(priority, 1, tx);
+      const fallbackCarriers = await CarrierRepository.findEligibleCarriers(priority, 1, organizationId || undefined, tx);
       targetCarrier = fallbackCarriers[0] || null;
     }
 

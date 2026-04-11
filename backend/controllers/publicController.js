@@ -1,5 +1,7 @@
 import { asyncHandler, AppError } from '../errors/index.js';
 import userRepo from '../repositories/UserRepository.js';
+import OrganizationRepository from '../repositories/OrganizationRepository.js';
+import CarrierRepository from '../repositories/CarrierRepository.js';
 import emailService from '../services/emailService.js';
 
 function normalizeRecipients(values) {
@@ -81,5 +83,51 @@ export const contactMessage = asyncHandler(async (req, res) => {
   res.status(202).json({
     success: true,
     message: 'Message received. We will get back to you soon.',
+  });
+});
+
+export const getPublicOrganizations = asyncHandler(async (_req, res) => {
+  const { organizations } = await OrganizationRepository.findOrganizations({
+    page: 1,
+    limit: 500,
+    is_active: true,
+    include_deleted: false,
+  });
+
+  res.json({
+    success: true,
+    data: organizations.map((org) => ({
+      id: org.id,
+      code: org.code,
+      name: org.name,
+    })),
+  });
+});
+
+export const getPublicOrganizationCarriers = asyncHandler(async (req, res) => {
+  const { organizationId } = req.params;
+
+  const organization = await OrganizationRepository.findById(organizationId);
+  if (!organization || organization.is_deleted || !organization.is_active) {
+    throw new AppError('Organization not found', 404);
+  }
+
+  const { carriers } = await CarrierRepository.findCarriers({
+    page: 1,
+    limit: 500,
+    is_active: true,
+    organizationId,
+  });
+
+  res.json({
+    success: true,
+    data: carriers.map((carrier) => ({
+      id: carrier.id,
+      code: carrier.code,
+      name: carrier.name,
+      organizationId: carrier.organizationId || carrier.organization_id || null,
+      webhookSecret: carrier.webhook_secret || null,
+      webhookEnabled: carrier.webhook_enabled !== false,
+    })),
   });
 });

@@ -1,7 +1,8 @@
 const API_BASE = 'http://localhost:3000/api';
 let currentCarrier = null;
 let currentCarrierId = null;
-let currentWebhookSecret = "5c1fdb3a73d0ea04f30eeea8dcb8b0e54b672c6f091fb892741ae168f158c5bc";
+let currentOrganization = null;
+let currentWebhookSecret = null;
 let shipmentsById = {};
 let carrierNames = {};
 let assignmentRows = [];
@@ -10,9 +11,11 @@ let assignmentStatusFilter = 'all';
 let assignmentServiceFilter = 'all';
 let shipmentStatusFilter = 'all';
 let shipmentSearchText = '';
-// Maps carrier code → { id, webhook_secret } so selectCarrier can load
-// credentials immediately on click without waiting for a pending assignment.
+// Maps carrier id/code → { id, code, name, webhook_secret } so the selected
+// carrier can load credentials immediately without relying on pending rows.
 let carrierDetails = {};
+let organizationNames = {};
+let organizationCarrierMap = {};
 
 function getCarrierKey(carrier) {
     const codeKey = String(carrier?.code || '').trim().toLowerCase();
@@ -37,42 +40,123 @@ function dedupeCarriers(carriers) {
     return unique;
 }
 
-// ──────────── Load carriers from real API ────────────
+// ──────────── Load organizations and carriers from real API ────────────
 
 async function loadCarriers() {
     try {
-        const res = await fetch(`${API_BASE}/carriers`);
+        const res = await fetch(`${API_BASE}/public/organizations`);
         const result = await res.json();
-        const div = document.getElementById('carrierSelectorDiv');
+        const orgSelect = document.getElementById('organizationSelect');
+        const carrierSelect = document.getElementById('carrierSelect');
+        const secretValue = document.getElementById('webhookSecretValue');
+        const orgLoadError = document.getElementById('orgLoadError');
 
-        if (!result.success || !result.data || result.data.length === 0) {
-            div.innerHTML = '<div style="color:#6c757d; padding:10px;">No active carriers found.</div>';
+        orgLoadError.style.display = 'none';
+        orgLoadError.textContent = '';
+
+        if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {
+            orgSelect.innerHTML = '<option value="">No active organizations found</option>';
+            carrierSelect.innerHTML = '<option value="">Select an organization first</option>';
+            carrierSelect.disabled = true;
             return;
         }
 
         carrierNames = {};
         carrierDetails = {};
+        organizationNames = {};
+        organizationCarrierMap = {};
+        orgSelect.innerHTML = '<option value="">Select an organization</option>';
+        carrierSelect.innerHTML = '<option value="">Select an organization first</option>';
+        secretValue.value = '';
 
-        const carriers = dedupeCarriers(Array.isArray(result.data) ? result.data : []);
-        div.innerHTML = '';
-        carriers.forEach((c, i) => {
-            carrierNames[c.code] = c.name;
-            // Store id + webhook_secret keyed by code for instant lookup
-            carrierDetails[c.code] = { id: c.id, webhook_secret: c.webhookSecret };
-            const btn = document.createElement('button');
-            btn.className = 'carrier-btn' + (i === 0 ? ' active' : '');
-            btn.textContent = c.name;
-            btn.onclick = (evt) => selectCarrier(evt, c.code);
-            div.appendChild(btn);
+        result.data.forEach((org) => {
+            const option = document.createElement('option');
+            option.value = org.id;
+            option.textContent = org.name;
+            orgSelect.appendChild(option);
         });
 
-        if (carriers.length > 0) {
-            await selectCarrier(null, carriers[0].code);
+        if (result.data.length === 1) {
+            orgSelect.value = result.data[0].id;
+            await loadCarriersForOrganization(result.data[0].id);
         }
     } catch (err) {
         console.error('Error loading carriers:', err);
-        document.getElementById('carrierSelectorDiv').innerHTML =
-            '<div style="color:red; padding:10px;">Failed to load carriers. Is the backend running?</div>';
+        const orgLoadError = document.getElementById('orgLoadError');
+        orgLoadError.textContent = 'Failed to load organizations. Check backend and refresh.';
+        orgLoadError.style.display = 'block';
+    }
+}
+
+async function loadCarriersForOrganization(organizationId) {
+    const carrierSelect = document.getElementById('carrierSelect');
+    const secretValue = document.getElementById('webhookSecretValue');
+    const carrierLoadError = document.getElementById('carrierLoadError');
+
+    try {
+        carrierLoadError.style.display = 'none';
+        carrierSelect.innerHTML = '<option value="">Select a carrier</option>';
+        carrierSelect.disabled = !organizationId;
+        currentOrganization = organizationId || null;
+        currentCarrier = null;
+        currentCarrierId = null;
+        currentWebhookSecret = null;
+        secretValue.value = '';
+
+        if (!organizationId) {
+            document.getElementById('currentCarrierName').textContent = '—';
+            assignmentRows = [];
+            shipmentRows = [];
+            renderAssignments();
+            renderShipments();
+            return;
+        }
+
+        const res = await fetch(`${API_BASE}/public/organizations/${organizationId}/carriers`);
+        const result = await res.json();
+
+        const carriers = dedupeCarriers(Array.isArray(result.data) ? result.data : []);
+        if (carriers.length === 0) {
+            carrierSelect.innerHTML = '<option value="">No carriers found for this organization</option>';
+            carrierSelect.disabled = true;
+            document.getElementById('currentCarrierName').textContent = '—';
+            assignmentRows = [];
+            shipmentRows = [];
+            renderAssignments();
+            renderShipments();
+            return;
+        }
+
+        carrierSelect.disabled = false;
+        carriers.forEach((carrier) => {
+            carrierNames[carrier.code] = carrier.name;
+            carrierNames[carrier.id] = carrier.name;
+            const details = {
+                id: carrier.id,
+                code: carrier.code,
+                name: carrier.name,
+                webhook_secret: carrier.webhookSecret || carrier.webhook_secret || null,
+                organizationId,
+            };
+            carrierDetails[carrier.id] = details;
+            carrierDetails[carrier.code] = details;
+
+            const option = document.createElement('option');
+            option.value = carrier.id;
+            option.textContent = carrier.name;
+            carrierSelect.appendChild(option);
+        });
+
+        if (carriers.length === 1) {
+            carrierSelect.value = carriers[0].id;
+            await selectCarrier(null, carriers[0].id);
+        } else {
+            document.getElementById('currentCarrierName').textContent = 'Select a carrier';
+        }
+    } catch (err) {
+        console.error('Error loading carriers for organization:', err);
+        carrierLoadError.textContent = 'Failed to load carriers for the selected organization.';
+        carrierLoadError.style.display = 'block';
     }
 }
 
@@ -142,6 +226,33 @@ function setupFilters() {
         shipmentSearchText = (e.target.value || '').trim().toLowerCase();
         renderShipments();
     });
+    document.getElementById('organizationSelect').addEventListener('change', async (e) => {
+        await loadCarriersForOrganization(e.target.value);
+    });
+    document.getElementById('carrierSelect').addEventListener('change', async (e) => {
+        await selectCarrier(null, e.target.value);
+    });
+    document.getElementById('toggleWebhookSecretBtn').addEventListener('click', () => {
+        const secretValue = document.getElementById('webhookSecretValue');
+        const toggleBtn = document.getElementById('toggleWebhookSecretBtn');
+        if (secretValue.type === 'password') {
+            secretValue.type = 'text';
+            toggleBtn.textContent = 'Hide';
+        } else {
+            secretValue.type = 'password';
+            toggleBtn.textContent = 'Show';
+        }
+    });
+    document.getElementById('copyWebhookSecretBtn').addEventListener('click', async () => {
+        const secretValue = document.getElementById('webhookSecretValue');
+        if (!secretValue.value) return;
+        try {
+            await navigator.clipboard.writeText(secretValue.value);
+        } catch {
+            secretValue.select();
+            document.execCommand('copy');
+        }
+    });
     document.getElementById('refreshAssignmentsBtn').addEventListener('click', () => loadPendingRequests());
     document.getElementById('refreshShipmentsBtn').addEventListener('click', () => loadMyShipments());
 }
@@ -172,16 +283,27 @@ function renderShipmentStats(rows) {
 // ──────────── Carrier selection ────────────
 
 async function selectCarrier(evt, carrier) {
-    currentCarrier = carrier;
-    // Load credentials immediately from stored carrier data — do not
-    // wait for pending assignments, which may not exist yet.
-    currentCarrierId = carrierDetails[carrier]?.id || null;
-    currentWebhookSecret = carrierDetails[carrier]?.webhook_secret || null;
+    const selected = carrierDetails[carrier] || null;
+    if (!selected) {
+        currentCarrier = null;
+        currentCarrierId = null;
+        currentWebhookSecret = null;
+        document.getElementById('currentCarrierName').textContent = '—';
+        document.getElementById('webhookSecretValue').value = '';
+        assignmentRows = [];
+        shipmentRows = [];
+        renderAssignments();
+        renderShipments();
+        return;
+    }
 
-    document.querySelectorAll('.carrier-btn').forEach(btn => btn.classList.remove('active'));
-    if (evt?.currentTarget) evt.currentTarget.classList.add('active');
+    currentCarrier = selected.code;
+    currentCarrierId = selected.id;
+    currentWebhookSecret = selected.webhook_secret || null;
 
-    document.getElementById('currentCarrierName').textContent = carrierNames[carrier] || carrier;
+    document.getElementById('carrierSelect').value = selected.id;
+    document.getElementById('currentCarrierName').textContent = selected.name || selected.code;
+    document.getElementById('webhookSecretValue').value = currentWebhookSecret || '';
 
     await loadPendingRequests();
     await loadMyShipments();
@@ -191,15 +313,13 @@ async function selectCarrier(evt, carrier) {
 
 async function loadPendingRequests() {
     try {
-        // Pass carrier UUID (not code) — backend getPendingAssignments expects an ID
-        const carrierId = carrierDetails[currentCarrier]?.id;
-        if (!carrierId) {
+        if (!currentCarrierId || !currentOrganization) {
             assignmentRows = [];
             renderAssignments();
             return;
         }
 
-        const params = new URLSearchParams({ carrierId });
+        const params = new URLSearchParams({ carrierId: currentCarrierId, orgId: currentOrganization });
         if (assignmentStatusFilter !== 'all') params.set('status', assignmentStatusFilter);
         
         // Use authenticated request with HMAC signature for GET
@@ -209,25 +329,25 @@ async function loadPendingRequests() {
             result = await sendAuthenticatedRequest(url, 'GET', '');
             if (!result.success || !Array.isArray(result.data)) {
                 assignmentRows = [];
-                renderAssignments();
+                document.getElementById('requestsContainer').innerHTML = `
+                    <div class="empty-state">
+                        <h3>Could not load assignments</h3>
+                        <p>Server returned an unexpected response.</p>
+                    </div>`;
                 return;
             }
         } catch (authError) {
             console.error('Authenticated request failed:', authError);
             assignmentRows = [];
-            renderAssignments();
+            document.getElementById('requestsContainer').innerHTML = `
+                <div class="empty-state">
+                    <h3>Assignment fetch failed</h3>
+                    <p>${authError.message || 'Authentication failed for selected carrier.'}</p>
+                </div>`;
             return;
         }
 
         assignmentRows = result.data;
-
-        if (assignmentRows.length > 0) {
-            const newCarrierId = assignmentRows[0].carrierId;
-            if (currentCarrierId !== newCarrierId) {
-                currentCarrierId = newCarrierId;
-                await fetchWebhookSecret(currentCarrierId);
-            }
-        }
 
         renderAssignments();
     } catch (error) {
@@ -238,21 +358,18 @@ async function loadPendingRequests() {
 }
 
 async function fetchWebhookSecret(carrierId) {
-    try {
-        const response = await fetch(`${API_BASE}/carriers/${carrierId}`);
-        const result = await response.json();
-        if (result.success && (result.data?.webhookSecret || result.data?.webhook_secret)) {
-            currentWebhookSecret = result.data.webhookSecret || result.data.webhook_secret;
-        } else {
-            currentWebhookSecret = null;
-        }
-    } catch { currentWebhookSecret = null; }
+    const details = carrierDetails[carrierId];
+    currentWebhookSecret = details?.webhook_secret || null;
+    const secretValue = document.getElementById('webhookSecretValue');
+    if (secretValue) {
+        secretValue.value = currentWebhookSecret || '';
+    }
 }
 
 function showEmptyState() {
     document.getElementById('requestsContainer').innerHTML = `
         <div class="empty-state">
-            <h3>📭 No Pending Requests</h3>
+            <h3>No Pending Requests</h3>
             <p>Waiting for customers to place orders…</p>
             <p style="margin-top: 15px; font-size: 0.9em;">
                 <strong>Tip:</strong> Go to the Customer Portal and place an order to see requests here.
@@ -287,13 +404,13 @@ function displayAssignments(assignments) {
             <div class="request-header">
                 <h3>Order ${assignment.orderNumber}</h3>
                 <div class="request-time">
-                    <span class="badge badge-pending">⏳ PENDING</span>
+                    <span class="badge badge-pending">PENDING</span>
                     <small style="display:block; margin-top:5px;">Expires: ${new Date(assignment.expiresAt).toLocaleString()}</small>
                 </div>
             </div>
 
             <div class="shipment-details">
-                <h4 style="margin-bottom:15px; color:#495057;">📦 Shipment Details</h4>
+                <h4 style="margin-bottom:15px; color:#495057;">Shipment Details</h4>
                 <div class="detail-row"><div class="detail-label">Customer:</div><div class="detail-value">${assignment.customerName}</div></div>
                 <div class="detail-row"><div class="detail-label">Email:</div><div class="detail-value">${assignment.customerEmail}</div></div>
                 <div class="detail-row"><div class="detail-label">Product:</div><div class="detail-value">${firstItem.productName || 'N/A'}</div></div>
@@ -304,9 +421,9 @@ function displayAssignments(assignments) {
                     ${firstItem.volumetric_weight ? `<small style="color:#6c757d;"> (Vol: ${firstItem.volumetric_weight}kg)</small>` : ''}
                 </div></div>
                 <div class="detail-row"><div class="detail-label">Special Handling:</div><div class="detail-value">
-                    ${firstItem.is_fragile ? '<span style="color:#dc3545;">⚠️ Fragile</span>' : ''}
-                    ${firstItem.is_hazardous ? '<span style="color:#dc3545;">☢️ Hazardous</span>' : ''}
-                    ${firstItem.requires_cold_storage ? '<span style="color:#0d6efd;">❄️ Cold Storage</span>' : ''}
+                    ${firstItem.is_fragile ? '<span style="color:#dc3545;">Fragile</span>' : ''}
+                    ${firstItem.is_hazardous ? '<span style="color:#dc3545;">Hazardous</span>' : ''}
+                    ${firstItem.requires_cold_storage ? '<span style="color:#0d6efd;">Cold Storage</span>' : ''}
                     ${!firstItem.is_fragile && !firstItem.is_hazardous && !firstItem.requires_cold_storage ? 'Standard' : ''}
                 </div></div>
                 <div class="detail-row"><div class="detail-label">Order Value:</div><div class="detail-value">₹${assignment.totalAmount.toLocaleString()}</div></div>
@@ -317,11 +434,11 @@ function displayAssignments(assignments) {
 
             <div class="data-grid">
                 <div class="data-section">
-                    <h4>📄 Full Request Payload</h4>
+                    <h4>Full Request Payload</h4>
                     <div class="data-display"><pre>${JSON.stringify(orderData, null, 2)}</pre></div>
                 </div>
                 <div class="data-section">
-                    <h4>🎯 Assignment Info</h4>
+                    <h4>Assignment Info</h4>
                     <div style="padding:15px; background:#f8f9fa; border-radius:6px;">
                         <p><strong>Assignment ID:</strong> ${assignment.id}</p>
                         <p><strong>Order ID:</strong> ${assignment.orderId}</p>
@@ -335,7 +452,7 @@ function displayAssignments(assignments) {
 
             <div class="action-section">
                 <div class="action-card">
-                    <h4>✅ Accept Assignment</h4>
+                    <h4>Accept Assignment</h4>
                     <div class="input-group">
                         <label>Quoted Price (₹)</label>
                         <input type="number" id="quotedPrice-${assignment.id}" value="${Math.round(assignment.totalAmount * 0.15)}" step="0.01">
@@ -353,11 +470,11 @@ function displayAssignments(assignments) {
                         </select>
                     </div>
                     <button type="button" class="btn btn-accept" onclick="acceptAssignment('${assignment.id}')">
-                        ✅ Accept & Create Shipment
+                        Accept & Create Shipment
                     </button>
                 </div>
                 <div class="action-card">
-                    <h4>❌ Reject Assignment</h4>
+                    <h4>Reject Assignment</h4>
                     <div class="input-group">
                         <label>Rejection Reason</label>
                         <select id="rejectionReason-${assignment.id}">
@@ -374,7 +491,7 @@ function displayAssignments(assignments) {
                         <input type="text" id="rejectionMessage-${assignment.id}" placeholder="Optional details…">
                     </div>
                     <button type="button" class="btn btn-reject" onclick="rejectAssignment('${assignment.id}')">
-                        ❌ Reject Assignment
+                        Reject Assignment
                     </button>
                 </div>
             </div>
@@ -415,7 +532,7 @@ async function acceptAssignment(assignmentId) {
         else throw new Error(result.error || 'Failed to accept assignment');
     } catch (error) {
         console.error('Error accepting assignment:', error);
-        console.error('Error: ' + error.message);
+        showActionError(assignmentId, `Accept failed: ${error.message}`);
     }
 }
 
@@ -431,8 +548,19 @@ async function rejectAssignment(assignmentId) {
         else throw new Error(result.error || 'Failed to reject assignment');
     } catch (error) {
         console.error('Error rejecting assignment:', error);
-        console.error('Error: ' + error.message);
+        showActionError(assignmentId, `Reject failed: ${error.message}`);
     }
+}
+
+function showActionError(assignmentId, message) {
+    const responseDiv = document.getElementById(`responseDisplay-${assignmentId}`);
+    if (!responseDiv) return;
+    responseDiv.className = 'response-section reject';
+    responseDiv.style.display = 'block';
+    responseDiv.innerHTML = `
+        <h4>Action Failed</h4>
+        <p style="margin-bottom:10px; color:#721c24;">${message}</p>
+        <p style="font-size:0.85em; color:#6c757d;">Refresh assignments and retry.</p>`;
 }
 
 function getRejectionMessage(reason) {
@@ -452,16 +580,16 @@ function displayResponse(assignmentId, responseData, isAccepted) {
     responseDiv.className = 'response-section ' + (isAccepted ? '' : 'reject');
     responseDiv.style.display = 'block';
     responseDiv.innerHTML = `
-        <h4>${isAccepted ? '✅ Assignment Accepted & Shipment Created!' : '❌ Assignment Rejected'}</h4>
+        <h4>${isAccepted ? 'Assignment Accepted & Shipment Created!' : 'Assignment Rejected'}</h4>
         <p style="margin-bottom:15px; color:#495057;">Processed at ${new Date().toLocaleTimeString()}</p>
         ${isAccepted ? `
         <div style="background:#d4edda; border:2px solid #c3e6cb; padding:15px; border-radius:8px; margin-bottom:15px;">
-            <h4 style="color:#155724; margin-bottom:10px;">📦 Shipment Details</h4>
+            <h4 style="color:#155724; margin-bottom:10px;">Shipment Details</h4>
             <p><strong>Tracking Number:</strong> ${responseData.shipment?.trackingNumber || 'N/A'}</p>
             <p><strong>Status:</strong> ${responseData.shipment?.status || 'pending'}</p>
             <p><strong>Created:</strong> ${new Date(responseData.shipment?.createdAt || Date.now()).toLocaleString()}</p>
         </div>` : ''}
-        <h4 style="margin-top:15px; color:#495057;">📤 Response Data:</h4>
+        <h4 style="margin-top:15px; color:#495057;">Response Data:</h4>
         <div class="data-display"><pre>${JSON.stringify(responseData, null, 2)}</pre></div>
         <p style="margin-top:15px; text-align:center; font-size:0.9em; color:#6c757d;">
             Refreshing in 3 seconds…
@@ -522,7 +650,7 @@ function renderShipments(errorMessage = '') {
     if (rows.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <h3>${errorMessage ? '❌ Unable to Load Shipments' : '📦 No Shipments Match Filter'}</h3>
+                <h3>${errorMessage ? 'Unable to Load Shipments' : 'No Shipments Match Filter'}</h3>
                 <p>${errorMessage || 'Try changing status/search filters or accept new assignments.'}</p>
             </div>`;
         return;
@@ -531,7 +659,7 @@ function renderShipments(errorMessage = '') {
     container.innerHTML = rows.map(shipment => `
         <div class="shipment-card">
             <div class="request-header">
-                <h3>📦 ${shipment.trackingNumber}</h3>
+                <h3>${shipment.trackingNumber}</h3>
                 <span class="shipment-status ${shipment.status === 'in_transit' ? 'in-transit' : ''}">${shipment.status.toUpperCase()}</span>
             </div>
             <div class="shipment-details">
@@ -539,23 +667,22 @@ function renderShipments(errorMessage = '') {
                 <div class="detail-row"><span class="detail-label">Origin:</span><span class="detail-value">${shipment.origin?.city || 'N/A'}, ${shipment.origin?.state || ''}</span></div>
                 <div class="detail-row"><span class="detail-label">Destination:</span><span class="detail-value">${shipment.destination?.city || 'N/A'}, ${shipment.destination?.state || ''}</span></div>
                 <div class="detail-row"><span class="detail-label">Weight:</span><span class="detail-value">${shipment.weight} kg</span></div>
-                <div class="detail-row"><span class="detail-label">Shipping Cost:</span><span class="detail-value">₹${shipment.cost}</span></div>
                 <div class="detail-row"><span class="detail-label">SLA Deadline:</span><span class="detail-value">${new Date(shipment.slaDeadline).toLocaleString()}</span></div>
                 <div class="detail-row"><span class="detail-label">Created:</span><span class="detail-value">${new Date(shipment.createdAt).toLocaleString()}</span></div>
             </div>
             <div style="margin-top:20px; padding:15px; background:${shipment.status === 'pending' ? '#fff3cd' : '#e9f7ff'}; border-left:4px solid ${shipment.status === 'pending' ? '#ffc107' : '#17a2b8'}; border-radius:4px;">
-                <h4 style="margin-bottom:10px; color:${shipment.status === 'pending' ? '#856404' : '#0c5460'};">${shipment.status === 'pending' ? '⚠️ Action Required: Confirm Pickup' : 'ℹ️ Shipment Progress'}</h4>
+                <h4 style="margin-bottom:10px; color:${shipment.status === 'pending' ? '#856404' : '#0c5460'};">${shipment.status === 'pending' ? 'Action Required: Confirm Pickup' : 'Shipment Progress'}</h4>
                 ${shipment.status === 'pending'
                     ? `<p style="margin-bottom:15px; color:#856404;">
                         This shipment is ready for pickup. Once you collect the package, click below.
                         <strong>SLA timer starts from confirmation.</strong>
                        </p>
                        <button class="btn-pickup" onclick="confirmPickup('${shipment.id}', '${shipment.trackingNumber}')">
-                        ✅ Confirm Pickup — Start Transit
+                        Confirm Pickup - Start Transit
                        </button>`
                     : `<p style="margin-bottom:12px; color:#0c5460;">No pickup action needed. Current status: <strong>${shipment.status}</strong>.</p>
                        ${shipment.status !== 'delivered' && shipment.status !== 'returned' && shipment.status !== 'cancelled'
-                        ? `<button class="btn btn-reject" style="max-width:260px;" onclick="reportShipmentException('${shipment.id}', '${shipment.trackingNumber}')">⚠️ Report Exception</button>`
+                        ? `<button class="btn btn-reject" style="max-width:260px;" onclick="reportShipmentException('${shipment.id}', '${shipment.trackingNumber}')">Report Exception</button>`
                         : ''}`}
             </div>
         </div>`).join('');
@@ -587,12 +714,12 @@ async function confirmPickup(shipmentId, trackingNumber) {
             `${API_BASE}/shipments/${shipmentId}/confirm-pickup`, 'POST', pickupData
         );
         if (result.success) {
-            console.info(`✅ Pickup Confirmed!\n\nTracking: ${result.data.trackingNumber}\nStatus: ${result.data.status}\nOrder: ${result.data.orderStatus}\n\nSLA timer started.`);
+            console.info(`Pickup Confirmed!\n\nTracking: ${result.data.trackingNumber}\nStatus: ${result.data.status}\nOrder: ${result.data.orderStatus}\n\nSLA timer started.`);
             loadMyShipments();
         } else throw new Error(result.error || 'Failed to confirm pickup');
     } catch (error) {
         console.error('Error confirming pickup:', error);
-        console.error('❌ Error: ' + error.message);
+        console.error('Error: ' + error.message);
     }
 }
 
@@ -651,7 +778,7 @@ async function updateShipmentStatus() {
         resultDiv.style.background = '#d4edda';
         resultDiv.style.border = '2px solid #28a745';
         resultDiv.style.color = '#155724';
-        resultDiv.innerHTML = `<strong>✅ Tracking updated!</strong><br>
+        resultDiv.innerHTML = `<strong>Tracking updated!</strong><br>
             Tracking: <code>${trackingNumber}</code><br>
             Status: <strong>${result.data?.status || eventType}</strong><br>
             <small style="color:#6c757d; margin-top:8px; display:block;">
@@ -665,7 +792,7 @@ async function updateShipmentStatus() {
         resultDiv.style.background = '#f8d7da';
         resultDiv.style.border = '2px solid #dc3545';
         resultDiv.style.color = '#721c24';
-        resultDiv.innerHTML = `<strong>❌ Error:</strong> ${err.message}`;
+        resultDiv.innerHTML = `<strong>Error:</strong> ${err.message}`;
     }
 }
 

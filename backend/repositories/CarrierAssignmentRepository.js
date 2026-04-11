@@ -123,6 +123,12 @@ class CarrierAssignmentRepository extends BaseRepository {
         `;
         const params = [carrierId];
         let paramCount = 2;
+        if (filters.organizationId) {
+            // Filter by order org to support legacy assignment rows where ca.organization_id may be NULL.
+            query += ` AND o.organization_id = $${paramCount}`;
+            paramCount += 1;
+            params.push(filters.organizationId);
+        }
         if (filters.status) {
             query += ` AND ca.status = $${paramCount}`;
             paramCount += 1;
@@ -148,7 +154,7 @@ class CarrierAssignmentRepository extends BaseRepository {
              FROM carrier_assignments ca
              JOIN orders o ON ca.order_id = o.id
              JOIN carriers c ON ca.carrier_id = c.id
-             WHERE ca.id = $1 AND ca.carrier_id = $2 AND ca.status = 'pending'
+             WHERE ca.id = $1 AND ca.carrier_id = $2 AND ca.status IN ('pending', 'assigned')
              FOR UPDATE OF ca`,
             [assignmentId, carrierId], client
         );
@@ -180,7 +186,7 @@ class CarrierAssignmentRepository extends BaseRepository {
                  carrier_reference_id = $1,
                  carrier_tracking_number = $2,
                  acceptance_payload = $3
-             WHERE id = $4 AND status = 'pending'
+             WHERE id = $4 AND status IN ('pending', 'assigned')
              RETURNING *`,
             [referenceId, trackingNumber, JSON.stringify(acceptancePayload), assignmentId], client
         );
@@ -195,7 +201,7 @@ class CarrierAssignmentRepository extends BaseRepository {
         const result = await this.query(
             `UPDATE carrier_assignments
              SET status = 'cancelled', updated_at = NOW()
-             WHERE order_id = $1 AND id != $2 AND status IN ('pending', 'assigned')
+             WHERE order_id = $1 AND id != $2 AND status IN ('pending', 'assigned', 'busy')
              RETURNING id, carrier_id`,
             [orderId, acceptedAssignmentId], client
         );
@@ -382,17 +388,22 @@ class CarrierAssignmentRepository extends BaseRepository {
     /**
      * Fetch top available carriers for a service type.
      */
-    async findAvailableCarriers(serviceType, client = null) {
-        const result = await this.query(
-            `SELECT id, code, name, contact_email, service_type, is_active, availability_status
-             FROM carriers
-             WHERE is_active = true
-               AND availability_status = 'available'
-               AND (service_type = $1 OR service_type = 'all')
-             ORDER BY reliability_score DESC
-             LIMIT 3`,
-            [serviceType], client
-        );
+    async findAvailableCarriers(serviceType, organizationId = undefined, client = null) {
+        let query = `
+            SELECT id, code, name, contact_email, service_type, is_active, availability_status
+            FROM carriers
+            WHERE is_active = true
+              AND availability_status = 'available'
+              AND (service_type = $1 OR service_type = 'all')
+        `;
+        const params = [serviceType];
+        if (organizationId) {
+            query += ` AND organization_id = $2`;
+            params.push(organizationId);
+        }
+        query += ` ORDER BY reliability_score DESC LIMIT 3`;
+
+        const result = await this.query(query, params, client);
         return result.rows;
     }
 
