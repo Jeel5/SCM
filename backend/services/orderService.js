@@ -10,6 +10,7 @@ import { NotFoundError, BusinessLogicError, assertExists } from '../errors/index
 import { logEvent, logPerformance } from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import logger from '../utils/logger.js';
+import { maybeCreateAutoRestockOrder } from './restockService.js';
 
 import customerInvoiceService from './customerInvoiceService.js';
 // ─── Order State Machine ────────────────────────────────────────────────────
@@ -289,6 +290,8 @@ async function reserveInventoryForItems(enrichedItems, tx) {
         `Insufficient stock for SKU "${item.sku}". Required: ${item.quantity}. Check available inventory and try again.`
       );
     }
+
+    await maybeCreateAutoRestockOrder(reserved, 'order_reserve_low_stock', tx);
   });
 }
 
@@ -872,6 +875,8 @@ class OrderService {
       if (!reserved) {
         throw new BusinessLogicError(`Failed to reserve inventory for SKU: ${item.sku}`);
       }
+
+      await maybeCreateAutoRestockOrder(reserved, 'transfer_reserve_low_stock', tx);
     });
   }
 

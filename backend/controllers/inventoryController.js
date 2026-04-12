@@ -10,6 +10,7 @@ import { NotFoundError, BusinessLogicError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { withTransaction } from '../utils/dbTransaction.js';
 import { cacheWrap, orgSeg, hashParams, invalidatePatterns, invalidationTargets } from '../utils/cache.js';
+import { maybeCreateAutoRestockOrder } from '../services/restockService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -165,7 +166,19 @@ export const getInventoryItem = asyncHandler(async (req, res) => {
   const item = await InventoryRepository.findByIdWithDetails(id, organizationId);
   if (!item) throw new NotFoundError('Inventory item');
 
-  res.json({ success: true, data: formatInventoryItem(item) });
+  const formatted = formatInventoryItem(item);
+  if (formatted.isLowStock) {
+    try {
+      await maybeCreateAutoRestockOrder(formatted, 'inventory_item_view_low_stock');
+    } catch (error) {
+      logger.warn('Auto restock create check failed in getInventoryItem', {
+        inventoryId: id,
+        error: error.message,
+      });
+    }
+  }
+
+  res.json({ success: true, data: formatted });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -523,7 +536,19 @@ export const createInventoryItem = asyncHandler(async (req, res) => {
   await invalidatePatterns(invalidationTargets(orgId, 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'));
   emitToOrg(orgId, 'inventory:updated', formatInventoryItem(item));
 
-  res.status(201).json({ success: true, data: formatInventoryItem(item) });
+  const formatted = formatInventoryItem(item);
+  if (formatted.isLowStock) {
+    try {
+      await maybeCreateAutoRestockOrder(formatted, 'inventory_create_low_stock');
+    } catch (error) {
+      logger.warn('Auto restock create check failed in createInventoryItem', {
+        inventoryId: item.id,
+        error: error.message,
+      });
+    }
+  }
+
+  res.status(201).json({ success: true, data: formatted });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -550,9 +575,22 @@ export const updateInventoryItem = asyncHandler(async (req, res) => {
     fields: Object.keys(req.body),
     userId: req.user?.userId
   });
+
+  const formatted = formatInventoryItem(updated);
+  if (formatted.isLowStock) {
+    try {
+      await maybeCreateAutoRestockOrder(formatted, 'inventory_update_low_stock');
+    } catch (error) {
+      logger.warn('Auto restock create check failed in updateInventoryItem', {
+        inventoryId: id,
+        error: error.message,
+      });
+    }
+  }
+
   await invalidatePatterns(invalidationTargets(organizationId, 'inv:list', 'inv:stats', 'inv:lowstock'));
 
-  res.json({ success: true, data: formatInventoryItem(updated) });
+  res.json({ success: true, data: formatted });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -716,6 +754,15 @@ export const adjustStock = asyncHandler(async (req, res) => {
   // Emit low_stock alert if updated item is at or below reorder point
   if (txResult.data?.availableQuantity <= txResult.data?.reorderPoint) {
     emitToOrg(item.organization_id, 'inventory:low_stock', txResult.data);
+    try {
+      await maybeCreateAutoRestockOrder(txResult.data, `inventory_adjust_${adjustment_type}_low_stock`);
+    } catch (error) {
+      logger.warn('Auto restock create check failed in adjustStock', {
+        inventoryId: id,
+        adjustmentType: adjustment_type,
+        error: error.message,
+      });
+    }
   }
   await invalidatePatterns(invalidationTargets(item.organization_id, 'inv:list', 'inv:stats', 'inv:lowstock', 'dash', 'analytics'));
   res.json({ success: true, ...txResult });
